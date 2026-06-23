@@ -1,0 +1,176 @@
+{
+  "_metadata": {
+    "engine": "Rotax 914iS",
+    "variant": "914iS Series",
+    "om_reference": "PLACEHOLDER \u2014 not yet verified against official OM",
+    "source_status": "PLACEHOLDER",
+    "notes": "Values are estimates from publicly available Rotax 915iS specifications. MUST be verified against the official Operators Manual before use in a real aircraft. Do not rely on these limits for operational decisions."
+  },
+  "engine_family": "iS",
+  "fadec": true,
+  "turbocharged": true,
+  "cylinders": 4,
+  "rated_power_kw": 86,
+  "rated_power_hp": 115,
+  "rated_rpm": 5800,
+  "limits": [
+    {
+      "param": "rpm",
+      "label": "Idle RPM minimum",
+      "unit": "rpm",
+      "min_val": 1800,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "rpm",
+      "label": "Max continuous RPM",
+      "unit": "rpm",
+      "max_val": 5500,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "rpm",
+      "label": "Takeoff RPM (5-min limit)",
+      "unit": "rpm",
+      "max_val": 5800,
+      "time_limit_s": 300,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "oil_press_psi",
+      "label": "Oil pressure min (>3500 rpm)",
+      "unit": "psi",
+      "min_val": 29.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "oil_press_psi",
+      "label": "Oil pressure max",
+      "unit": "psi",
+      "max_val": 72.5,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "oil_temp_f",
+      "label": "Oil temp minimum (takeoff)",
+      "unit": "\u00b0F",
+      "min_val": 122.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "oil_temp_f",
+      "label": "Oil temp maximum",
+      "unit": "\u00b0F",
+      "max_val": 248.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "oil_temp_f",
+      "label": "Oil temp optimal band (low)",
+      "unit": "\u00b0F",
+      "min_val": 194.0,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "coolant_temp_f",
+      "label": "Coolant temp maximum",
+      "unit": "\u00b0F",
+      "max_val": 248.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "egt1_f",
+      "label": "EGT1 maximum",
+      "unit": "\u00b0F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "egt2_f",
+      "label": "EGT2 maximum",
+      "unit": "\u00b0F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "egt3_f",
+      "label": "EGT3 maximum",
+      "unit": "\u00b0F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "egt4_f",
+      "label": "EGT4 maximum",
+      "unit": "\u00b0F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "map_inhg",
+      "label": "Manifold pressure maximum",
+      "unit": "inHg",
+      "max_val": 44.1,
+      "severity": "WARNING",
+      "note": "PLACEHOLDER \u2014 verify against OM. 915iS max boost approximately 1,600 hPa."
+    },
+    {
+      "param": "main_volts",
+      "label": "Bus voltage minimum",
+      "unit": "V",
+      "min_val": 11.5,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    },
+    {
+      "param": "main_volts",
+      "label": "Bus voltage maximum",
+      "unit": "V",
+      "max_val": 14.5,
+      "severity": "CAUTION",
+      "note": "PLACEHOLDER \u2014 verify against OM"
+    }
+  ],
+  "egt_spread": {
+    "note": "PLACEHOLDER \u2014 verify thresholds against OM",
+    "high_flow_threshold_lph": 3.0,
+    "high_flow_spread_limit_f": 392.0,
+    "high_flow_spread_limit_c": 200.0,
+    "high_flow_note": "PLACEHOLDER \u2014 EGT split limit at fuel flow > 3 L/hr",
+    "low_flow_spread_limit_f": 932.0,
+    "low_flow_spread_limit_c": 500.0,
+    "low_flow_note": "PLACEHOLDER \u2014 EGT split limit at fuel flow < 3 L/hr"
+  },
+  "overboost": {
+    "rpm_threshold": 5500,
+    "power_pct_threshold": 100,
+    "time_limit_s": 300,
+    "note": "PLACEHOLDER \u2014 verify against OM"
+  },
+  "eco_power_mode": {
+    "throttle_position_threshold_pct": 97,
+    "note": "PLACEHOLDER \u2014 verify against OM"
+  },
+  "phase_detection": {
+    "idle_rpm_min": 1800,
+    "runup_rpm_min": 3000,
+    "runup_rpm_max": 5000,
+    "takeoff_rpm_min": 4500,
+    "overboost_rpm_threshold": 5500,
+    "lane_check_max_duration_s": 15,
+    "note": "PLACEHOLDER \u2014 derived from limit values above"
+  }
+}

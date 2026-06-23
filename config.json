@@ -1,0 +1,11 @@
+{
+  "_notes": [
+    "SlingologyEIS toolkit configuration.",
+    "Set 'engine' to match your aircraft's engine.",
+    "Available engines: 912iS, 914iS, 915iS, 916iS",
+    "The engine config files live in the engines/ directory.",
+    "Only 916iS is fully sourced from the official OM.",
+    "The others are placeholders — verify against your engine's OM before use."
+  ],
+  "engine": "916iS"
+}
