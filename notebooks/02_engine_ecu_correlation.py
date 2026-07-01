@@ -389,54 +389,30 @@ def main():
 
 
 def _inflight_detail_lines(inflight_df: pd.DataFrame) -> list[str]:
+    """
+    Build the IN-FLIGHT interpretation/recommendation lines once, so both
+    the console output and the saved text report show the same analysis —
+    previously this only existed in the console, leaving the saved
+    engine_ecu_report.txt without the actual interpretation.
+    """
     lines = []
-
-    # ── Per-event callouts ────────────────────────────────────────────────────
-    for _, row in inflight_df.iterrows():
-        co = list(row.get("co_alerts", []) or [])
-        oil_nan = row.get("oil_nan_frac")
-        oil_nan_str = f"  oil_NaN:{oil_nan*100:.0f}%" if oil_nan is not None else ""
-
-        lines.append(
-            f"    ⚡ {row['source_file']}  "
-            f"{row['start_time']:%Y-%m-%d %H:%M:%S}  "
-            f"{row['duration_s']:.0f}s{oil_nan_str}"
-        )
-
-        if co:
-            # Flag OIL PRESS specifically — only co-active alert with a
-            # direct engine-parameter correlation
-            for alert in co:
-                if alert == "OIL PRESS":
-                    lines.append(
-                        f"      ⚠ Co-active: OIL PRESS — only IN-FLIGHT event with "
-                        f"a direct engine-parameter correlation. "
-                        f"Verify oil pressure was genuine, not a CAN dropout."
-                    )
-                else:
-                    lines.append(f"      · Co-active: {alert}")
-        else:
-            lines.append(
-                "      · No co-active alerts — ENGINE ECU isolated → "
-                "CAN fault, not ECU hardware"
-            )
-
-    # ── Aggregate pattern across all events ──────────────────────────────────
-    lines.append("")
     oil_nan_consistent = (
         (inflight_df["oil_nan_frac"] > 0.8).mean() > 0.6
         if "oil_nan_frac" in inflight_df.columns else False
     )
     if oil_nan_consistent:
-        lines.append(
-            "    Pattern: Oil press NaN co-occurrence STRONG across events "
-            "→ CAN bus dropout signature"
-        )
+        lines.append("    Oil press NaN co-occurrence: STRONG → CAN bus dropout pattern")
     else:
-        lines.append(
-            "    Pattern: Oil press NaN co-occurrence mixed — "
-            "events are not all the same type"
-        )
+        lines.append("    Oil press NaN co-occurrence: mixed — investigate further")
+
+    co_counter: dict[str, int] = {}
+    for _, row in inflight_df.iterrows():
+        for a in row.get("co_alerts", []):
+            co_counter[a] = co_counter.get(a, 0) + 1
+    if co_counter:
+        lines.append(f"    Co-active alerts: {co_counter}")
+    else:
+        lines.append("    No co-active alerts — ENGINE ECU isolated → CAN fault, not ECU hardware")
 
     lines.append("")
     lines.append("    RECOMMENDED ACTIONS:")
