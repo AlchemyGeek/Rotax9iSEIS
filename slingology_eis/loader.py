@@ -243,6 +243,7 @@ def load_log(
     # ── Datetime ──────────────────────────────────────────────────────────────
     df["datetime"] = pd.to_datetime(
         df["date"].astype(str) + " " + df["time"].astype(str),
+        format="%Y-%m-%d %H:%M:%S",
         errors="coerce"
     )
     df = df.dropna(subset=["datetime"]).reset_index(drop=True)
