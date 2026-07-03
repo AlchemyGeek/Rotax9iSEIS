@@ -44,6 +44,7 @@ sys.path.insert(0, str(_TOOLKIT))
 from slingology_eis.loader import load_directory, find_duplicate_flights, deduplicate_flights
 from slingology_eis.cas import _split_cas
 from slingology_eis.limits import load_engine_config
+from slingology_eis.cas import extract_engine_ecu_runs, classify_engine_ecu_run
 
 import pandas as pd
 import numpy as np
@@ -84,80 +85,12 @@ CORR_PARAMS = [
 def ecu_active_series(df: pd.DataFrame) -> pd.Series:
     return df["cas_alert"].apply(lambda v: "ENGINE ECU" in _split_cas(v))
 
-
-def classify_run(df: pd.DataFrame, start_idx: int, end_idx: int) -> str:
-    """
-    Classify an ENGINE ECU run into one of four categories:
-    POWERUP | SHUTDOWN | LANE_CHECK | IN_FLIGHT
-    """
-    seg        = df.loc[start_idx:end_idx]
-    rpm_vals   = seg["rpm"].fillna(0)
-    engine_rows = (rpm_vals > RPM_RUNNING).sum()
-    total_rows  = len(seg)
-    dur_s       = total_rows  # 1-second logging
-
-    # ── POWERUP / SHUTDOWN ────────────────────────────────────────────────────
-    if engine_rows / total_rows < 0.3:
-        if "main_volts" in seg.columns:
-            volts = seg["main_volts"].dropna()
-            if len(volts) >= 3:
-                if volts.iloc[:3].mean() > volts.iloc[-3:].mean() + VOLTAGE_DECLINE_THRESHOLD:
-                    return "SHUTDOWN"
-        return "POWERUP"
-
-    # ── LANE_CHECK ────────────────────────────────────────────────────────────
-    # Must be: short, in run-up RPM band, nearly stationary
-    mean_rpm = float(rpm_vals[rpm_vals > RPM_RUNNING].mean()) if engine_rows else 0
-    mean_ias = float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else 99
-
-    if (dur_s <= LANE_CHECK_MAX_DURATION_S
-            and LANE_CHECK_RPM_MIN <= mean_rpm <= LANE_CHECK_RPM_MAX
-            and mean_ias <= LANE_CHECK_MAX_IAS_KT):
-        return "LANE_CHECK"
-
-    return "IN_FLIGHT"
-
-
-def extract_runs(df: pd.DataFrame) -> list[dict]:
-    """Extract all ENGINE ECU runs with classification and statistics."""
-    ecu = ecu_active_series(df)
-    raw_runs = []
-    in_run, start = False, None
-
-    for i in df.index:
-        if ecu.loc[i] and not in_run:
-            in_run, start = True, i
-        elif not ecu.loc[i] and in_run:
-            in_run = False
-            raw_runs.append((start, i - 1))
-    if in_run and start is not None:
-        raw_runs.append((start, df.index[-1]))
-
-    # Build run dicts
-    runs = [_build_run(df, s, e) for s, e in raw_runs]
-
-    # ── Pair lane checks: if two LANE_CHECK runs are within the pair window,
-    #    annotate each with its pair partner ────────────────────────────────
-    lane_checks = [(i, r) for i, r in enumerate(runs) if r["classification"] == "LANE_CHECK"]
-    for j in range(len(lane_checks) - 1):
-        idx_a, r_a = lane_checks[j]
-        idx_b, r_b = lane_checks[j + 1]
-        gap_s = (r_b["start_time"] - r_a["end_time"]).total_seconds()
-        if gap_s <= LANE_CHECK_PAIR_WINDOW_S:
-            runs[idx_a]["lane_check_pair"] = True
-            runs[idx_b]["lane_check_pair"] = True
-            runs[idx_a]["lane_check_note"] = f"Lane A test (paired with run at {r_b['start_time']:%H:%M:%S})"
-            runs[idx_b]["lane_check_note"] = f"Lane B test (paired with run at {r_a['start_time']:%H:%M:%S})"
-
-    return runs
-
-
 def _build_run(df: pd.DataFrame, start_idx: int, end_idx: int) -> dict:
     seg     = df.loc[start_idx:end_idx]
     t_start = seg["datetime"].iloc[0]
     t_end   = seg["datetime"].iloc[-1]
     dur_s   = (t_end - t_start).total_seconds() + 1
-    kind    = classify_run(df, start_idx, end_idx)
+    kind    = classify_engine_ecu_run()
 
     pre_start = max(df.index[0], start_idx - CONTEXT_WINDOW)
     pre       = df.loc[pre_start: start_idx - 1]
@@ -256,7 +189,7 @@ def main():
         total = len(df)
         ecu   = ecu_active_series(df)
         n_ecu = ecu.sum()
-        runs  = extract_runs(df)
+        runs = extract_engine_ecu_runs(df, engine_config=_engine_cfg)
 
         n_powerup    = sum(1 for r in runs if r["classification"] == "POWERUP")
         n_shutdown   = sum(1 for r in runs if r["classification"] == "SHUTDOWN")

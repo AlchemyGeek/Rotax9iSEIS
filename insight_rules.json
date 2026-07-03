@@ -1,0 +1,94 @@
+{
+  "version": "1.0",
+  "rules": {
+    "egt_spread": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0},
+        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10}
+      ]
+    },
+    "egt4_elevation": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0},
+        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10}
+      ]
+    },
+    "cylinder_rank": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "condition": "rank_changed"}
+      ]
+    },
+    "oil_temp_peak": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "limit": 248, "unit": "f"},
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    },
+    "coolant_temp_peak": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "limit": 248, "unit": "f"},
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    },
+    "oil_coolant_ratio": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    },
+    "overboost_time": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "limit": 300, "unit": "s"}
+      ]
+    },
+    "cruise_efficiency": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0},
+        {"type": "trend", "direction": "decreasing", "r2_min": 0.5, "n_min": 10}
+      ]
+    },
+    "cruise_fuel_flow": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    },
+    "map_at_takeoff": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "condition": "vs_om_expected", "tolerance_hpa": 20}
+      ]
+    },
+    "engine_ecu_inflight": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "condition": "any_inflight"}
+      ]
+    },
+    "flight_phase_mix": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    },
+    "limit_exceedances": {
+      "enabled": true,
+      "triggers": [
+        {"type": "threshold", "condition": "any_exceedance"}
+      ]
+    },
+    "climb_thermal_rate": {
+      "enabled": true,
+      "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0}
+      ]
+    }
+  }
+}

@@ -56,6 +56,10 @@ class Limit:
     time_limit_s: Optional[float] = None
     severity: str = "CAUTION"
     note: str = ""
+    phases: Optional[list] = None
+    min_duration_s: Optional[float] = None
+    min_duration_by_phase: Optional[dict] = None
+    report_in_exceedances: bool = True
 
 
 # ── Engine config loader ──────────────────────────────────────────────────────
@@ -126,15 +130,20 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
     """Convert an engine config dict to a list of Limit objects."""
     limits = []
     for entry in engine_config.get("limits", []):
-        limits.append(Limit(
+        lims = []
+        lims.append(Limit(
             param=entry["param"],
             label=entry["label"],
-            unit=entry["unit"],
+            unit=entry.get("unit", ""),
             min_val=entry.get("min_val"),
             max_val=entry.get("max_val"),
             time_limit_s=entry.get("time_limit_s"),
             severity=entry.get("severity", "CAUTION"),
             note=entry.get("note", ""),
+            phases=entry.get("phases"),
+            min_duration_s=entry.get("min_duration_s"),
+            min_duration_by_phase=entry.get("min_duration_by_phase"),
+            report_in_exceedances=entry.get("report_in_exceedances", True),
         ))
     return limits
 
@@ -253,17 +262,27 @@ def check_exceedances(
     events: list[ExceedanceEvent] = []
 
     for lim in lims:
+        if not lim.report_in_exceedances:
+            continue
         if lim.param not in df.columns:
             continue
-        series = df[lim.param].copy()
+
+        # Phase filtering — restrict rows to allowed phases if specified
+        if lim.phases and "phase" in df.columns:
+            working_df = df[df["phase"].isin(lim.phases)].copy()
+        else:
+            working_df = df
+
+        series = working_df[lim.param].copy()
         if series.isna().all():
             continue
+
         if lim.min_val is not None:
             mask = series < lim.min_val
-            _accumulate_events(df, series, mask, lim, "MIN", lim.min_val, events)
+            _accumulate_events(working_df, series, mask, lim, "MIN", lim.min_val, events)
         if lim.max_val is not None:
             mask = series > lim.max_val
-            _accumulate_events(df, series, mask, lim, "MAX", lim.max_val, events)
+            _accumulate_events(working_df, series, mask, lim, "MAX", lim.max_val, events)
 
     # ── EGT spread: conditional on fuel flow ─────────────────────────────────
     # Thresholds come from the engine config rather than being hardcoded.
@@ -317,8 +336,24 @@ def _add_event(df, series, lim, limit_type, limit_value, start_idx, end_idx, eve
     t_start = df["datetime"].iloc[start_idx]
     t_end   = df["datetime"].iloc[end_idx]
     dur_s   = (t_end - t_start).total_seconds() + 1
+
+    # time_limit_s — takeoff RPM 5-min rule
     if lim.time_limit_s is not None and dur_s <= lim.time_limit_s:
         return
+
+    # min_duration_by_phase — per-phase duration threshold
+    if lim.min_duration_by_phase and "phase" in df.columns:
+        phase_at_start = df["phase"].iloc[start_idx]
+        threshold = lim.min_duration_by_phase.get(phase_at_start)
+        if threshold is None:
+            return  # null = suppress entirely for this phase
+        if dur_s < threshold:
+            return
+
+    # min_duration_s — flat duration threshold regardless of phase
+    elif lim.min_duration_s is not None:
+        if dur_s < lim.min_duration_s:
+            return
     obs = series.iloc[start_idx:end_idx + 1].max() \
         if limit_type == "MAX" else series.iloc[start_idx:end_idx + 1].min()
     events.append(ExceedanceEvent(

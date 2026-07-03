@@ -18,7 +18,14 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 import pandas as pd
+from typing import Optional
+import numpy as np
 
+# ── ENGINE ECU classifier constants ──────────────────────────────────────────
+_RPM_RUNNING               = 500
+_VOLTAGE_DECLINE_THRESHOLD = 0.5   # V drop over run → SHUTDOWN
+_LANE_CHECK_MAX_IAS_KT     = 20
+_LANE_CHECK_PAIR_WINDOW_S  = 90
 
 # Known alert categories for 916iS / G3X installation
 ALERT_SEVERITY = {
@@ -211,3 +218,171 @@ def cas_report(df: pd.DataFrame) -> str:
         lines.append("  → Check G3X Config mode (on ground, engine running) for fault code.")
 
     return "\n".join(lines)
+
+def classify_engine_ecu_run(
+    df: pd.DataFrame,
+    start_idx: int,
+    end_idx: int,
+    engine_config: Optional[dict] = None,
+) -> str:
+    """
+    Classify a single ENGINE ECU run into one of four categories:
+    POWERUP | SHUTDOWN | LANE_CHECK | IN_FLIGHT
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full flight dataframe (not sliced).
+    start_idx, end_idx : int
+        Row indices of the run within df.
+    engine_config : dict, optional
+        Engine config from load_engine_config(). If None, loads default.
+
+    Returns
+    -------
+    str — one of POWERUP, SHUTDOWN, LANE_CHECK, IN_FLIGHT
+    """
+    if engine_config is None:
+        from .limits import load_engine_config
+        engine_config = load_engine_config()
+
+    phase_cfg = engine_config.get("phase_detection", {})
+    lane_check_max_duration_s = phase_cfg.get("lane_check_max_duration_s", 15)
+    lane_check_rpm_min        = phase_cfg.get("runup_rpm_min", 3000)
+    lane_check_rpm_max        = phase_cfg.get("runup_rpm_max", 5000)
+
+    seg        = df.loc[start_idx:end_idx]
+    rpm_vals   = seg["rpm"].fillna(0)
+    engine_rows = (rpm_vals > _RPM_RUNNING).sum()
+    total_rows  = len(seg)
+    dur_s       = total_rows  # 1-second logging
+
+    # ── POWERUP / SHUTDOWN ────────────────────────────────────────────────────
+    if engine_rows / max(total_rows, 1) < 0.3:
+        if "main_volts" in seg.columns:
+            volts = seg["main_volts"].dropna()
+            if len(volts) >= 3:
+                if volts.iloc[:3].mean() > volts.iloc[-3:].mean() + _VOLTAGE_DECLINE_THRESHOLD:
+                    return "SHUTDOWN"
+        return "POWERUP"
+
+    # ── LANE_CHECK ────────────────────────────────────────────────────────────
+    mean_rpm = float(rpm_vals[rpm_vals > _RPM_RUNNING].mean()) if engine_rows else 0
+    mean_ias = float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else 99
+
+    if (dur_s <= lane_check_max_duration_s
+            and lane_check_rpm_min <= mean_rpm <= lane_check_rpm_max
+            and mean_ias <= _LANE_CHECK_MAX_IAS_KT):
+        return "LANE_CHECK"
+
+    return "IN_FLIGHT"
+
+
+def extract_engine_ecu_runs(
+    df: pd.DataFrame,
+    engine_config: Optional[dict] = None,
+) -> list[dict]:
+    """
+    Find all ENGINE ECU runs in a flight dataframe and return a list of
+    dicts with classification, timestamps, duration, co-active alerts,
+    and oil pressure NaN fraction.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full flight dataframe with cas_alert column.
+    engine_config : dict, optional
+        Engine config from load_engine_config(). If None, loads default.
+
+    Returns
+    -------
+    list[dict] with keys:
+        source_file, date, start_time, end_time, duration_s,
+        classification, co_alerts, oil_nan_frac,
+        start_idx, end_idx, mean_rpm, mean_ias_kt
+    """
+    if engine_config is None:
+        from .limits import load_engine_config
+        engine_config = load_engine_config()
+
+    if "cas_alert" not in df.columns:
+        return []
+
+    ecu_active = df["cas_alert"].apply(lambda v: "ENGINE ECU" in _split_cas(v))
+    runs = []
+
+    in_run    = False
+    start_idx = None
+
+    for idx in range(len(df)):
+        active = bool(ecu_active.iloc[idx])
+        if active and not in_run:
+            in_run    = True
+            start_idx = df.index[idx]
+        elif not active and in_run:
+            end_idx = df.index[idx - 1]
+            in_run  = False
+            runs.append((start_idx, end_idx))
+
+    if in_run and start_idx is not None:
+        runs.append((start_idx, df.index[-1]))
+
+    results = []
+    fname   = df["_source_file"].iloc[0] if "_source_file" in df.columns else ""
+    date    = df["datetime"].iloc[0].date() if "datetime" in df.columns else None
+
+    for start_idx, end_idx in runs:
+        seg           = df.loc[start_idx:end_idx]
+        classification = classify_engine_ecu_run(df, start_idx, end_idx, engine_config)
+        dur_s         = len(seg)
+
+        # Co-active alerts (excluding ENGINE ECU itself)
+        co_alerts: list[str] = []
+        for cas_val in seg["cas_alert"].dropna():
+            for alert in _split_cas(cas_val):
+                if alert and alert != "ENGINE ECU" and alert not in co_alerts:
+                    co_alerts.append(alert)
+
+        # Oil pressure NaN fraction
+        oil_nan_frac = None
+        if "oil_press_psi" in seg.columns:
+            oil_nan_frac = float(seg["oil_press_psi"].isna().mean())
+
+        results.append({
+            "source_file":     fname,
+            "date":            date,
+            "start_time":      df.loc[start_idx, "datetime"] if "datetime" in df.columns else None,
+            "end_time":        df.loc[end_idx,   "datetime"] if "datetime" in df.columns else None,
+            "duration_s":      dur_s,
+            "classification":  classification,
+            "co_alerts":       co_alerts,
+            "oil_nan_frac":    oil_nan_frac,
+            "start_idx":       start_idx,
+            "end_idx":         end_idx,
+            "mean_rpm":        float(seg["rpm"].fillna(0).mean()) if "rpm" in seg.columns else None,
+            "mean_ias_kt":     float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else None,
+        })
+
+        # ── Lane check pairing ────────────────────────────────────────────────────
+        # Mark LANE_CHECK runs that occur in pairs within the pairing window
+        # (one run per lane, both within _LANE_CHECK_PAIR_WINDOW_S seconds)
+        lc_indices = [
+            i for i, r in enumerate(results)
+            if r["classification"] == "LANE_CHECK"
+        ]
+        paired = set()
+        for i in range(len(lc_indices)):
+            for j in range(i + 1, len(lc_indices)):
+                ri = results[lc_indices[i]]
+                rj = results[lc_indices[j]]
+                if (ri["start_time"] is not None and rj["start_time"] is not None):
+                    gap = abs((rj["start_time"] - ri["start_time"]).total_seconds())
+                    if gap <= _LANE_CHECK_PAIR_WINDOW_S:
+                        paired.add(lc_indices[i])
+                        paired.add(lc_indices[j])
+
+        for i, r in enumerate(results):
+            r["lane_check_pair"] = (i in paired)
+            r["lane_check_note"] = "paired" if (i in paired and r["classification"] == "LANE_CHECK") else ""
+
+    return results

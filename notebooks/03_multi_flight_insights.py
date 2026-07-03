@@ -47,6 +47,9 @@ from slingology_eis.fleet import (
 from slingology_eis.climb import VS_BUCKETS
 from slingology_eis.limits import load_engine_config
 
+import json
+from datetime import date
+
 import pandas as pd
 
 LOGS_DIR    = _TOOLKIT / "data" / "logs"
@@ -63,6 +66,130 @@ def section(title: str):
 def subsection(title: str):
     print(f"\n── {title} {'─' * max(0, 58 - len(title))}")
 
+def _serialise(obj):
+    """JSON serialiser for types not handled by default."""
+    import numpy as np
+    import math
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        if math.isnan(obj):
+            return None
+        return float(obj)
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(f"Not serialisable: {type(obj)}")
+
+def _raw(col, band_col=None):
+    cols = ["date", "engine_hours", col]
+    if band_col and band_col in metrics.columns:
+        cols += [band_col]
+    if "da_band" in metrics.columns and "da_band" not in cols:
+        cols += ["da_band"]
+    if "oat_band" in metrics.columns and "oat_band" not in cols:
+        cols += ["oat_band"]
+    sub = metrics[[c for c in cols if c in metrics.columns]].dropna(subset=[col])
+    renamed = sub.rename(columns={col: "value"})
+    records = renamed.to_dict(orient="records")
+    return [
+        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
+        for row in records
+    ]
+
+
+def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
+    """
+    Serialise fleet baselines, trends, and raw data points to
+    reports/baselines.json for use by script 04.
+    """
+    def _baseline_dict(b):
+        if b.mean is None:
+            return {"n": b.n, "confidence": b.confidence}
+        return {
+            "mean": b.mean, "std": b.std,
+            "min": b.min, "max": b.max,
+            "n": b.n, "confidence": b.confidence,
+        }
+
+    def _trend_dict(t):
+        if t.slope is None:
+            return {"n": t.n, "direction": t.direction, "confidence": t.confidence}
+        return {
+            "n": t.n, "slope": t.slope,
+            "direction": t.direction,
+            "r_squared": t.r_squared,
+            "confidence": t.confidence,
+        }
+
+    def _raw(col, band_col=None):
+        cols = ["date", "engine_hours", col]
+        if band_col and band_col in metrics.columns:
+            cols += [band_col]
+        if "da_band" in metrics.columns and "da_band" not in cols:
+            cols += ["da_band"]
+        if "oat_band" in metrics.columns and "oat_band" not in cols:
+            cols += ["oat_band"]
+        sub = metrics[[c for c in cols if c in metrics.columns]].dropna(subset=[col])
+        renamed = sub.rename(columns={col: "value"})
+        return renamed.where(pd.notna(renamed), other=None).to_dict(orient="records")
+
+    # ── Per-metric definitions ────────────────────────────────────────────
+    metric_defs = [
+        # (key, column, band_column)
+        ("egt_spread",        "egt_spread_mean_f",    "oat_band"),
+        ("egt4_elevation",    "egt4_elevation_f",      "oat_band"),
+        ("oil_temp_peak",     "oil_temp_max_f",        "oat_band"),
+        ("coolant_temp_peak", "coolant_temp_max_f",    "oat_band"),
+        ("oil_coolant_ratio", "oil_coolant_ratio",     "oat_band"),
+        ("overboost_time",    "overboost_total_s",     None),
+        ("cruise_efficiency", "cruise_nmpg",           "da_band"),
+        ("cruise_fuel_flow",  "cruise_fuel_flow_gph",  "da_band"),
+        ("climb_thermal_rate","climb_oil_rise_f_per_min", None),
+    ]
+
+    baselines_out = {}
+    for key, col, band_col in metric_defs:
+        if col not in metrics.columns:
+            continue
+        b = baseline(metrics, col)
+        t = trend(metrics, col, x="engine_hours")
+        by_band = {}
+        if band_col:
+            stratified = baseline_stratified(metrics, col, band_column=band_col)
+            for band_name, sb in stratified.items():
+                by_band[band_name] = _baseline_dict(sb)
+
+        baselines_out[key] = {
+            **_baseline_dict(b),
+            "trend": _trend_dict(t),
+            **({"by_band": by_band} if by_band else {}),
+            "raw": _raw(col, band_col),
+        }
+
+    doc = {
+        "version": "1.0",
+        "generated_at": date.today().isoformat(),
+        "engine": engine_name,
+        "engine_hours_range": [
+            float(metrics["engine_hours"].min()),
+            float(metrics["engine_hours"].max()),
+        ] if metrics["engine_hours"].notna().any() else None,
+        "flight_count": len(metrics),
+        "baselines": baselines_out,
+    }
+
+    # Convert the doc to a JSON string via pandas which handles all NaN variants,
+    # then parse back to replace NaN tokens with null before final write.
+    import re as _re
+    raw_json = json.dumps(doc, indent=2, default=_serialise)
+    # json.dumps writes NaN as bare NaN (invalid JSON) — replace all occurrences with null
+    clean_json = _re.sub(r'\bNaN\b', 'null', raw_json)
+    out_path.write_text(clean_json)
+
+    print(f"\n  Baselines written to: {out_path}")
+    print(f"  ({len(baselines_out)} metrics, {len(metrics)} flights)")
 
 def main():
     engine_cfg_early = load_engine_config()
@@ -375,6 +502,8 @@ def main():
     print(f"\n  Per-flight metrics table saved: {out_csv}")
     print(f"  ({len(metrics)} rows × {len(metrics.columns)} columns)")
     print(f"  Open in Excel/Sheets for further exploration, or feed into future plotting work.")
+
+    write_baselines(metrics, REPORTS_DIR / "baselines.json", engine_name_early)
 
     print(f"\n{'=' * 70}\n")
 
