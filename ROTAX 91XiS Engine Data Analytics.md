@@ -1,7 +1,7 @@
 # ROTAX 916iS ENGINE DATA ANALYTICS
 ## A Research Foundation for FADEC-Native Engine Monitoring
 
-**Slingology EIS Project  |  N117ZS Sling TSi  |  KPAE**
+**Slingology EIS Project  |  N117ZS Sling TSi  |  KAWO**
 
 Living Document — Edition 0.3  |  July 2026
 
@@ -441,6 +441,6 @@ Trigger rules are defined in `insight_rules.json` with three trigger types:
 
 ---
 
-*Slingology EIS Research  •  N117ZS  •  KPAE  •  Living document — update with each analytical finding*
+*Slingology EIS Research  •  N117ZS  •  KAWO •  Living document — update with each analytical finding*
 
 *Edition 0.3 — July 2026*
