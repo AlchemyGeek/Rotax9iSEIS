@@ -33,6 +33,8 @@ Usage
 
 import sys
 from pathlib import Path
+import numpy as np
+import re as _re
 
 _HERE    = Path(__file__).resolve().parent
 _TOOLKIT = _HERE.parent
@@ -138,15 +140,17 @@ def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
     # ── Per-metric definitions ────────────────────────────────────────────
     metric_defs = [
         # (key, column, band_column)
-        ("egt_spread",        "egt_spread_mean_f",    "oat_band"),
-        ("egt4_elevation",    "egt4_elevation_f",      "oat_band"),
-        ("oil_temp_peak",     "oil_temp_max_f",        "oat_band"),
-        ("coolant_temp_peak", "coolant_temp_max_f",    "oat_band"),
-        ("oil_coolant_ratio", "oil_coolant_ratio",     "oat_band"),
-        ("overboost_time",    "overboost_total_s",     None),
-        ("cruise_efficiency", "cruise_nmpg",           "da_band"),
-        ("cruise_fuel_flow",  "cruise_fuel_flow_gph",  "da_band"),
-        ("climb_thermal_rate","climb_oil_rise_f_per_min", None),
+        ("egt_spread", "egt_spread_mean_f", "oat_band"),
+        ("egt4_elevation", "egt4_elevation_f", "oat_band"),
+        ("oil_temp_peak", "oil_temp_max_f", "oat_band"),
+        ("coolant_temp_peak", "coolant_temp_max_f", "oat_band"),
+        ("oil_coolant_ratio", "oil_coolant_ratio", "oat_band"),
+        ("overboost_time", "overboost_total_s", None),
+        ("cruise_efficiency", "cruise_nmpg", "da_band"),
+        ("cruise_fuel_flow", "cruise_fuel_flow_gph", "da_band"),
+        ("climb_thermal_rate", "climb_oil_rise_f_per_min", None),
+        ("cruise_da_ft", "cruise_da_ft", None),
+        ("takeoff_map_inhg", "takeoff_map_inhg", None),
     ]
 
     baselines_out = {}
@@ -186,10 +190,188 @@ def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
     raw_json = json.dumps(doc, indent=2, default=_serialise)
     # json.dumps writes NaN as bare NaN (invalid JSON) — replace all occurrences with null
     clean_json = _re.sub(r'\bNaN\b', 'null', raw_json)
+
+    # ── MAP model — linear regression: MAP = f(pressure_alt_ft, oat_c) ───────
+    map_df = metrics[["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c",
+                      "engine_hours", "date"]].dropna()
+    map_model = {"n": len(map_df), "confidence": confidence_label(len(map_df))}
+
+    if len(map_df) >= 5:
+        from numpy.linalg import lstsq as _lstsq
+        X = np.column_stack([
+            np.ones(len(map_df)),
+            map_df["takeoff_pressure_alt_ft"].values,
+            map_df["takeoff_oat_c"].values,
+        ])
+        y = map_df["takeoff_map_inhg"].values
+        coeffs, _, _, _ = _lstsq(X, y, rcond=None)
+        y_pred = X @ coeffs
+        ss_res = float(np.sum((y - y_pred) ** 2))
+        ss_tot = float(np.sum((y - y.mean()) ** 2))
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        map_model.update({
+            "type": "linear_regression",
+            "features": ["pressure_alt_ft", "oat_c"],
+            "target": "map_inhg",
+            "coefficients": {
+                "intercept": round(float(coeffs[0]), 4),
+                "pressure_alt_ft": round(float(coeffs[1]), 6),
+                "oat_c": round(float(coeffs[2]), 4),
+            },
+            "r_squared": round(r2, 4),
+        })
+    else:
+        map_model["note"] = (
+            f"Still collecting data — need 5 minimum for first model fit "
+            f"(have {len(map_df)})"
+        )
+
+    map_model["raw"] = [
+        {
+            "date": str(row["date"]),
+            "engine_hours": row["engine_hours"],
+            "map_inhg": row["takeoff_map_inhg"],
+            "pressure_alt_ft": row["takeoff_pressure_alt_ft"],
+            "oat_c": row["takeoff_oat_c"],
+        }
+        for _, row in map_df.iterrows()
+    ]
+
+    models_doc = {
+        "version": "1.0",
+        "generated_at": date.today().isoformat(),
+        "flight_count": len(metrics),
+        "models": {
+            "takeoff_map": map_model,
+        }
+    }
+
+    models_path = out_path.parent / "models.json"
+    raw_models = json.dumps(models_doc, indent=2, default=_serialise)
+    clean_models = _re.sub(r'\bNaN\b', 'null', raw_models)
+    models_path.write_text(clean_models)
+    print(f"  Models written to: {models_path}")
+
     out_path.write_text(clean_json)
 
     print(f"\n  Baselines written to: {out_path}")
     print(f"  ({len(baselines_out)} metrics, {len(metrics)} flights)")
+
+def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, out_path: Path):
+    """
+    Write the Fleet Insights section — a tight summary of what needs attention.
+    Only major findings are included: hard limit exceedances, IN-FLIGHT ENGINE ECU
+    events, overboost exceedances, confirmed trends (R²≥0.5), and outliers (z≥2.5).
+    """
+    import io, contextlib
+    buffer = io.StringIO()
+
+    def w(line=""):
+        buffer.write(line + "\n")
+
+    w("=" * 70)
+    w("  SLINGOLOGY EIS — FLEET INSIGHTS")
+    w(f"  N117ZS  |  {len(metrics)} flights  |  "
+      f"{metrics['engine_hours'].min():.1f}h – {metrics['engine_hours'].max():.1f}h")
+    w("=" * 70)
+    w()
+
+    warnings = []
+    checks   = []
+
+    # ── Hard limit exceedances ────────────────────────────────────────────────
+    overboost = metrics[metrics["overboost_max_block_s"] > 300]
+    if len(overboost):
+        for _, row in overboost.iterrows():
+            warnings.append(
+                f"⚠ Overboost limit exceeded — {row['source_file']} "
+                f"({row['overboost_max_block_s']:.0f}s, limit 300s)."
+            )
+    else:
+        checks.append("✓ No overboost limit exceedances across all flights.")
+
+    # ── IN-FLIGHT ENGINE ECU ──────────────────────────────────────────────────
+    if "inflight_ecu_count" in metrics.columns:
+        inflight_ecu = metrics[metrics["inflight_ecu_count"] > 0]
+        if len(inflight_ecu):
+            for _, row in inflight_ecu.iterrows():
+                warnings.append(
+                    f"⚠ IN-FLIGHT ENGINE ECU event — {row['source_file']} "
+                    f"({row['inflight_ecu_count']:.0f} event(s)). "
+                    f"Run 02_engine_ecu_correlation.py for full analysis."
+                )
+        else:
+            checks.append("✓ No IN-FLIGHT ENGINE ECU events across all flights.")
+
+    # ── Confirmed trends (R²≥0.5) ─────────────────────────────────────────────
+    trend_metrics = [
+        ("egt_spread_mean_f",  "EGT spread",         "increasing", "widening cylinder imbalance"),
+        ("egt4_elevation_f",   "EGT4 elevation",     "increasing", "cylinder 4 running progressively hotter"),
+        ("oil_temp_max_f",     "Oil temp peak",      "increasing", "oil temperature creeping up"),
+        ("coolant_temp_max_f", "Coolant temp peak",  "increasing", "coolant temperature creeping up"),
+        ("cruise_nmpg",        "Cruise efficiency",  "decreasing", "fuel efficiency declining"),
+    ]
+    r_rules = rules.get("rules", {})
+    for col, label, direction, note in trend_metrics:
+        if col not in metrics.columns:
+            continue
+        from slingology_eis.fleet import trend as _trend
+        t = _trend(metrics, col, x="engine_hours")
+        r2  = getattr(t, "r_squared", None) or 0
+        dir_ = getattr(t, "direction", None)
+        n   = getattr(t, "n", 0)
+        if r2 >= 0.5 and dir_ == direction and n >= 10:
+            slope = getattr(t, "slope", 0)
+            warnings.append(
+                f"⚠ {label} trending {direction} over engine hours "
+                f"(slope={slope:+.3f}/hr, R²={r2:.2f}, n={n}) — {note}."
+            )
+
+    # ── Outliers (z≥2.5) ─────────────────────────────────────────────────────
+    outlier_metrics = [
+        ("egt_spread_max_f",  "EGT spread max"),
+        ("oil_temp_max_f",    "Oil temp peak"),
+        ("coolant_temp_max_f","Coolant temp peak"),
+    ]
+    for col, label in outlier_metrics:
+        if col not in metrics.columns:
+            continue
+        mean = metrics[col].mean()
+        std  = metrics[col].std()
+        if std == 0:
+            continue
+        extreme = metrics[(metrics[col] - mean).abs() / std >= 2.5]
+        for _, row in extreme.iterrows():
+            z = (row[col] - mean) / std
+            warnings.append(
+                f"⚠ {label} outlier — {row['source_file']} "
+                f"(value={row[col]:.0f}, z={z:+.2f})."
+            )
+
+    # ── Write output ──────────────────────────────────────────────────────────
+    if warnings:
+        w("  NEEDS ATTENTION:")
+        w()
+        for line in warnings:
+            w(f"  {line}")
+    else:
+        w("  No major findings across all flights.")
+
+    if checks:
+        w()
+        w("  ALL CLEAR:")
+        w()
+        for line in checks:
+            w(f"  {line}")
+
+    w()
+    w("=" * 70)
+    w()
+
+    content = buffer.getvalue()
+    print(content, end="")
+    out_path.write_text(content)
+    print(f"  Fleet insights saved: {out_path}")
 
 def main():
     engine_cfg_early = load_engine_config()
@@ -504,6 +686,17 @@ def main():
     print(f"  Open in Excel/Sheets for further exploration, or feed into future plotting work.")
 
     write_baselines(metrics, REPORTS_DIR / "baselines.json", engine_name_early)
+
+    # ── Fleet Insights ────────────────────────────────────────────────────────
+    import json as _json
+    _baselines = _json.loads((REPORTS_DIR / "baselines.json").read_text()) \
+        if (REPORTS_DIR / "baselines.json").exists() else {}
+    _rules = _json.loads((_TOOLKIT / "insight_rules.json").read_text()) \
+        if (_TOOLKIT / "insight_rules.json").exists() else {}
+    write_fleet_insights(
+        metrics, _baselines, _rules,
+        REPORTS_DIR / "fleet_insights.txt"
+    )
 
     print(f"\n{'=' * 70}\n")
 

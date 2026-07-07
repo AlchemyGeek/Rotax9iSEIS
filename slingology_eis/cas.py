@@ -275,6 +275,14 @@ def classify_engine_ecu_run(
             and mean_ias <= _LANE_CHECK_MAX_IAS_KT):
         return "LANE_CHECK"
 
+    # ── Final gate: reject likely shutdown/taxi events ────────────────────────
+    # A run with low IAS, low-medium RPM, and long duration is almost certainly
+    # a shutdown or taxi event misclassified as in-flight.
+    if (mean_ias <= _LANE_CHECK_MAX_IAS_KT
+            and mean_rpm < lane_check_rpm_min
+            and dur_s > 30):
+        return "SHUTDOWN"
+
     return "IN_FLIGHT"
 
 

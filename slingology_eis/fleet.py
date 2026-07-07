@@ -144,6 +144,12 @@ class FlightMetrics:
     climb_coolant_rise_f_per_min: Optional[float] = None
     climb_vs_bucket_dominant: Optional[str] = None   # which VS bucket had the most climb rows
 
+    # Takeoff MAP model inputs
+    takeoff_map_inhg: Optional[float] = None
+    takeoff_pressure_alt_ft: Optional[float] = None
+    takeoff_oat_c: Optional[float] = None
+    inflight_ecu_count: int = 0
+
 
 def build_flight_metrics(
     flights: list[tuple[pd.DataFrame, object]],
@@ -201,6 +207,30 @@ def build_flight_metrics(
                 for ph in ["CLIMB", "CRUISE", "DESCENT"]:
                     phase_min[ph] = round(float((df["phase"] == ph).sum() / 60), 1)
 
+            # ── Takeoff MAP — median MAP/PA/OAT while RPM ≥ 5,500 and phase = TAKEOFF ──
+            takeoff_map_inhg = None
+            takeoff_pressure_alt_ft = None
+            takeoff_oat_c = None
+            if "phase" in df.columns and "rpm" in df.columns and "map_inhg" in df.columns:
+                to_rows = df[
+                    (df["phase"] == "TAKEOFF_ROLL") &
+                    (df["rpm"].fillna(0) >= 5500)
+                    ]
+                if len(to_rows) >= 3:
+                    takeoff_map_inhg = round(float(to_rows["map_inhg"].median()), 2)
+                    takeoff_pressure_alt_ft = round(float(to_rows["press_alt_ft"].median()), 0) \
+                        if "press_alt_ft" in to_rows.columns else None
+                    takeoff_oat_c = round(float(to_rows["oat_c"].median()), 1) \
+                        if "oat_c" in to_rows.columns else None
+
+            # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
+            from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
+            from slingology_eis.limits import load_engine_config as _load_cfg
+            _ecu_runs = _extract_ecu(df, engine_config=_load_cfg())
+            inflight_ecu_count = sum(
+                1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
+            )
+
             # ── Density altitude / OAT — cruise-phase median ──────────────────────
             cruise_rows = df[df["phase"] == "CRUISE"] if "phase" in df.columns else pd.DataFrame()
             cruise_da  = cruise_rows["da_ft"].median() if "da_ft" in cruise_rows.columns and len(cruise_rows) else None
@@ -249,6 +279,10 @@ def build_flight_metrics(
                 climb_oil_rise_f_per_min=climb_profile.get("oil_rise_f_per_min_overall"),
                 climb_coolant_rise_f_per_min=climb_profile.get("coolant_rise_f_per_min_overall"),
                 climb_vs_bucket_dominant=dominant_bucket,
+                takeoff_map_inhg=takeoff_map_inhg,
+                takeoff_pressure_alt_ft=takeoff_pressure_alt_ft,
+                takeoff_oat_c=takeoff_oat_c,
+                inflight_ecu_count=inflight_ecu_count,
             )
             rows.append(m.__dict__)
             if verbose:

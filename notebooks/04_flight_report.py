@@ -19,6 +19,7 @@ from pathlib import Path
 import contextlib
 import io
 from datetime import date
+from typing import Optional
 
 _HERE    = Path(__file__).resolve().parent
 _TOOLKIT = _HERE.parent
@@ -33,7 +34,7 @@ from slingology_eis.cas import extract_engine_ecu_runs
 
 BASELINES_PATH    = _TOOLKIT / "data" / "reports" / "baselines.json"
 RULES_PATH        = _TOOLKIT / "insight_rules.json"
-
+MODELS_PATH = _TOOLKIT / "data" / "reports" / "models.json"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,17 @@ def write_report(content: str, log_path: Path):
     out_path.write_text(content)
     print(f"  Report saved: {out_path}")
 
+def _predict_map(model: dict, pressure_alt_ft: float, oat_c: float) -> Optional[float]:
+    """Predict MAP from the linear regression model."""
+    coeffs = model.get("coefficients", {})
+    if not coeffs:
+        return None
+    return (
+        coeffs.get("intercept", 0)
+        + coeffs.get("pressure_alt_ft", 0) * pressure_alt_ft
+        + coeffs.get("oat_c", 0) * oat_c
+    )
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def _main():
@@ -166,6 +178,14 @@ def _main():
     print(f"  Fuel used:    {fuel_used} (FADEC)")
     print(f"  Baselines:    {baselines.get('flight_count', '?')} flights  "
           f"({baselines.get('generated_at', '?')})")
+    # Warn if no cruise phase detected — affects validity of cruise-based metrics
+    has_cruise = fm_row is not None and not math.isnan(fm_row.get("phase_cruise_min", float("nan"))) \
+                 and fm_row.get("phase_cruise_min", 0) > 0 \
+        if fm_row is not None else False
+    if not has_cruise:
+        print(f"\n  ⚠ No stable cruise phase detected — EGT spread, fuel flow,")
+        print(f"    and efficiency metrics will not be available for this flight.")
+
     print("═" * 70)
 
     # ── EGT SPREAD ───────────────────────────────────────────────────────────
@@ -220,6 +240,39 @@ def _main():
     else:
         analysis_line("EGT4 elevation not available.")
 
+    # ── CYLINDER RANK ─────────────────────────────────────────────────────────
+    section("CYLINDER RANK")
+    rank_stable = egt.get("rank_stable")
+    rank_order = egt.get("rank_order", [])
+
+    # Fleet stable count from already-loaded fleet_metrics
+    if _fm is not None and "egt_rank_stable" in _fm.columns:
+        total_count = int(_fm["egt_rank_stable"].notna().sum())
+        stable_count = int(_fm["egt_rank_stable"].sum())
+        fleet_note = f"Stable in {stable_count}/{total_count} fleet flights."
+    else:
+        fleet_note = ""
+
+    if rank_order:
+        hottest = rank_order[0].replace("egt", "EGT").replace("_f", "").upper()
+        if rank_stable:
+            analysis_line(
+                f"Hottest cylinder this flight: {hottest} (stable throughout cruise). "
+                f"{fleet_note}"
+            )
+        else:
+            analysis_line(
+                f"Cylinder rank unstable this flight — hottest cylinder changed during cruise. "
+                f"{fleet_note}"
+            )
+            insight_line(
+                "⚠ Rank instability is unusual for this engine — possible early "
+                "injector or ignition imbalance. Compare per-cylinder EGT means "
+                "in script 01."
+            )
+    else:
+        analysis_line("Insufficient cruise data for cylinder rank analysis.")
+
     # ── OVERBOOST ─────────────────────────────────────────────────────────────
     section("OVERBOOST")
     ob = overboost_time(df, engine_cfg)
@@ -237,6 +290,58 @@ def _main():
     elif ob_max >= 240:
         insight_line(f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
                      f"Pull back to climb power promptly after takeoff.")
+
+    # ── TAKEOFF MAP ───────────────────────────────────────────────────────────
+    section("TAKEOFF MAP")
+    models = _load_json(MODELS_PATH) if MODELS_PATH.exists() else {}
+    map_model = models.get("models", {}).get("takeoff_map", {})
+    obs_map = float(fm_row["takeoff_map_inhg"]) \
+        if fm_row is not None and "takeoff_map_inhg" in fm_row.index \
+           and not math.isnan(fm_row["takeoff_map_inhg"]) else None
+    obs_pa = float(fm_row["takeoff_pressure_alt_ft"]) \
+        if fm_row is not None and "takeoff_pressure_alt_ft" in fm_row.index \
+           and not math.isnan(fm_row["takeoff_pressure_alt_ft"]) else None
+    obs_oat = float(fm_row["takeoff_oat_c"]) \
+        if fm_row is not None and "takeoff_oat_c" in fm_row.index \
+           and not math.isnan(fm_row["takeoff_oat_c"]) else None
+
+    if obs_map is None:
+        analysis_line("No takeoff MAP data available — "
+                      "flight may lack a TAKEOFF phase with RPM ≥ 5,500.")
+    else:
+        n_model = map_model.get("n", 0)
+        conf = map_model.get("confidence", "")
+        pa_str = f"{obs_pa:,.0f} ft PA" if obs_pa is not None else "unknown PA"
+        oat_str = f"{obs_oat:.0f}°C" if obs_oat is not None else "unknown OAT"
+
+        if n_model < 5:
+            analysis_line(
+                f"Observed MAP at takeoff: {obs_map:.1f} inHg at {pa_str}, {oat_str}. "
+                f"Still collecting data to build your personal MAP baseline "
+                f"(n={n_model} — need 5 minimum for first model fit)."
+            )
+        else:
+            exp_map = _predict_map(map_model, obs_pa, obs_oat) \
+                if obs_pa is not None and obs_oat is not None else None
+            r2 = map_model.get("r_squared", 0)
+            if exp_map is not None:
+                delta = obs_map - exp_map
+                analysis_line(
+                    f"Observed MAP at takeoff: {obs_map:.1f} inHg at {pa_str}, {oat_str}. "
+                    f"Model expected: {exp_map:.1f} inHg "
+                    f"(n={n_model}, {conf.split(' ')[0]}, R²={r2:.2f})."
+                )
+                if abs(delta) >= 1.5:
+                    direction = "below" if delta < 0 else "above"
+                    insight_line(
+                        f"⚠ {abs(delta):.1f} inHg {direction} model — "
+                        f"{'possible turbo underperformance, monitor trend.' if delta < 0 else 'above model — verify sensor.'}"
+                    )
+            else:
+                analysis_line(
+                    f"Observed MAP at takeoff: {obs_map:.1f} inHg. "
+                    f"Model available (n={n_model}) but PA/OAT missing for prediction."
+                )
 
     # ── OIL TEMPERATURE ───────────────────────────────────────────────────────
     section("OIL TEMPERATURE")
@@ -261,6 +366,14 @@ def _main():
     else:
         analysis_line("Oil temperature data not available.")
 
+    for rule in rule_triggers:
+        if rule["type"] == "threshold" and oil_max > rule.get("limit", 248):
+            insight_line(f"⚠ Exceeded OM limit of {rule['limit']}°F.")
+        elif rule["type"] == "baseline_deviation":
+            triggered, text = _baseline_triggered(oil_max, b, rule)
+            if triggered:
+                insight_line(text)
+
     # ── COOLANT TEMPERATURE ───────────────────────────────────────────────────
     section("COOLANT TEMPERATURE")
     coolant_max = df["coolant_temp_f"].max() if "coolant_temp_f" in df.columns else None
@@ -283,6 +396,28 @@ def _main():
                     insight_line(text)
     else:
         analysis_line("Coolant temperature data not available.")
+
+    # ── OIL/COOLANT RATIO ────────────────────────────────────────────────────
+    section("OIL/COOLANT RATIO")
+    oc_ratio = float(fm_row["oil_coolant_ratio"]) \
+        if fm_row is not None and not math.isnan(fm_row["oil_coolant_ratio"]) else None
+    b = b_data.get("oil_coolant_ratio", {})
+    rule_triggers = r_data.get("oil_coolant_ratio", {}).get("triggers", [])
+
+    if oc_ratio is not None and b.get("mean") is not None:
+        note = _confidence_note(b)
+        analysis_line(
+            f"Oil/coolant ratio this flight: {oc_ratio:.2f}. "
+            f"Your average: {b['mean']:.2f} ± {b['std']:.2f} "
+            f"({b['n']} flights{note})."
+        )
+        for rule in rule_triggers:
+            if rule["type"] == "baseline_deviation":
+                triggered, text = _baseline_triggered(oc_ratio, b, rule)
+                if triggered:
+                    insight_line(text)
+    else:
+        analysis_line("Oil/coolant ratio not available for this flight.")
 
     # ── CRUISE EFFICIENCY ─────────────────────────────────────────────────────
     section("CRUISE EFFICIENCY")
@@ -319,6 +454,60 @@ def _main():
         analysis_line("Still building your cruise efficiency baseline.")
     else:
         analysis_line("No cruise efficiency data for this flight.")
+
+    # ── CRUISE FUEL FLOW ─────────────────────────────────────────────────────
+    section("CRUISE FUEL FLOW")
+    fuel_flow = float(fm_row["cruise_fuel_flow_gph"]) \
+        if fm_row is not None and not math.isnan(fm_row["cruise_fuel_flow_gph"]) else None
+    b = b_data.get("cruise_fuel_flow", {})
+    rule_triggers = r_data.get("cruise_fuel_flow", {}).get("triggers", [])
+
+    if fuel_flow is not None and b.get("mean") is not None:
+        note = _confidence_note(b)
+
+        # DA context for fuel flow comparison
+        this_da = float(fm_row["cruise_da_ft"]) \
+            if fm_row is not None and not math.isnan(fm_row["cruise_da_ft"]) else None
+        fleet_da_mean = float(b_data.get("cruise_efficiency", {}).get("mean", 0)) \
+            if "cruise_efficiency" in b_data else None
+
+        # Compute fleet average DA from raw data points
+        ce_raw = b_data.get("cruise_efficiency", {}).get("raw", [])
+        fleet_da_vals = [r["da_band"] for r in ce_raw if r.get("da_band") is not None]
+        da_b = b_data.get("cruise_da_ft", {})
+        fleet_da_avg = da_b.get("mean")
+        fleet_da_std = da_b.get("std")
+
+        da_note = ""
+        da_high = False
+        if this_da is not None and fleet_da_avg is not None and fleet_da_std:
+            da_z = (this_da - fleet_da_avg) / fleet_da_std
+            da_note = (f" at cruise DA {this_da:,.0f} ft "
+                       f"(fleet avg {fleet_da_avg:,.0f} ft)")
+            da_high = da_z > 1.0
+
+        analysis_line(
+            f"{fuel_flow:.1f} gph this flight{da_note}. "
+            f"Your average: {b['mean']:.1f} ± {b['std']:.1f} gph "
+            f"({b['n']} flights{note}, all altitudes blended)."
+        )
+        for rule in rule_triggers:
+            if rule["type"] == "baseline_deviation":
+                triggered, text = _baseline_triggered(fuel_flow, b, rule)
+                if triggered:
+                    if da_high:
+                        insight_line(
+                            text + " Note: this flight's cruise DA was "
+                                   "significantly higher than your typical cruise — "
+                                   "altitude and power setting affect fuel flow. "
+                                   "A power/altitude model is needed for a fully valid comparison."
+                        )
+                    else:
+                        insight_line(text)
+    elif b.get("mean") is None:
+        analysis_line("Still building your cruise fuel flow baseline.")
+    else:
+        analysis_line("No cruise fuel flow data for this flight.")
 
     # ── ENGINE ECU ────────────────────────────────────────────────────────────
     section("ENGINE ECU")
@@ -359,6 +548,30 @@ def _main():
             "    Run 02_engine_ecu_correlation.py for full CAN bus "
             "pattern analysis and recommended actions."
         )
+
+    # ── CLIMB THERMAL RATE ───────────────────────────────────────────────────
+    section("CLIMB THERMAL RATE")
+    oil_rise = float(fm_row["climb_oil_rise_f_per_min"]) \
+        if fm_row is not None and "climb_oil_rise_f_per_min" in fm_row.index \
+           and not math.isnan(fm_row["climb_oil_rise_f_per_min"]) else None
+    b = b_data.get("climb_thermal_rate", {})
+    rule_triggers = r_data.get("climb_thermal_rate", {}).get("triggers", [])
+
+    if oil_rise is not None and b.get("mean") is not None:
+        note = _confidence_note(b)
+        analysis_line(
+            f"Oil temp rose {oil_rise:.1f}°F/min during climb. "
+            f"Your average: {b['mean']:.1f} ± {b['std']:.1f}°F/min "
+            f"({b['n']} flights{note})."
+        )
+        for rule in rule_triggers:
+            if rule["type"] == "baseline_deviation":
+                triggered, text = _baseline_triggered(oil_rise, b, rule)
+                if triggered:
+                    insight_line(text)
+    else:
+        analysis_line("Insufficient climb data for thermal rate — "
+                      "short or pattern-work flights don't contribute here.")
 
     # ── LIMIT EXCEEDANCES ─────────────────────────────────────────────────────
     section("LIMIT EXCEEDANCES")

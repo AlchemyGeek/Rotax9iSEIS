@@ -1,150 +1,197 @@
 # SlingologyEIS — Project Backlog
 
-Last updated: June 23, 2026  
-Toolkit current version: 0.8.0  
+Last updated: July 7, 2026
+Toolkit current version: 0.10.0
 Research paper current edition: 0.2
 
 Items organized by category. Each item notes type: **code**, **design**, or **research**.
 
 ---
 
-## A — Analytics: Not Yet Built
+## A — Analytics
 
-### A1. Analysis / Insight two-layer output format
-**Type:** Code + design  
-Every analytics topic produces two layers:
-- **Analysis line** — always present, purely descriptive. States this flight's measurement, personal baseline comparison, and OM limit reference in one plain sentence. Present even when nothing notable. e.g. *"EGT spread this flight: 56°F. Your average: 56°F ± 5°F over 23 flights. OM limit: 392°F."*
-- **Insight line** — conditional, only appears when the analysis finds something worth flagging (trend clears R² bar, outlier crosses z-score, hard limit exceeded). e.g. *"Trending wider over your last 25 flights — still within limits, worth watching."*
-
-For topics where no baseline exists yet (small-n), show raw number with "still building your baseline" rather than a comparison.
-
-Likely lives in a new `04_flight_summary.py` (per-flight plain-language report) plus a summary header in script 03. Design questions still open: does the per-flight version (script 01) also get this treatment?
+### ~~A1. Analysis / Insight two-layer output format~~ — COMPLETED in v0.10.0
+**Type:** Code + design
+`insight_rules.json` at toolkit root defines trigger rules (threshold, baseline_deviation, trend).
+`reports/baselines.json` written by script 03, read by script 04.
+`reports/models.json` written by script 03, read by script 04.
+Script 04 (`04_flight_report.py`) is the new per-flight pilot report with two-layer format.
+Fleet Insights section added to end of script 03 output and saved as `reports/fleet_insights.txt`.
 
 ---
 
-### A2. The 14 agreed analytics topics
-**Type:** Design (agreed), Code (pending)  
-Each needs both an analysis line and a conditional insight, for both per-flight and fleet views:
-
-1. EGT spread — cruise mean vs personal average vs OM 392°F limit
-2. EGT4 elevation — vs cylinders 1–3, vs personal average
-3. Cylinder rank stability — is the same cylinder consistently hottest?
-4. Oil temperature — peak and % time below 194°F/90°C optimal band, vs personal average and OM 248°F limit
-5. Coolant temperature — peak vs personal average and OM 248°F limit
-6. Oil/coolant ratio — vs personal average
-7. Overboost time — this flight's max block and distribution vs 300s OM limit
-8. Cruise efficiency — nmpg vs personal average (DA-stratified)
-9. Cruise fuel flow — vs personal average
-10. Manifold pressure at takeoff — vs OM expected value for conditions
-11. ENGINE ECU alerts — plain-language classification (expected vs genuine signal)
-12. Flight phase mix — climb/cruise/descent split vs personal typical
-13. Operating limit exceedances — any OM hard-limit violation, plainly stated
-14. Climb thermal rate — oil/coolant rise rate during climb vs personal average for similar VS
+### ~~A2. The 14 agreed analytics topics~~ — COMPLETED in v0.10.0
+**Type:** Code
+All 14 topics implemented in script 04:
+1. EGT spread — ✅
+2. EGT4 elevation — ✅
+3. Cylinder rank stability — ✅
+4. Oil temperature — ✅
+5. Coolant temperature — ✅
+6. Oil/coolant ratio — ✅
+7. Overboost time — ✅ (with close-call flag at 240–300s)
+8. Cruise efficiency — ✅ (DA context added)
+9. Cruise fuel flow — ✅ (with DA context and altitude note)
+10. Manifold pressure at takeoff — ✅ (empirical model, shows "still collecting" until n≥5)
+11. ENGINE ECU alerts — ✅ (uses proper classifier from cas.py)
+12. Flight phase mix — DROPPED as standalone; replaced with "no cruise detected" header note
+13. Operating limit exceedances — ✅ (phase-filtered, duration-thresholded)
+14. Climb thermal rate — ✅
 
 ---
 
-### A3. Manifold pressure vs OM expected-power model
-**Type:** Code  
-OM provides target MAP values at specific RPM/OAT conditions. At each takeoff (RPM ≥ 5,500, stable 10s window): record MAP vs OAT, compute expected MAP from OM reference corrected for OAT, track MAP deviation over engine hours as a turbocharger health proxy. Deviation >+20 mbar from expected = air supply fault; below expected = possible turbocharger degradation.
+### A3. Manifold pressure vs OM expected-power model — PARTIALLY COMPLETE
+**Type:** Code + research
+Empirical MAP model built in v0.10.0: linear regression MAP = f(pressure_alt_ft, oat_c).
+RPM capture threshold: ≥ 5,500 rpm during TAKEOFF_ROLL phase.
+Model lives in `reports/models.json`, written by script 03, read by script 04.
+Confidence thresholds: n<5 = "still collecting", n 5–14 = LOW, n≥15 = MODERATE.
+Currently at n=15, MODERATE, R²=0.71.
+
+**Remaining:** Model needs more altitude diversity (most departures from KPAE, near sea level).
+Target: 5+ flights from departure elevations above 2,000 ft MSL for reliable altitude range.
 
 ---
 
 ### A4. ECO/POWER mode detection
-**Type:** Research → Code  
-Throttle position (the actual 97% threshold) is not in the G3X log — it's on the FADEC CAN bus but not surfaced in the column set. Need to infer from correlated parameters: fuel flow step-reduction, EGT drop at constant altitude/RPM. Validation requires a flight with deliberate known-throttle-position manoeuvres as ground truth.
+**Type:** Code
+BLOCKED — requires a ground-truth validation flight with deliberate known throttle positions.
+ECO/POWER threshold: ~97% throttle position per engine config.
+Do not start until validation flight data is available.
 
 ---
 
-## B — Classifier / Logic Fixes
-
-### B1. POWERUP duration threshold
-**Type:** Code  
-A POWERUP run of 28,678 seconds (nearly 8 hours) is not the same event type as a normal 20–120 second pre-start powerup — it's the avionics left on battery or ground power. Any POWERUP run exceeding ~600 seconds should be classified as `AVIONICS_ON_GROUND` (distinct category) to avoid inflating POWERUP totals meaninglessly. Note: with ground sessions now excluded at the loader level (v0.8.0), this primarily affects any future case where someone passes `skip_ground_sessions=False`.
-
----
-
-### B2. Mid-log power-cycle handling
-**Type:** Code  
-A single G3X log can span multiple avionics power cycles (e.g. `log_20260423_135821_KTOA.csv` has a POWERUP at 19:17 inside a log that started at 13:58 — a 5-hour gap). The classifier currently treats this as an independent POWERUP within the same file. Either split multi-power-cycle logs into separate logical sessions, or at minimum label mid-log power cycles distinctly from start-of-log powerups.
+### A5. Power/altitude/fuel-flow model
+**Type:** Code + research
+Build a DA band × power setting → expected gph model from fleet data.
+Compare observed cruise fuel flow against model prediction rather than blended personal average.
+Requires: sufficient data across DA and power combinations.
+Currently cruise fuel flow uses blended personal average with DA context note as interim solution.
+Park until fleet data is sufficient for a reliable multi-variable regression.
 
 ---
 
-### B3. IN_FLIGHT ENGINE ECU — per-event co-active alert reporting
-**Type:** Code  
-Current report lumps all IN_FLIGHT events' co-active alerts into one frequency table. Each event is different. The KSFF flight (`log_20260527_200344_KSFF.csv`) has `OIL PRESS` as a co-active alert — the only event with a direct engine-parameter correlation alongside the ECU alert. This should be called out explicitly, not buried in a combined count.
+### A6. MAP empirical model — altitude diversity requirement
+**Type:** Research → code
+Currently blocked on altitude diversity — most departures from KPAE (near sea level).
+Revisit when 5+ flights from departure elevations above 2,000 ft MSL are available.
+Track departure elevation distribution in fleet_metrics to monitor readiness.
+
+---
+
+## B — Bug Fixes & Signal Quality
+
+### ~~B3. IN-FLIGHT ENGINE ECU — per-event reporting~~ — COMPLETED in v0.10.0
+**Type:** Code
+ENGINE ECU classifier moved from script 02 into `cas.py` as `classify_engine_ecu_run()`
+and `extract_engine_ecu_runs()`. Script 02 and script 04 both import from `cas.py`.
+Fleet insights reads `inflight_ecu_count` from `fleet_metrics.csv` (computed via classifier).
+KSFF OIL PRESS event correctly identified as the only genuine IN-FLIGHT event with
+engine-parameter correlation.
 
 ---
 
 ### B4. Overboost known-cause annotation
-**Type:** Code  
-Need a lightweight mechanism to attach a note/known-cause to a specific flight's flagged event (e.g. `annotations.json` keyed by source file). Pilot-facing report then shows: *"April 23 — exceeded 300s limit (+81s). Note: ATC delay at LAX."* This is not suppression — the event still shows — but lets the pilot's own context travel with the finding.
+**Type:** Code
+Need a lightweight mechanism to attach a note/known-cause to a specific flight's flagged event
+(e.g. `annotations.json` keyed by source file). Pilot-facing report then shows:
+*"April 23 — exceeded 300s limit (+81s). Note: ATC delay at LAX."*
+This is not suppression — the event still shows — but lets the pilot's own context travel
+with the finding.
+
+---
+
+### B1, B2 — Ground session edge cases
+**Type:** Code
+Low urgency post-v0.8.0 loader filtering. Investigate if needed.
 
 ---
 
 ## C — Fleet Statistics
 
-### C1. Fleet count reporting
-**Type:** Code (small)  
-With ground-session filtering now in the loader (v0.8.0), the headline count in script 03 should accurately reflect real flights only. Verify this is consistent everywhere after v0.8.0 changes.
+### ~~C1. Fleet count reporting~~ — RESOLVED in v0.10.0
+**Type:** Code
+Confirmed: 23 real flights (50 total log files, 27 ground sessions filtered at loader).
+All fleet metrics, baselines, and insights correctly use 23 flights.
 
 ---
 
 ### C2. Engine hours as trend x-axis — reliability
-**Type:** Research → possible code  
-Engine hours in log metadata reflect the Hobbs at log creation. For ground sessions (now excluded) this was a big problem; for real flights it's less severe but still worth checking. Consider using cumulative airborne hours derived from the logs themselves as an alternative x-axis. Investigate and compare both approaches.
+**Type:** Research → possible code
+Engine hours in log metadata reflect the Hobbs at log creation.
+Consider using cumulative airborne hours derived from logs as alternative x-axis.
+Investigate and compare both approaches. Low urgency.
 
 ---
 
 ### C3. DA/OAT stratification — remaining thermal metrics
-**Type:** Code  
-`da_band` and `oat_band` are captured per flight. Cruise efficiency (DA) and EGT spread (OAT) are already stratified in script 03. Remaining thermal metrics — oil temp, coolant temp, oil/coolant ratio, climb thermal rate — should also trend within OAT bands rather than blended across conditions.
+**Type:** Code
+`da_band` and `oat_band` captured per flight. Cruise efficiency (DA) and EGT spread (OAT)
+already stratified. Remaining thermal metrics — oil temp, coolant temp, oil/coolant ratio,
+climb thermal rate — should also trend within OAT bands rather than blended.
 
 ---
 
-## D — Engine Coverage
+## D — Engine Coverage & Maintenance
 
-### D1. ~~Multi-engine config file support~~ — COMPLETED in v0.9.0 (912iS, 914iS, 915iS, 916iS)
-**Type:** Architecture + Code  
-All four Rotax iS engines are turbocharged and FADEC — the analytics architecture generalizes without redesign. Work needed: externalize the `Limit` registry from `limits.py` into per-engine JSON/YAML config files; add user-specifiable engine selection (config file or CLI flag); source limits from each engine's OM. Phase-detection RPM/power thresholds may need per-engine tuning. Depends on obtaining the other three engines' Operators Manuals.
+### ~~D1. Multi-engine config file support~~ — COMPLETED in v0.9.0
+916iS fully verified. 912iS, 914iS, 915iS are verified placeholders.
+
+---
+
+### D2. Maintenance event logging and post-maintenance baseline tracking
+**Type:** Code + design
+Ability to record maintenance events (oil change, spark plug replacement, intercooler
+service, turbo inspection, etc.) with engine hours and date. Analytics then track whether
+key metrics (oil temp, EGT spread, MAP at takeoff) shift after a maintenance event —
+useful for validating that a service had the expected effect and detecting regressions.
+Events stored in a `maintenance_log.json` at the toolkit root.
 
 ---
 
 ## E — Documentation & Registration
 
-### E1. Aircraft registration correction — N5512E → N117ZS
-**Type:** Documentation  
-Research paper title page, abstract, and several body references still say N5512E. The aircraft is N117ZS. Fix throughout `research/build_paper.js` and rebuild the paper.
+### ~~E1. Aircraft registration correction — N5512E → N117ZS~~ — PENDING
+**Type:** Documentation
+Research paper still references N5512E in several places. Fix in v0.10.0 release.
 
 ---
 
 ### E2. Research paper — ongoing updates
-**Type:** Documentation (ongoing)  
-Edition 0.2. Updates needed as findings accumulate:
-- §11 Open Questions — update as answered or refined
-- §12 Revision History — add entry per meaningful analytical finding
-- §6.1 EGT4 elevation — update with validated statistical finding (n=23, mean +44.7°F ± 5.3°F)
-- §6.7 Climb-rate-correlated thermal analysis — update from "identified gap" to "built" (v0.7.0)
-- §9 DA/OAT normalization — update from "design gap" to "partially implemented" (v0.7.0 bands, full stratification pending)
+**Type:** Documentation (ongoing)
+Edition 0.2. Updates needed for v0.10.0:
+- Correct registration N5512E → N117ZS throughout
+- Update fleet count: 23 real flights (50 total log files)
+- Add script 04 per-flight report section
+- Add Fleet Insights section
+- Add MAP empirical model section
+- Add two-layer format design section
+- Update §9 DA/OAT normalisation — stratification partially implemented
+- Update §11 Open Questions — close answered questions
+- Update §12 Revision History
 
 ---
 
-### E3. GitHub repository preparation
-**Type:** Infrastructure  
-Eventual goal: publish the toolkit to GitHub as an open-source project. Before doing so:
-- Confirm no sensitive data (flight logs, personal info) is in any committed file
-- Add a proper `.gitignore` (exclude `data/logs/`, `data/reports/`, `__pycache__/`, `.venv/`)
-- Add a `LICENSE` file (recommend MIT or Apache 2.0)
-- Review README for public audience (currently written assuming familiarity with the project history)
-- Tag v0.8.0 as the first public release candidate
+### E3. GitHub repository — v0.10.0 release
+**Type:** Infrastructure
+- `.gitignore` excludes `data/logs/`, `data/reports/`, `__pycache__/`, `.venv/`
+- LICENSE file (MIT)
+- README updated with user manual
+- CHANGELOG updated
+- Version bumped to 0.10.0 in `slingology_eis/__init__.py`
+- Tag v0.10.0
 
 ---
 
 ## F — Future / Long Horizon
 
 ### F1. Maintenance-interval tracking (100-hr / annual cycle)
-**Type:** Future capability  
-Tying findings to actual maintenance inspection intervals. Requires much longer baseline than currently available. Deferred deliberately.
+**Type:** Future capability
+Tying findings to actual maintenance inspection intervals.
+Requires much longer baseline than currently available. Deferred deliberately.
 
 ### F2. SlingologyEIS web app
-**Type:** Future product milestone  
-Free, offline-first PWA for any Sling / Rotax iS pilot. Lovable (React + Tailwind). Analytics toolkit must be validated and the Analysis/Insight two-layer format (A1) defined first.
+**Type:** Future product milestone
+Free, offline-first PWA for any Sling / Rotax iS pilot.
+Analytics toolkit must be validated first.
+Script 04 per-flight report logic becomes the per-flight report page.
