@@ -1,2 +1,9 @@
 /data/logs/
 /data/reports/
+/tests/characterization/golden/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.DS_Store
