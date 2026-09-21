@@ -271,7 +271,7 @@ There is deliberately no fuel-flow calibration against pump receipts in this too
 
 ## Research paper
 
-See `Rotax_916iS_EIS_Research_v0.2.docx` for the full analytical methodology, findings, open questions, and design decisions behind this toolkit.
+See `ROTAX 91XiS Engine Data Analytics.md` for the full analytical methodology, findings, open questions, and design decisions behind this toolkit.
 
 ---
 
