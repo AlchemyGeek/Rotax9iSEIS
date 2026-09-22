@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slingologyeis.dev/contract/schema/flight_analysis.schema.json",
+  "title": "FlightAnalysis",
+  "description": "Spec 01 (Engine Contract) Section 8.3 — the result of analyze_flight.",
+  "type": "object",
+  "required": [
+    "flight_id", "analysis_key", "source_keys", "header", "phases",
+    "metrics", "exceedances", "cas_events", "ecu_runs", "quality", "provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "flight_id": { "type": "string" },
+    "analysis_key": { "type": "string" },
+    "source_keys": { "type": "array", "items": { "type": "string" } },
+    "header": {
+      "type": "object",
+      "required": ["date", "start_utc"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": "string" },
+        "start_utc": { "type": "string" },
+        "engine_hours_start": { "type": ["number", "null"] },
+        "engine_hours_end": { "type": ["number", "null"] },
+        "airport_hint": { "type": ["string", "null"] },
+        "aircraft": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ident": { "type": ["string", "null"] },
+            "system_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["phase", "start_s", "end_s"],
+        "additionalProperties": false,
+        "properties": {
+          "phase": { "type": "string" },
+          "start_s": { "type": "number" },
+          "end_s": { "type": "number" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/metricValue" }
+    },
+    "exceedances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["param", "label", "unit", "severity", "limit_type", "limit_value", "observed_value", "start_utc", "elapsed_s", "duration_s"],
+        "properties": {
+          "param": { "type": "string" },
+          "label": { "type": "string" },
+          "unit": { "type": "string" },
+          "severity": { "type": "string" },
+          "limit_type": { "type": "string", "enum": ["MIN", "MAX"] },
+          "limit_value": { "type": "number" },
+          "observed_value": { "type": "number" },
+          "start_utc": { "type": "string" },
+          "elapsed_s": { "type": ["number", "null"] },
+          "duration_s": { "type": "number" },
+          "time_limit_s": { "type": ["number", "null"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "cas_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["alert", "severity", "start_utc", "elapsed_s", "duration_s", "rows", "started_before_engine"],
+        "properties": {
+          "alert": { "type": "string" },
+          "severity": { "type": "string" },
+          "start_utc": { "type": "string" },
+          "elapsed_s": { "type": ["number", "null"] },
+          "duration_s": { "type": "number" },
+          "rows": { "type": "integer" },
+          "started_before_engine": { "type": "boolean" }
+        }
+      }
+    },
+    "ecu_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["classification", "start_utc", "elapsed_s", "duration_s", "co_alerts", "oil_nan_frac", "lane_check_pair", "lane_check_note"],
+        "properties": {
+          "classification": { "type": "string", "enum": ["POWERUP", "SHUTDOWN", "LANE_CHECK", "IN_FLIGHT"] },
+          "start_utc": { "type": ["string", "null"] },
+          "elapsed_s": { "type": ["number", "null"] },
+          "duration_s": { "type": "number" },
+          "co_alerts": { "type": "array", "items": { "type": "string" } },
+          "oil_nan_frac": { "type": ["number", "null"] },
+          "lane_check_pair": { "type": "boolean" },
+          "lane_check_note": { "type": "string" },
+          "mean_rpm": { "type": ["number", "null"] },
+          "mean_ias_kt": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "quality": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" }
+  },
+  "$defs": {
+    "missingReason": {
+      "type": "string",
+      "enum": ["NO_PHASE", "CHANNEL_MISSING", "INSUFFICIENT_DATA", "NOT_APPLICABLE", "EXCLUDED"]
+    },
+    "metricValue": {
+      "type": "object",
+      "required": ["id", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "value": { "type": ["number", "boolean", "string", "null"] },
+        "unit": { "type": "string" },
+        "missing": { "$ref": "#/$defs/missingReason" },
+        "window": {
+          "type": "object",
+          "properties": {
+            "phase": { "type": "string" },
+            "start_s": { "type": "number" },
+            "end_s": { "type": "number" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "value": { "type": "null" } }, "required": ["value"] },
+          "then": { "required": ["missing"] }
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "scope", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INGEST_UNKNOWN_FORMAT", "INGEST_GROUND_SESSION", "INGEST_DUPLICATE_OF",
+            "INGEST_MULTI_POWER_CYCLE", "INGEST_MISSING_CHANNEL", "INGEST_SIGNAL_GAP",
+            "PHASE_TAKEOFF_NOT_DETECTED", "PHASE_NO_CLIMB", "PHASE_NO_CRUISE",
+            "BASELINE_LOW_N", "MODEL_INSUFFICIENT_DATA",
+            "ENGINE_PLACEHOLDER_CONFIG", "ENGINE_CUSTOM_OVERRIDE"
+          ]
+        },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+        "scope": { "type": "string", "enum": ["file", "flight", "fleet", "topic"] },
+        "message": { "type": "string" },
+        "refs": { "type": "object" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["engine_version", "schema_version", "engine_profile", "params_hash", "source_keys"],
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": { "type": "string" },
+        "schema_version": { "type": "string" },
+        "engine_profile": {
+          "type": "object",
+          "required": ["id", "hash", "source_status"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string" },
+            "hash": { "type": "string" },
+            "source_status": { "type": "string", "enum": ["VERIFIED", "PLACEHOLDER", "CUSTOM"] }
+          }
+        },
+        "params_hash": { "type": "string" },
+        "rules_hash": { "type": "string" },
+        "source_keys": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

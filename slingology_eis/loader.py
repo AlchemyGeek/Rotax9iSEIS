@@ -15,6 +15,7 @@ Usage
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
@@ -511,6 +512,30 @@ class DuplicateGroup:
         return (f"[{self.match_kind}] {self.aircraft_ident}  "
                 f"{self.overlap_start:%Y-%m-%d %H:%M}–{self.overlap_end:%H:%M}  "
                 f"({names})  — {self.detail}")
+
+
+def source_key(data: bytes) -> str:
+    """
+    Identifies one exported file (Spec 01 §6.1): SHA-256 of the file
+    bytes, hex, first 16 characters.
+    """
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def flight_id(fingerprint: tuple) -> str:
+    """
+    Identifies one physical flight across export paths (Spec 01 §6.1):
+    an opaque hash of `flight_fingerprint()`'s output. Two files with the
+    same fingerprint (e.g. an SD-card export and a Garmin Pilot export of
+    the same flight) share a flight_id but differ in source_key.
+
+    Not an anonymization mechanism — the underlying fingerprint fields
+    are low-entropy. Identifying fields are carried separately in
+    FlightAnalysis.header and are what the `anonymize` option strips.
+    """
+    aircraft_ident, system_id, start_minute = fingerprint
+    canonical = f"{aircraft_ident}|{system_id}|{start_minute.isoformat() if start_minute is not None else ''}"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def flight_fingerprint(df: pd.DataFrame, info: AirframeInfo) -> tuple:

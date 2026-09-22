@@ -186,114 +186,7 @@ def build_flight_metrics(
         fname = df["_source_file"].iloc[0]
         try:
             df = detect_phases(df, field_elev_ft=field_elev_ft, verbose=False)
-            s   = log_summary(df, info)
-            egt = egt_health(df)
-            ob  = overboost_time(df, engine_config=engine_config)
-            eff = cruise_efficiency(df)
-            fuel_total = integrate_fuel(df)
-
-            cas_events = parse_cas(df)
-            inflight_anomalies = sum(
-                1 for e in cas_events
-                if e.alert == "ENGINE ECU"
-                # Heuristic without re-running full classification: running engine,
-                # not a brief (<=15s) ground-speed-near-zero pair → handled properly
-                # in 02; here we just count raw ENGINE ECU runs while airborne.
-            )
-
-            airborne = df[df["rpm"].fillna(0) > 3000]
-            oil_t    = airborne["oil_temp_f"].dropna() if "oil_temp_f" in airborne.columns else pd.Series(dtype=float)
-            below_optimal_pct = (
-                round(float((oil_t < 194).mean() * 100), 1) if len(oil_t) else None
-            )
-            coolant_max = airborne["coolant_temp_f"].max() if "coolant_temp_f" in airborne.columns else None
-            oil_max     = airborne["oil_temp_f"].max() if "oil_temp_f" in airborne.columns else None
-            oc_ratio    = (
-                round(float(oil_max / coolant_max), 3)
-                if oil_max and coolant_max and coolant_max > 0 else None
-            )
-
-            phase_min = {}
-            if "phase" in df.columns:
-                for ph in ["CLIMB", "CRUISE", "DESCENT"]:
-                    phase_min[ph] = round(float((df["phase"] == ph).sum() / 60), 1)
-
-            # ── Takeoff MAP — median MAP/PA/OAT while RPM ≥ 5,500 and phase = TAKEOFF ──
-            takeoff_map_inhg = None
-            takeoff_pressure_alt_ft = None
-            takeoff_oat_c = None
-            if "phase" in df.columns and "rpm" in df.columns and "map_inhg" in df.columns:
-                to_rows = df[
-                    (df["phase"] == "TAKEOFF_ROLL") &
-                    (df["rpm"].fillna(0) >= 5500)
-                    ]
-                if len(to_rows) >= 3:
-                    takeoff_map_inhg = round(float(to_rows["map_inhg"].median()), 2)
-                    takeoff_pressure_alt_ft = round(float(to_rows["press_alt_ft"].median()), 0) \
-                        if "press_alt_ft" in to_rows.columns else None
-                    takeoff_oat_c = round(float(to_rows["oat_c"].median()), 1) \
-                        if "oat_c" in to_rows.columns else None
-
-            # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
-            from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
-            _ecu_runs = _extract_ecu(df, engine_config=engine_config)
-            inflight_ecu_count = sum(
-                1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
-            )
-
-            # ── Density altitude / OAT — cruise-phase median ──────────────────────
-            cruise_rows = df[df["phase"] == "CRUISE"] if "phase" in df.columns else pd.DataFrame()
-            cruise_da  = cruise_rows["da_ft"].median() if "da_ft" in cruise_rows.columns and len(cruise_rows) else None
-            cruise_oat = cruise_rows["oat_c"].median() if "oat_c" in cruise_rows.columns and len(cruise_rows) else None
-            da_band  = _band_for(cruise_da, DA_BANDS)
-            oat_band = _band_for(cruise_oat, OAT_BANDS)
-
-            # ── Climb thermal profile ──────────────────────────────────────────────
-            climb_profile = climb_thermal_profile(df)
-            dominant_bucket = None
-            if climb_profile["available"] and climb_profile["by_bucket"]:
-                dominant_bucket = max(
-                    climb_profile["by_bucket"].items(),
-                    key=lambda kv: kv[1]["rows"]
-                )[0]
-
-            m = FlightMetrics(
-                source_file=fname,
-                date=s["date"],
-                engine_hours=info.engine_hours,
-                duration_min=round(s["duration_min"], 1),
-                airborne_min=round(s["airborne_min"], 1),
-                egt_spread_mean_f=egt.get("spread_mean_f"),
-                egt_spread_max_f=egt.get("spread_max_f"),
-                egt4_elevation_f=egt.get("egt4_elevation_f"),
-                egt_rank_stable=egt.get("rank_stable"),
-                fadec_gallons=fuel_total.get("fadec_gallons"),
-                cruise_nmpg=eff.get("nmpg") if eff else None,
-                cruise_fuel_flow_gph=eff.get("mean_fuel_flow_gph") if eff else None,
-                oil_temp_max_f=round(float(oil_max), 1) if oil_max else None,
-                oil_temp_below_optimal_pct=below_optimal_pct,
-                coolant_temp_max_f=round(float(coolant_max), 1) if coolant_max else None,
-                oil_coolant_ratio=oc_ratio,
-                overboost_total_s=ob.get("overboost_total_s"),
-                overboost_max_block_s=ob.get("overboost_max_block_s"),
-                cas_inflight_anomaly_count=inflight_anomalies,
-                max_altitude_ft=round(float(df["baro_alt_ft"].max()), 0) if "baro_alt_ft" in df.columns else None,
-                max_ias_kt=round(float(df["ias_kt"].max()), 0) if "ias_kt" in df.columns else None,
-                phase_climb_min=phase_min.get("CLIMB"),
-                phase_cruise_min=phase_min.get("CRUISE"),
-                phase_descent_min=phase_min.get("DESCENT"),
-                cruise_da_ft=round(float(cruise_da), 0) if cruise_da is not None and not pd.isna(cruise_da) else None,
-                cruise_oat_c=round(float(cruise_oat), 1) if cruise_oat is not None and not pd.isna(cruise_oat) else None,
-                da_band=da_band,
-                oat_band=oat_band,
-                climb_oil_rise_f_per_min=climb_profile.get("oil_rise_f_per_min_overall"),
-                climb_coolant_rise_f_per_min=climb_profile.get("coolant_rise_f_per_min_overall"),
-                climb_vs_bucket_dominant=dominant_bucket,
-                takeoff_map_inhg=takeoff_map_inhg,
-                takeoff_pressure_alt_ft=takeoff_pressure_alt_ft,
-                takeoff_oat_c=takeoff_oat_c,
-                inflight_ecu_count=inflight_ecu_count,
-            )
+            m = compute_flight_metrics(df, info, engine_config)
             rows.append(m.__dict__)
             if verbose:
                 print(f"  ✓ {fname}")
@@ -305,6 +198,127 @@ def build_flight_metrics(
     if len(metrics_df):
         metrics_df = metrics_df.sort_values("date").reset_index(drop=True)
     return metrics_df
+
+
+def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) -> FlightMetrics:
+    """
+    Compute one flight's full metrics row. `df` must already have phases
+    detected (detect_phases) — this function doesn't run the pipeline
+    stages itself, only assembles their outputs.
+
+    Shared by build_flight_metrics() (the fleet-level batch loop above)
+    and the analyze_flight() operation (slingology_eis.operations), so
+    both report identical numbers from one code path.
+    """
+    fname = df["_source_file"].iloc[0]
+    s   = log_summary(df, info)
+    egt = egt_health(df)
+    ob  = overboost_time(df, engine_config=engine_config)
+    eff = cruise_efficiency(df)
+    fuel_total = integrate_fuel(df)
+
+    cas_events = parse_cas(df)
+    inflight_anomalies = sum(
+        1 for e in cas_events
+        if e.alert == "ENGINE ECU"
+        # Heuristic without re-running full classification: running engine,
+        # not a brief (<=15s) ground-speed-near-zero pair → handled properly
+        # in 02; here we just count raw ENGINE ECU runs while airborne.
+    )
+
+    airborne = df[df["rpm"].fillna(0) > 3000]
+    oil_t    = airborne["oil_temp_f"].dropna() if "oil_temp_f" in airborne.columns else pd.Series(dtype=float)
+    below_optimal_pct = (
+        round(float((oil_t < 194).mean() * 100), 1) if len(oil_t) else None
+    )
+    coolant_max = airborne["coolant_temp_f"].max() if "coolant_temp_f" in airborne.columns else None
+    oil_max     = airborne["oil_temp_f"].max() if "oil_temp_f" in airborne.columns else None
+    oc_ratio    = (
+        round(float(oil_max / coolant_max), 3)
+        if oil_max and coolant_max and coolant_max > 0 else None
+    )
+
+    phase_min = {}
+    if "phase" in df.columns:
+        for ph in ["CLIMB", "CRUISE", "DESCENT"]:
+            phase_min[ph] = round(float((df["phase"] == ph).sum() / 60), 1)
+
+    # ── Takeoff MAP — median MAP/PA/OAT while RPM ≥ 5,500 and phase = TAKEOFF ──
+    takeoff_map_inhg = None
+    takeoff_pressure_alt_ft = None
+    takeoff_oat_c = None
+    if "phase" in df.columns and "rpm" in df.columns and "map_inhg" in df.columns:
+        to_rows = df[
+            (df["phase"] == "TAKEOFF_ROLL") &
+            (df["rpm"].fillna(0) >= 5500)
+            ]
+        if len(to_rows) >= 3:
+            takeoff_map_inhg = round(float(to_rows["map_inhg"].median()), 2)
+            takeoff_pressure_alt_ft = round(float(to_rows["press_alt_ft"].median()), 0) \
+                if "press_alt_ft" in to_rows.columns else None
+            takeoff_oat_c = round(float(to_rows["oat_c"].median()), 1) \
+                if "oat_c" in to_rows.columns else None
+
+    # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
+    from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
+    _ecu_runs = _extract_ecu(df, engine_config=engine_config)
+    inflight_ecu_count = sum(
+        1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
+    )
+
+    # ── Density altitude / OAT — cruise-phase median ──────────────────────
+    cruise_rows = df[df["phase"] == "CRUISE"] if "phase" in df.columns else pd.DataFrame()
+    cruise_da  = cruise_rows["da_ft"].median() if "da_ft" in cruise_rows.columns and len(cruise_rows) else None
+    cruise_oat = cruise_rows["oat_c"].median() if "oat_c" in cruise_rows.columns and len(cruise_rows) else None
+    da_band  = _band_for(cruise_da, DA_BANDS)
+    oat_band = _band_for(cruise_oat, OAT_BANDS)
+
+    # ── Climb thermal profile ──────────────────────────────────────────────
+    climb_profile = climb_thermal_profile(df)
+    dominant_bucket = None
+    if climb_profile["available"] and climb_profile["by_bucket"]:
+        dominant_bucket = max(
+            climb_profile["by_bucket"].items(),
+            key=lambda kv: kv[1]["rows"]
+        )[0]
+
+    return FlightMetrics(
+        source_file=fname,
+        date=s["date"],
+        engine_hours=info.engine_hours,
+        duration_min=round(s["duration_min"], 1),
+        airborne_min=round(s["airborne_min"], 1),
+        egt_spread_mean_f=egt.get("spread_mean_f"),
+        egt_spread_max_f=egt.get("spread_max_f"),
+        egt4_elevation_f=egt.get("egt4_elevation_f"),
+        egt_rank_stable=egt.get("rank_stable"),
+        fadec_gallons=fuel_total.get("fadec_gallons"),
+        cruise_nmpg=eff.get("nmpg") if eff else None,
+        cruise_fuel_flow_gph=eff.get("mean_fuel_flow_gph") if eff else None,
+        oil_temp_max_f=round(float(oil_max), 1) if oil_max else None,
+        oil_temp_below_optimal_pct=below_optimal_pct,
+        coolant_temp_max_f=round(float(coolant_max), 1) if coolant_max else None,
+        oil_coolant_ratio=oc_ratio,
+        overboost_total_s=ob.get("overboost_total_s"),
+        overboost_max_block_s=ob.get("overboost_max_block_s"),
+        cas_inflight_anomaly_count=inflight_anomalies,
+        max_altitude_ft=round(float(df["baro_alt_ft"].max()), 0) if "baro_alt_ft" in df.columns else None,
+        max_ias_kt=round(float(df["ias_kt"].max()), 0) if "ias_kt" in df.columns else None,
+        phase_climb_min=phase_min.get("CLIMB"),
+        phase_cruise_min=phase_min.get("CRUISE"),
+        phase_descent_min=phase_min.get("DESCENT"),
+        cruise_da_ft=round(float(cruise_da), 0) if cruise_da is not None and not pd.isna(cruise_da) else None,
+        cruise_oat_c=round(float(cruise_oat), 1) if cruise_oat is not None and not pd.isna(cruise_oat) else None,
+        da_band=da_band,
+        oat_band=oat_band,
+        climb_oil_rise_f_per_min=climb_profile.get("oil_rise_f_per_min_overall"),
+        climb_coolant_rise_f_per_min=climb_profile.get("coolant_rise_f_per_min_overall"),
+        climb_vs_bucket_dominant=dominant_bucket,
+        takeoff_map_inhg=takeoff_map_inhg,
+        takeoff_pressure_alt_ft=takeoff_pressure_alt_ft,
+        takeoff_oat_c=takeoff_oat_c,
+        inflight_ecu_count=inflight_ecu_count,
+    )
 
 
 # ── Baseline ──────────────────────────────────────────────────────────────────

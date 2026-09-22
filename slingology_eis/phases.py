@@ -305,6 +305,28 @@ def detect_phases(
 
 # ── Phase summary ─────────────────────────────────────────────────────────────
 
+def phase_segments(df: pd.DataFrame) -> list[dict]:
+    """
+    Contiguous phase segments as [start,end) on elapsed_s (Spec 01 §8.3):
+    [{"phase": str, "start_s": float, "end_s": float}, ...].
+
+    Lighter than phase_summary() — no per-phase engine-parameter stats,
+    just the timeline FlightAnalysis needs.
+    """
+    if "phase" not in df.columns:
+        raise ValueError("Run detect_phases() first.")
+
+    segments = []
+    groups = df.groupby((df["phase"] != df["phase"].shift()).cumsum())
+    for _, g in groups:
+        segments.append({
+            "phase": g["phase"].iloc[0],
+            "start_s": float(g["elapsed_s"].iloc[0]),
+            "end_s": float(g["elapsed_s"].iloc[-1]) + 1,
+        })
+    return segments
+
+
 def phase_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
     Return a summary table of phases: start time, end time, duration,
@@ -371,7 +393,8 @@ def overboost_time(
     pwr_threshold = ob_cfg.get("power_pct_threshold", 100)
     time_limit_s  = ob_cfg.get("time_limit_s", 300)
 
-    ob_mask = (df["rpm"] > rpm_threshold) | (df["power_pct"].fillna(0) > pwr_threshold)
+    power_pct = df["power_pct"].fillna(0) if "power_pct" in df.columns else 0
+    ob_mask = (df["rpm"] > rpm_threshold) | (power_pct > pwr_threshold)
     ob_rows = ob_mask.sum()
 
     max_block = 0
