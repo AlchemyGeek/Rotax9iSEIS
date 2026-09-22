@@ -42,12 +42,12 @@ _TOOLKIT = _HERE.parent
 sys.path.insert(0, str(_TOOLKIT))
 
 from slingology_eis.loader import load_directory, find_duplicate_flights, deduplicate_flights
-from slingology_eis.cas import _split_cas
 from slingology_eis.limits import load_engine_config
-from slingology_eis.cas import extract_engine_ecu_runs, classify_engine_ecu_run
+from slingology_eis.cas import (
+    extract_engine_ecu_runs, ecu_active_series, analyze_inflight_pattern,
+)
 
 import pandas as pd
-import numpy as np
 
 # ── Config ────────────────────────────────────────────────────────────────────
 LOGS_DIR    = _TOOLKIT / "data" / "logs"
@@ -56,19 +56,8 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Load engine config (reads from config.json or defaults to 916iS)
 _engine_cfg = load_engine_config()
-_phase_cfg  = _engine_cfg.get("phase_detection", {})
 
-RPM_RUNNING               = 500
-VOLTAGE_DECLINE_THRESHOLD = 0.5   # V drop over run → SHUTDOWN
-
-# Lane check detection thresholds — from engine config
-LANE_CHECK_MAX_DURATION_S = _phase_cfg.get("lane_check_max_duration_s", 15)
-LANE_CHECK_RPM_MIN        = _phase_cfg.get("runup_rpm_min", 3000)
-LANE_CHECK_RPM_MAX        = _phase_cfg.get("runup_rpm_max", 5000)
-LANE_CHECK_MAX_IAS_KT     = 20    # ground-speed criterion — not engine-specific
-LANE_CHECK_PAIR_WINDOW_S  = 90    # both lanes tested within this window
-
-CONTEXT_WINDOW = 5
+RPM_RUNNING = 500
 
 CORR_PARAMS = [
     "rpm", "power_pct", "map_inhg", "map_hpa",
@@ -78,82 +67,6 @@ CORR_PARAMS = [
     "main_volts", "batt_amps", "efis_bkup_v", "nav_bkup_v",
     "ias_kt", "baro_alt_ft", "vs_fpm",
 ]
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def ecu_active_series(df: pd.DataFrame) -> pd.Series:
-    return df["cas_alert"].apply(lambda v: "ENGINE ECU" in _split_cas(v))
-
-def _build_run(df: pd.DataFrame, start_idx: int, end_idx: int) -> dict:
-    seg     = df.loc[start_idx:end_idx]
-    t_start = seg["datetime"].iloc[0]
-    t_end   = seg["datetime"].iloc[-1]
-    dur_s   = (t_end - t_start).total_seconds() + 1
-    kind    = classify_engine_ecu_run()
-
-    pre_start = max(df.index[0], start_idx - CONTEXT_WINDOW)
-    pre       = df.loc[pre_start: start_idx - 1]
-
-    oil_nan_frac = seg["oil_press_psi"].isna().mean() if "oil_press_psi" in seg.columns else None
-
-    rpm_accel_pre = None
-    if "rpm" in pre.columns and len(pre) >= 2:
-        rpm_vals = pre["rpm"].dropna()
-        if len(rpm_vals) >= 2:
-            rpm_accel_pre = float(rpm_vals.diff().mean())
-
-    volts_at_start, volts_delta = None, None
-    if "main_volts" in df.columns:
-        v_now = seg["main_volts"].dropna()
-        v_pre = pre["main_volts"].dropna()
-        if len(v_now):
-            volts_at_start = float(v_now.iloc[0])
-        if len(v_now) and len(v_pre):
-            volts_delta = float(v_now.iloc[0]) - float(v_pre.iloc[-1])
-
-    co_alerts: set[str] = set()
-    for v in seg["cas_alert"].dropna():
-        for a in _split_cas(v):
-            if a != "ENGINE ECU":
-                co_alerts.add(a)
-
-    param_means = {}
-    for col in ["rpm", "power_pct", "oil_press_psi", "oil_temp_f",
-                "coolant_temp_f", "main_volts", "batt_amps",
-                "fuel_press_psi", "ias_kt", "baro_alt_ft"]:
-        if col in seg.columns:
-            v = seg[col].dropna()
-            param_means[col] = round(float(v.mean()), 2) if len(v) else None
-
-    return {
-        "source_file":      df["_source_file"].iloc[0],
-        "date":             t_start.date(),
-        "start_time":       t_start,
-        "end_time":         t_end,
-        "duration_s":       dur_s,
-        "classification":   kind,
-        "lane_check_pair":  False,
-        "lane_check_note":  "",
-        "start_idx":        start_idx,
-        "end_idx":          end_idx,
-        "oil_nan_frac":     oil_nan_frac,
-        "rpm_accel_pre":    rpm_accel_pre,
-        "volts_at_start":   volts_at_start,
-        "volts_delta":      volts_delta,
-        "co_alerts":        sorted(co_alerts),
-        **{f"mean_{k}": v for k, v in param_means.items()},
-    }
-
-
-def correlation_analysis(df: pd.DataFrame) -> pd.Series:
-    running = df[df["rpm"].fillna(0) > RPM_RUNNING].copy()
-    if len(running) < 10:
-        return pd.Series(dtype=float)
-    running["ecu_active"] = ecu_active_series(running).astype(float)
-    available = [c for c in CORR_PARAMS if c in running.columns]
-    corr = running[available + ["ecu_active"]].corr()["ecu_active"].drop("ecu_active")
-    return corr.sort_values(key=abs, ascending=False)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -321,28 +234,28 @@ def main():
     print(f"\n{'=' * 70}\n")
 
 
-def _inflight_detail_lines(inflight_df: pd.DataFrame) -> list[str]:
+def _inflight_detail_lines(pattern: dict) -> list[str]:
+    """Render analyze_inflight_pattern()'s structured output as text lines."""
     lines = []
 
     # ── Per-event callouts ────────────────────────────────────────────────────
-    for _, row in inflight_df.iterrows():
-        co = list(row.get("co_alerts", []) or [])
-        oil_nan = row.get("oil_nan_frac")
+    for event in pattern["events"]:
+        co = event["co_alerts"]
+        direct = set(event["direct_correlation_alerts"])
+        oil_nan = event["oil_nan_frac"]
         oil_nan_str = f"  oil_NaN:{oil_nan*100:.0f}%" if oil_nan is not None else ""
 
         lines.append(
-            f"    ⚡ {row['source_file']}  "
-            f"{row['start_time']:%Y-%m-%d %H:%M:%S}  "
-            f"{row['duration_s']:.0f}s{oil_nan_str}"
+            f"    ⚡ {event['source_file']}  "
+            f"{event['start_time']:%Y-%m-%d %H:%M:%S}  "
+            f"{event['duration_s']:.0f}s{oil_nan_str}"
         )
 
         if co:
-            # Flag OIL PRESS specifically — only co-active alert with a
-            # direct engine-parameter correlation
             for alert in co:
-                if alert == "OIL PRESS":
+                if alert in direct:
                     lines.append(
-                        f"      ⚠ Co-active: OIL PRESS — only IN-FLIGHT event with "
+                        f"      ⚠ Co-active: {alert} — only IN-FLIGHT event with "
                         f"a direct engine-parameter correlation. "
                         f"Verify oil pressure was genuine, not a CAN dropout."
                     )
@@ -356,11 +269,7 @@ def _inflight_detail_lines(inflight_df: pd.DataFrame) -> list[str]:
 
     # ── Aggregate pattern across all events ──────────────────────────────────
     lines.append("")
-    oil_nan_consistent = (
-        (inflight_df["oil_nan_frac"] > 0.8).mean() > 0.6
-        if "oil_nan_frac" in inflight_df.columns else False
-    )
-    if oil_nan_consistent:
+    if pattern["oil_nan_pattern"] == "strong":
         lines.append(
             "    Pattern: Oil press NaN co-occurrence STRONG across events "
             "→ CAN bus dropout signature"
@@ -373,14 +282,14 @@ def _inflight_detail_lines(inflight_df: pd.DataFrame) -> list[str]:
 
     lines.append("")
     lines.append("    RECOMMENDED ACTIONS:")
-    lines.append("    1. Inspect Rotax Display CAN at GEA-24 (J244 pins 17 & 33)")
-    lines.append("    2. Inspect & reseat HIC A and HIC B connector bodies")
-    lines.append("    3. Pull B.U.D.S. fault log — both Lane A and Lane B")
+    for i, action in enumerate(pattern["recommended_actions"], start=1):
+        lines.append(f"    {i}. {action}")
     return lines
 
 
 def _print_inflight_detail(inflight_df: pd.DataFrame):
-    for line in _inflight_detail_lines(inflight_df):
+    pattern = analyze_inflight_pattern(inflight_df.to_dict("records"))
+    for line in _inflight_detail_lines(pattern):
         print(line)
 
 
@@ -406,7 +315,7 @@ def _write_text_report(flights, runs_df, summaries, out_path: Path):
     if len(inflight_df) > 0:
         lines.append(f"  {len(inflight_df)} IN-FLIGHT occurrence(s) across "
                      f"{inflight_df['source_file'].nunique()} flight(s):")
-        lines += _inflight_detail_lines(inflight_df)
+        lines += _inflight_detail_lines(analyze_inflight_pattern(inflight_df.to_dict("records")))
     else:
         lines.append("  No IN-FLIGHT ENGINE ECU occurrences detected — all occurrences")
         lines.append("  classified as expected (POWERUP / LANE_CHECK / SHUTDOWN).")

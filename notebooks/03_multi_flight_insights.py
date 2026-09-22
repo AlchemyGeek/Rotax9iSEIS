@@ -33,7 +33,6 @@ Usage
 
 import sys
 from pathlib import Path
-import numpy as np
 
 _HERE    = Path(__file__).resolve().parent
 _TOOLKIT = _HERE.parent
@@ -41,13 +40,13 @@ sys.path.insert(0, str(_TOOLKIT))
 
 from slingology_eis.loader import load_directory, find_duplicate_flights, deduplicate_flights
 from slingology_eis.fleet import (
-    build_flight_metrics, baseline, baseline_stratified,
+    build_flight_metrics, baseline,
     trend, trend_stratified, outliers, confidence_label,
     MIN_FLIGHTS_FOR_CONFIDENCE,
 )
-from slingology_eis.climb import VS_BUCKETS
 from slingology_eis.limits import load_engine_config
 from slingology_eis import serialize as _json_serialize
+from slingology_eis import baselines as _baselines_module
 
 from datetime import date
 
@@ -67,172 +66,25 @@ def section(title: str):
 def subsection(title: str):
     print(f"\n── {title} {'─' * max(0, 58 - len(title))}")
 
-def _raw(col, band_col=None):
-    cols = ["date", "engine_hours", col]
-    if band_col and band_col in metrics.columns:
-        cols += [band_col]
-    if "da_band" in metrics.columns and "da_band" not in cols:
-        cols += ["da_band"]
-    if "oat_band" in metrics.columns and "oat_band" not in cols:
-        cols += ["oat_band"]
-    sub = metrics[[c for c in cols if c in metrics.columns]].dropna(subset=[col])
-    renamed = sub.rename(columns={col: "value"})
-    records = renamed.to_dict(orient="records")
-    return [
-        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
-        for row in records
-    ]
-
 
 def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
     """
-    Serialise fleet baselines, trends, and raw data points to
-    reports/baselines.json for use by script 04.
+    Compute fleet baselines/trends/models (slingology_eis.baselines) and
+    serialise to reports/baselines.json and reports/models.json for use
+    by script 04. Thin renderer: the analysis lives in the library.
     """
-    def _baseline_dict(b):
-        if b.mean is None:
-            return {"n": b.n, "confidence": b.confidence}
-        return {
-            "mean": b.mean, "std": b.std,
-            "min": b.min, "max": b.max,
-            "n": b.n, "confidence": b.confidence,
-        }
+    doc = _baselines_module.build_baselines(metrics, engine_name)
+    doc["generated_at"] = date.today().isoformat()
+    out_path.write_text(_json_serialize.dumps(doc, indent=2))
 
-    def _trend_dict(t):
-        if t.slope is None:
-            return {"n": t.n, "direction": t.direction, "confidence": t.confidence}
-        return {
-            "n": t.n, "slope": t.slope,
-            "direction": t.direction,
-            "r_squared": t.r_squared,
-            "confidence": t.confidence,
-        }
-
-    def _raw(col, band_col=None):
-        cols = ["date", "engine_hours", col]
-        if band_col and band_col in metrics.columns:
-            cols += [band_col]
-        if "da_band" in metrics.columns and "da_band" not in cols:
-            cols += ["da_band"]
-        if "oat_band" in metrics.columns and "oat_band" not in cols:
-            cols += ["oat_band"]
-        sub = metrics[[c for c in cols if c in metrics.columns]].dropna(subset=[col])
-        renamed = sub.rename(columns={col: "value"})
-        return renamed.where(pd.notna(renamed), other=None).to_dict(orient="records")
-
-    # ── Per-metric definitions ────────────────────────────────────────────
-    metric_defs = [
-        # (key, column, band_column)
-        ("egt_spread", "egt_spread_mean_f", "oat_band"),
-        ("egt4_elevation", "egt4_elevation_f", "oat_band"),
-        ("oil_temp_peak", "oil_temp_max_f", "oat_band"),
-        ("coolant_temp_peak", "coolant_temp_max_f", "oat_band"),
-        ("oil_coolant_ratio", "oil_coolant_ratio", "oat_band"),
-        ("overboost_time", "overboost_total_s", None),
-        ("cruise_efficiency", "cruise_nmpg", "da_band"),
-        ("cruise_fuel_flow", "cruise_fuel_flow_gph", "da_band"),
-        ("climb_thermal_rate", "climb_oil_rise_f_per_min", None),
-        ("cruise_da_ft", "cruise_da_ft", None),
-        ("takeoff_map_inhg", "takeoff_map_inhg", None),
-    ]
-
-    baselines_out = {}
-    for key, col, band_col in metric_defs:
-        if col not in metrics.columns:
-            continue
-        b = baseline(metrics, col)
-        t = trend(metrics, col, x="engine_hours")
-        by_band = {}
-        if band_col:
-            stratified = baseline_stratified(metrics, col, band_column=band_col)
-            for band_name, sb in stratified.items():
-                by_band[band_name] = _baseline_dict(sb)
-
-        baselines_out[key] = {
-            **_baseline_dict(b),
-            "trend": _trend_dict(t),
-            **({"by_band": by_band} if by_band else {}),
-            "raw": _raw(col, band_col),
-        }
-
-    doc = {
-        "version": "1.0",
-        "generated_at": date.today().isoformat(),
-        "engine": engine_name,
-        "engine_hours_range": [
-            float(metrics["engine_hours"].min()),
-            float(metrics["engine_hours"].max()),
-        ] if metrics["engine_hours"].notna().any() else None,
-        "flight_count": len(metrics),
-        "baselines": baselines_out,
-    }
-
-    clean_json = _json_serialize.dumps(doc, indent=2)
-
-    # ── MAP model — linear regression: MAP = f(pressure_alt_ft, oat_c) ───────
-    map_df = metrics[["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c",
-                      "engine_hours", "date"]].dropna()
-    map_model = {"n": len(map_df), "confidence": confidence_label(len(map_df))}
-
-    if len(map_df) >= 5:
-        from numpy.linalg import lstsq as _lstsq
-        X = np.column_stack([
-            np.ones(len(map_df)),
-            map_df["takeoff_pressure_alt_ft"].values,
-            map_df["takeoff_oat_c"].values,
-        ])
-        y = map_df["takeoff_map_inhg"].values
-        coeffs, _, _, _ = _lstsq(X, y, rcond=None)
-        y_pred = X @ coeffs
-        ss_res = float(np.sum((y - y_pred) ** 2))
-        ss_tot = float(np.sum((y - y.mean()) ** 2))
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
-        map_model.update({
-            "type": "linear_regression",
-            "features": ["pressure_alt_ft", "oat_c"],
-            "target": "map_inhg",
-            "coefficients": {
-                "intercept": round(float(coeffs[0]), 4),
-                "pressure_alt_ft": round(float(coeffs[1]), 6),
-                "oat_c": round(float(coeffs[2]), 4),
-            },
-            "r_squared": round(r2, 4),
-        })
-    else:
-        map_model["note"] = (
-            f"Still collecting data — need 5 minimum for first model fit "
-            f"(have {len(map_df)})"
-        )
-
-    map_model["raw"] = [
-        {
-            "date": str(row["date"]),
-            "engine_hours": row["engine_hours"],
-            "map_inhg": row["takeoff_map_inhg"],
-            "pressure_alt_ft": row["takeoff_pressure_alt_ft"],
-            "oat_c": row["takeoff_oat_c"],
-        }
-        for _, row in map_df.iterrows()
-    ]
-
-    models_doc = {
-        "version": "1.0",
-        "generated_at": date.today().isoformat(),
-        "flight_count": len(metrics),
-        "models": {
-            "takeoff_map": map_model,
-        }
-    }
-
+    models_doc = _baselines_module.build_models(metrics)
+    models_doc["generated_at"] = date.today().isoformat()
     models_path = out_path.parent / "models.json"
-    clean_models = _json_serialize.dumps(models_doc, indent=2)
-    models_path.write_text(clean_models)
+    models_path.write_text(_json_serialize.dumps(models_doc, indent=2))
     print(f"  Models written to: {models_path}")
 
-    out_path.write_text(clean_json)
-
     print(f"\n  Baselines written to: {out_path}")
-    print(f"  ({len(baselines_out)} metrics, {len(metrics)} flights)")
+    print(f"  ({len(doc['baselines'])} metrics, {len(metrics)} flights)")
 
 def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, out_path: Path):
     """

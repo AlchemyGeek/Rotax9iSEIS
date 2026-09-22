@@ -51,6 +51,18 @@ POWERUP_TRANSIENT = {"SET BARO", "EFIS ON BKUP", "NAV ON BKUP", "ARM BKUP"}
 # Alerts that are NEVER expected during normal flight
 ALWAYS_ABNORMAL = {"ENGINE ECU", "OIL PRESS", "ALT FAIL", "EARTH X FAIL", "FPCM FAULT"}
 
+# Co-active alerts (alongside an IN_FLIGHT ENGINE ECU run) known to have a
+# direct engine-parameter correlation, as opposed to a CAN-bus-only signature.
+DIRECT_CORRELATION_ALERTS = {"OIL PRESS"}
+
+# Standard troubleshooting steps for an IN_FLIGHT ENGINE ECU occurrence —
+# a CAN bus dropout signature, not an ECU hardware fault.
+RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT = [
+    "Inspect Rotax Display CAN at GEA-24 (J244 pins 17 & 33)",
+    "Inspect & reseat HIC A and HIC B connector bodies",
+    "Pull B.U.D.S. fault log — both Lane A and Lane B",
+]
+
 
 @dataclass
 class AlertEvent:
@@ -218,6 +230,11 @@ def cas_report(df: pd.DataFrame) -> str:
         lines.append("  → Check G3X Config mode (on ground, engine running) for fault code.")
 
     return "\n".join(lines)
+
+def ecu_active_series(df: pd.DataFrame) -> pd.Series:
+    """Boolean Series: True on rows where 'ENGINE ECU' is an active CAS alert."""
+    return df["cas_alert"].apply(lambda v: "ENGINE ECU" in _split_cas(v))
+
 
 def classify_engine_ecu_run(
     df: pd.DataFrame,
@@ -394,3 +411,63 @@ def extract_engine_ecu_runs(
             r["lane_check_note"] = "paired" if (i in paired and r["classification"] == "LANE_CHECK") else ""
 
     return results
+
+
+def classify_coactive_alerts(co_alerts: list[str]) -> dict:
+    """
+    Split an IN_FLIGHT ECU run's co-active alerts into those with a known
+    direct engine-parameter correlation vs. everything else. Order within
+    each list is preserved from `co_alerts`.
+    """
+    return {
+        "direct_correlation": [a for a in co_alerts if a in DIRECT_CORRELATION_ALERTS],
+        "other":              [a for a in co_alerts if a not in DIRECT_CORRELATION_ALERTS],
+    }
+
+
+def analyze_inflight_pattern(inflight_runs: list[dict]) -> dict:
+    """
+    Structured analysis of a set of IN_FLIGHT ENGINE ECU runs (the output
+    of `extract_engine_ecu_runs`, filtered to classification == "IN_FLIGHT").
+
+    This is the analysis a UI or report renders — no text formatting here,
+    so any host (CLI, browser, local server) can build its own presentation
+    from the same structured findings.
+
+    Returns
+    -------
+    dict with keys:
+        events : list[dict] — one per run: source_file, start_time,
+            duration_s, oil_nan_frac, co_alerts (original order preserved),
+            direct_correlation_alerts (subset of co_alerts).
+        oil_nan_pattern : "strong" | "mixed" | None — None if there are no
+            events. "strong" when oil-pressure-NaN co-occurred with more
+            than 60% of events (a CAN bus dropout signature); "mixed"
+            otherwise.
+        recommended_actions : list[str] — standard troubleshooting steps.
+    """
+    events = []
+    strong_count = 0
+    for r in inflight_runs:
+        co_alerts = list(r.get("co_alerts") or [])
+        classified = classify_coactive_alerts(co_alerts)
+        events.append({
+            "source_file":              r.get("source_file"),
+            "start_time":               r.get("start_time"),
+            "duration_s":               r.get("duration_s"),
+            "oil_nan_frac":             r.get("oil_nan_frac"),
+            "co_alerts":                co_alerts,
+            "direct_correlation_alerts": classified["direct_correlation"],
+        })
+        oil_nan_frac = r.get("oil_nan_frac")
+        if oil_nan_frac is not None and oil_nan_frac > 0.8:
+            strong_count += 1
+
+    n = len(inflight_runs)
+    oil_nan_pattern = None if n == 0 else ("strong" if (strong_count / n) > 0.6 else "mixed")
+
+    return {
+        "events":              events,
+        "oil_nan_pattern":     oil_nan_pattern,
+        "recommended_actions": list(RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT),
+    }
