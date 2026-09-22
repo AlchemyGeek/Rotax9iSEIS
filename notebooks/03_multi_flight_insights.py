@@ -34,7 +34,6 @@ Usage
 import sys
 from pathlib import Path
 import numpy as np
-import re as _re
 
 _HERE    = Path(__file__).resolve().parent
 _TOOLKIT = _HERE.parent
@@ -48,8 +47,8 @@ from slingology_eis.fleet import (
 )
 from slingology_eis.climb import VS_BUCKETS
 from slingology_eis.limits import load_engine_config
+from slingology_eis import serialize as _json_serialize
 
-import json
 from datetime import date
 
 import pandas as pd
@@ -67,22 +66,6 @@ def section(title: str):
 
 def subsection(title: str):
     print(f"\n── {title} {'─' * max(0, 58 - len(title))}")
-
-def _serialise(obj):
-    """JSON serialiser for types not handled by default."""
-    import numpy as np
-    import math
-    if isinstance(obj, float) and math.isnan(obj):
-        return None
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        if math.isnan(obj):
-            return None
-        return float(obj)
-    if isinstance(obj, date):
-        return obj.isoformat()
-    raise TypeError(f"Not serialisable: {type(obj)}")
 
 def _raw(col, band_col=None):
     cols = ["date", "engine_hours", col]
@@ -184,12 +167,7 @@ def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
         "baselines": baselines_out,
     }
 
-    # Convert the doc to a JSON string via pandas which handles all NaN variants,
-    # then parse back to replace NaN tokens with null before final write.
-    import re as _re
-    raw_json = json.dumps(doc, indent=2, default=_serialise)
-    # json.dumps writes NaN as bare NaN (invalid JSON) — replace all occurrences with null
-    clean_json = _re.sub(r'\bNaN\b', 'null', raw_json)
+    clean_json = _json_serialize.dumps(doc, indent=2)
 
     # ── MAP model — linear regression: MAP = f(pressure_alt_ft, oat_c) ───────
     map_df = metrics[["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c",
@@ -247,8 +225,7 @@ def write_baselines(metrics: pd.DataFrame, out_path: Path, engine_name: str):
     }
 
     models_path = out_path.parent / "models.json"
-    raw_models = json.dumps(models_doc, indent=2, default=_serialise)
-    clean_models = _re.sub(r'\bNaN\b', 'null', raw_models)
+    clean_models = _json_serialize.dumps(models_doc, indent=2)
     models_path.write_text(clean_models)
     print(f"  Models written to: {models_path}")
 
@@ -410,7 +387,8 @@ def main():
 
     n_flights = len(flights)
     print(f"\nBuilding per-flight metrics for {n_flights} flight(s)...")
-    metrics = build_flight_metrics(flights, field_elev_ft=None, verbose=True)
+    metrics = build_flight_metrics(flights, field_elev_ft=None, verbose=True,
+                                    engine_config=engine_cfg_early)
 
     if len(metrics) == 0:
         print("No metrics could be computed.")

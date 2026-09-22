@@ -81,9 +81,50 @@ def _resolve_engine_name(engine: Optional[str] = None) -> str:
     return _DEFAULT_ENGINE
 
 
+def parse_engine_config(text: str, name: str = "") -> dict:
+    """
+    Parse engine config JSON text into a dict. No file I/O — the core
+    parser `load_engine_config()` wraps for disk access.
+
+    Parameters
+    ----------
+    text : str
+        Raw JSON text (the contents of an engines/<name>.json file).
+    name : str, optional
+        Engine name, used only in the placeholder warning message.
+
+    Returns
+    -------
+    dict — the full parsed engine config.
+
+    Raises
+    ------
+    ValueError  if the text is not valid JSON.
+    """
+    try:
+        cfg = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid engine config JSON: {e}")
+
+    # Warn if this is a placeholder config
+    if cfg.get("_metadata", {}).get("source_status") == "PLACEHOLDER":
+        import warnings
+        warnings.warn(
+            f"Engine config for '{name or cfg.get('_metadata', {}).get('engine', '?')}' "
+            f"is a PLACEHOLDER — values have not been verified against the official "
+            f"Operators Manual. Do not rely on these limits for operational decisions.",
+            UserWarning, stacklevel=2
+        )
+    return cfg
+
+
 def load_engine_config(engine: Optional[str] = None) -> dict:
     """
     Load an engine config dict from engines/<name>.json.
+
+    Thin wrapper around `parse_engine_config()` — resolves the engine
+    name and file path (touching the filesystem and `engines/`, relative
+    to this package), reads the text, and delegates parsing.
 
     Parameters
     ----------
@@ -109,21 +150,7 @@ def load_engine_config(engine: Optional[str] = None) -> dict:
             f"Engine config not found: {path}\n"
             f"Available engines: {', '.join(sorted(available))}"
         )
-    try:
-        cfg = json.loads(path.read_text())
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in {path}: {e}")
-
-    # Warn if this is a placeholder config
-    if cfg.get("_metadata", {}).get("source_status") == "PLACEHOLDER":
-        import warnings
-        warnings.warn(
-            f"Engine config for '{name}' is a PLACEHOLDER — values have not been "
-            f"verified against the official Operators Manual. Do not rely on these "
-            f"limits for operational decisions.",
-            UserWarning, stacklevel=2
-        )
-    return cfg
+    return parse_engine_config(path.read_text(), name=name)
 
 
 def engine_limits_from_config(engine_config: dict) -> list[Limit]:

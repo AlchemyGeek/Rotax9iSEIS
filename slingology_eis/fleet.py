@@ -155,6 +155,7 @@ def build_flight_metrics(
     flights: list[tuple[pd.DataFrame, object]],
     field_elev_ft: Optional[float] = None,
     verbose: bool = True,
+    engine_config: Optional[dict] = None,
 ) -> pd.DataFrame:
     """
     Run the full per-flight analysis pipeline (phases, EGT, fuel, oil,
@@ -166,10 +167,20 @@ def build_flight_metrics(
     different airports at different elevations. Pass an explicit value
     only to force the same elevation across every flight in the batch.
 
+    engine_config: engine config dict from load_engine_config(). If None
+    (default, for backward compatibility), resolved once here via the
+    same fallback load_engine_config() itself uses (explicit arg → env
+    var → config.json → 916iS default) rather than deep inside the
+    per-flight loop.
+
     This is the shared foundation for every fleet-level insight —
     baselines, trends, and outlier detection all operate on the
     DataFrame this returns.
     """
+    if engine_config is None:
+        from .limits import load_engine_config
+        engine_config = load_engine_config()
+
     rows = []
     for df, info in flights:
         fname = df["_source_file"].iloc[0]
@@ -177,7 +188,7 @@ def build_flight_metrics(
             df = detect_phases(df, field_elev_ft=field_elev_ft, verbose=False)
             s   = log_summary(df, info)
             egt = egt_health(df)
-            ob  = overboost_time(df)
+            ob  = overboost_time(df, engine_config=engine_config)
             eff = cruise_efficiency(df)
             fuel_total = integrate_fuel(df)
 
@@ -225,8 +236,7 @@ def build_flight_metrics(
 
             # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
             from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
-            from slingology_eis.limits import load_engine_config as _load_cfg
-            _ecu_runs = _extract_ecu(df, engine_config=_load_cfg())
+            _ecu_runs = _extract_ecu(df, engine_config=engine_config)
             inflight_ecu_count = sum(
                 1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
             )

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SlingologyEIS — Pyodide Spike Harness</title>
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 1.25rem;
+         max-width: 900px; margin-inline: auto; color: #1a1a1a; background: #fafafa; }
+  h1 { font-size: 1.25rem; margin-bottom: 0.1rem; }
+  h2 { font-size: 1rem; margin-top: 1.75rem; border-top: 1px solid #ddd; padding-top: 1rem; }
+  .sub { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+  button { font-size: 0.95rem; padding: 0.5rem 0.9rem; border-radius: 6px; border: 1px solid #bbb;
+           background: #fff; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: #1a56db; color: #fff; border-color: #1a56db; }
+  .row { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+  #dropzone { border: 2px dashed #aaa; border-radius: 10px; padding: 1.5rem; text-align: center;
+              color: #666; background: #fff; }
+  #dropzone.drag { border-color: #1a56db; background: #eef3ff; }
+  pre { background: #111; color: #ddd; padding: 0.8rem; border-radius: 8px; overflow: auto;
+        font-size: 0.8rem; max-height: 320px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-top: 0.5rem; }
+  td, th { border: 1px solid #ddd; padding: 0.3rem 0.5rem; text-align: left; }
+  th { background: #f0f0f0; }
+  .ok { color: #0a7d2c; }
+  .bad { color: #c0392b; font-weight: 600; }
+  .warn { color: #b8860b; }
+  #banner { padding: 0.6rem 0.9rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; }
+  #banner.crash { background: #fde2e1; color: #7a1410; }
+  #banner.hidden { display: none; }
+  code { background: #eee; padding: 0.1rem 0.3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div id="banner" class="hidden"></div>
+
+<h1>SlingologyEIS — Pyodide Spike Harness</h1>
+<p class="sub">
+  Spec 04 (Part A). Runs the <em>real</em> engine code — <code>load_log</code>,
+  <code>detect_phases</code>, <code>build_flight_metrics</code> — inside a Web Worker
+  running Pyodide, on a log you pick from disk. Serve this folder from the
+  <strong>repo root</strong> (e.g. <code>python3 -m http.server 8000</code> run at the
+  repo root, then open <code>http://localhost:8000/spike/</code>) so it can fetch the
+  project's own <code>slingology_eis/</code> source. Nothing is uploaded anywhere —
+  everything below runs in your browser.
+</p>
+
+<h2>1. Load runtime</h2>
+<div class="row">
+  <button id="initBtn" class="primary">Initialize Pyodide</button>
+  <span id="initStatus" class="sub"></span>
+</div>
+<pre id="initLog" style="display:none"></pre>
+
+<h2>2. Run the pipeline on a log</h2>
+<div id="dropzone">
+  Drag a <code>.csv</code> log here, or
+  <label style="text-decoration: underline; cursor: pointer;">
+    choose a file<input id="fileInput" type="file" accept=".csv" style="display:none" />
+  </label>
+</div>
+<div class="row">
+  <button id="runBtn" disabled>Run pipeline</button>
+  <span id="runStatus" class="sub"></span>
+</div>
+
+<h2>3. Compare against a native golden (optional)</h2>
+<p class="sub">
+  Produced on your Mac by <code>spike/native_reference.py</code> (see
+  <code>spike/README.md</code>).
+</p>
+<div class="row">
+  <label style="text-decoration: underline; cursor: pointer;">
+    choose golden.json<input id="goldenInput" type="file" accept=".json" style="display:none" />
+  </label>
+  <span id="goldenStatus" class="sub"></span>
+</div>
+<div id="diffOut"></div>
+
+<h2>4. Results</h2>
+<div class="row">
+  <button id="downloadBtn" disabled>Download results JSON</button>
+</div>
+<pre id="resultsOut">(no run yet)</pre>
+
+<script>
+const CRASH_KEY = "eis_spike_run_in_progress";
+
+function showBanner(text, cls) {
+  const b = document.getElementById("banner");
+  b.textContent = text;
+  b.className = cls;
+}
+
+// --- Crash marker (Spec 04 §4.4 "Failure") ------------------------------
+// If a run was in progress when the page last unloaded and never cleared
+// its flag, the previous attempt likely crashed the tab (iOS gives no
+// crash event, so this is the only reliable signal).
+(function checkCrashMarker() {
+  const prev = sessionStorage.getItem(CRASH_KEY);
+  if (prev) {
+    showBanner(
+      "⚠ Previous run did not complete cleanly (flag: " + prev +
+      "). If the page reloaded or froze during that step, treat it as a " +
+      "crash for that workload size.",
+      "banner crash"
+    );
+  }
+})();
+
+function markRunning(stage) { sessionStorage.setItem(CRASH_KEY, stage); }
+function markDone() { sessionStorage.removeItem(CRASH_KEY); }
+
+// --- Worker plumbing ------------------------------------------------------
+const worker = new Worker("worker.js");
+const state = { env: {}, initInfo: null, lastResult: null, allEvents: [] };
+
+const initBtn = document.getElementById("initBtn");
+const initStatus = document.getElementById("initStatus");
+const initLog = document.getElementById("initLog");
+const runBtn = document.getElementById("runBtn");
+const runStatus = document.getElementById("runStatus");
+const downloadBtn = document.getElementById("downloadBtn");
+const resultsOut = document.getElementById("resultsOut");
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+const goldenInput = document.getElementById("goldenInput");
+const goldenStatus = document.getElementById("goldenStatus");
+const diffOut = document.getElementById("diffOut");
+
+let pendingFile = null;
+let goldenData = null;
+
+function logInit(line) {
+  initLog.style.display = "block";
+  initLog.textContent += line + "\n";
+}
+
+worker.onmessage = (ev) => {
+  const msg = ev.data;
+  state.allEvents.push({ t: Date.now(), ...msg });
+
+  if (msg.type === "progress") {
+    if (msg.stage === "run_start") {
+      runStatus.textContent = "Running…";
+    } else {
+      logInit(`  ${msg.stage}: ${msg.elapsed_s !== undefined ? msg.elapsed_s.toFixed(2) + "s" : ""}`);
+      if (msg.missing && msg.missing.length) {
+        logInit("  MISSING FILES: " + msg.missing.join(", "));
+      }
+    }
+  } else if (msg.type === "warning") {
+    logInit("  WARNING: " + msg.message);
+  } else if (msg.type === "init_done") {
+    state.initInfo = msg.info;
+    initStatus.textContent = `Ready — Pyodide ${msg.info.pyodide_version}, ` +
+      `Python ${msg.info.python_version}, numpy ${msg.info.numpy_version}, ` +
+      `pandas ${msg.info.pandas_version}. Total: ${msg.info.t_ready_s.toFixed(1)}s, ` +
+      `heap ${msg.info.heap_mb} MB.`;
+    initBtn.disabled = true;
+    if (pendingFile) runBtn.disabled = false;
+    markDone();
+  } else if (msg.type === "run_done") {
+    markDone();
+    state.lastResult = msg.result;
+    runStatus.textContent = `Done in ${msg.result.total_wall_s.toFixed(2)}s ` +
+      `(rows=${msg.result.rows}, cols=${msg.result.cols}, heap=${msg.result.heap_mb} MB)`;
+    resultsOut.textContent = JSON.stringify(msg.result, null, 2);
+    downloadBtn.disabled = false;
+    runBtn.disabled = false;
+    if (goldenData) renderDiff();
+  } else if (msg.type === "error") {
+    markDone();
+    showBanner("Error: " + msg.message, "banner crash");
+    runStatus.textContent = "Failed — see banner.";
+    runBtn.disabled = false;
+    initBtn.disabled = false;
+  }
+};
+
+initBtn.addEventListener("click", () => {
+  initBtn.disabled = true;
+  initStatus.textContent = "Loading Pyodide, numpy, pandas, and mounting engine source…";
+  markRunning("init");
+  worker.postMessage({ type: "init" });
+});
+
+function setFile(file) {
+  pendingFile = file;
+  dropzone.querySelector.length; // no-op, keep style
+  dropzone.firstChild && (dropzone.textContent = "");
+  dropzone.innerHTML = `Selected: <strong>${file.name}</strong> (${(file.size/1e6).toFixed(1)} MB). ` +
+    `<label style="text-decoration:underline;cursor:pointer;">choose a different file` +
+    `<input id="fileInput2" type="file" accept=".csv" style="display:none" /></label>`;
+  document.getElementById("fileInput2").addEventListener("change", (e) => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+  if (state.initInfo) runBtn.disabled = false;
+}
+
+fileInput.addEventListener("change", (e) => { if (e.target.files[0]) setFile(e.target.files[0]); });
+["dragenter", "dragover"].forEach(evt =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag"); }));
+["dragleave", "drop"].forEach(evt =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag"); }));
+dropzone.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+runBtn.addEventListener("click", async () => {
+  if (!pendingFile) return;
+  runBtn.disabled = true;
+  runStatus.textContent = "Reading file…";
+  const bytes = await pendingFile.arrayBuffer();
+  markRunning("run:" + pendingFile.name + ":" + pendingFile.size);
+  worker.postMessage(
+    { type: "run", bytes, filename: pendingFile.name },
+    [bytes]
+  );
+});
+
+downloadBtn.addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({
+    ua: navigator.userAgent,
+    platform: navigator.platform,
+    init: state.initInfo,
+    result: state.lastResult,
+    events: state.allEvents,
+  }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "spike_result_" + Date.now() + ".json";
+  a.click();
+});
+
+// --- Golden comparison ------------------------------------------------
+goldenInput.addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  goldenData = JSON.parse(await f.text());
+  goldenStatus.textContent = `Loaded ${f.name}`;
+  if (state.lastResult) renderDiff();
+});
+
+function numClose(a, b, tol = 1e-9) {
+  if (a === null || b === null) return a === b;
+  if (typeof a !== "number" || typeof b !== "number") return String(a) === String(b);
+  return Math.abs(a - b) <= tol * Math.max(1, Math.abs(a));
+}
+
+function renderDiff() {
+  const g = goldenData.metrics || goldenData; // allow either shape
+  const r = state.lastResult.metrics;
+  const keys = Array.from(new Set([...Object.keys(g || {}), ...Object.keys(r || {})])).sort();
+  let rows = "";
+  let failCount = 0;
+  for (const k of keys) {
+    const gv = g ? g[k] : undefined;
+    const rv = r ? r[k] : undefined;
+    const same = numClose(gv, rv);
+    if (!same) failCount++;
+    rows += `<tr><td>${k}</td><td>${JSON.stringify(gv)}</td><td>${JSON.stringify(rv)}</td>` +
+            `<td class="${same ? 'ok' : 'bad'}">${same ? "match" : "DIFFER"}</td></tr>`;
+  }
+  diffOut.innerHTML = `<p class="${failCount ? 'bad' : 'ok'}">` +
+    `${failCount ? failCount + " field(s) differ" : "All metric fields match within tolerance"}` +
+    `</p><table><tr><th>metric</th><th>native (golden)</th><th>pyodide</th><th></th></tr>${rows}</table>`;
+}
+</script>
+</body>
+</html>

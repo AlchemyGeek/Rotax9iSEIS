@@ -174,12 +174,17 @@ def _detect_source_format(header_row: str) -> str:
 
 # ── Core loader ───────────────────────────────────────────────────────────────
 
-def load_log(
-    path: str | Path,
+def load_log_bytes(
+    data: bytes,
+    filename: str,
     tz_aware: bool = False,
 ) -> tuple[pd.DataFrame, AirframeInfo]:
     """
-    Load a single G3X EIS log file.
+    Load a single G3X EIS log from raw bytes — no filesystem access.
+
+    This is the core parser. `load_log(path)` is a thin wrapper that
+    reads a file's bytes and calls this. Hosts that don't have a local
+    path (a browser `File`, an HTTP upload) call this directly.
 
     Supports both export paths transparently:
       • g3x_direct   — CSV downloaded directly from the G3X SD card
@@ -189,6 +194,14 @@ def load_log(
     The detected format is recorded on `info.source_format` so you can
     confirm which path produced a given file, but no other behaviour
     differs between the two — both normalise to identical columns.
+
+    Parameters
+    ----------
+    data : bytes
+        Raw file contents.
+    filename : str
+        Name to record as `_source_file` and to use in error messages —
+        purely descriptive, not read from disk.
 
     Returns
     -------
@@ -200,28 +213,26 @@ def load_log(
     info : AirframeInfo
         Parsed metadata from the file header, including `source_format`.
     """
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Log not found: {path}")
+    import io
 
-    # Read metadata row 0 and header row 1 (need both before pandas parses the body)
-    with open(path, encoding="utf-8-sig", errors="replace") as f:
-        meta_row   = f.readline()
-        header_row = f.readline()
+    text = data.decode("utf-8-sig", errors="replace")
+    buf = io.StringIO(text)
+    meta_row   = buf.readline()
+    header_row = buf.readline()
 
     info = AirframeInfo.from_row(meta_row)
     info.source_format = _detect_source_format(header_row)
 
     if info.source_format == "unknown":
         raise ValueError(
-            f"{path.name}: unrecognised header format — expected a G3X-direct "
+            f"{filename}: unrecognised header format — expected a G3X-direct "
             f"download ('Date (yyyy-mm-dd)...') or a Garmin Pilot export "
             f"('#Date (yyyy-mm-dd)...'). Got: {header_row[:60]!r}. "
             f"This file may be corrupted or from an unsupported source."
         )
 
     # Read data (skip metadata row, row 1 is headers)
-    df = pd.read_csv(path, skiprows=1, low_memory=False, encoding="utf-8-sig")
+    df = pd.read_csv(io.StringIO(text), skiprows=1, low_memory=False)
 
     # Garmin Pilot exports prefix the header row with '#' (e.g. "#Date (yyyy-mm-dd)")
     # while direct G3X SD-card downloads do not. Strip it — along with any stray
@@ -288,9 +299,25 @@ def load_log(
         df[col.replace("_f", "_c")] = (df[col] - 32) * 5/9
 
     # Source file metadata
-    df["_source_file"] = path.name
+    df["_source_file"] = filename
 
     return df, info
+
+
+def load_log(
+    path: str | Path,
+    tz_aware: bool = False,
+) -> tuple[pd.DataFrame, AirframeInfo]:
+    """
+    Load a single G3X EIS log file from disk.
+
+    Thin wrapper around `load_log_bytes()` — reads the file's bytes and
+    delegates. See `load_log_bytes()` for parsing details.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Log not found: {path}")
+    return load_log_bytes(path.read_bytes(), path.name, tz_aware=tz_aware)
 
 
 def load_directory(

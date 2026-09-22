@@ -13,5 +13,5 @@ fleet     : Multi-flight aggregation — baselines, trends, outlier detection, D
 climb     : Climb-rate-correlated thermal analysis (oil/coolant rise rate vs VS)
 """
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 __author__  = "Slingology EIS Research"

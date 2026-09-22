@@ -1,10 +1,19 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.1 — for review (no code written)
+**Status:** Draft v0.4 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
+
+**Revision history**
+
+| Version | Change |
+|---|---|
+| 0.1 | Initial draft. |
+| 0.2 | Open questions Q2, Q4, Q5, Q7 resolved and folded in; Q1 provisionally resolved (§2, §8.4, §8.5, §14). New §7.1 CLI front end. Finding 9 rescoped: the phase-detection miss affects at least 8 of 23 real flights, not one. Migration and acceptance criteria updated (§11, §12). New open question Q8. |
+| 0.3 | Added `--logs DIR` to the CLI global options (§7.1), independent of `--workspace DIR`. A non-technical, no-repo user (Spec 02 §5.1) must be able to point both flags at plain folders with no git checkout involved; see Spec 02 v0.2 for the workspace-side default resolution this supports. |
+| 0.4 | Added `CUSTOM` to `EngineProfile.source_status` (§6.3, §8.1) and diagnostic `ENGINE_CUSTOM_OVERRIDE`, for a host-merged profile built from a shipped profile plus a pilot's `engine_overrides.json` (Spec 02 §6.4). The engine itself is unchanged — it still only ever receives one `EngineProfile`; merging happens host-side. |
 
 ---
 
@@ -39,6 +48,18 @@ The UI can only be as good as the structured output behind it. Today the engine'
 | P2 | The engine is **stateless and pure**: persistence belongs to the host (Spec 02). |
 | P3 | iPad is a *viewing* target via an exported results bundle; desktop is the working platform. |
 
+**Resolved in v0.2** (recommendations from the open-questions review; revert any you disagree with)
+
+| # | Resolution | Origin |
+|---|---|---|
+| R1 | Insight severity is defined per trigger in `insight_rules.json`, with defaults by trigger type (§8.5). | Q2 |
+| R2 | Baseline comparisons use **leave-one-out** membership, and baseline-deviation triggers require a minimum sample size (§8.4). | Q4 |
+| R3 | Pilot annotations are host-supplied input to `evaluate_insights`, keyed by `flight_id` plus insight/event reference, not by source file (§8.5). | Q5 |
+| R4 | The contract uses its own semantic version, independent of the toolkit version. | Q7 |
+| R5 | `flight_id` stays fingerprint-based; overlap matches surface as `INGEST_DUPLICATE_OF` and the host keeps an alias list. Provisional until checked against the full log set. | Q1 |
+| R6 | The CLI is retained as a thin client and becomes a single `slingology-eis` command with subcommands (§7.1). | new |
+| R7 | Stage 0 golden outputs are captured as a **known-defect baseline** (finding 9); the detector fix is a separate reviewed change (§11). | new |
+
 ## 3. Findings from the code review that shape the contract
 
 Reviewed against the repo snapshot and the logs in the project space.
@@ -51,7 +72,7 @@ Reviewed against the repo snapshot and the logs in the project space.
 6. **Raw column names are inconsistent.** The loaded frame has 129 columns mixing normalized ids (`rpm`, `egt1_f`) with raw Garmin names (`GPS Time of Week (sec)`, `Selected Heading (deg)`).
 7. **Scale (measured on the provided log, native CPython, 16,196 rows):** load 0.67 s, phase detection 0.35 s, 129 columns, ≈46.5 MB resident for one 4.5-hour flight. Per-flight cost is small; holding many flights' raw frames at once is the memory risk in a browser.
 8. **Test-data reality check.** The project space contains **one raw log** (`log_20260423_200615_KACV.csv`) plus derived files `fleet_metrics.csv` (50 rows, 23 of them real flights) and `engine_ecu_runs.csv` (145 runs). Re-running the current `build_flight_metrics` on the raw log reproduces its `fleet_metrics.csv` row exactly (all 31 columns, zero differences), so the current behavior is a valid characterization baseline. The current code also emits four columns the CSV predates (`takeoff_map_inhg`, `takeoff_pressure_alt_ft`, `takeoff_oat_c`, `inflight_ecu_count`).
-9. **A phase-detection miss on the provided log** (reported here because it shapes the quality model in §8; *not* fixed by this spec). This log is a 4.5-hour flight (241 airborne minutes, max 8,062 ft, max IAS 130 kt) but `detect_phases` labels 15,997 of 16,196 seconds as `TAXI`; there is no `TAKEOFF_ROLL`/`CLIMB`/`CRUISE`. `fleet_metrics.csv` consequently shows zero climb and cruise minutes and null cruise efficiency for this flight. Working hypothesis, unverified: the `TAXI → TAKEOFF_ROLL` transition requires smoothed RPM > 4,500 while smoothed IAS < 35 kt, but in this log RPM ramps from ~3,200 to ~5,500 in about six seconds while IAS is already 34–38 kt (a rolling takeoff), so the transition never fires and the state machine stays in `TAXI`. Proposed as a backlog item, separate from this spec.
+9. **A phase-detection miss on the provided log** (reported here because it shapes the quality model in §8; *not* fixed by this spec). This log is a 4.5-hour flight (241 airborne minutes, max 8,062 ft, max IAS 130 kt) but `detect_phases` labels 15,997 of 16,196 seconds as `TAXI`; there is no `TAKEOFF_ROLL`/`CLIMB`/`CRUISE`. `fleet_metrics.csv` consequently shows zero climb and cruise minutes and null cruise efficiency for this flight. Working hypothesis, unverified: the `TAXI → TAKEOFF_ROLL` transition requires smoothed RPM > 4,500 while smoothed IAS < 35 kt, but in this log RPM ramps from ~3,200 to ~5,500 in about six seconds while IAS is already 34–38 kt (a rolling takeoff), so the transition never fires and the state machine stays in `TAXI`. **Scope check (v0.2):** in `fleet_metrics.csv`, 9 of the 23 real flights have zero cruise minutes, and 8 of those also have zero climb and descent minutes, the same signature as the KACV flight. They include the 241-minute and 293-minute cross-country flights. The mechanism was traced only on KACV, so the other eight are unconfirmed, but the signature is consistent. It also explains why cruise efficiency exists for only 12 of 23 flights, so cruise-dependent fleet baselines are currently built on partial data. Proposed as a backlog item, separate from this spec.
 10. **Version inconsistency in the snapshot:** `slingology_eis/__init__.py` reports `0.9.0` while CHANGELOG, README, and BACKLOG say `0.10.0`.
 
 ## 4. Principles
@@ -106,7 +127,9 @@ A log file may contain several avionics power cycles (BACKLOG B2), and ground-on
 
 ### 6.3 Engine profile
 
-`EngineProfile` is the parsed content of `engines/<name>.json` (limits, thresholds, suppression rules) passed explicitly, with `profile_hash` and `source_status` (`VERIFIED` | `PLACEHOLDER`). A placeholder profile yields the diagnostic `ENGINE_PLACEHOLDER_CONFIG` (replacing today's Python `warnings.warn`).
+`EngineProfile` is the parsed content of `engines/<name>.json` (limits, thresholds, suppression rules) passed explicitly, with `profile_hash` and `source_status` (`VERIFIED` | `PLACEHOLDER` | `CUSTOM`). A placeholder profile yields the diagnostic `ENGINE_PLACEHOLDER_CONFIG` (replacing today's Python `warnings.warn`).
+
+`CUSTOM` (v0.4) marks a profile the host built by merging a shipped profile with a pilot's `engine_overrides.json` (Spec 02 §6.4) — e.g. "my POH says 250°F max oil temp, not the shipped 248°F." The engine has no concept of overrides; it only ever receives one already-merged `EngineProfile` and doesn't know or care that it's not the stock one. `profile_hash` is computed over the merged content, so an overridden flight gets its own `analysis_key` rather than colliding with the stock profile's cache entries. `CUSTOM` yields the diagnostic `ENGINE_CUSTOM_OVERRIDE`, so reports and insights visibly flag that the limits shown aren't the shipped defaults.
 
 ### 6.4 Channel registry
 
@@ -151,6 +174,39 @@ All operations use one envelope, regardless of transport.
 
 **Staleness rules** (drives incremental recompute): a `FlightAnalysis` is stale if its log, profile, params, or engine major.minor changed; a `FleetAnalysis` if its set of flight analyses, selection, or baseline config changed; an `InsightSet` if its flight, fleet, or rules changed.
 
+### 7.1 CLI front end
+
+The CLI is **retained** as a thin client of the engine. It is not the interface for non-technical users; it serves contributors, headless batch runs, CI and golden-output tests, reproducing the numbers in the research paper, and local hosting (path 2).
+
+**Rules**
+
+- No analysis logic in the CLI. It converts paths to `LogSource`, calls the §7 operations in-process, and prints a renderer's output.
+- **Parity:** every §7 workflow is reachable from the CLI, and `--json` prints the operation's result (validated against the schemas). UI-only interactions (chart zoom, rule playground editing) are excluded.
+- One installable command, `slingology-eis`, with subcommands. Diagnostics go to stderr, results to stdout.
+
+| Subcommand | Maps to | Replaces |
+|---|---|---|
+| `flight <log>` | `analyze_flight` (text summary) | script 01 |
+| `ecu [paths]` | `analyze_ecu` | script 02 |
+| `fleet` | `update_fleet` + fleet insights | script 03 |
+| `report <log \| flight_id>` | `analyze_flight` + `evaluate_insights` + `render_report` | script 04 |
+| `import <paths>` | `import_and_update` (files or folders) | – |
+| `rules check <file>` / `rules try <file>` | `validate_rules` / `what_if_rules` (prints which insights change) | – |
+| `engines` | `list_engines` | – |
+| `export-bundle` | results bundle (Spec 02) | – |
+| `serve` | starts the local server and UI (path 2) | – |
+
+**Global options:** `--logs DIR`, `--workspace DIR`, `--engine NAME`, `--json`, `--anonymize`, `--quiet`. **Exit codes:** `0` success, `1` operation failed, `2` usage error.
+
+`--logs` and `--workspace` are independent — neither implies the other, and neither implies a git checkout. Their defaults, in order of precedence, are resolved by the host (not the engine) as: (1) the flag, if given; (2) a packaged install's own default folder (a named folder under the user's home directory — see Spec 02 §5.1 for the exact path); (3) `<repo-root>/data/logs` and `<repo-root>/data/` respectively, **only** when the CLI is run from inside a git checkout and neither flag nor (2) applies. Case (3) exists for contributors and CI reproducing the current scripts' behavior; it is not the default for anyone who installed the tool rather than cloned it.
+
+**Compatibility**
+
+- Scripts 01–04 keep their current behavior through Stage 3. From Stage 4 they remain as thin aliases that print a deprecation notice for at least one minor release.
+- The legacy layout (`data/logs/`, `data/reports/`) stays readable. `reports/baselines.json` and `reports/models.json` are written as today through Stage 3, and afterwards only with `--legacy-outputs`.
+- The CLI, the local server, and the UI share one workspace layout, defined in Spec 02, so a report produced on the command line appears in the UI unchanged.
+- Whether `serve` can ship inside a `pip` install depends on how the built UI assets are packaged (Q8).
+
 ## 8. Result model
 
 Type sketches are illustrative; normative JSON Schemas will be generated into `contract/schema/` and used by both Python and TypeScript tests. `T | null` always pairs with a reason (§8.2).
@@ -161,7 +217,7 @@ Type sketches are illustrative; normative JSON Schemas will be generated into `c
 interface Provenance {
   engine_version: string;        // e.g. "0.11.0"
   schema_version: string;        // contract version, semver
-  engine_profile: { id: string; hash: string; source_status: "VERIFIED"|"PLACEHOLDER" };
+  engine_profile: { id: string; hash: string; source_status: "VERIFIED"|"PLACEHOLDER"|"CUSTOM" };
   params_hash: string;
   rules_hash?: string;
   source_keys: string[];
@@ -175,7 +231,7 @@ interface Diagnostic {
 }
 ```
 
-Diagnostic catalog (v0.1): `INGEST_UNKNOWN_FORMAT`, `INGEST_GROUND_SESSION`, `INGEST_DUPLICATE_OF`, `INGEST_MULTI_POWER_CYCLE`, `INGEST_MISSING_CHANNEL`, `INGEST_SIGNAL_GAP`, `PHASE_TAKEOFF_NOT_DETECTED`, `PHASE_NO_CLIMB`, `PHASE_NO_CRUISE`, `BASELINE_LOW_N`, `MODEL_INSUFFICIENT_DATA`, `ENGINE_PLACEHOLDER_CONFIG`.
+Diagnostic catalog (v0.1): `INGEST_UNKNOWN_FORMAT`, `INGEST_GROUND_SESSION`, `INGEST_DUPLICATE_OF`, `INGEST_MULTI_POWER_CYCLE`, `INGEST_MISSING_CHANNEL`, `INGEST_SIGNAL_GAP`, `PHASE_TAKEOFF_NOT_DETECTED`, `PHASE_NO_CLIMB`, `PHASE_NO_CRUISE`, `BASELINE_LOW_N`, `MODEL_INSUFFICIENT_DATA`, `ENGINE_PLACEHOLDER_CONFIG`. Added in v0.4: `ENGINE_CUSTOM_OVERRIDE`.
 
 **Phase cross-check (new, informational).** `PHASE_TAKEOFF_NOT_DETECTED` is raised when airborne time (from altitude/speed) exceeds a small threshold but no `TAKEOFF_ROLL`/`CLIMB` phase was labelled. It does not change the detector; it makes finding 9 visible in the UI and in fleet quality summaries. The provided KACV log is the acceptance case (§12).
 
@@ -248,7 +304,20 @@ interface FleetAnalysis { fleet_key: string; flight_ids: string[]; excluded: {fl
 
 `confidence.level` is a **structured enum**; the human sentence ("MODERATE (n=15 …)") is a renderer concern. The `points` array replaces the `raw` blocks in `baselines.json` and is what the trend charts draw.
 
-Baseline membership is explicit: `FleetSelection` lists included flights, and each `Baseline` records whether the evaluated flight is inside its own baseline. (The current scripts build one baseline over all flights and script 04 reads it, so a flight appears to be compared against a baseline that includes itself. See open question Q4.)
+**Baseline membership (resolved, R2).** The current code builds one baseline over all flights (script 03) and script 04 compares each flight against it, so a flight is compared against a baseline that includes itself. The contract instead specifies:
+
+- `FleetAnalysis` keeps the all-flights baseline for display (trend charts, baseline bands) and the per-flight `points` array.
+- `evaluate_insights` compares each flight against a **leave-one-out** baseline derived from `points` (mean and standard deviation excluding that flight).
+- `baseline_deviation` triggers require a minimum sample size, `n_min` (proposed default 10, matching the existing trend triggers; tunable per rule through the rule playground). Below it, the analysis line is shown with a `BASELINE_LOW_N` note and no insight fires.
+
+```ts
+interface BaselineConfig {
+  membership: "leave_one_out" | "all";   // default "leave_one_out"
+  band_kind_by_metric: Record<string, "oat_band" | "da_band" | null>;
+}
+```
+
+Evidence from the review (23 real flights in `fleet_metrics.csv`, |z| ≥ 2.0): self-inclusion changed four borderline results (z between 1.8 and 2.1, always damped); a "prior flights only" baseline was unstable and order-dependent. At n = 23, about one chance trigger per metric is expected at this threshold, which is why the sample-size gate matters more for new users with few flights.
 
 ### 8.5 Topics, analysis lines, insights (the two-layer format as data)
 
@@ -281,7 +350,9 @@ interface InsightSet { flight_id: string; analysis_key: string; fleet_key: strin
 
 `text` fields are included for convenience, generated from `template` + `values`. The UI renders from structured fields; templates make later localization and rule-playground diffs ("which insight text changed?") possible. **Evidence** is what lets the UI link every insight card to the chart or table row that supports it, which is the core UX requirement.
 
-Severity mapping is defined in the rule set (`insight_rules.json` gains a `severity` per trigger; default `watch` for statistical triggers, `limit` for OM limits). *This is a rules-schema change and is listed under §11 migration.*
+Severity is defined in the rule set (R1): `insight_rules.json` gains an optional `severity` per trigger, defaulting to `limit` for OM threshold triggers and `watch` for statistical triggers; `warning` and `info` are set explicitly. `baseline_deviation` triggers also gain `n_min` (§8.4). Both are rules-schema changes, listed under §11 migration.
+
+**Annotations (R3).** The host passes annotations to `evaluate_insights` as `{ flight_id, insight_id | ref, note }[]`. The engine attaches them to the matching insight (`Insight.note`) without suppressing it, and stores nothing. Keying by `flight_id` rather than source file (as BACKLOG B4 first proposed) keeps a note attached when the same flight arrives through two export paths.
 
 ### 8.6 ECU analysis
 
@@ -326,11 +397,13 @@ Each stage must leave the current CLI output byte-identical (or explicitly diffe
 
 | Stage | Work | Verified by |
 |---|---|---|
-| 0 | **Characterization tests**: golden outputs from the current code for the provided log, `fleet_metrics.csv`, `engine_ecu_runs.csv`, and the current text reports. | Tests pass on unmodified code. |
+| 0 | **Characterization tests**: golden outputs from the current code for the provided log, `fleet_metrics.csv`, `engine_ecu_runs.csv`, and the current text reports, labelled a **known-defect baseline** (finding 9). | Tests pass on unmodified code. |
 | 1 | **I/O and config decoupling**: `load_log_bytes`, engine profile passed explicitly, remove import-time default profile and `__file__`-relative reads from the core (thin wrappers keep old signatures), single JSON serializer replacing the NaN regex, fix `__version__`. | Stage 0 tests unchanged. |
 | 2 | **Extract script logic into the library**: fleet baseline/trend/model construction (from 03), insight evaluation and topic analysis lines (from 04), ECU run building (from 02). Scripts become thin renderers. Add `severity` and evidence to rules/insights. | Reports identical to Stage 0; new structured results match reports field-for-field. |
 | 3 | **Contract**: metric/channel registries, result types, missing-reason codes, diagnostics, provenance; generate JSON Schemas into `contract/`; add contract tests and fixture bundles. UI development can begin against fixtures here. | Schema validation of all results on the provided data. |
-| 4 | **Adapters**: browser worker RPC (Pyodide) and local server per Spec 04; run the contract tests under Pyodide. | Same tests, both runtimes. |
+| 4 | **Adapters and CLI**: browser worker RPC (Pyodide), local server, and the unified `slingology-eis` CLI (§7.1) per Spec 04; run the contract tests under Pyodide. | Same tests, both runtimes; CLI parity check. |
+
+The phase-detector fix (finding 9) is **not** part of these stages. It lands as its own reviewed change after Stage 0, with the resulting golden-output diffs inspected line by line, so the effect of the fix on fleet baselines is visible rather than mixed into the refactor.
 
 ## 12. Acceptance criteria (tested against the provided project data)
 
@@ -341,6 +414,8 @@ Each stage must leave the current CLI output byte-identical (or explicitly diffe
 5. Every result validates against the generated JSON Schemas; serialization contains no bare `NaN`.
 6. No core function reads the filesystem, environment, or wall clock (enforced by a test that runs the core with file access blocked).
 7. Adding a hypothetical topic requires no edits outside its own module, its rule entries, and (optionally) a view hint.
+8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (|z| ≥ 2.0, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2.
+9. Scripts 01–04 produce output identical to the Stage 0 goldens after Stages 1–3; every §7 workflow is reachable via a `slingology-eis` subcommand whose `--json` output validates against the schemas.
 
 **Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the four genuine `IN_FLIGHT` runs) needs the raw log set, either shared in the project or run locally to produce golden outputs.
 
@@ -348,14 +423,13 @@ Each stage must leave the current CLI output byte-identical (or explicitly diffe
 
 Results bundle and workspace format (Spec 02); UI layout and chart choices (Spec 03); Pyodide feasibility and performance measurements (Spec 04); new analytics or detector changes, including the phase-detection miss in finding 9 (proposed as a separate BACKLOG item); README, CHANGELOG, and research-paper updates.
 
-## 14. Open questions — resolved (2026-09-21)
+## 14. Open questions
 
-| # | Question | Decision |
+**Resolved in v0.2:** Q2 → R1, Q4 → R2, Q5 → R3, Q7 → R4, Q1 → R5 (provisional).
+
+| # | Question | Status |
 |---|---|---|
-| Q1 | Should `flight_id` be stable across export paths only (current proposal), or also across re-exports that shift the start minute? | **Export paths only.** `flight_id` = hash(aircraft ident, system ID, start minute), as proposed. Re-exports that shift the start minute get a new `flight_id`. |
-| Q2 | Should severity live in `insight_rules.json` per trigger, or be derived from trigger type? | **`insight_rules.json`, with defaults.** Each trigger gets an explicit severity; statistical triggers default to `watch`, OM-limit triggers default to `limit`. Rule authors can override per rule. |
-| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2, or should it emerge from the refactor? | **Emerge from Stage 2, freeze after.** The interface is generalized from what extracting scripts 02/03/04 actually needs, then frozen for community extensions. |
-| Q4 | Should a flight be compared against a baseline that includes itself? | **Keep as-is: self-inclusive.** Matches current script 03/04 behavior — one baseline over all flights, each flight compared against a baseline that includes itself. Not revisited in this spec; may be reopened later if insight sensitivity at small n proves to be a problem. |
-| Q5 | Where should annotations (BACKLOG B4) live? | **Host-supplied input to `evaluate_insights`.** Annotations stay outside the pure engine, consistent with Principle 2 and D3 (no service-side storage/persistence belongs to the host, Spec 02). |
-| Q6 | Are the four `IN_FLIGHT` ECU events and the KSFF `OIL PRESS` co-alert expected to remain test fixtures? | **No — informational only, for now.** Do not commit scrubbed log excerpts as part of this spec. Full `IN_FLIGHT`/co-alert regression coverage remains a known gap per the §12 testing limitation, to be closed separately if/when more raw logs are available. |
-| Q7 | Version numbering for the contract: independent semver, or tied to the toolkit version? | **Independent semver.** `schema_version` versions separately from `engine_version`, so the contract can stabilize on its own cadence. |
+| Q1 | Should `flight_id` also survive re-exports that shift the start minute? | Provisionally resolved (R5). Confirm by running duplicate detection over the full log set and counting `exact` vs `overlap` groups. Needs the raw logs. |
+| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Deferred. Freeze after two structurally different topics (a simple threshold topic such as overboost and a model-based one such as takeoff MAP) are ported in Stage 2 without special-casing. |
+| Q6 | Are the four `IN_FLIGHT` ECU events and the KSFF `OIL PRESS` co-alert to remain test fixtures? | Proposed: yes, as short scrubbed excerpts (GPS dropped or offset). Needs the raw logs. |
+| Q8 | How are the built UI assets packaged so that `slingology-eis serve` works from a plain `pip`/`pipx` install (bundled in the wheel, or fetched at first run)? | New. To be settled in Spec 04. |
