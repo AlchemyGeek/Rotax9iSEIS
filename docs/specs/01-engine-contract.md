@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.4 — for review (no code written)
+**Status:** Draft v0.6 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -14,6 +14,8 @@
 | 0.2 | Open questions Q2, Q4, Q5, Q7 resolved and folded in; Q1 provisionally resolved (§2, §8.4, §8.5, §14). New §7.1 CLI front end. Finding 9 rescoped: the phase-detection miss affects at least 8 of 23 real flights, not one. Migration and acceptance criteria updated (§11, §12). New open question Q8. |
 | 0.3 | Added `--logs DIR` to the CLI global options (§7.1), independent of `--workspace DIR`. A non-technical, no-repo user (Spec 02 §5.1) must be able to point both flags at plain folders with no git checkout involved; see Spec 02 v0.2 for the workspace-side default resolution this supports. |
 | 0.4 | Added `CUSTOM` to `EngineProfile.source_status` (§6.3, §8.1) and diagnostic `ENGINE_CUSTOM_OVERRIDE`, for a host-merged profile built from a shipped profile plus a pilot's `engine_overrides.json` (Spec 02 §6.4). The engine itself is unchanged — it still only ever receives one `EngineProfile`; merging happens host-side. |
+| 0.5 | Stage 4 split into 4a (CLI adapter) and 4b (browser worker + local server) (§11). The CLI ships first: it's the cheapest adapter to build, it's a live conformance check on the Stage 3 contract before the harder browser work starts, and its `--json` output becomes the source for regenerating Spec 05's fixtures from real data instead of hand-authored values. No change to D2 (browser-compute remains the primary deployment path) — this only reorders *building* the adapters, not which one users get. |
+| 0.6 | §9 rewritten from evidence, not speculation: all 13 report topics were ported in Stage 3 (not just the two Q3 proposed as a freeze trigger), and the v0.1 sketch doesn't match what they needed. Q3 resolved (§14). `TopicResult.insight: Insight \| null` corrected to `insights: Insight[]` (§8.5) — one of the five findings. |
 
 ---
 
@@ -328,7 +330,7 @@ interface TopicResult {
                                   // cruise_fuel_flow, map_at_takeoff, engine_ecu_inflight, flight_phase_mix,
                                   // limit_exceedances, climb_thermal_rate
   analysis: { template: string; values: Record<string, number|string|null>; text: string };  // always present
-  insight: Insight | null;                                                                    // conditional
+  insights: Insight[];                                                    // zero or more (§9 v0.6 finding 4)
   metric_ids: string[];
 }
 interface Insight {
@@ -375,15 +377,24 @@ Downsampling uses a min/max-preserving envelope (so peaks such as max EGT or oil
 
 ## 9. Extension model (community)
 
+**Rewritten in v0.6.** The v0.1 sketch below this note was written before any topic existed in the library; Stage 3 then ported all 13 report topics into `evaluate_insights()`, not just the two Q3 proposed as a freeze trigger. Five findings from that port contradict the sketch:
+
+1. **Topics consume metrics; they don't produce them.** Every registry metric (§8.2) is computed once, together, before any topic runs (`fleet.compute_flight_metrics`). No topic computes its own metrics — each is a pure interpretation layer over already-computed `MetricValue`s. The sketch's "the metrics it produces... a compute function returning `MetricValue`s" conflated two different extension points (metric production, topic interpretation) into one.
+2. **Named-condition dispatch doesn't exist, and wasn't needed.** `insight_rules.json` still carries `"condition"` fields (`rank_changed`, `vs_om_expected`, `any_inflight`, `any_exceedance`) for four topics, but nothing reads them at evaluation time — each of those four topics is direct code in `evaluate_insights()`, not routed through a condition registry. The registry looked necessary on paper; building 12 working topics without one showed it wasn't.
+3. **Topic compute signatures are genuinely heterogeneous, not uniform.** Across the 13: one needs an OM limit and an enabled flag; several need only a value and a baseline; one needs a fitted regression model; one needs extra stratification context; two bypass the baseline pattern entirely and read raw per-flight fields (ECU runs, exceedances) directly. A single `compute(value, baseline, triggers)` call — the sketch's implicit shape — does not fit all of them.
+4. **An insight is a list, not a nullable singleton.** Real topics (e.g. EGT spread) can trigger a `baseline_deviation` and a `trend` insight on the same flight at once. `insight: Insight | null` (§8.5) loses one of them; it must be `insights: Insight[]`.
+5. **Required channels/phases are already declared, one layer down.** The metric registry (§8.2) already carries `requires_phase`/`requires_channel` per metric. A topic doesn't need to re-declare this — it inherits it transitively through the `metric_ids` it lists.
+
+**Revised sketch** (still not frozen — see Q3):
+
 A **Topic** is the unit of extension. A topic module declares:
 
-- `id` and the metrics it produces (registry entries with unit, description, stratification band kind),
-- required channels and phases (so missing inputs yield `CHANNEL_MISSING` / `NO_PHASE`, not exceptions),
-- a per-flight compute function returning `MetricValue`s, events, and analysis-line values,
-- named conditions it contributes to the rule engine (today's hard-coded ones: `rank_changed`, `vs_om_expected`, `any_inflight`, `any_exceedance`),
-- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code.
+- `id`, and the `metric_ids` (§8.2 registry entries) it interprets — requirements are inherited from those entries, not re-declared,
+- a per-flight `compute(context) -> { analysis, insights }` function, where `context` is the slice of `FlightAnalysis`, `FleetAnalysis`, and `RuleSet` the topic actually needs — not a fixed positional signature; real topics' inputs vary too much for one,
+- zero or more `insights` per invocation (`Insight[]`, never a nullable singleton),
+- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code — unbuilt, unevidenced either way; kept as-is from the v0.1 sketch.
 
-The rule engine is generic over the three existing trigger types (`threshold`, `baseline_deviation`, `trend`) plus registered conditions. Engine profiles and rule sets remain plain JSON. This section is an **interface sketch**: it will be frozen only after Migration Stage 2 shows what the extracted code actually needs.
+The rule engine is generic over the three trigger types (`threshold`, `baseline_deviation`, `trend`). Named-condition dispatch is dropped from the sketch — the real implementation never needed it. Engine profiles and rule sets remain plain JSON. This section is still an **interface sketch**, not an enforced contract: `evaluate_insights()`'s topic dispatch today is a hardcoded map (Spec 01 §12 acceptance criterion 7 fails on this), not a registry a contributor could extend by dropping in a module. Turning this sketch into that registry is unbuilt follow-up work, not part of this revision.
 
 ## 10. Configuration, options, and privacy
 
@@ -401,7 +412,8 @@ Each stage must leave the current CLI output byte-identical (or explicitly diffe
 | 1 | **I/O and config decoupling**: `load_log_bytes`, engine profile passed explicitly, remove import-time default profile and `__file__`-relative reads from the core (thin wrappers keep old signatures), single JSON serializer replacing the NaN regex, fix `__version__`. | Stage 0 tests unchanged. |
 | 2 | **Extract script logic into the library**: fleet baseline/trend/model construction (from 03), insight evaluation and topic analysis lines (from 04), ECU run building (from 02). Scripts become thin renderers. Add `severity` and evidence to rules/insights. | Reports identical to Stage 0; new structured results match reports field-for-field. |
 | 3 | **Contract**: metric/channel registries, result types, missing-reason codes, diagnostics, provenance; generate JSON Schemas into `contract/`; add contract tests and fixture bundles. UI development can begin against fixtures here. | Schema validation of all results on the provided data. |
-| 4 | **Adapters and CLI**: browser worker RPC (Pyodide), local server, and the unified `slingology-eis` CLI (§7.1) per Spec 04; run the contract tests under Pyodide. | Same tests, both runtimes; CLI parity check. |
+| 4a | **CLI adapter**: the unified `slingology-eis` command (§7.1), in-process against the Stage 3 contract — no Pyodide, no worker, no browser. `--json` output validated against the schemas becomes the live source for Spec 05's fixtures, replacing the hand-authored ones. | Contract tests pass via the CLI; `--json` output round-trips through the schemas; scripts 01–04 still match Stage 0 goldens (unchanged, still calling the same operations). |
+| 4b | **Browser worker and local server**: self-hosted Pyodide worker RPC and the local-server adapter, per Spec 04. Built after 4a because it's the harder, higher-risk adapter, and 4a should have already caught most contract-shape problems cheaply. | Same contract tests, run under Pyodide; browser/local-server output matches 4a's CLI output on the same inputs. |
 
 The phase-detector fix (finding 9) is **not** part of these stages. It lands as its own reviewed change after Stage 0, with the resulting golden-output diffs inspected line by line, so the effect of the fix on fleet baselines is visible rather than mixed into the refactor.
 
@@ -430,6 +442,6 @@ Results bundle and workspace format (Spec 02); UI layout and chart choices (Spec
 | # | Question | Status |
 |---|---|---|
 | Q1 | Should `flight_id` also survive re-exports that shift the start minute? | Provisionally resolved (R5). Confirm by running duplicate detection over the full log set and counting `exact` vs `overlap` groups. Needs the raw logs. |
-| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Deferred. Freeze after two structurally different topics (a simple threshold topic such as overboost and a model-based one such as takeoff MAP) are ported in Stage 2 without special-casing. |
+| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Resolved in v0.6 (§9). The proposed freeze trigger — two topics ported without special-casing — wasn't met: all 13 were ported in Stage 3, and special-casing turned out to be necessary for at least 4 of them (§9 findings 2–3). The sketch is rewritten from that evidence. Still not literally frozen: `evaluate_insights()`'s dispatch remains a hardcoded map, not an enforced registry (acceptance criterion 7) — building that registry is separate, unbuilt follow-up work. |
 | Q6 | Are the four `IN_FLIGHT` ECU events and the KSFF `OIL PRESS` co-alert to remain test fixtures? | Proposed: yes, as short scrubbed excerpts (GPS dropped or offset). Needs the raw logs. |
 | Q8 | How are the built UI assets packaged so that `slingology-eis serve` works from a plain `pip`/`pipx` install (bundled in the wheel, or fetched at first run)? | New. To be settled in Spec 04. |
