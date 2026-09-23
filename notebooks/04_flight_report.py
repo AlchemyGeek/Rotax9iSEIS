@@ -58,8 +58,8 @@ def insight_line(text: str):
 def render_topic(result: dict):
     """Print a topic's analysis line followed by zero or more insight lines."""
     analysis_line(result["analysis"])
-    for text in result["insights"]:
-        insight_line(text)
+    for insight in result["insights"]:
+        insight_line(insight["text"])
 
 
 def write_report(content: str, log_path: Path):

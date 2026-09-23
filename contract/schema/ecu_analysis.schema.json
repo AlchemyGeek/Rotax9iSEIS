@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slingologyeis.dev/contract/schema/ecu_analysis.schema.json",
+  "title": "EcuAnalysis",
+  "description": "Spec 01 (Engine Contract) Section 8.6 — the result of analyze_ecu.",
+  "type": "object",
+  "required": ["flight_ids", "runs", "counts", "inflight_pattern", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "flight_ids": { "type": "array", "items": { "type": "string" } },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["flight_id", "classification", "duration_s", "co_alerts", "lane_check_pair", "lane_check_note"],
+        "properties": {
+          "flight_id": { "type": "string" },
+          "classification": { "type": "string", "enum": ["POWERUP", "SHUTDOWN", "LANE_CHECK", "IN_FLIGHT"] },
+          "start_utc": { "type": ["string", "null"] },
+          "elapsed_s": { "type": ["number", "null"] },
+          "duration_s": { "type": "number" },
+          "co_alerts": { "type": "array", "items": { "type": "string" } },
+          "oil_nan_frac": { "type": ["number", "null"] },
+          "lane_check_pair": { "type": "boolean" },
+          "lane_check_note": { "type": "string" },
+          "mean_rpm": { "type": ["number", "null"] },
+          "mean_ias_kt": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer" }
+    },
+    "inflight_pattern": {
+      "type": "object",
+      "required": ["events", "oil_nan_pattern", "recommended_actions"],
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "duration_s", "co_alerts", "direct_correlation_alerts"],
+            "properties": {
+              "flight_id": { "type": "string" },
+              "start_time": { "type": ["string", "null"] },
+              "duration_s": { "type": "number" },
+              "oil_nan_frac": { "type": ["number", "null"] },
+              "co_alerts": { "type": "array", "items": { "type": "string" } },
+              "direct_correlation_alerts": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "oil_nan_pattern": { "type": ["string", "null"], "enum": ["strong", "mixed", null] },
+        "recommended_actions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["engine_version", "source_keys", "flight_analysis_keys"],
+      "properties": {
+        "engine_version": { "type": "string" },
+        "schema_version": { "type": ["string", "null"] },
+        "source_keys": { "type": "array", "items": { "type": "string" } },
+        "flight_analysis_keys": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

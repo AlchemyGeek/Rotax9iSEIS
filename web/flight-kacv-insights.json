@@ -1,0 +1,302 @@
+{
+  "flight_id": "584e022a47517397",
+  "analysis_key": "ce3172c7f4689fbd64a12ecc956fa162227968483d3c9e307667ed1f1d326990",
+  "fleet_key": "12875952878634045fcbb4e4141a8dfe0be473691a218eea3a92cfbd9f4f50e2",
+  "rules_hash": "80bab461cef45a5a3aca0ef1f99fef16b9c4cb73337adc1c6dfdc4de6ab21df5",
+  "topics": [
+    {
+      "topic_id": "egt_spread",
+      "analysis": {
+        "text": "Cruise mean 53\u00b0F. Your average: 58\u00b0F \u00b1 5\u00b0F (36 flights). OM limit: 392\u00b0F."
+      },
+      "insights": [],
+      "metric_ids": [
+        "egt_spread_mean_f"
+      ]
+    },
+    {
+      "topic_id": "egt4_elevation",
+      "analysis": {
+        "text": "EGT4 is +42\u00b0F vs cylinders 1\u20133. Your average: +45\u00b0F \u00b1 5\u00b0F (36 flights)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "egt4_elevation_f"
+      ]
+    },
+    {
+      "topic_id": "oil_temp_peak",
+      "analysis": {
+        "text": "Peak 213\u00b0F. Your average: 204\u00b0F \u00b1 13\u00b0F (36 flights). OM limit: 248\u00b0F."
+      },
+      "insights": [],
+      "metric_ids": [
+        "oil_temp_max_f"
+      ]
+    },
+    {
+      "topic_id": "coolant_temp_peak",
+      "analysis": {
+        "text": "Peak 179\u00b0F. Your average: 182\u00b0F \u00b1 8\u00b0F (36 flights). OM limit: 248\u00b0F."
+      },
+      "insights": [],
+      "metric_ids": [
+        "coolant_temp_max_f"
+      ]
+    },
+    {
+      "topic_id": "oil_coolant_ratio",
+      "analysis": {
+        "text": "Oil/coolant ratio this flight: 1.19. Your average: 1.12 \u00b1 0.04 (36 flights)."
+      },
+      "insights": [
+        {
+          "id": "2b1604ffa3e3b846",
+          "topic_id": "oil_coolant_ratio",
+          "rule_id": "oil_coolant_ratio.baseline_deviation",
+          "trigger": "baseline_deviation",
+          "severity": "watch",
+          "message": {
+            "text": "\u26a0 2.0 std devs above your personal average."
+          },
+          "evidence": [
+            {
+              "kind": "metric",
+              "metric_id": "oil_coolant_ratio"
+            }
+          ],
+          "confidence": {
+            "level": "GOOD",
+            "n": 36
+          }
+        }
+      ],
+      "metric_ids": [
+        "oil_coolant_ratio"
+      ]
+    },
+    {
+      "topic_id": "cruise_efficiency",
+      "analysis": {
+        "text": "No cruise efficiency data for this flight."
+      },
+      "insights": [],
+      "metric_ids": [
+        "cruise_nmpg"
+      ]
+    },
+    {
+      "topic_id": "cruise_fuel_flow",
+      "analysis": {
+        "text": "No cruise fuel flow data for this flight."
+      },
+      "insights": [],
+      "metric_ids": [
+        "cruise_fuel_flow_gph"
+      ]
+    },
+    {
+      "topic_id": "climb_thermal_rate",
+      "analysis": {
+        "text": "Insufficient climb data for thermal rate \u2014 short or pattern-work flights don't contribute here."
+      },
+      "insights": [],
+      "metric_ids": [
+        "climb_oil_rise_f_per_min"
+      ]
+    },
+    {
+      "topic_id": "overboost_time",
+      "analysis": {
+        "text": "Max continuous block: 61s. Total this flight: 70s. OM limit: 300s."
+      },
+      "insights": [],
+      "metric_ids": [
+        "overboost_total_s",
+        "overboost_max_block_s"
+      ]
+    },
+    {
+      "topic_id": "map_at_takeoff",
+      "analysis": {
+        "text": "No takeoff MAP data available \u2014 flight may lack a TAKEOFF phase with RPM \u2265 5,500."
+      },
+      "insights": [],
+      "metric_ids": [
+        "takeoff_map_inhg",
+        "takeoff_pressure_alt_ft",
+        "takeoff_oat_c"
+      ]
+    },
+    {
+      "topic_id": "engine_ecu_inflight",
+      "analysis": {
+        "text": "No IN-FLIGHT ENGINE ECU events \u2014 all occurrences are expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "inflight_ecu_count"
+      ]
+    },
+    {
+      "topic_id": "limit_exceedances",
+      "analysis": {
+        "text": "8 OM hard-limit exceedance(s) this flight:"
+      },
+      "insights": [
+        {
+          "id": "c4da9edbf4551816",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': -0.4, 'start_utc': '2026-04-23T20:06:16', 'elapsed_s': 0.0, 'duration_s': 104.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "9a6fbe46688e6603",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': 2.4, 'start_utc': '2026-04-23T20:08:05', 'elapsed_s': 109.0, 'duration_s': 14.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "cb39c51635b671eb",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'rpm', 'label': 'Idle RPM minimum', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MIN', 'limit_value': 1800, 'observed_value': 1730.0, 'start_utc': '2026-04-23T20:09:56', 'elapsed_s': 220.0, 'duration_s': 40.0, 'time_limit_s': None, 'note': 'Engine must idle at or above 1,800 rpm. Short dips are normal governor variation.'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "bf642043af23cc46",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5780.0, 'start_utc': '2026-04-23T20:30:50', 'elapsed_s': 1474.0, 'duration_s': 5.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "823ef198633c188e",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5810.0, 'start_utc': '2026-04-23T20:30:56', 'elapsed_s': 1480.0, 'duration_s': 61.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "147cb3e07ff4d9bc",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5820.0, 'start_utc': '2026-04-23T22:30:57', 'elapsed_s': 8681.0, 'duration_s': 4.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "8cfc351cc0c887f7",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': -0.6, 'start_utc': '2026-04-24T00:35:05', 'elapsed_s': 16129.0, 'duration_s': 67.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        },
+        {
+          "id": "4c66fdc7e98c92bc",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 {'param': 'main_volts', 'label': 'Bus voltage minimum', 'unit': 'V', 'severity': 'CAUTION', 'limit_type': 'MIN', 'limit_value': 11.5, 'observed_value': 0.0, 'start_utc': '2026-04-24T00:35:10', 'elapsed_s': 16134.0, 'duration_s': 62.0, 'time_limit_s': None, 'note': 'Below ~12V indicates alternator failure or excessive load'}"
+          },
+          "evidence": [],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          }
+        }
+      ],
+      "metric_ids": []
+    }
+  ],
+  "header_warnings": [
+    {
+      "code": "PHASE_TAKEOFF_NOT_DETECTED",
+      "severity": "warn",
+      "scope": "flight",
+      "message": "Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
+      "refs": {
+        "airborne_rows": 14359
+      }
+    },
+    {
+      "code": "PHASE_NO_CRUISE",
+      "severity": "info",
+      "scope": "flight",
+      "message": "No CRUISE phase detected this flight."
+    }
+  ],
+  "provenance": {
+    "engine_version": "0.10.0",
+    "schema_version": "0.1.0",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "ea746a8acdcc7451a0dfe0e5476e2be58f8d8b969187c0461786712f67d4b880",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "rules_hash": "80bab461cef45a5a3aca0ef1f99fef16b9c4cb73337adc1c6dfdc4de6ab21df5",
+    "source_keys": [
+      "e6db755e9c40fa8c"
+    ]
+  }
+}

@@ -109,7 +109,8 @@ def test_cylinder_rank_stable():
 def test_cylinder_rank_unstable_fires_insight():
     result = topics.cylinder_rank(["egt2_f"], False, "")
     assert result["insights"]
-    assert "instability" in result["insights"][0].lower()
+    assert result["insights"][0]["trigger"] == "threshold"
+    assert "instability" in result["insights"][0]["text"].lower()
 
 
 def test_cylinder_rank_no_data():
@@ -120,12 +121,13 @@ def test_cylinder_rank_no_data():
 
 def test_overboost_exceeded():
     result = topics.overboost(320, 320, 300, True)
-    assert "Exceeded" in result["insights"][0]
+    assert result["insights"][0]["trigger"] == "threshold"
+    assert "Exceeded" in result["insights"][0]["text"]
 
 
 def test_overboost_close_call():
     result = topics.overboost(250, 250, 300, False)
-    assert "Close call" in result["insights"][0]
+    assert "Close call" in result["insights"][0]["text"]
 
 
 def test_overboost_comfortable():
@@ -149,7 +151,7 @@ def test_takeoff_map_deviation_fires_insight():
     result = topics.takeoff_map(45.0, 1000, 20, model)
     # expected == 40, observed == 45 -> delta 5, above threshold
     assert result["insights"]
-    assert "above" in result["insights"][0]
+    assert "above" in result["insights"][0]["text"]
 
 
 def test_oil_temp_peak_fires_insight_once():
@@ -160,7 +162,7 @@ def test_oil_temp_peak_fires_insight_once():
     b = {"mean": 200, "std": 10, "n": 20}
     rule = {"type": "threshold", "limit": 248}
     result = topics.oil_temp_peak(260, b, [rule])
-    assert result["insights"] == ["⚠ Exceeded OM limit of 248°F."]
+    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
 
 
 def test_oil_temp_peak_no_data():
@@ -174,7 +176,7 @@ def test_coolant_temp_peak_no_duplication():
     b = {"mean": 200, "std": 10, "n": 20}
     rule = {"type": "threshold", "limit": 248}
     result = topics.coolant_temp_peak(260, b, [rule])
-    assert result["insights"] == ["⚠ Exceeded OM limit of 248°F."]
+    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
 
 
 def test_cruise_fuel_flow_high_da_appends_note():
@@ -183,7 +185,7 @@ def test_cruise_fuel_flow_high_da_appends_note():
     result = topics.cruise_fuel_flow(
         8.0, b, [rule], this_da=12000, fleet_da_avg=5000, fleet_da_std=1000,
     )
-    assert "cruise DA was" in result["insights"][0]
+    assert "cruise DA was" in result["insights"][0]["text"]
 
 
 def test_cruise_fuel_flow_low_da_no_note():
@@ -192,7 +194,7 @@ def test_cruise_fuel_flow_low_da_no_note():
     result = topics.cruise_fuel_flow(
         8.0, b, [rule], this_da=5000, fleet_da_avg=5000, fleet_da_std=1000,
     )
-    assert "cruise DA was" not in result["insights"][0]
+    assert "cruise DA was" not in result["insights"][0]["text"]
 
 
 def test_cruise_fuel_flow_still_building():
@@ -208,7 +210,7 @@ def test_limit_exceedances_none():
 
 def test_limit_exceedances_present():
     result = topics.limit_exceedances(["RPM above 5800 for 10s"])
-    assert result["insights"] == ["⚠ RPM above 5800 for 10s"]
+    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ RPM above 5800 for 10s"}]
 
 
 def test_engine_ecu_inflight_no_events():

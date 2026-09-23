@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slingologyeis.dev/contract/schema/insight_set.schema.json",
+  "title": "InsightSet",
+  "description": "Spec 01 (Engine Contract) Section 8.5 — the result of evaluate_insights. Deviates from the section's illustrative sketch in one place: each TopicResult carries `insights` (a list), not a single nullable `insight` — real topics can trigger more than one insight at once (e.g. both a baseline_deviation and a trend insight together), matching what the text report actually prints.",
+  "type": "object",
+  "required": ["flight_id", "analysis_key", "fleet_key", "rules_hash", "topics", "header_warnings", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "flight_id": { "type": "string" },
+    "analysis_key": { "type": "string" },
+    "fleet_key": { "type": "string" },
+    "rules_hash": { "type": "string" },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic_id", "analysis", "insights", "metric_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "topic_id": { "type": "string" },
+          "analysis": {
+            "type": "object",
+            "required": ["text"],
+            "properties": { "text": { "type": "string" } }
+          },
+          "insights": { "type": "array", "items": { "$ref": "#/$defs/insight" } },
+          "metric_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "header_warnings": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "provenance": {
+      "type": "object",
+      "required": ["engine_version", "rules_hash", "source_keys"],
+      "properties": {
+        "engine_version": { "type": "string" },
+        "schema_version": { "type": ["string", "null"] },
+        "engine_profile": { "type": ["object", "null"] },
+        "params_hash": { "type": ["string", "null"] },
+        "rules_hash": { "type": "string" },
+        "source_keys": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "insight": {
+      "type": "object",
+      "required": ["id", "topic_id", "rule_id", "trigger", "severity", "message", "evidence", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "topic_id": { "type": "string" },
+        "rule_id": { "type": "string" },
+        "trigger": { "type": "string", "enum": ["threshold", "baseline_deviation", "trend"] },
+        "severity": { "type": "string", "enum": ["info", "watch", "warning", "limit"] },
+        "message": {
+          "type": "object",
+          "required": ["text"],
+          "properties": { "text": { "type": "string" } }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["metric", "baseline_point", "series_window", "exceedance", "ecu_run"] }
+            }
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "required": ["level", "n"],
+          "properties": {
+            "level": { "type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "GOOD"] },
+            "n": { "type": "integer" }
+          }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "scope", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+        "scope": { "type": "string", "enum": ["file", "flight", "fleet", "topic"] },
+        "message": { "type": "string" },
+        "refs": { "type": "object" }
+      }
+    }
+  }
+}

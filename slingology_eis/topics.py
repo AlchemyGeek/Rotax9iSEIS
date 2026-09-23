@@ -3,13 +3,16 @@ topics.py — per-flight topic analysis and insight evaluation.
 
 Each topic function is a pure computation: given a flight's own values
 plus its personal baseline/rules, it returns the report's two-layer
-content — {"analysis": str, "insights": list[str]} — with no printing.
-notebooks/04_flight_report.py is a thin renderer over these.
+content — {"analysis": str, "insights": list[dict]} — with no printing.
+Each insight dict is {"trigger": "threshold"|"baseline_deviation"|"trend",
+"text": str}; the trigger tag is what lets evaluate_insights()
+(slingology_eis.operations) attribute each insight to a rule and
+severity without re-deriving which check fired. notebooks/04_flight_
+report.py is a thin renderer over these (it only reads ["text"]).
 
 This mirrors Spec 01 §8.5's TopicResult/Insight shape at the level Stage
-2 needs (structured analysis text, zero-or-more insight strings); the
-full typed contract (templates, severity enums, evidence refs) is Stage
-3 work, deliberately not built here — Spec 01 Q3 leaves the eventual
+3 needs; the full typed contract (message templates, evidence refs) is
+built in evaluate_insights(), not here — Spec 01 Q3 leaves the eventual
 Topic plugin interface to emerge from doing this extraction for real,
 not to be designed upfront.
 """
@@ -93,11 +96,11 @@ def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, e
             if rule["type"] == "baseline_deviation":
                 triggered, text = baseline_triggered(spread, b, rule)
                 if triggered:
-                    insights.append(text)
+                    insights.append({"trigger": "baseline_deviation", "text": text})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
-                    insights.append(text)
+                    insights.append({"trigger": "trend", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -115,7 +118,7 @@ def egt4_elevation(elev, b: dict, rule_triggers: list) -> dict:
         if rule["type"] == "baseline_deviation":
             triggered, text = baseline_triggered(elev, b, rule)
             if triggered:
-                insights.append(text)
+                insights.append({"trigger": "baseline_deviation", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -133,25 +136,28 @@ def cylinder_rank(rank_order: list, rank_stable: Optional[bool], fleet_note: str
         f"Cylinder rank unstable this flight — hottest cylinder changed during cruise. "
         f"{fleet_note}"
     )
-    insights = [
-        "⚠ Rank instability is unusual for this engine — possible early "
-        "injector or ignition imbalance. Compare per-cylinder EGT means "
-        "in script 01."
-    ]
+    insights = [{
+        "trigger": "threshold",
+        "text": "⚠ Rank instability is unusual for this engine — possible early "
+                "injector or ignition imbalance. Compare per-cylinder EGT means "
+                "in script 01.",
+    }]
     return {"analysis": analysis, "insights": insights}
 
 
 def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool) -> dict:
+    if ob_max is None:
+        return {"analysis": "Overboost data not available (no RPM channel).", "insights": []}
     analysis = (
         f"Max continuous block: {ob_max}s. Total this flight: {ob_total}s. "
         f"OM limit: {ob_limit}s."
     )
     insights = []
     if ob_exceeded:
-        insights.append(f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s.")
+        insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s."})
     elif ob_max >= 240:
-        insights.append(f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
-                         f"Pull back to climb power promptly after takeoff.")
+        insights.append({"trigger": "threshold", "text": f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
+                         f"Pull back to climb power promptly after takeoff."})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -188,10 +194,10 @@ def takeoff_map(obs_map, obs_pa, obs_oat, map_model: dict) -> dict:
         )
         if abs(delta) >= 1.5:
             direction = "below" if delta < 0 else "above"
-            insights.append(
+            insights.append({"trigger": "threshold", "text": (
                 f"⚠ {abs(delta):.1f} inHg {direction} model — "
                 f"{'possible turbo underperformance, monitor trend.' if delta < 0 else 'above model — verify sensor.'}"
-            )
+            )})
     else:
         analysis = (
             f"Observed MAP at takeoff: {obs_map:.1f} inHg. "
@@ -212,11 +218,11 @@ def oil_temp_peak(oil_max, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "threshold" and oil_max > rule.get("limit", 248):
-            insights.append(f"⚠ Exceeded OM limit of {rule['limit']}°F.")
+            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
         elif rule["type"] == "baseline_deviation":
             triggered, text = baseline_triggered(oil_max, b, rule)
             if triggered:
-                insights.append(text)
+                insights.append({"trigger": "baseline_deviation", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -232,11 +238,11 @@ def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "threshold" and coolant_max > rule.get("limit", 248):
-            insights.append(f"⚠ Exceeded OM limit of {rule['limit']}°F.")
+            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
         elif rule["type"] == "baseline_deviation":
             triggered, text = baseline_triggered(coolant_max, b, rule)
             if triggered:
-                insights.append(text)
+                insights.append({"trigger": "baseline_deviation", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -254,7 +260,7 @@ def oil_coolant_ratio(oc_ratio, b: dict, rule_triggers: list) -> dict:
         if rule["type"] == "baseline_deviation":
             triggered, text = baseline_triggered(oc_ratio, b, rule)
             if triggered:
-                insights.append(text)
+                insights.append({"trigger": "baseline_deviation", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -271,11 +277,11 @@ def cruise_efficiency(nmpg, b: dict, rule_triggers: list) -> dict:
             if rule["type"] == "baseline_deviation":
                 triggered, text = baseline_triggered(nmpg, b, rule)
                 if triggered:
-                    insights.append(text)
+                    insights.append({"trigger": "baseline_deviation", "text": text})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
-                    insights.append(text)
+                    insights.append({"trigger": "trend", "text": text})
         return {"analysis": analysis, "insights": insights}
     if b.get("mean") is None:
         return {"analysis": "Still building your cruise efficiency baseline.", "insights": []}
@@ -304,14 +310,11 @@ def cruise_fuel_flow(fuel_flow, b: dict, rule_triggers: list,
                 triggered, text = baseline_triggered(fuel_flow, b, rule)
                 if triggered:
                     if da_high:
-                        insights.append(
-                            text + " Note: this flight's cruise DA was "
-                                   "significantly higher than your typical cruise — "
-                                   "altitude and power setting affect fuel flow. "
-                                   "A power/altitude model is needed for a fully valid comparison."
-                        )
-                    else:
-                        insights.append(text)
+                        text = (text + " Note: this flight's cruise DA was "
+                                       "significantly higher than your typical cruise — "
+                                       "altitude and power setting affect fuel flow. "
+                                       "A power/altitude model is needed for a fully valid comparison.")
+                    insights.append({"trigger": "baseline_deviation", "text": text})
         return {"analysis": analysis, "insights": insights}
     if b.get("mean") is None:
         return {"analysis": "Still building your cruise fuel flow baseline.", "insights": []}
@@ -357,7 +360,7 @@ def climb_thermal_rate(oil_rise, b: dict, rule_triggers: list) -> dict:
         if rule["type"] == "baseline_deviation":
             triggered, text = baseline_triggered(oil_rise, b, rule)
             if triggered:
-                insights.append(text)
+                insights.append({"trigger": "baseline_deviation", "text": text})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -365,6 +368,6 @@ def limit_exceedances(exceedances: list) -> dict:
     if exceedances:
         return {
             "analysis": f"{len(exceedances)} OM hard-limit exceedance(s) this flight:",
-            "insights": [f"⚠ {exc}" for exc in exceedances],
+            "insights": [{"trigger": "threshold", "text": f"⚠ {exc}"} for exc in exceedances],
         }
     return {"analysis": "No OM hard-limit exceedances this flight.", "insights": []}

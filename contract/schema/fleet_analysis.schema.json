@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slingologyeis.dev/contract/schema/fleet_analysis.schema.json",
+  "title": "FleetAnalysis",
+  "description": "Spec 01 (Engine Contract) Section 8.4 — the result of update_fleet.",
+  "type": "object",
+  "required": ["fleet_key", "flight_ids", "excluded", "metrics", "models", "quality", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "fleet_key": { "type": "string" },
+    "flight_ids": { "type": "array", "items": { "type": "string" } },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["flight_id", "reason"],
+        "properties": { "flight_id": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/metricFleet" }
+    },
+    "models": { "type": "array", "items": { "$ref": "#/$defs/model" } },
+    "quality": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "provenance": { "type": "object", "required": ["engine_version", "source_keys"] }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "object",
+      "required": ["level", "n"],
+      "properties": {
+        "level": { "type": "string", "enum": ["VERY_LOW", "LOW", "MODERATE", "GOOD"] },
+        "n": { "type": "integer" }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "required": ["n", "mean", "std", "min", "max", "confidence"],
+      "properties": {
+        "n": { "type": "integer" },
+        "mean": { "type": ["number", "null"] },
+        "std": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "trend": {
+      "type": "object",
+      "required": ["n", "slope", "r_squared", "direction", "x", "confidence"],
+      "properties": {
+        "n": { "type": "integer" },
+        "slope": { "type": ["number", "null"] },
+        "r_squared": { "type": ["number", "null"] },
+        "direction": { "type": "string", "enum": ["increasing", "decreasing", "flat", "insufficient_data"] },
+        "x": { "type": "string", "const": "engine_hours" },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "metricFleet": {
+      "type": "object",
+      "required": ["metric_id", "baseline", "trend", "points", "outliers"],
+      "properties": {
+        "metric_id": { "type": "string" },
+        "baseline": { "$ref": "#/$defs/baseline" },
+        "trend": { "$ref": "#/$defs/trend" },
+        "by_band": {
+          "type": "object",
+          "required": ["band_kind", "bands"],
+          "properties": {
+            "band_kind": { "type": "string", "enum": ["oat_band", "da_band"] },
+            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseline" } }
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "date", "x", "value"],
+            "properties": {
+              "flight_id": { "type": "string" },
+              "date": { "type": "string" },
+              "x": { "type": ["number", "null"] },
+              "value": { "type": ["number", "boolean", "string"] },
+              "band": { "type": "string" }
+            }
+          }
+        },
+        "outliers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "z_score"],
+            "properties": { "flight_id": { "type": "string" }, "z_score": { "type": "number" } }
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["id", "kind", "features", "coefficients", "n", "r_squared", "confidence", "capture"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "coefficients": { "type": "object", "additionalProperties": { "type": "number" } },
+        "n": { "type": "integer" },
+        "r_squared": { "type": ["number", "null"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "capture": { "type": "string" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "scope", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+        "scope": { "type": "string", "enum": ["file", "flight", "fleet", "topic"] },
+        "message": { "type": "string" },
+        "refs": { "type": "object" }
+      }
+    }
+  }
+}

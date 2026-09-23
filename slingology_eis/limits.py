@@ -157,8 +157,7 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
     """Convert an engine config dict to a list of Limit objects."""
     limits = []
     for entry in engine_config.get("limits", []):
-        lims = []
-        lims.append(Limit(
+        limits.append(Limit(
             param=entry["param"],
             label=entry["label"],
             unit=entry.get("unit", ""),

@@ -1,0 +1,635 @@
+{
+  "flight_id": "584e022a47517397",
+  "analysis_key": "ce3172c7f4689fbd64a12ecc956fa162227968483d3c9e307667ed1f1d326990",
+  "source_keys": [
+    "e6db755e9c40fa8c"
+  ],
+  "header": {
+    "date": "2026-04-23",
+    "start_utc": "2026-04-23T20:06:16",
+    "engine_hours_start": 38.2,
+    "engine_hours_end": 42.7,
+    "airport_hint": "KACV",
+    "aircraft": {
+      "ident": null,
+      "system_id": null
+    }
+  },
+  "phases": [
+    {
+      "phase": "PRE_START",
+      "start_s": 0.0,
+      "end_s": 120.0
+    },
+    {
+      "phase": "ENGINE_START",
+      "start_s": 120.0,
+      "end_s": 132.0
+    },
+    {
+      "phase": "WARMUP",
+      "start_s": 132.0,
+      "end_s": 133.0
+    },
+    {
+      "phase": "TAXI",
+      "start_s": 133.0,
+      "end_s": 16130.0
+    },
+    {
+      "phase": "SHUTDOWN",
+      "start_s": 16130.0,
+      "end_s": 16196.0
+    }
+  ],
+  "metrics": {
+    "date": {
+      "id": "date",
+      "value": "2026-04-23"
+    },
+    "engine_hours": {
+      "id": "engine_hours",
+      "value": 38.2,
+      "unit": "hr"
+    },
+    "duration_min": {
+      "id": "duration_min",
+      "value": 269.9,
+      "unit": "min"
+    },
+    "airborne_min": {
+      "id": "airborne_min",
+      "value": 241.0,
+      "unit": "min"
+    },
+    "max_altitude_ft": {
+      "id": "max_altitude_ft",
+      "value": 8062.0,
+      "unit": "ft"
+    },
+    "max_ias_kt": {
+      "id": "max_ias_kt",
+      "value": 130.0,
+      "unit": "kt"
+    },
+    "fadec_gallons": {
+      "id": "fadec_gallons",
+      "value": 27.883,
+      "unit": "gal"
+    },
+    "phase_climb_min": {
+      "id": "phase_climb_min",
+      "value": 0.0,
+      "unit": "min"
+    },
+    "phase_cruise_min": {
+      "id": "phase_cruise_min",
+      "value": 0.0,
+      "unit": "min"
+    },
+    "phase_descent_min": {
+      "id": "phase_descent_min",
+      "value": 0.0,
+      "unit": "min"
+    },
+    "egt_spread_mean_f": {
+      "id": "egt_spread_mean_f",
+      "value": 52.6,
+      "unit": "\u00b0F"
+    },
+    "egt_spread_max_f": {
+      "id": "egt_spread_max_f",
+      "value": 75.0,
+      "unit": "\u00b0F"
+    },
+    "egt4_elevation_f": {
+      "id": "egt4_elevation_f",
+      "value": 41.6,
+      "unit": "\u00b0F"
+    },
+    "egt_rank_stable": {
+      "id": "egt_rank_stable",
+      "value": true
+    },
+    "cruise_nmpg": {
+      "id": "cruise_nmpg",
+      "value": null,
+      "unit": "nm/gal",
+      "missing": "NO_PHASE"
+    },
+    "cruise_fuel_flow_gph": {
+      "id": "cruise_fuel_flow_gph",
+      "value": null,
+      "unit": "gal/hr",
+      "missing": "NO_PHASE"
+    },
+    "oil_temp_max_f": {
+      "id": "oil_temp_max_f",
+      "value": 213.0,
+      "unit": "\u00b0F"
+    },
+    "oil_temp_below_optimal_pct": {
+      "id": "oil_temp_below_optimal_pct",
+      "value": 96.8,
+      "unit": "%"
+    },
+    "coolant_temp_max_f": {
+      "id": "coolant_temp_max_f",
+      "value": 179.0,
+      "unit": "\u00b0F"
+    },
+    "oil_coolant_ratio": {
+      "id": "oil_coolant_ratio",
+      "value": 1.19
+    },
+    "climb_oil_rise_f_per_min": {
+      "id": "climb_oil_rise_f_per_min",
+      "value": null,
+      "unit": "\u00b0F/min",
+      "missing": "NO_PHASE"
+    },
+    "climb_coolant_rise_f_per_min": {
+      "id": "climb_coolant_rise_f_per_min",
+      "value": null,
+      "unit": "\u00b0F/min",
+      "missing": "NO_PHASE"
+    },
+    "climb_vs_bucket_dominant": {
+      "id": "climb_vs_bucket_dominant",
+      "value": null,
+      "missing": "NO_PHASE"
+    },
+    "overboost_total_s": {
+      "id": "overboost_total_s",
+      "value": 70,
+      "unit": "s"
+    },
+    "overboost_max_block_s": {
+      "id": "overboost_max_block_s",
+      "value": 61,
+      "unit": "s"
+    },
+    "cruise_da_ft": {
+      "id": "cruise_da_ft",
+      "value": null,
+      "unit": "ft",
+      "missing": "NO_PHASE"
+    },
+    "cruise_oat_c": {
+      "id": "cruise_oat_c",
+      "value": null,
+      "unit": "\u00b0C",
+      "missing": "NO_PHASE"
+    },
+    "da_band": {
+      "id": "da_band",
+      "value": null,
+      "missing": "NO_PHASE"
+    },
+    "oat_band": {
+      "id": "oat_band",
+      "value": null,
+      "missing": "NO_PHASE"
+    },
+    "takeoff_map_inhg": {
+      "id": "takeoff_map_inhg",
+      "value": null,
+      "unit": "inHg",
+      "missing": "NO_PHASE"
+    },
+    "takeoff_pressure_alt_ft": {
+      "id": "takeoff_pressure_alt_ft",
+      "value": null,
+      "unit": "ft",
+      "missing": "NO_PHASE"
+    },
+    "takeoff_oat_c": {
+      "id": "takeoff_oat_c",
+      "value": null,
+      "unit": "\u00b0C",
+      "missing": "NO_PHASE"
+    },
+    "cas_inflight_anomaly_count": {
+      "id": "cas_inflight_anomaly_count",
+      "value": 5
+    },
+    "inflight_ecu_count": {
+      "id": "inflight_ecu_count",
+      "value": 0
+    }
+  },
+  "exceedances": [
+    {
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "severity": "WARNING",
+      "limit_type": "MIN",
+      "limit_value": 42.0,
+      "observed_value": -0.4,
+      "start_utc": "2026-04-23T20:06:16",
+      "elapsed_s": 0.0,
+      "duration_s": 104.0,
+      "time_limit_s": null,
+      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
+    },
+    {
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "severity": "WARNING",
+      "limit_type": "MIN",
+      "limit_value": 42.0,
+      "observed_value": 2.4,
+      "start_utc": "2026-04-23T20:08:05",
+      "elapsed_s": 109.0,
+      "duration_s": 14.0,
+      "time_limit_s": null,
+      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
+    },
+    {
+      "param": "rpm",
+      "label": "Idle RPM minimum",
+      "unit": "rpm",
+      "severity": "CAUTION",
+      "limit_type": "MIN",
+      "limit_value": 1800,
+      "observed_value": 1730.0,
+      "start_utc": "2026-04-23T20:09:56",
+      "elapsed_s": 220.0,
+      "duration_s": 40.0,
+      "time_limit_s": null,
+      "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
+    },
+    {
+      "param": "rpm",
+      "label": "Max continuous RPM",
+      "unit": "rpm",
+      "severity": "CAUTION",
+      "limit_type": "MAX",
+      "limit_value": 5500,
+      "observed_value": 5780.0,
+      "start_utc": "2026-04-23T20:30:50",
+      "elapsed_s": 1474.0,
+      "duration_s": 5.0,
+      "time_limit_s": null,
+      "note": "5,500 rpm is max continuous; 5,800 rpm allowed for 5 min"
+    },
+    {
+      "param": "rpm",
+      "label": "Max continuous RPM",
+      "unit": "rpm",
+      "severity": "CAUTION",
+      "limit_type": "MAX",
+      "limit_value": 5500,
+      "observed_value": 5810.0,
+      "start_utc": "2026-04-23T20:30:56",
+      "elapsed_s": 1480.0,
+      "duration_s": 61.0,
+      "time_limit_s": null,
+      "note": "5,500 rpm is max continuous; 5,800 rpm allowed for 5 min"
+    },
+    {
+      "param": "rpm",
+      "label": "Max continuous RPM",
+      "unit": "rpm",
+      "severity": "CAUTION",
+      "limit_type": "MAX",
+      "limit_value": 5500,
+      "observed_value": 5820.0,
+      "start_utc": "2026-04-23T22:30:57",
+      "elapsed_s": 8681.0,
+      "duration_s": 4.0,
+      "time_limit_s": null,
+      "note": "5,500 rpm is max continuous; 5,800 rpm allowed for 5 min"
+    },
+    {
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "severity": "WARNING",
+      "limit_type": "MIN",
+      "limit_value": 42.0,
+      "observed_value": -0.6,
+      "start_utc": "2026-04-24T00:35:05",
+      "elapsed_s": 16129.0,
+      "duration_s": 67.0,
+      "time_limit_s": null,
+      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
+    },
+    {
+      "param": "main_volts",
+      "label": "Bus voltage minimum",
+      "unit": "V",
+      "severity": "CAUTION",
+      "limit_type": "MIN",
+      "limit_value": 11.5,
+      "observed_value": 0.0,
+      "start_utc": "2026-04-24T00:35:10",
+      "elapsed_s": 16134.0,
+      "duration_s": 62.0,
+      "time_limit_s": null,
+      "note": "Below ~12V indicates alternator failure or excessive load"
+    }
+  ],
+  "cas_events": [
+    {
+      "alert": "EFIS ON BKUP",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-23T20:06:16",
+      "elapsed_s": 0.0,
+      "duration_s": 169.0,
+      "rows": 169,
+      "started_before_engine": true
+    },
+    {
+      "alert": "NAV ON BKUP",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-23T20:06:16",
+      "elapsed_s": 0.0,
+      "duration_s": 169.0,
+      "rows": 169,
+      "started_before_engine": true
+    },
+    {
+      "alert": "FUEL PRESS",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-23T20:06:18",
+      "elapsed_s": 2.0,
+      "duration_s": 102.0,
+      "rows": 102,
+      "started_before_engine": true
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-04-23T20:06:19",
+      "elapsed_s": 3.0,
+      "duration_s": 99.0,
+      "rows": 99,
+      "started_before_engine": true
+    },
+    {
+      "alert": "RAGL FAIL",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-23T20:06:20",
+      "elapsed_s": 4.0,
+      "duration_s": 169.0,
+      "rows": 169,
+      "started_before_engine": true
+    },
+    {
+      "alert": "TRAFFIC FAIL",
+      "severity": "ADVISORY",
+      "start_utc": "2026-04-23T20:06:35",
+      "elapsed_s": 19.0,
+      "duration_s": 53.0,
+      "rows": 53,
+      "started_before_engine": true
+    },
+    {
+      "alert": "OIL PRESS",
+      "severity": "WARNING",
+      "start_utc": "2026-04-23T20:08:00",
+      "elapsed_s": 104.0,
+      "duration_s": 4.0,
+      "rows": 4,
+      "started_before_engine": true
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-04-23T20:08:07",
+      "elapsed_s": 111.0,
+      "duration_s": 9.0,
+      "rows": 9,
+      "started_before_engine": true
+    },
+    {
+      "alert": "FUEL PRESS",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-23T20:08:08",
+      "elapsed_s": 112.0,
+      "duration_s": 10.0,
+      "rows": 10,
+      "started_before_engine": true
+    },
+    {
+      "alert": "AOA FAIL",
+      "severity": "ADVISORY",
+      "start_utc": "2026-04-23T20:09:06",
+      "elapsed_s": 170.0,
+      "duration_s": 5.0,
+      "rows": 5,
+      "started_before_engine": false
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-04-23T20:15:35",
+      "elapsed_s": 559.0,
+      "duration_s": 4.0,
+      "rows": 4,
+      "started_before_engine": false
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-04-23T20:15:46",
+      "elapsed_s": 570.0,
+      "duration_s": 6.0,
+      "rows": 6,
+      "started_before_engine": false
+    },
+    {
+      "alert": "RPM",
+      "severity": "ADVISORY",
+      "start_utc": "2026-04-23T20:30:53",
+      "elapsed_s": 1477.0,
+      "duration_s": 2.0,
+      "rows": 2,
+      "started_before_engine": false
+    },
+    {
+      "alert": "RPM",
+      "severity": "ADVISORY",
+      "start_utc": "2026-04-23T20:30:58",
+      "elapsed_s": 1482.0,
+      "duration_s": 59.0,
+      "rows": 59,
+      "started_before_engine": false
+    },
+    {
+      "alert": "RPM",
+      "severity": "ADVISORY",
+      "start_utc": "2026-04-23T22:31:00",
+      "elapsed_s": 8684.0,
+      "duration_s": 2.0,
+      "rows": 2,
+      "started_before_engine": false
+    },
+    {
+      "alert": "EFIS ON BKUP",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-24T00:34:59",
+      "elapsed_s": 16123.0,
+      "duration_s": 73.0,
+      "rows": 73,
+      "started_before_engine": false
+    },
+    {
+      "alert": "NAV ON BKUP",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-24T00:34:59",
+      "elapsed_s": 16123.0,
+      "duration_s": 73.0,
+      "rows": 73,
+      "started_before_engine": false
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-04-24T00:35:05",
+      "elapsed_s": 16129.0,
+      "duration_s": 67.0,
+      "rows": 67,
+      "started_before_engine": false
+    },
+    {
+      "alert": "FUEL PRESS",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-24T00:35:07",
+      "elapsed_s": 16131.0,
+      "duration_s": 65.0,
+      "rows": 65,
+      "started_before_engine": true
+    },
+    {
+      "alert": "ALT FAIL",
+      "severity": "WARNING",
+      "start_utc": "2026-04-24T00:35:10",
+      "elapsed_s": 16134.0,
+      "duration_s": 62.0,
+      "rows": 62,
+      "started_before_engine": true
+    },
+    {
+      "alert": "RAGL FAIL",
+      "severity": "CAUTION",
+      "start_utc": "2026-04-24T00:35:10",
+      "elapsed_s": 16134.0,
+      "duration_s": 62.0,
+      "rows": 62,
+      "started_before_engine": true
+    }
+  ],
+  "ecu_runs": [
+    {
+      "classification": "POWERUP",
+      "start_utc": "2026-04-23T20:06:19",
+      "elapsed_s": 3.0,
+      "duration_s": 99,
+      "co_alerts": [
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "FUEL PRESS",
+        "RAGL FAIL",
+        "TRAFFIC FAIL"
+      ],
+      "oil_nan_frac": 0.98989898989899,
+      "lane_check_pair": false,
+      "lane_check_note": "",
+      "mean_rpm": 0.0,
+      "mean_ias_kt": 11.481818181818182
+    },
+    {
+      "classification": "POWERUP",
+      "start_utc": "2026-04-23T20:08:07",
+      "elapsed_s": 111.0,
+      "duration_s": 9,
+      "co_alerts": [
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "RAGL FAIL",
+        "FUEL PRESS"
+      ],
+      "oil_nan_frac": 1.0,
+      "lane_check_pair": false,
+      "lane_check_note": "",
+      "mean_rpm": 0.0,
+      "mean_ias_kt": 6.688888888888889
+    },
+    {
+      "classification": "LANE_CHECK",
+      "start_utc": "2026-04-23T20:15:35",
+      "elapsed_s": 559.0,
+      "duration_s": 4,
+      "co_alerts": [],
+      "oil_nan_frac": 0.0,
+      "lane_check_pair": true,
+      "lane_check_note": "paired",
+      "mean_rpm": 4085.0,
+      "mean_ias_kt": 18.6
+    },
+    {
+      "classification": "LANE_CHECK",
+      "start_utc": "2026-04-23T20:15:46",
+      "elapsed_s": 570.0,
+      "duration_s": 6,
+      "co_alerts": [],
+      "oil_nan_frac": 0.8333333333333334,
+      "lane_check_pair": true,
+      "lane_check_note": "paired",
+      "mean_rpm": 3980.0,
+      "mean_ias_kt": 19.866666666666667
+    },
+    {
+      "classification": "SHUTDOWN",
+      "start_utc": "2026-04-24T00:35:05",
+      "elapsed_s": 16129.0,
+      "duration_s": 67,
+      "co_alerts": [
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "FUEL PRESS",
+        "ALT FAIL",
+        "RAGL FAIL"
+      ],
+      "oil_nan_frac": 0.9850746268656716,
+      "lane_check_pair": false,
+      "lane_check_note": "",
+      "mean_rpm": 28.507462686567163,
+      "mean_ias_kt": 15.63283582089552
+    }
+  ],
+  "quality": [
+    {
+      "code": "PHASE_TAKEOFF_NOT_DETECTED",
+      "severity": "warn",
+      "scope": "flight",
+      "message": "Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
+      "refs": {
+        "airborne_rows": 14359
+      }
+    },
+    {
+      "code": "PHASE_NO_CRUISE",
+      "severity": "info",
+      "scope": "flight",
+      "message": "No CRUISE phase detected this flight."
+    }
+  ],
+  "provenance": {
+    "engine_version": "0.10.0",
+    "schema_version": "0.1.0",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "ea746a8acdcc7451a0dfe0e5476e2be58f8d8b969187c0461786712f67d4b880",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "source_keys": [
+      "e6db755e9c40fa8c"
+    ]
+  }
+}

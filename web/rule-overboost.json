@@ -1,0 +1,232 @@
+{
+  "rule_id": "overboost_time",
+  "trigger": "threshold",
+  "shipped_default": {
+    "limit": 300,
+    "severity": "limit"
+  },
+  "flights": [
+    {
+      "flight_id": "flight-032",
+      "date": "2026-07-08",
+      "engine_hours": 72.5,
+      "overboost_total_s": 449
+    },
+    {
+      "flight_id": "flight-023",
+      "date": "2026-04-23",
+      "engine_hours": 33.0,
+      "overboost_total_s": 387
+    },
+    {
+      "flight_id": "flight-028",
+      "date": "2026-04-30",
+      "engine_hours": 42.8,
+      "overboost_total_s": 284
+    },
+    {
+      "flight_id": "flight-000",
+      "date": "2026-05-27",
+      "engine_hours": 56.2,
+      "overboost_total_s": 274
+    },
+    {
+      "flight_id": "flight-033",
+      "date": "2026-06-13",
+      "engine_hours": 61.6,
+      "overboost_total_s": 229
+    },
+    {
+      "flight_id": "flight-010",
+      "date": "2026-08-10",
+      "engine_hours": 102.0,
+      "overboost_total_s": 156
+    },
+    {
+      "flight_id": "flight-003",
+      "date": "2026-06-08",
+      "engine_hours": 60.4,
+      "overboost_total_s": 149
+    },
+    {
+      "flight_id": "flight-025",
+      "date": "2026-04-21",
+      "engine_hours": 30.2,
+      "overboost_total_s": 141
+    },
+    {
+      "flight_id": "flight-012",
+      "date": "2026-06-04",
+      "engine_hours": 60.0,
+      "overboost_total_s": 139
+    },
+    {
+      "flight_id": "flight-035",
+      "date": "2026-07-14",
+      "engine_hours": 73.5,
+      "overboost_total_s": 129
+    },
+    {
+      "flight_id": "flight-027",
+      "date": "2026-05-20",
+      "engine_hours": 51.8,
+      "overboost_total_s": 124
+    },
+    {
+      "flight_id": "flight-020",
+      "date": "2026-05-08",
+      "engine_hours": 44.8,
+      "overboost_total_s": 119
+    },
+    {
+      "flight_id": "flight-005",
+      "date": "2026-05-18",
+      "engine_hours": 50.3,
+      "overboost_total_s": 113
+    },
+    {
+      "flight_id": "flight-014",
+      "date": "2026-07-17",
+      "engine_hours": 75.3,
+      "overboost_total_s": 113
+    },
+    {
+      "flight_id": "flight-024",
+      "date": "2026-06-02",
+      "engine_hours": 58.4,
+      "overboost_total_s": 84
+    },
+    {
+      "flight_id": "flight-002",
+      "date": "2026-04-17",
+      "engine_hours": 29.4,
+      "overboost_total_s": 76
+    },
+    {
+      "flight_id": "flight-034",
+      "date": "2026-07-17",
+      "engine_hours": 80.3,
+      "overboost_total_s": 76
+    },
+    {
+      "flight_id": "flight-011",
+      "date": "2026-04-23",
+      "engine_hours": 38.2,
+      "overboost_total_s": 70
+    },
+    {
+      "flight_id": "flight-021",
+      "date": "2026-05-27",
+      "engine_hours": 53.5,
+      "overboost_total_s": 68
+    },
+    {
+      "flight_id": "flight-008",
+      "date": "2026-07-23",
+      "engine_hours": 97.8,
+      "overboost_total_s": 66
+    },
+    {
+      "flight_id": "flight-026",
+      "date": "2026-05-08",
+      "engine_hours": 44.1,
+      "overboost_total_s": 65
+    },
+    {
+      "flight_id": "flight-029",
+      "date": "2026-05-18",
+      "engine_hours": 51.1,
+      "overboost_total_s": 63
+    },
+    {
+      "flight_id": "flight-013",
+      "date": "2026-06-02",
+      "engine_hours": 59.1,
+      "overboost_total_s": 62
+    },
+    {
+      "flight_id": "flight-031",
+      "date": "2026-04-08",
+      "engine_hours": 28.2,
+      "overboost_total_s": 59
+    },
+    {
+      "flight_id": "flight-004",
+      "date": "2026-05-08",
+      "engine_hours": 46.9,
+      "overboost_total_s": 57
+    },
+    {
+      "flight_id": "flight-022",
+      "date": "2026-07-03",
+      "engine_hours": 70.4,
+      "overboost_total_s": 57
+    },
+    {
+      "flight_id": "flight-019",
+      "date": "2026-06-17",
+      "engine_hours": 63.5,
+      "overboost_total_s": 56
+    },
+    {
+      "flight_id": "flight-006",
+      "date": "2026-07-22",
+      "engine_hours": 87.7,
+      "overboost_total_s": 56
+    },
+    {
+      "flight_id": "flight-009",
+      "date": "2026-07-23",
+      "engine_hours": 93.8,
+      "overboost_total_s": 56
+    },
+    {
+      "flight_id": "flight-007",
+      "date": "2026-07-18",
+      "engine_hours": 85.4,
+      "overboost_total_s": 55
+    },
+    {
+      "flight_id": "flight-001",
+      "date": "2026-06-18",
+      "engine_hours": 66.3,
+      "overboost_total_s": 53
+    },
+    {
+      "flight_id": "flight-016",
+      "date": "2026-07-06",
+      "engine_hours": 71.5,
+      "overboost_total_s": 47
+    },
+    {
+      "flight_id": "flight-017",
+      "date": "2026-07-06",
+      "engine_hours": 72.2,
+      "overboost_total_s": 43
+    },
+    {
+      "flight_id": "flight-030",
+      "date": "2026-04-09",
+      "engine_hours": 29.0,
+      "overboost_total_s": 42
+    },
+    {
+      "flight_id": "flight-015",
+      "date": "2026-07-22",
+      "engine_hours": 90.9,
+      "overboost_total_s": 42
+    },
+    {
+      "flight_id": "flight-036",
+      "date": "2026-04-22",
+      "engine_hours": 32.5,
+      "overboost_total_s": 38
+    },
+    {
+      "flight_id": "flight-018",
+      "date": "2026-06-22",
+      "engine_hours": 69.9,
+      "overboost_total_s": 0
+    }
+  ]
+}
