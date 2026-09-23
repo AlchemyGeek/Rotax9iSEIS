@@ -1,10 +1,10 @@
 # SlingologyEIS — Rotax iS Engine Analytics Toolkit
 
-**Version: 0.10.0** — verify with `python -c "import slingology_eis; print(slingology_eis.__version__)"`
+**Version: 0.11.0** — verify with `slingology-eis --version` or `python -c "import slingology_eis; print(slingology_eis.__version__)"`
 
 Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines (912iS, 914iS, 915iS, 916iS). Built from the ground up for how these engines actually work — not retrofitted from the carbureted-engine assumptions that underpin existing tools like Savvy Aviation and FlySto. Analyses Garmin G3X EIS logs against Rotax Operators Manual limits, automatically detects flight phases, tracks EGT spread and cylinder balance over engine hours, classifies CAS alerts, monitors overboost time, builds personal baselines from your own flight history, and produces plain-language per-flight reports — all offline, with your data never leaving your machine.
 
-**Current status:** Python research toolkit v0.10.0, validated against 23 flights on N117ZS (Sling TSi, Rotax 916iS, KPAE). Long-term goal is a free progressive web app for any Sling / Rotax iS pilot.
+**Current status:** Python toolkit v0.11.0, validated against 37 flights on N117ZS (Sling TSi, Rotax 916iS, KPAE). Engine profiles 916iS and 915iS are fully verified against their Operators Manuals; 912iS and 914iS are placeholders pending verification. As of v0.11.0 the toolkit is built around a stateless, typed engine contract (see [`docs/specs/01-engine-contract.md`](docs/specs/01-engine-contract.md)) with a unified command-line interface — the same contract a future browser UI will run against unmodified. Long-term goal is a free progressive web app for any Sling / Rotax iS pilot.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
@@ -23,7 +23,14 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 ```bash
 git clone https://github.com/AlchemyGeek/Rotax9iSEIS.git
 cd Rotax9iSEIS
-pip install -r requirements.txt
+pip install -e .
+```
+
+This installs the `slingology-eis` command and the core runtime dependencies (`pandas`, `numpy` — that's genuinely all the engine needs). Two optional extras:
+
+```bash
+pip install -e ".[dev]"        # pytest, jsonschema — for running the test suite
+pip install -e ".[notebooks]"  # jupyter, jupytext, matplotlib — for the legacy interactive notebooks
 ```
 
 ---
@@ -32,7 +39,7 @@ pip install -r requirements.txt
 
 ```
 Rotax9iSEIS/
-├── slingology_eis/                     # Core analytics library
+├── slingology_eis/                     # Core analytics library + CLI
 │   ├── __init__.py                     # __version__ lives here
 │   ├── loader.py                       # G3X CSV parser, dual-format, duplicate detection
 │   ├── limits.py                       # OM operating limits, phase filtering, exceedance detection
@@ -41,24 +48,39 @@ Rotax9iSEIS/
 │   ├── fuel.py                         # FADEC fuel integration, cruise efficiency
 │   ├── cas.py                          # CAS alert parser, ENGINE ECU classifier
 │   ├── fleet.py                        # Multi-flight baselines, trends, outlier detection
-│   └── climb.py                        # Climb-rate-correlated thermal analysis
-├── notebooks/
+│   ├── climb.py                        # Climb-rate-correlated thermal analysis
+│   ├── baselines.py                    # Personal-baseline computation
+│   ├── topics.py                       # The 14 analytics topics (Analysis + Insight)
+│   ├── registry.py                     # Metric/topic registries backing the contract
+│   ├── contract.py                     # Provenance, Diagnostic, diagnostic catalog
+│   ├── operations.py                   # analyze_flight / analyze_ecu / update_fleet / evaluate_insights
+│   ├── rules.py                        # validate_rules / what_if_rules
+│   ├── serialize.py                    # NaN-safe JSON serialization
+│   └── cli.py                          # The `slingology-eis` command
+├── contract/
+│   └── schema/                         # JSON Schemas for every contract result type
+├── notebooks/                          # Legacy interactive scripts (Jupyter, via jupytext) —
+│   │                                    # kept for now for plotting/deep-dive use; superseded
+│   │                                    # by the CLI as the primary interface, see CHANGELOG 0.11.0
 │   ├── 01_first_flight_analysis.py     # Deep-dive diagnostic report — one flight
 │   ├── 02_engine_ecu_correlation.py    # ENGINE ECU pattern analysis across all flights
 │   ├── 03_multi_flight_insights.py     # Fleet baselines, trends, outliers, Fleet Insights
 │   └── 04_flight_report.py             # Per-flight pilot report (plain language)
 ├── engines/
 │   ├── 916iS.json                      # VERIFIED — sourced from OM-916 i/C24 Ed.0 Rev.1
-│   ├── 915iS.json                      # PLACEHOLDER — verify before operational use
+│   ├── 915iS.json                      # VERIFIED — sourced from OM-915 i A/C24 Ed.0 Rev.4
 │   ├── 914iS.json                      # PLACEHOLDER — verify before operational use
 │   └── 912iS.json                      # PLACEHOLDER — verify before operational use
 ├── data/
-│   ├── logs/                           # Place your G3X CSV files here
-│   └── reports/                        # Generated reports (auto-created on first run)
-├── config.json                         # Set your engine here (default: 916iS)
+│   ├── logs/                           # Place your G3X CSV files here (default --logs)
+│   └── reports/                        # Legacy notebook output / default --workspace
+├── docs/specs/                         # Engine contract, workspace, and runtime-adapter specs
+├── tests/                              # pytest suite — characterization, unit, contract, cli
+├── config.json                         # Set your default engine here (default: 916iS)
 ├── insight_rules.json                  # Analytics trigger rules — edit to tune thresholds
+├── pyproject.toml                      # Packaging — installs the slingology-eis command
 ├── CHANGELOG.md
-└── requirements.txt
+└── BACKLOG.md
 ```
 
 ---
@@ -67,7 +89,9 @@ Rotax9iSEIS/
 
 ### 1. Set your engine
 
-Edit `config.json` at the toolkit root:
+Resolved in this order: the `--engine` flag → the `SLINGOLOGY_ENGINE` environment variable → `config.json` → default (`916iS`).
+
+Edit `config.json` at the toolkit root to change the default:
 
 ```json
 {
@@ -75,146 +99,83 @@ Edit `config.json` at the toolkit root:
 }
 ```
 
-Valid values: `916iS`, `915iS`, `914iS`, `912iS`. The 916iS config is fully verified against the Rotax OM. The others are placeholders — verify limits against your engine's OM before use.
+Valid values: `916iS`, `915iS`, `914iS`, `912iS`. The 916iS and 915iS configs are fully verified against their Operators Manuals. 914iS and 912iS are placeholders — verify limits against your engine's OM before relying on them.
 
 ### 2. Add your log files
 
-Copy G3X CSV files into `data/logs/`. Both export formats are supported and can be mixed freely:
+Copy G3X CSV files into `data/logs/` (or point `--logs` at wherever you keep them). Both export formats are supported and can be mixed freely:
 
 - **G3X-direct** — downloaded from the SD card. Filename format: `log_YYYYMMDD_HHMMSS_ICAO.csv`
 - **Garmin Pilot export** — exported via the Garmin Pilot app. Filename is typically a UUID; rename it to anything ending in `.csv`.
 
-The loader auto-detects the format and normalises both to identical columns. Ground sessions (engine runs where the aircraft never flew) are automatically filtered out.
+The loader auto-detects the format and normalises both to identical columns. Ground sessions (engine runs where the aircraft never flew) and duplicate exports of the same flight are automatically filtered out.
 
 ---
 
-## User Manual
+## Command-line interface
 
-### Recommended workflow
-
-Run the scripts in this order after every few flights:
-
-```
-Script 03  →  Script 04  →  Script 02  (Script 01 on demand)
-```
-
-**Script 03 first** — processes all logs and writes the fleet baselines and models that scripts 02 and 04 depend on.
-
-**Script 04 after** — reads baselines from script 03 and produces a per-flight plain-language report in seconds without reloading all logs.
-
-**Script 02 when flagged** — run when Fleet Insights or the per-flight report flags an IN-FLIGHT ENGINE ECU event. Provides full CAN bus pattern analysis and recommended actions.
-
-**Script 01 on demand** — a deep technical diagnostic for a specific flight. Use when you want to understand what happened in detail.
-
----
-
-### Script 03 — Fleet Summary
+`slingology-eis` is the primary way to use the toolkit. It's a thin client over the engine contract in `slingology_eis/operations.py` — every subcommand converts inputs to bytes, calls one contract operation in-process, and prints the result as a plain-language report or as JSON.
 
 ```bash
-python notebooks/03_multi_flight_insights.py
+slingology-eis <command> [options]
 ```
 
-Processes all logs in `data/logs/`, produces five analytical sections (Baselines, Trends, Outliers, Operational, Data Quality), and appends a Fleet Insights section. Writes:
+**Global options** (work before or after the subcommand):
 
-- `data/reports/fleet_metrics.csv` — one row per flight, 34 columns of per-flight metrics
-- `data/reports/baselines.json` — personal baselines for all analytics topics
-- `data/reports/models.json` — empirical regression models (currently: takeoff MAP)
-- `data/reports/fleet_insights.txt` — tight summary of major findings only
+| Option | Meaning |
+|---|---|
+| `--logs DIR` | Folder of G3X log CSVs. Default: `data/logs/` in a git checkout, or `~/SlingologyEIS/logs/` for a packaged install. |
+| `--workspace DIR` | Folder for cached/derived results (fleet baseline, per-flight analyses). Default: `data/` in a git checkout, or `~/SlingologyEIS/workspace/` for a packaged install. |
+| `--engine NAME` | Engine profile override (e.g. `916iS`). See engine resolution order above. |
+| `--json` | Print the operation result as JSON instead of a plain-language report. |
+| `--anonymize` | Strip aircraft ident, system ID, and airport hint from `--json` output. |
+| `--quiet` | Suppress progress/diagnostic output on stderr. |
 
-**Fleet Insights** is the section to read first after every run. It shows only what needs your attention:
+**Exit codes:** `0` success, `1` operation failed (bad path, malformed log), `2` usage error or a not-yet-implemented subcommand.
 
-```
-⚠ Overboost limit exceeded — log_20260423_135821_KTOA.csv (381s, limit 300s).
-⚠ IN-FLIGHT ENGINE ECU event — log_20260527_200344_KSFF.csv (1 event(s)).
-⚠ EGT spread max outlier — log_20260613_193731_KAWO.csv (value=145, z=+2.56).
+### Subcommands
 
-✓ No IN-FLIGHT ENGINE ECU events across all flights.
-```
+| Command | Purpose |
+|---|---|
+| `engines` | List available engine profiles and their verification status. |
+| `flight LOG` | Analyze one flight. `LOG` is a filename (resolved against `--logs`) or a full path. |
+| `ecu [LOGS...]` | ENGINE ECU correlation across flights — classifies every ENGINE ECU occurrence as POWERUP / LANE_CHECK / SHUTDOWN / IN_FLIGHT. |
+| `fleet` | Build fleet baselines, trends, and outlier detection across all logs in `--logs`; writes the workspace cache. |
+| `report LOG` | Plain-language per-flight report — the two-layer Analysis/Insight format, evaluated against the cached (or freshly built) fleet baseline. |
+| `import [PATHS...]` | Analyze logs/folders and write/refresh the workspace cache, without printing a report. |
+| `rules check FILE` | Validate an `insight_rules.json`-shaped file; exits 1 if any error-severity diagnostic is found. |
+| `rules try FILE` | Diff the insights a candidate rules file would produce, for one flight, against the currently-shipped rules. |
+| `export-bundle` | *Not yet implemented* — needs Spec 02's results-bundle format. Exits 2. |
+| `serve` | *Not yet implemented* — needs the Stage 4b local server adapter. Exits 2. |
 
-Re-run script 03 after every few new flights to keep baselines current.
-
----
-
-### Script 04 — Per-Flight Pilot Report
+### Examples
 
 ```bash
-# Filename only (resolved against data/logs/ automatically):
-python notebooks/04_flight_report.py log_20260527_200344_KSFF.csv
+# List engine profiles
+slingology-eis engines
 
-# Or with full path:
-python notebooks/04_flight_report.py data/logs/log_20260527_200344_KSFF.csv
+# Analyze one flight, plain-language summary
+slingology-eis flight log_20260527_200344_KSFF.csv
+
+# Same, as JSON, validated against contract/schema/flight_analysis.schema.json
+slingology-eis flight log_20260527_200344_KSFF.csv --json
+
+# Build fleet baselines from everything in data/logs/, cache to the workspace
+slingology-eis fleet
+
+# Full per-flight pilot report (uses the cached fleet baseline if present)
+slingology-eis report log_20260527_200344_KSFF.csv
+
+# ENGINE ECU correlation across all flights
+slingology-eis ecu
+
+# Validate a candidate rules file, then see what it would change for one flight
+slingology-eis rules check my_rules.json
+slingology-eis rules try my_rules.json --flight log_20260527_200344_KSFF.csv
+
+# Anonymized JSON output (strips aircraft ident/system_id/airport) for sharing
+slingology-eis flight log_20260527_200344_KSFF.csv --json --anonymize
 ```
-
-Produces a plain-language report for one flight. Requires `reports/baselines.json` and `reports/models.json` from a recent script 03 run.
-
-The report uses a two-layer format:
-
-- **Analysis line** — always present. States this flight's measurement and personal baseline comparison.
-- **Insight line** — only appears when something is worth flagging.
-
-Example output:
-
-```
-══════════════════════════════════════════════════════════════════════
-  SLINGOLOGY EIS — FLIGHT REPORT
-  N117ZS  |  Rotax 916iS
-  Date:         2026-05-27  20:06
-  Airport:      KSFF
-  Engine hrs:   56.2h → 58.6h
-  Duration:     142 min airborne
-  Max altitude: 9,500 ft
-  Max IAS:      136 kt
-  Fuel used:    18.4 gal (FADEC)
-══════════════════════════════════════════════════════════════════════
-
-── EGT SPREAD ────────────────────────────────────────────────
-  Analysis: Cruise mean 55°F. Your average: 56°F ± 5°F (23 flights). OM limit: 392°F.
-
-── OVERBOOST ─────────────────────────────────────────────────
-  Analysis: Max continuous block: 274s. Total this flight: 274s. OM limit: 300s.
-  Insight:  ⚠ Close call — 26s below the OM limit. Pull back to climb power promptly.
-
-── ENGINE ECU ────────────────────────────────────────────────
-  Analysis: 1 IN-FLIGHT ENGINE ECU event(s) detected — requires investigation.
-    ⚡ 20:06:38  1s  oil_NaN:0%
-  Insight:  ⚠ Co-active: OIL PRESS — only IN-FLIGHT event with a direct engine-parameter correlation.
-
-── LIMIT EXCEEDANCES ─────────────────────────────────────────
-  Analysis: No OM hard-limit exceedances this flight.
-
-══════════════════════════════════════════════════════════════════════
-```
-
-Report saved to `data/reports/report_<logname>.txt`.
-
----
-
-### Script 02 — ENGINE ECU Correlation
-
-```bash
-python notebooks/02_engine_ecu_correlation.py
-```
-
-Run when an IN-FLIGHT ENGINE ECU event is flagged. Analyses all flights, classifies every ENGINE ECU occurrence as POWERUP / LANE_CHECK / SHUTDOWN / IN_FLIGHT, and produces a detailed report covering:
-
-- Per-flight summary of all ENGINE ECU runs
-- Co-active alert analysis for IN_FLIGHT events
-- Oil pressure NaN pattern (CAN dropout signature)
-- Recommended inspection actions
-
-Output saved to `data/reports/engine_ecu_report.txt` and `data/reports/engine_ecu_runs.csv`.
-
----
-
-### Script 01 — Single Flight Deep Dive
-
-```bash
-python notebooks/01_first_flight_analysis.py log_20260527_200344_KSFF.csv
-```
-
-Detailed technical diagnostic for one flight — per-cylinder EGT analysis, full phase timeline, fuel flow by phase, CAS alert log, all exceedances with timestamps. Use when the per-flight report flags something and you want to understand it in detail.
-
----
 
 ### Tuning insight triggers
 
@@ -230,7 +191,20 @@ Edit `insight_rules.json` at the toolkit root to adjust when insights fire. For 
 }
 ```
 
-No code changes needed — edit the JSON and re-run.
+No code changes needed — edit the JSON, then `slingology-eis rules check insight_rules.json` to validate it before use.
+
+---
+
+## Legacy notebooks
+
+`notebooks/01`–`04` are the original interactive scripts (Jupyter-compatible via `jupytext`) the toolkit grew from. Since the engine-contract refactor they call into the same `slingology_eis/` library as the CLI, but still own their own report-rendering logic independently of `cli.py` — the two aren't guaranteed byte-identical. They're kept for now as Stage 0's characterization-test oracle (`tests/characterization/`) and for ad hoc plotting/deep-dive work; see CHANGELOG 0.11.0 and `BACKLOG.md` for the planned cleanup once the CLI has some track record. Prefer the `slingology-eis` CLI for day-to-day use.
+
+```bash
+python notebooks/01_first_flight_analysis.py log_20260527_200344_KSFF.csv   # single-flight deep dive
+python notebooks/02_engine_ecu_correlation.py                               # ENGINE ECU pattern analysis
+python notebooks/03_multi_flight_insights.py                                # fleet baselines/models/insights
+python notebooks/04_flight_report.py log_20260527_200344_KSFF.csv           # per-flight pilot report
+```
 
 ---
 
@@ -261,11 +235,24 @@ The takeoff MAP model additionally requires altitude diversity across departure 
 | Oil press (cruise) | 29 psi | 72.5 psi |
 | MAP | — | 53.15 inHg |
 
+915iS limits are sourced separately from OM-915 i A/C24 Ed. 0 Rev. 4 — see `engines/915iS.json`. Run `slingology-eis engines` for the full list of available profiles and their verification status.
+
 ---
 
 ## Fuel analytics note
 
 There is deliberately no fuel-flow calibration against pump receipts in this toolkit. For an aircraft always fuelled full-to-full, gallons added at the pump already equals true consumption since the last fill — no flight-log-based calibration adds value. See CHANGELOG.md (0.6.0) and research paper §6.2.
+
+---
+
+## For developers
+
+```bash
+pip install -e ".[dev]"
+pytest tests/
+```
+
+Most of the suite runs against synthetic data and needs nothing further. A subset — the characterization tests, and some contract/CLI tests — are gated on real flight logs (`data/logs/`) and frozen golden fixtures (`tests/characterization/golden/`), both private and gitignored; they skip automatically when absent. See `docs/specs/01-engine-contract.md` for the engine contract this all sits on top of, and `docs/specs/` generally for the design behind the refactor.
 
 ---
 
@@ -277,4 +264,4 @@ See `ROTAX 91XiS Engine Data Analytics.md` for the full analytical methodology, 
 
 ## License
 
-MIT License — see LICENSE file.
+MIT License — see LICENSE.md.

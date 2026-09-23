@@ -1,18 +1,19 @@
 {
   "_metadata": {
     "engine": "Rotax 915iS",
-    "variant": "915 iS Series",
-    "om_reference": "PLACEHOLDER — not yet verified against official OM",
-    "source_status": "PLACEHOLDER",
-    "notes": "Values are estimates from publicly available Rotax 915iS specifications. MUST be verified against the official Operators Manual before use in a real aircraft. Do not rely on these limits for operational decisions."
+    "variant": "915 i A / C24 Series",
+    "om_reference": "OM-915 i A / C24, Edition 0 / Rev. 4, September 2022 (Ref. No. OM-915 i A / C24, Part No. 898851)",
+    "om_chapter": "Chapter 2.1 Operating Limits",
+    "source_status": "VERIFIED",
+    "notes": "All limit values sourced directly from the Operators Manual except bus voltage (not an OM limit) and phase_detection (derived). Do not modify without updating om_reference."
   },
 
   "engine_family": "iS",
   "fadec": true,
   "turbocharged": true,
   "cylinders": 4,
-  "rated_power_kw": 100,
-  "rated_power_hp": 135,
+  "rated_power_kw": 104,
+  "rated_power_hp": 139,
   "rated_rpm": 5800,
 
   "limits": [
@@ -23,7 +24,8 @@
       "unit": "rpm",
       "min_val": 1800,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "min_duration_s": 30,
+      "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
     },
     {
       "param": "rpm",
@@ -31,7 +33,7 @@
       "unit": "rpm",
       "max_val": 5500,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "5,500 rpm is max continuous (99 kW); 5,800 rpm allowed for 5 min (104 kW take-off)"
     },
     {
       "param": "rpm",
@@ -40,7 +42,7 @@
       "max_val": 5800,
       "time_limit_s": 300,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "5,800 rpm permitted for maximum 5 minutes"
     },
 
     {
@@ -49,15 +51,24 @@
       "unit": "psi",
       "min_val": 29.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "phases": ["CLIMB", "CRUISE", "DESCENT"],
+      "note": "Minimum 2.0 bar / 29 psi above 3,500 rpm (0.8 bar / 11.6 psi minimum below 3,500 rpm). Phase-filtered — pre-flight and engine start readings excluded."
     },
     {
       "param": "oil_press_psi",
-      "label": "Oil pressure max",
+      "label": "Oil pressure max (>3500 rpm)",
       "unit": "psi",
       "max_val": 72.5,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "Maximum 5.0 bar / 72.5 psi normal operation"
+    },
+    {
+      "param": "oil_press_psi",
+      "label": "Oil pressure max (cold start)",
+      "unit": "psi",
+      "max_val": 101.5,
+      "severity": "CAUTION",
+      "note": "Up to 7.0 bar / 101.5 psi acceptable during cold start warmup"
     },
 
     {
@@ -66,15 +77,16 @@
       "unit": "°F",
       "min_val": 122.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "phases": ["TAKEOFF", "CLIMB", "CRUISE"],
+      "note": "Must reach 50°C / 122°F before takeoff. Phase-filtered — pre-flight readings excluded."
     },
     {
       "param": "oil_temp_f",
       "label": "Oil temp maximum",
       "unit": "°F",
-      "max_val": 248.0,
+      "max_val": 266.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "Maximum 130°C / 266°F normal operation (915iS; differs from 916iS 120°C)"
     },
     {
       "param": "oil_temp_f",
@@ -82,7 +94,8 @@
       "unit": "°F",
       "min_val": 194.0,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "report_in_exceedances": false,
+      "note": "Operating below 90–110°C / 194–230°F may cause condensation in the lubrication system — reach 100°C / 212°F once daily. Reported in oil temp analysis section, not exceedances."
     },
 
     {
@@ -91,37 +104,75 @@
       "unit": "°F",
       "max_val": 248.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "Maximum 120°C / 248°F at normal operation"
     },
 
     {
-      "param": "egt1_f", "label": "EGT1 maximum", "unit": "°F",
-      "max_val": 1742.0, "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "param": "egt1_f",
+      "label": "EGT1 maximum",
+      "unit": "°F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
-      "param": "egt2_f", "label": "EGT2 maximum", "unit": "°F",
-      "max_val": 1742.0, "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "param": "egt2_f",
+      "label": "EGT2 maximum",
+      "unit": "°F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
-      "param": "egt3_f", "label": "EGT3 maximum", "unit": "°F",
-      "max_val": 1742.0, "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "param": "egt3_f",
+      "label": "EGT3 maximum",
+      "unit": "°F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
-      "param": "egt4_f", "label": "EGT4 maximum", "unit": "°F",
-      "max_val": 1742.0, "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM"
+      "param": "egt4_f",
+      "label": "EGT4 maximum",
+      "unit": "°F",
+      "max_val": 1742.0,
+      "severity": "WARNING",
+      "note": "950°C / 1,742°F absolute max per cylinder"
     },
 
     {
       "param": "map_inhg",
       "label": "Manifold pressure maximum",
       "unit": "inHg",
-      "max_val": 47.2,
+      "max_val": 51.09,
       "severity": "WARNING",
-      "note": "PLACEHOLDER — verify against OM. 915iS max boost approximately 1,600 hPa."
+      "note": "1,730 hPa / 51.09 inHg not-to-exceed (OM rounds to 51 inHg). Target at 25–35°C: 1,520 mbar at 5,800 rpm, 1,450 mbar at 5,500 rpm."
+    },
+
+    {
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "min_val": 42.0,
+      "severity": "WARNING",
+      "min_duration_s": 10,
+      "note": "2.9 bar / 42 psi minimum at fuel rail. 36 psi allowed for 3 sec after power change per OM."
+    },
+    {
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure maximum",
+      "unit": "psi",
+      "max_val": 46.0,
+      "severity": "CAUTION",
+      "min_duration_by_phase": {
+        "TAXI": null,
+        "TAKEOFF": null,
+        "CLIMB": 10,
+        "CRUISE": 30,
+        "DESCENT": 10,
+        "LANDING": null
+      },
+      "note": "3.2 bar / 46 psi nominal max. Transient exceedances suppressed during taxi/pump test and tank switching in cruise. 51 psi allowed for 3 sec after power change per OM."
     },
 
     {
@@ -130,7 +181,7 @@
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "Not an OM limit — 12 V airframe bus heuristic. Below ~12V indicates alternator failure or excessive load. Not valid for C24 (24 V bus) installations."
     },
     {
       "param": "main_volts",
@@ -138,31 +189,31 @@
       "unit": "V",
       "max_val": 14.5,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER — verify against OM"
+      "note": "Not an OM limit — 12 V airframe bus heuristic. Above 14.5V indicates voltage regulator fault. Not valid for C24 (24 V bus) installations."
     }
   ],
 
   "egt_spread": {
-    "note": "PLACEHOLDER — verify thresholds against OM",
+    "note": "EGT split limits are conditional on fuel flow — two separate thresholds per OM Chapter 2.1",
     "high_flow_threshold_lph": 3.0,
     "high_flow_spread_limit_f": 392.0,
     "high_flow_spread_limit_c": 200.0,
-    "high_flow_note": "PLACEHOLDER — EGT split limit at fuel flow > 3 L/hr",
+    "high_flow_note": "EGT split limit at fuel flow > 3 L/hr (200°C / 392°F)",
     "low_flow_spread_limit_f": 932.0,
     "low_flow_spread_limit_c": 500.0,
-    "low_flow_note": "PLACEHOLDER — EGT split limit at fuel flow < 3 L/hr"
+    "low_flow_note": "EGT split limit at fuel flow < 3 L/hr (500°C / 932°F)"
   },
 
   "overboost": {
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
     "time_limit_s": 300,
-    "note": "PLACEHOLDER — verify against OM"
+    "note": "5-minute (300s) limit on operation at or above 5,800 rpm / 100% power"
   },
 
   "eco_power_mode": {
     "throttle_position_threshold_pct": 97,
-    "note": "PLACEHOLDER — verify against OM"
+    "note": "Below ~97% throttle position the ECU operates in ECO mode; above, POWER mode (OM Chapter 5). ECO only available with dual-lane operation. Not directly available in G3X log columns — must be inferred."
   },
 
   "phase_detection": {
@@ -172,6 +223,6 @@
     "takeoff_rpm_min": 4500,
     "overboost_rpm_threshold": 5500,
     "lane_check_max_duration_s": 15,
-    "note": "PLACEHOLDER — derived from limit values above"
+    "note": "Values derived from operating limits above — not separately sourced. Mirrors 916iS; OM-915 lane/ignition check is performed at 2,500 rpm."
   }
 }

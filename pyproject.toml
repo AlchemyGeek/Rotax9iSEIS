@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slingology-eis"
+version = "0.11.0"
+description = "Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE.md" }
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+]
+
+# Housekeeping (Spec 04 finding 1): only pandas and numpy are actually
+# imported anywhere in slingology_eis/ or notebooks/ — everything else
+# requirements.txt used to list unconditionally is optional tooling.
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "jsonschema>=4.0",
+]
+notebooks = [
+    "jupytext>=1.14",
+    "jupyter>=1.0",
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+slingology-eis = "slingology_eis.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["slingology_eis*"]

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baselines &amp; Rule Playground</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body{margin:0;background:#0F1214;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#E8EAED}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+  a{color:#4FC3B0;text-decoration:none}
+  a:hover{color:#6DD4C3}
+  button{font-family:inherit}
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:8px 10px;font-size:12px;}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2A3136;border-radius:4px}
+</style>
+</helmet>
+
+<div style="width:1440px;height:920px;box-sizing:border-box;display:flex;flex-direction:column;background:#0F1214;overflow:hidden;">
+
+  <!-- Top nav -->
+  <div style="height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid #2A3136;">
+    <div style="display:flex;align-items:center;gap:28px;">
+      <span style="font-weight:700;font-size:15px;letter-spacing:0.2px;">SlingologyEIS</span>
+      <nav style="display:flex;gap:4px;">
+        <a href="FlightView.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Flights</a>
+        <a href="Trends.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Trends</a>
+        <span style="padding:6px 14px;border-radius:8px;background:rgba(79,195,176,0.15);color:#4FC3B0;font-size:13px;font-weight:600;">Baselines</span>
+        <span style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#5B6570;">ECU</span>
+      </nav>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button style="padding:7px 14px;border-radius:8px;background:#171B1E;border:1px solid #2A3136;color:#E8EAED;font-size:12px;cursor:pointer;">Rebuild baselines</button>
+      <a href="Import.dc.html" style="display:flex;align-items:center;gap:7px;padding:7px 16px;border-radius:8px;border:1px solid #4FC3B0;color:#4FC3B0;font-size:13px;font-weight:600;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
+        Import logs
+        <span style="display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#4FC3B0;color:#0F1214;font-size:10px;font-weight:700;">3</span>
+      </a>
+    </div>
+  </div>
+
+  <div style="flex-grow:1;display:flex;min-height:0;">
+
+    <!-- Rule list -->
+    <div style="width:300px;flex-shrink:0;border-right:1px solid #2A3136;overflow-y:auto;padding:18px 14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">RULES</div>
+      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">egt_spread</div>
+      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">oil_coolant_ratio</div>
+      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">cruise_efficiency</div>
+      <div style="padding:9px 12px;border-radius:8px;background:rgba(79,195,176,0.15);color:#4FC3B0;font-size:13px;font-weight:600;margin-bottom:2px;">overboost_time</div>
+      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">cylinder_rank</div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:14px 8px 8px;">FLEET SELECTION</div>
+      <div style="padding:10px 12px;background:#171B1E;border-radius:8px;font-size:12px;color:#9AA4AC;">
+        23 of 23 flights included<br>
+        <span style="color:#5B6570;">0 excluded</span>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:14px 8px 8px;">ENGINE OVERRIDES</div>
+      <div style="padding:10px 12px;background:#171B1E;border-radius:8px;font-size:12px;color:#9AA4AC;">
+        None active — using shipped 916iS limits.
+      </div>
+    </div>
+
+    <!-- Main -->
+    <div style="flex-grow:1;overflow-y:auto;padding:20px 28px;display:flex;flex-direction:column;gap:16px;">
+
+      <div>
+        <h1 style="margin:0 0 4px;font-size:19px;font-weight:700;">overboost_time — close-call flag</h1>
+        <div style="font-size:12px;color:#5B6570;">Threshold rule · workspace copy — editing this never touches the shipped insight_rules.json.</div>
+      </div>
+
+      <!-- Rule editor -->
+      <div style="background:#171B1E;border-radius:12px;padding:20px;">
+        <div style="display:grid;grid-template-columns:160px 1fr 160px;gap:16px;align-items:center;margin-bottom:16px;">
+          <label style="font-size:12px;color:#9AA4AC;">Trigger type</label>
+          <div class="mono" style="font-size:13px;background:#0F1214;border:1px solid #2A3136;border-radius:6px;padding:8px 10px;">threshold</div>
+          <div></div>
+
+          <label style="font-size:12px;color:#9AA4AC;">Condition</label>
+          <div class="mono" style="font-size:13px;background:#0F1214;border:1px solid #2A3136;border-radius:6px;padding:8px 10px;">overboost_total_s ≥ <span style="color:#EAB308;font-weight:600;">240</span></div>
+          <div style="font-size:11px;color:#5B6570;">shipped default</div>
+
+          <label style="font-size:12px;color:#9AA4AC;">Severity</label>
+          <div style="display:flex;gap:8px;">
+            <span style="padding:5px 10px;border-radius:6px;background:rgba(234,179,8,0.15);color:#EAB308;font-size:12px;font-weight:600;">watch</span>
+          </div>
+          <div></div>
+        </div>
+
+        <div style="border-top:1px solid #2A3136;padding-top:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:#9AA4AC;">Preview threshold</span>
+            <span class="mono" style="font-size:13px;color:#4FC3B0;font-weight:600;">200</span>
+          </div>
+          <div style="position:relative;height:6px;background:#0F1214;border-radius:3px;border:1px solid #2A3136;">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:56%;background:rgba(79,195,176,0.35);border-radius:3px;"></div>
+            <div style="position:absolute;left:66%;top:-4px;width:2px;height:14px;background:#5B6570;" title="shipped default: 240"></div>
+            <div style="position:absolute;left:56%;top:-5px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:#4FC3B0;border:2px solid #0F1214;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;">
+            <span class="mono" style="font-size:10px;color:#5B6570;">0s</span>
+            <span class="mono" style="font-size:10px;color:#5B6570;">300s (5-min OM limit)</span>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button style="padding:7px 14px;border-radius:8px;background:#4FC3B0;border:none;color:#0F1214;font-size:12px;font-weight:600;cursor:pointer;">Apply to workspace</button>
+            <button style="padding:7px 14px;border-radius:8px;background:transparent;border:1px solid #2A3136;color:#9AA4AC;font-size:12px;cursor:pointer;">Reset to shipped default</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live impact -->
+      <div style="background:#171B1E;border-radius:12px;padding:18px 20px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px;">
+          <span style="font-size:13px;font-weight:600;">Live impact across the fleet</span>
+          <span style="font-size:12px;color:#4FC3B0;font-weight:600;">+1 flight newly flagged at 200s</span>
+        </div>
+        <div style="font-size:12px;color:#5B6570;margin-bottom:12px;">Flights sorted by overboost total time, current fleet selection (23 flights).</div>
+
+        <table>
+          <thead>
+            <tr style="border-bottom:1px solid #2A3136;">
+              <th style="color:#5B6570;font-weight:500;">Flight</th>
+              <th style="color:#5B6570;font-weight:500;">Overboost total</th>
+              <th style="color:#5B6570;font-weight:500;">At 240s (current)</th>
+              <th style="color:#5B6570;font-weight:500;">At 200s (preview)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #1F2427;">
+              <td class="mono">Apr 23 · 33.0h</td>
+              <td class="mono">387s</td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+            </tr>
+            <tr style="border-bottom:1px solid #1F2427;">
+              <td class="mono">Apr 30 · 42.8h</td>
+              <td class="mono">284s</td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+            </tr>
+            <tr style="border-bottom:1px solid #1F2427;">
+              <td class="mono">May 27 · 56.2h</td>
+              <td class="mono">274s</td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+              <td><span style="color:#EAB308;font-weight:600;">flagged</span></td>
+            </tr>
+            <tr style="border-bottom:1px solid #1F2427;background:rgba(79,195,176,0.06);">
+              <td class="mono">Jun 13 · 61.6h</td>
+              <td class="mono">229s</td>
+              <td style="color:#5B6570;">—</td>
+              <td><span style="color:#4FC3B0;font-weight:600;">+ newly flagged</span></td>
+            </tr>
+            <tr style="border-bottom:1px solid #1F2427;">
+              <td class="mono">Jun 8 · 60.4h</td>
+              <td class="mono">149s</td>
+              <td style="color:#5B6570;">—</td>
+              <td style="color:#5B6570;">—</td>
+            </tr>
+            <tr style="border-bottom:1px solid #1F2427;">
+              <td class="mono">Apr 21 · 30.2h</td>
+              <td class="mono">141s</td>
+              <td style="color:#5B6570;">—</td>
+              <td style="color:#5B6570;">—</td>
+            </tr>
+            <tr>
+              <td class="mono" style="color:#5B6570;">+ 17 more flights</td>
+              <td class="mono" style="color:#5B6570;">≤139s</td>
+              <td style="color:#5B6570;">—</td>
+              <td style="color:#5B6570;">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":920}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

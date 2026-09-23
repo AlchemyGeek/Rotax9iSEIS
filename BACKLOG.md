@@ -1,7 +1,7 @@
 # SlingologyEIS — Project Backlog
 
-Last updated: July 7, 2026
-Toolkit current version: 0.10.0
+Last updated: September 23, 2026
+Toolkit current version: 0.11.0
 Research paper current edition: 0.2
 
 Items organized by category. Each item notes type: **code**, **design**, or **research**.
@@ -135,7 +135,8 @@ climb thermal rate — should also trend within OAT bands rather than blended.
 ## D — Engine Coverage & Maintenance
 
 ### ~~D1. Multi-engine config file support~~ — COMPLETED in v0.9.0
-916iS fully verified. 912iS, 914iS, 915iS are verified placeholders.
+916iS and 915iS fully verified (915iS verified in v0.11.0, against OM-915 i A/C24 Ed. 0
+Rev. 4). 912iS and 914iS remain placeholders.
 
 ---
 
@@ -180,6 +181,42 @@ Edition 0.2. Updates needed for v0.10.0:
 - CHANGELOG updated
 - Version bumped to 0.10.0 in `slingology_eis/__init__.py`
 - Tag v0.10.0
+
+---
+
+## G — Engine Contract Refactor Follow-ups
+
+### G1. Fuel-pressure exceedances — root cause
+**Type:** Research → possible code
+Fixing the silent limit-checking bug in v0.11.0 (see CHANGELOG) surfaced real exceedances
+in the golden fixtures, mostly fuel-pressure related: some negative PSI readings (likely
+sensor/CAN-dropout artifacts) and some sustained near-max readings (possibly genuine, or a
+units/reference-frame mismatch — the 916iS config's fuel-pressure minimum note says
+"relative to MAP" while the logged channel may be absolute). Deliberately deferred until
+the tool's analysis capabilities are more complete. Investigate post-v0.11.0.
+
+---
+
+### G2. Retire notebook/CLI orchestration duplication
+**Type:** Code
+`notebooks/03`'s `write_baselines()` and `notebooks/04`'s report loop still duplicate
+orchestration/rendering logic that `operations.py` + `cli.py` now do independently (not
+byte-identical). Kept through v0.11.0 as the characterization tests' independent oracle.
+Once the CLI has a track record post-release: either delete notebooks 01/02/04 (redundant
+with `flight`/`ecu`/`report` subcommands) or shrink 03/04 to thin plotting wrappers around
+the library, and retire or rework the characterization tests that currently run them live.
+
+---
+
+### ~~E3'. GitHub repository — v0.11.0 release~~ — this pass
+**Type:** Infrastructure
+- README rewritten: `pyproject.toml`-based install, CLI command reference, updated
+  directory structure, legacy-notebooks section
+- CHANGELOG updated with the full Stage 0–4a refactor entry
+- Version bumped to 0.11.0 in `slingology_eis/__init__.py` and `pyproject.toml`
+- `requirements.txt` removed in favor of `pyproject.toml`
+- `.gitignore` updated (`*.egg-info/`)
+- Tag v0.11.0 (after commit/push)
 
 ---
 

@@ -4,8 +4,89 @@ All notable changes to the `slingology_eis` toolkit are recorded here.
 Check your installed version with:
 
 ```bash
+slingology-eis --version
+# or
 python -c "import slingology_eis; print(slingology_eis.__version__)"
 ```
+
+---
+
+## 0.11.0 — September 23, 2026
+
+**The engine contract refactor (Stages 0–4a) and the new `slingology-eis` CLI.** The
+per-flight/fleet analysis logic that used to live only in `notebooks/` scripts now lives in
+a pure, stateless library (`slingology_eis/operations.py`) behind a typed contract, driven
+by `docs/specs/01-engine-contract.md` (through v0.6) and `docs/specs/02-results-bundle-and-workspace.md`.
+The goal: the same engine a future browser UI runs unmodified via Pyodide (`docs/specs/04-runtime-adapters-and-pyodide-spike.md`
+reached a GO decision this cycle — numpy+pandas only, no SciPy/Matplotlib/Jupyter needed at runtime).
+
+- **New: `slingology-eis` command-line interface** (`slingology_eis/cli.py`, installed via
+  `pyproject.toml`). Subcommands: `engines`, `flight`, `ecu`, `fleet`, `report`, `import`,
+  `rules check`, `rules try`; `export-bundle` and `serve` are present but intentionally stubbed
+  (exit 2) pending Spec 02's bundle format and the Stage 4b local-server adapter. Global
+  options `--logs`/`--workspace`/`--engine`/`--json`/`--anonymize`/`--quiet`; exit codes
+  0/1/2. `--json` output validates against the new JSON Schemas in `contract/schema/`.
+  See the README's Command-line interface section for the full reference.
+- **New: the engine contract.** Four operations — `analyze_flight`, `analyze_ecu`,
+  `update_fleet`, `evaluate_insights` — each returning a typed, `.to_dict()`-serializable
+  result object (`FlightAnalysis`, `EcuAnalysis`, `FleetAnalysis`, `InsightSet`) with a
+  shared `Provenance`/`Diagnostic` envelope (`slingology_eis/contract.py`). Every result
+  validates against a hand-authored JSON Schema in `contract/schema/`. Missing metrics
+  always carry a reason code (`NO_PHASE`, `CHANNEL_MISSING`, `INSUFFICIENT_DATA`,
+  `NOT_APPLICABLE`, `EXCLUDED`) instead of a bare `null`.
+- **New: minimal workspace persistence.** `fleet`/`import`/`report`/`rules try` cache
+  results under `<workspace>/flights/<flight_id>/analysis.json` and
+  `<workspace>/fleet/analysis.json` — a deliberately minimal subset of Spec 02's eventual
+  layout, just enough to avoid recomputing the fleet baseline from every log on every call.
+- **New: `slingology_eis/rules.py`** — `validate_rules()` (schema/semantic checks on an
+  `insight_rules.json`-shaped file) and `what_if_rules()` (diffs the insights a candidate
+  rule set would produce against the currently-shipped one, for one flight). Backs the new
+  `rules check`/`rules try` subcommands.
+- **New: `slingology_eis/baselines.py` and `topics.py`**, extracted from the notebook
+  scripts (Stage 2) — the personal-baseline computation and all 14 analytics topics are now
+  importable library functions, not print statements. `notebooks/03` and `04` call into
+  them but still own their own orchestration/rendering (see "Known duplication" below).
+- **New: `tests/` suite** — 119 tests across `characterization/` (locks legacy notebook
+  behaviour against frozen goldens), `unit/`, `contract/` (schema validation + purity checks
+  against real and synthetic flights), and `cli/` (18 tests: schema validation, exit codes,
+  `--anonymize`, rules check/try, gated real-data subcommands).
+- **Packaging: `pyproject.toml` replaces `requirements.txt`.** Install with
+  `pip install -e .`; core runtime deps are just `pandas` and `numpy` — nothing else is
+  actually imported anywhere in `slingology_eis/` or `notebooks/`. `pytest`/`jsonschema` are
+  now a `dev` extra; `jupyter`/`jupytext`/`matplotlib` are a `notebooks` extra.
+  `requirements.txt` (which overstated the dependency list, including an unused `scipy`
+  pin) is removed.
+- **Fixed: a 2.5-month-old bug that silenced all limit checking.**
+  `engine_limits_from_config()` built each `Limit` inside a shadowed local list that was
+  discarded every loop iteration, so `check_exceedances()` silently returned zero events for
+  every engine, for every flight, since commit `a7af9ad` (July 3). One-line fix, plus
+  regression tests (`tests/unit/test_limits.py`) asserting a non-empty limit list. This
+  surfaced real exceedances (mostly fuel-pressure related) in the golden fixtures that were
+  previously hidden — root-causing which are genuine versus sensor/CAN-dropout artifacts is
+  deliberately deferred until after this release.
+  Characterization tests didn't catch it because they skip when no private log data is
+  present, so a silent-empty-result regression like this produced no test failure.
+- **Fixed: duplicate oil-temperature insight** — `topics.oil_temp_peak()` had its
+  threshold/baseline-deviation insight loop duplicated, firing the same insight twice.
+  Dormant in every golden report until now; fixed with a unit test asserting single-insight
+  behaviour.
+- **Fixed: `overboost_time()` crash on a log missing `power_pct`**, `update_fleet([])`
+  crash on an empty flight list, and a bare `NaN` (instead of `None`) surviving into
+  `FlightMetrics` JSON output — all caught via contract-layer testing against synthetic
+  logs, none previously exercised by the notebook path.
+- **Known duplication, tracked for cleanup:** `notebooks/03`'s `write_baselines()` and
+  `notebooks/04`'s report loop still duplicate orchestration/rendering logic that
+  `operations.py` + `cli.py`'s `render_report`/`render_fleet_summary` now do independently
+  — the two aren't byte-identical. Kept through this release as the characterization tests'
+  independent oracle; slated for retirement or simplification to thin plotting wrappers
+  once the CLI has a track record post-release. See `BACKLOG.md`.
+- **Engine coverage:** `engines/915iS.json` is now fully **VERIFIED** against
+  OM-915 i A/C24, Edition 0/Rev. 4 (previously a placeholder). 912iS and 914iS remain
+  placeholders.
+
+This release is the agreed milestone before UI work (Spec 03/05) begins — a released,
+documented, conformance-checked CLI to build the browser UI against, per the refactor's own
+"characterize before you change it" pattern.
 
 ---
 

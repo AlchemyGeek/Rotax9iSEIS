@@ -32,6 +32,7 @@ DIAGNOSTIC_CATALOG = (
     "MODEL_INSUFFICIENT_DATA",
     "ENGINE_PLACEHOLDER_CONFIG",
     "ENGINE_CUSTOM_OVERRIDE",
+    "RULES_SCHEMA_ERROR",
 )
 
 Severity = str    # "info" | "warn" | "error"

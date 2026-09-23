@@ -82,6 +82,26 @@ def _serialize_ecu_run(r, t0) -> dict:
     }
 
 
+def _format_exceedance_text(e: dict) -> str:
+    """
+    Match limits.ExceedanceEvent.__str__'s exact text, from the
+    serialized dict form (FlightAnalysis.exceedances) instead of the
+    live dataclass — topics.limit_exceedances() just needs something
+    stringifiable, and the notebook04 path still hands it real
+    ExceedanceEvent objects directly; this keeps both paths producing
+    the same message text.
+    """
+    direction = "below min" if e["limit_type"] == "MIN" else "above max"
+    t = e.get("start_utc")
+    time_str = datetime.fromisoformat(t).strftime("%H:%M:%S") if t else "?"
+    return (
+        f"[{e['severity']}] {e['label']}: "
+        f"{e['observed_value']:.1f} {e['unit']} {direction} "
+        f"{e['limit_value']:.1f} {e['unit']} "
+        f"at {time_str} for {e['duration_s']:.0f}s"
+    )
+
+
 def _to_plain(value):
     """
     numpy scalar / date / datetime -> JSON-primitive, for MetricValue.value.
@@ -717,7 +737,7 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     }
     topics_out.append(ecu_topic)
 
-    raw = topics.limit_exceedances(flight_analysis.exceedances)
+    raw = topics.limit_exceedances([_format_exceedance_text(e) for e in flight_analysis.exceedances])
     _emit("limit_exceedances", raw, [], 0)
 
     # header_warnings carries the flight's own quality diagnostics (e.g.
