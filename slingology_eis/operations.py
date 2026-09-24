@@ -27,6 +27,7 @@ from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
 from .limits import check_exceedances
 from .loader import flight_fingerprint, flight_id as _flight_id, load_log_bytes, source_key as _source_key
 from .phases import detect_phases, phase_segments
+from .channels import CHANNEL_REGISTRY
 from .registry import METRIC_REGISTRY, missing_reason
 from . import topics
 
@@ -71,6 +72,7 @@ def _serialize_ecu_run(r, t0) -> dict:
     return {
         "classification": r["classification"],
         "start_utc": r["start_time"].isoformat() if r["start_time"] is not None else None,
+        "end_utc": r["end_time"].isoformat() if r.get("end_time") is not None else None,
         "elapsed_s": _elapsed_s(r["start_time"], t0),
         "duration_s": r["duration_s"],
         "co_alerts": list(r.get("co_alerts") or []),
@@ -79,6 +81,14 @@ def _serialize_ecu_run(r, t0) -> dict:
         "lane_check_note": r.get("lane_check_note", ""),
         "mean_rpm": r.get("mean_rpm"),
         "mean_ias_kt": r.get("mean_ias_kt"),
+        "mean_power_pct": r.get("mean_power_pct"),
+        "mean_oil_press_psi": r.get("mean_oil_press_psi"),
+        "mean_oil_temp_f": r.get("mean_oil_temp_f"),
+        "mean_coolant_temp_f": r.get("mean_coolant_temp_f"),
+        "mean_main_volts": r.get("mean_main_volts"),
+        "mean_batt_amps": r.get("mean_batt_amps"),
+        "mean_fuel_press_psi": r.get("mean_fuel_press_psi"),
+        "mean_baro_alt_ft": r.get("mean_baro_alt_ft"),
     }
 
 
@@ -286,6 +296,34 @@ class EcuAnalysis:
         }
 
 
+_ECU_CONTEXT_FIELDS = (
+    "mean_rpm", "mean_power_pct", "mean_oil_press_psi", "mean_oil_temp_f",
+    "mean_coolant_temp_f", "mean_main_volts", "mean_batt_amps",
+    "mean_fuel_press_psi", "mean_ias_kt", "mean_baro_alt_ft", "oil_nan_frac",
+)
+
+
+def _ecu_run_output(r: dict) -> dict:
+    """
+    The API-facing per-run shape (Spec 01 §8.6's `runs[]`) — channel means
+    grouped under `context`, separate from the run's own identity/timing,
+    since a co-active-alert correlation check (B3) is judged against the
+    context, not the classification. `all_runs`' flat shape stays as-is
+    for analyze_inflight_pattern's own internal use, above/below this.
+    """
+    return {
+        "flight_id": r["flight_id"],
+        "classification": r["classification"],
+        "start_utc": r.get("start_utc"),
+        "end_utc": r.get("end_utc"),
+        "duration_s": r["duration_s"],
+        "co_alerts": r.get("co_alerts") or [],
+        "lane_check_pair": bool(r.get("lane_check_pair", False)),
+        "lane_check_note": r.get("lane_check_note", ""),
+        "context": {k: r.get(k) for k in _ECU_CONTEXT_FIELDS},
+    }
+
+
 def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
     """
     Aggregate ECU runs across flights: per-classification counts and,
@@ -318,6 +356,8 @@ def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
     for event in inflight_pattern["events"]:
         event["flight_id"] = event.pop("source_file")
 
+    runs_output = [_ecu_run_output(r) for r in all_runs]
+
     flight_ids = [fa.flight_id for fa in flight_analyses]
     source_keys = sorted({sk for fa in flight_analyses for sk in fa.source_keys})
     provenance = {
@@ -329,7 +369,7 @@ def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
 
     return EcuAnalysis(
         flight_ids=flight_ids,
-        runs=all_runs,
+        runs=runs_output,
         counts=counts,
         inflight_pattern=inflight_pattern,
         provenance=provenance,
@@ -431,6 +471,21 @@ class FleetAnalysis:
         }
 
 
+def resolve_outlier_z_threshold(baseline_config: dict, metric_id: str) -> float:
+    """
+    Spec 01 §8.4 v0.8: `outlier_z_threshold` (resolved per metric as
+    `overrides[metric_id] ?? outlier_z_threshold`, default 2.0 if neither
+    is set) is the ONE value behind both update_fleet's FleetMetric.outliers
+    and evaluate_insights's baseline_deviation trigger — a shared resolver
+    so the two can't drift apart the way insight_rules.json's own
+    per-rule z_score_threshold field used to let them.
+    """
+    overrides = baseline_config.get("outlier_z_threshold_overrides") or {}
+    if metric_id in overrides:
+        return overrides[metric_id]
+    return baseline_config.get("outlier_z_threshold", 2.0)
+
+
 def update_fleet(
     flight_analyses: list[FlightAnalysis],
     excluded: Optional[list[dict]] = None,
@@ -450,7 +505,9 @@ def update_fleet(
     from .fleet import baseline, baseline_stratified, outliers, trend
 
     excluded = excluded or []
-    baseline_config = baseline_config or {"membership": "leave_one_out", "band_kind_by_metric": {}}
+    baseline_config = baseline_config or {
+        "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
+    }
 
     if not flight_analyses:
         return FleetAnalysis(
@@ -472,12 +529,16 @@ def update_fleet(
         b = baseline(df, col)
         t = trend(df, col, x="engine_hours")
 
+        z_threshold = resolve_outlier_z_threshold(baseline_config, key)
         entry = {
             "metric_id": key,
             "baseline": _fleet_baseline_dict(b),
             "trend": _fleet_trend_dict(t),
             "points": _metric_points(df, col, band_col),
-            "outliers": [{"flight_id": o.source_file, "z_score": o.z_score} for o in outliers(df, col)],
+            "outliers": [
+                {"flight_id": o.source_file, "z_score": o.z_score}
+                for o in outliers(df, col, z_threshold=z_threshold)
+            ],
         }
         if band_col and band_col in df.columns:
             stratified = baseline_stratified(df, col, band_column=band_col)
@@ -621,6 +682,11 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     rules_hash = content_hash(rules)
     fm = flight_analysis.metrics
     flight_id = flight_analysis.flight_id
+    # Same BaselineConfig update_fleet resolved fleet_analysis's outliers
+    # from (carried in provenance) — not a fresh param, so this can never
+    # be called with a config that disagrees with the fleet it's paired
+    # with (Spec 01 §8.4 v0.8's "one threshold, two consumers").
+    baseline_config = fleet_analysis.provenance.get("baseline_config") or {}
 
     topics_out: list[dict] = []
 
@@ -660,7 +726,12 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
         # (not after: the insight would already exist in its output).
         bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
         low_n = 0 < fleet_n < bd_n_min
-        triggers = [t for t in all_triggers if not (low_n and t.get("type") == "baseline_deviation")]
+        resolved_z = resolve_outlier_z_threshold(baseline_config, fleet_key)
+        triggers = [
+            {**t, "z_score_threshold": resolved_z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+            if not (low_n and t.get("type") == "baseline_deviation")
+        ]
 
         if topic_id == "egt_spread":
             enabled = r_data.get(topic_id, {}).get("enabled", True)
@@ -737,8 +808,39 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     }
     topics_out.append(ecu_topic)
 
+    # Bypasses _emit(): limit_exceedances is per-event, not metric-shaped,
+    # so _emit's generic metric_ids -> evidence mapping doesn't apply (it
+    # was called with metric_ids=[], which is why this topic's insights
+    # had no evidence at all — the UI's evidence-click-to-zoom silently
+    # did nothing for the most common real insight type). Each exceedance
+    # already carries elapsed_s/duration_s; same pattern engine_ecu_inflight
+    # already uses below for its own per-event evidence.
     raw = topics.limit_exceedances([_format_exceedance_text(e) for e in flight_analysis.exceedances])
-    _emit("limit_exceedances", raw, [], 0)
+    limit_insights = []
+    for ins, exc in zip(raw["insights"], flight_analysis.exceedances):
+        pad = max(exc["duration_s"] * 0.5, 15)
+        limit_insights.append({
+            "id": content_hash({"flight_id": flight_id, "topic_id": "limit_exceedances",
+                                 "trigger": ins["trigger"], "text": ins["text"]})[:16],
+            "topic_id": "limit_exceedances",
+            "rule_id": "limit_exceedances.threshold",
+            "trigger": ins["trigger"],
+            "severity": _severity_for(rules, "limit_exceedances", ins["trigger"]),
+            "message": {"text": ins["text"]},
+            "evidence": [{
+                "kind": "series_window",
+                "channels": [exc["param"]] if exc["param"] in CHANNEL_REGISTRY else [],
+                "start_s": max(0, exc["elapsed_s"] - pad),
+                "end_s": exc["elapsed_s"] + exc["duration_s"] + pad,
+            }],
+            "confidence": _confidence(0),
+        })
+    topics_out.append({
+        "topic_id": "limit_exceedances",
+        "analysis": {"text": raw["analysis"]},
+        "insights": limit_insights,
+        "metric_ids": [],
+    })
 
     # header_warnings carries the flight's own quality diagnostics (e.g.
     # PHASE_NO_CRUISE — the "no stable cruise phase" banner the old text

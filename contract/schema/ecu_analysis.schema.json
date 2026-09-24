@@ -12,19 +12,33 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["flight_id", "classification", "duration_s", "co_alerts", "lane_check_pair", "lane_check_note"],
+        "required": ["flight_id", "classification", "duration_s", "co_alerts", "lane_check_pair", "lane_check_note", "context"],
         "properties": {
           "flight_id": { "type": "string" },
           "classification": { "type": "string", "enum": ["POWERUP", "SHUTDOWN", "LANE_CHECK", "IN_FLIGHT"] },
           "start_utc": { "type": ["string", "null"] },
-          "elapsed_s": { "type": ["number", "null"] },
+          "end_utc": { "type": ["string", "null"] },
           "duration_s": { "type": "number" },
           "co_alerts": { "type": "array", "items": { "type": "string" } },
-          "oil_nan_frac": { "type": ["number", "null"] },
           "lane_check_pair": { "type": "boolean" },
           "lane_check_note": { "type": "string" },
-          "mean_rpm": { "type": ["number", "null"] },
-          "mean_ias_kt": { "type": ["number", "null"] }
+          "context": {
+            "type": "object",
+            "description": "Per-run channel means, incl. oil_nan_frac — what a co-active-alert correlation (e.g. B3's OIL PRESS check) is actually judged against, not just classification/timing.",
+            "properties": {
+              "mean_rpm": { "type": ["number", "null"] },
+              "mean_power_pct": { "type": ["number", "null"] },
+              "mean_oil_press_psi": { "type": ["number", "null"] },
+              "mean_oil_temp_f": { "type": ["number", "null"] },
+              "mean_coolant_temp_f": { "type": ["number", "null"] },
+              "mean_main_volts": { "type": ["number", "null"] },
+              "mean_batt_amps": { "type": ["number", "null"] },
+              "mean_fuel_press_psi": { "type": ["number", "null"] },
+              "mean_ias_kt": { "type": ["number", "null"] },
+              "mean_baro_alt_ft": { "type": ["number", "null"] },
+              "oil_nan_frac": { "type": ["number", "null"] }
+            }
+          }
         }
       }
     },

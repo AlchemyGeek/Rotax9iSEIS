@@ -1,9 +1,16 @@
 # Spec 05 — Frontend Bootstrap (Fixture-Driven)
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.1 — implementation brief, for Claude Code
+**Status:** Draft v0.2 — implementation brief, for Claude Code
 **Suggested repo path:** `docs/specs/05-frontend-bootstrap.md`
 **Builds on:** Spec 01 v0.4 (types), Spec 02 v0.3 (schema, not yet implemented), Spec 03 (UI architecture), Spec 04 v0.3 (GO)
+**Revision history**
+
+| Version | Change |
+|---|---|
+| 0.1 | Initial brief. |
+| 0.2 | Flight view's timeline redesigned after review: the stacked-small-multiples approach in v0.1 was itself superseded (not the thing it replaced — see below). §4 and §6.1/§6.4 updated to match. New channel picker requirement added — the wireframe previously showed static channel text with no real control. |
+
 **Note on numbering:** "Spec 05" is reserved by this document. A separate "research mode" feature (correlation tools, free channel exploration) was discussed and tabled — if it's revisited, it gets the next number, 06, not this one.
 
 ---
@@ -40,7 +47,8 @@ Four `.dc.html` files are provided alongside this brief, under `design/wireframe
 
 Things the wireframes establish that are **not optional interpretation**, because they were deliberate design decisions made in review, not just first-draft choices:
 
-- **Stacked per-channel mini-charts, not one overlaid multi-axis chart**, in Flight view's timeline. Each channel (RPM, IAS, Oil Temp, EGT Spread) gets its own correctly-scaled row and its own unit label. A single shared axis was tried and explicitly rejected — see §6.1 below for why this matters for the fixture shape.
+- **One overlaid chart, each channel indexed to 0–100% of its own full-flight min/max, not a shared literal-value axis and not stacked small multiples.** Both of those were tried first and superseded, in that order: a literal shared axis (RPM/kt/°F on one scale) was rejected as meaningless; stacked per-channel rows fixed that but broke the ability to visually correlate channels against each other, which is what the timeline is actually for. The current design keeps the "no dishonest shared axis" property (the axis is explicitly labeled as an index, not a value scale) while putting every channel back in one chart, correlatable by eye. Exact real values, with real units, live in a synced cursor readout — a small box that follows a vertical guide line and shows every active channel's precise value at one instant. See §6.1 for what this means for the fixture/component shape.
+- **A real channel picker, not static label text.** Four channels are active by default (RPM, IAS, Oil Temp, EGT Spread), shown as colored chips that double as the chart's legend; more channels from the registry (Spec 01 §6.4) are available to add. The picker and the legend are the same component — don't build them separately.
 - **Import is a prominent, badged button in the header, not a nav tab.** It's reachable from every screen.
 - **The flight header shows the source log filename**, not just the date — e.g. `log_20260423_200615_KACV.csv` — because a flight's identity in Spec 02 is separate from its display date (a flight can have more than one source file).
 - **Leave-one-out baseline bands** in Trends, computed excluding the point being compared — this is a real Spec 01 decision (R2), not a chart-styling choice.
@@ -66,7 +74,7 @@ Real data, not placeholder text — generated from the project's own logs and `f
 This is the actual point of building this now rather than later. Specifically:
 
 ### 6.1 Chart library behavior
-Does ECharts make the stacked-small-multiples-with-synced-cursor pattern easy, or does ECharts' native multi-axis support push toward a different implementation than the wireframe assumed? If it's a fight, say so rather than forcing it — the wireframe's *intent* (per-channel honest scales, one synced readout) matters more than its exact SVG construction.
+Does ECharts make "multiple series, each independently normalized to its own 0–100% index, one shared x-axis, a synced cursor with a custom tooltip showing real values/units" straightforward, or does its native handling of this (dataZoom for the zoom/minimap, a formatter function for the cursor readout) push toward a different implementation than the wireframe assumed? If it's a fight, say so rather than forcing it — the wireframe's *intent* (channels visually correlatable in one view, real values never hidden) matters more than its exact SVG construction. Also report whether ECharts' own multi-axis support turns out to be a *better* way to get the same intent — that's a legitimate answer too, not a failure to match the mock.
 
 ### 6.2 Contract fit
 Anywhere `FlightAnalysis`/`InsightSet`/`FleetAnalysis` didn't cleanly supply what a view needed — a field that's awkward to consume, something the UI wants that Spec 01 doesn't have, evidence that doesn't map cleanly to a zoomable window. This is real signal for revising Spec 01, not a UI problem to work around silently.
@@ -75,7 +83,7 @@ Anywhere `FlightAnalysis`/`InsightSet`/`FleetAnalysis` didn't cleanly supply wha
 Anything where real content length, real data density, or real interaction broke a layout assumption — e.g., does the insight list's severity-sorted card layout still work when a flight has 14 topics with insights instead of the wireframe's 6, does the rule-playground diff table stay legible at 23 rows.
 
 ### 6.4 Performance
-Rough feel, not formal measurement: does the rule-playground threshold drag feel live against 23 flights' worth of fixture data (it should — the real spike measured `evaluate_insights` as cheap). Does the stacked-chart-plus-minimap combination feel smooth.
+Rough feel, not formal measurement: does the rule-playground threshold drag feel live against 23 flights' worth of fixture data (it should — the real spike measured `evaluate_insights` as cheap). Does the overlaid-chart-plus-minimap combination feel smooth, and does adding/removing a channel from the picker redraw without noticeable lag.
 
 ## 7. Explicit non-goals for this round
 

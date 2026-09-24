@@ -59,6 +59,17 @@ def test_trend_triggered_below_r2_or_n():
     assert not triggered
 
 
+def test_trend_triggered_insufficient_data_contract_spelling():
+    # operations.py's Stage 3 contract path emits direction="insufficient_data"
+    # (underscore) with r_squared/n as None — a real, previously-unguarded
+    # crash (TypeError comparing None < float) whenever a fleet is too small
+    # for a fit, e.g. a fresh 2-flight local-server workspace.
+    b = {"trend": {"direction": "insufficient_data", "r_squared": None, "n": None, "slope": None}}
+    triggered, text = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
+    assert not triggered
+    assert text == ""
+
+
 def test_confidence_note_thresholds():
     assert "still building" in topics.confidence_note({"n": 1})
     assert "low confidence" in topics.confidence_note({"n": 5})

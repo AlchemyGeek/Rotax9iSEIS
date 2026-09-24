@@ -303,6 +303,13 @@ def classify_engine_ecu_run(
     return "IN_FLIGHT"
 
 
+def _seg_mean(seg: pd.DataFrame, col: str) -> Optional[float]:
+    if col not in seg.columns:
+        return None
+    v = seg[col].mean()  # skips NaN by default — see the call site's note
+    return float(v) if pd.notna(v) else None
+
+
 def extract_engine_ecu_runs(
     df: pd.DataFrame,
     engine_config: Optional[dict] = None,
@@ -324,7 +331,10 @@ def extract_engine_ecu_runs(
     list[dict] with keys:
         source_file, date, start_time, end_time, duration_s,
         classification, co_alerts, oil_nan_frac,
-        start_idx, end_idx, mean_rpm, mean_ias_kt
+        start_idx, end_idx, mean_rpm, mean_ias_kt, mean_power_pct,
+        mean_oil_press_psi, mean_oil_temp_f, mean_coolant_temp_f,
+        mean_main_volts, mean_batt_amps, mean_fuel_press_psi,
+        mean_baro_alt_ft
     """
     if engine_config is None:
         from .limits import load_engine_config
@@ -386,6 +396,21 @@ def extract_engine_ecu_runs(
             "end_idx":         end_idx,
             "mean_rpm":        float(seg["rpm"].fillna(0).mean()) if "rpm" in seg.columns else None,
             "mean_ias_kt":     float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else None,
+            # A co-active-alert correlation check (e.g. B3's "is this OIL
+            # PRESS alert a real engine-parameter reading or just an
+            # avionics indication?") needs the actual channel means during
+            # the run, not just classification/timing — skipna .mean(),
+            # NOT the rpm/ias_kt fillna(0) convention above: filling a gap
+            # in oil_press_psi with 0 would drag a healthy mean toward the
+            # exact "near-zero" signature this is trying to detect for real.
+            "mean_power_pct":       _seg_mean(seg, "power_pct"),
+            "mean_oil_press_psi":   _seg_mean(seg, "oil_press_psi"),
+            "mean_oil_temp_f":      _seg_mean(seg, "oil_temp_f"),
+            "mean_coolant_temp_f":  _seg_mean(seg, "coolant_temp_f"),
+            "mean_main_volts":      _seg_mean(seg, "main_volts"),
+            "mean_batt_amps":       _seg_mean(seg, "batt_amps"),
+            "mean_fuel_press_psi":  _seg_mean(seg, "fuel_press_psi"),
+            "mean_baro_alt_ft":     _seg_mean(seg, "baro_alt_ft"),
         })
 
         # ── Lane check pairing ────────────────────────────────────────────────────

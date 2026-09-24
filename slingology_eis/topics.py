@@ -45,15 +45,18 @@ def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str]:
 
 def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
     """Check a trend trigger. Returns (triggered, insight_text)."""
-    t = b.get("trend", {})
-    if not t or t.get("direction") in (None, "insufficient data", "flat / no clear trend"):
+    t = b.get("trend") or {}
+    r2, n, direction = t.get("r_squared"), t.get("n"), t.get("direction")
+    # r2/n are None (and direction reads "insufficient data" / "insufficient_data"
+    # / "flat / no clear trend" depending on which code path built this dict —
+    # legacy fleet.py vs the Stage 3 contract) whenever there isn't enough data
+    # for a fit; guard on the values themselves, not a specific spelling.
+    if not t or r2 is None or n is None:
         return False, ""
-    r2 = t.get("r_squared", 0)
-    n  = t.get("n", 0)
     if r2 < rule.get("r2_min", 0.5) or n < rule.get("n_min", 10):
         return False, ""
-    if t["direction"] == rule.get("direction"):
-        return True, (f"⚠ Trending {t['direction']} over engine hours "
+    if direction == rule.get("direction"):
+        return True, (f"⚠ Trending {direction} over engine hours "
                       f"(slope={t['slope']:+.3f}/hr, R²={r2:.2f}, n={n}).")
     return False, ""
 

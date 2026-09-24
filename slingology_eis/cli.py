@@ -19,6 +19,7 @@ from typing import Optional
 
 from . import __version__
 from . import serialize as _json_serialize
+from . import workspace as _workspace
 from .contract import content_hash
 from .limits import _resolve_engine_name, load_engine_config
 from .loader import deduplicate_flights, find_duplicate_flights, flight_fingerprint
@@ -75,8 +76,22 @@ def resolve_logs_dir(cli_arg: Optional[str]) -> Path:
 
 
 def resolve_workspace_dir(cli_arg: Optional[str]) -> Path:
+    """
+    Spec 01 v0.6 §7.1 (Q10, resolved): when a value is given, it's tried
+    first as a registered workspace name/id (looked up in Spec 02's
+    registry); if that doesn't match anything, it's treated exactly as
+    before — a literal directory path. That literal-path fallback is
+    `resolve_workspace_ref`'s own behavior, so this only adds the lookup,
+    it doesn't change what happens when the lookup finds nothing — a
+    developer-checkout invocation that predates the registry keeps
+    working unmodified. Precedence when no value is given at all
+    (packaged install, else a git checkout, else a usage error) is
+    unchanged.
+    """
     if cli_arg:
-        return Path(cli_arg)
+        registry_path = _workspace.resolve_registry_path()
+        workspaces_root = _workspace.resolve_workspaces_root()
+        return _workspace.resolve_workspace_ref(cli_arg, registry_path, workspaces_root)
     if (_PACKAGED_HOME / "workspace").is_dir():
         return _PACKAGED_HOME / "workspace"
     if _is_git_checkout(_REPO_ROOT):
@@ -177,7 +192,9 @@ def render_fleet_summary(fleet: FleetAnalysis) -> str:
 
 # ── loading a directory + minimal workspace persistence ──────────────────────
 
-def _load_flight_analyses(logs_dir: Path, engine_cfg: dict, engine_name: str, quiet: bool) -> tuple[list[FlightAnalysis], list[dict]]:
+def _load_flight_analyses(
+    logs_dir: Path, engine_cfg: dict, engine_name: str, quiet: bool
+) -> tuple[list[FlightAnalysis], list[dict], dict[str, Path]]:
     """
     Load every log in `logs_dir`, applying the same ground-session
     filtering and overlap-aware duplicate detection load_directory()/
@@ -188,6 +205,12 @@ def _load_flight_analyses(logs_dir: Path, engine_cfg: dict, engine_name: str, qu
     once inside analyze_flight() — rather than reusing the DataFrame,
     so analyze_flight() stays the one place a FlightAnalysis gets built.
     A real inefficiency, acceptable for now.
+
+    Also returns flight_id -> source path, so _write_workspace() can
+    persist the source log alongside analysis.json (matching what
+    server.py's import_files already does) — without this, a flight
+    imported via the CLI has no source log in the workspace, and
+    get_flight_series/get_series can't build a timeline for it.
     """
     try:
         flights = load_directory(str(logs_dir), verbose=not quiet)
@@ -206,15 +229,18 @@ def _load_flight_analyses(logs_dir: Path, engine_cfg: dict, engine_name: str, qu
         flights = deduped
 
     fas = []
+    source_paths: dict[str, Path] = {}
     for df, info in flights:
         fname = df["_source_file"].iloc[0]
         path = logs_dir / fname
         try:
-            fas.append(analyze_flight(path.read_bytes(), fname, engine_cfg, engine_name))
+            fa = analyze_flight(path.read_bytes(), fname, engine_cfg, engine_name)
+            fas.append(fa)
+            source_paths[fa.flight_id] = path
             _log(f"  ✓ {fname}", quiet)
         except Exception as e:
             _log(f"  ✗ {fname}: {e}", quiet)
-    return fas, excluded
+    return fas, excluded, source_paths
 
 
 def _fleet_analysis_from_dict(d: dict) -> FleetAnalysis:
@@ -225,19 +251,32 @@ def _fleet_analysis_from_dict(d: dict) -> FleetAnalysis:
     )
 
 
-def _write_workspace(workspace_dir: Path, fas: list[FlightAnalysis], fleet: FleetAnalysis) -> None:
+def _write_workspace(
+    workspace_dir: Path, fas: list[FlightAnalysis], fleet: FleetAnalysis,
+    source_paths: Optional[dict[str, Path]] = None,
+) -> None:
     """
     A deliberately minimal subset of Spec 02's eventual workspace layout
     — just enough for `report`/`rules try` to cache a fleet baseline
     instead of recomputing it from every log on every call. Not
     manifest.json, sources.json, annotations, rules/, or settings.json;
     those are Spec 02 deliverables, not built here.
+
+    source_paths (flight_id -> the log it came from) is optional and
+    persists the source log alongside analysis.json when given, matching
+    server.py's import_files — without it, get_series has nothing to
+    re-parse for this flight later.
     """
     flights_dir = workspace_dir / "flights"
     for fa in fas:
         d = flights_dir / fa.flight_id
         d.mkdir(parents=True, exist_ok=True)
         (d / "analysis.json").write_text(_json_serialize.dumps(fa.to_dict(), indent=2))
+        src = (source_paths or {}).get(fa.flight_id)
+        if src is not None:
+            dest = d / src.name
+            if not dest.exists():
+                dest.write_bytes(src.read_bytes())
     fleet_dir = workspace_dir / "fleet"
     fleet_dir.mkdir(parents=True, exist_ok=True)
     (fleet_dir / "analysis.json").write_text(_json_serialize.dumps(fleet.to_dict(), indent=2))
@@ -250,7 +289,7 @@ def _load_or_build_fleet(logs_dir: Path, workspace_dir: Path, engine_cfg: dict, 
         return _fleet_analysis_from_dict(json.loads(cache.read_text()))
     _log(f"No cached fleet baseline at {cache} — recomputing from {logs_dir} "
          f"(slow; run 'fleet' or 'import' first to cache)", quiet)
-    fas, excluded = _load_flight_analyses(logs_dir, engine_cfg, engine_name, quiet)
+    fas, excluded, _source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, quiet)
     return update_fleet(fas, excluded=excluded)
 
 
@@ -322,9 +361,9 @@ def cmd_fleet(args) -> int:
     workspace_dir = resolve_workspace_dir(args.workspace)
     engine_name = _resolve_engine_name(args.engine)
     engine_cfg = load_engine_config(engine_name)
-    fas, excluded = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
+    fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
     fleet = update_fleet(fas, excluded=excluded)
-    _write_workspace(workspace_dir, fas, fleet)
+    _write_workspace(workspace_dir, fas, fleet, source_paths)
     d = fleet.to_dict()
     if args.json:
         _print_json(d)
@@ -372,9 +411,12 @@ def cmd_import(args) -> int:
         if not log_paths:
             raise CliOperationError("No logs to import.")
         fas = []
+        source_paths: dict[str, Path] = {}
         for p in log_paths:
             try:
-                fas.append(analyze_flight(p.read_bytes(), p.name, engine_cfg, engine_name))
+                fa = analyze_flight(p.read_bytes(), p.name, engine_cfg, engine_name)
+                fas.append(fa)
+                source_paths[fa.flight_id] = p
                 _log(f"  ✓ {p.name}", args.quiet)
             except Exception as e:
                 _log(f"  ✗ {p.name}: {e}", args.quiet)
@@ -382,10 +424,10 @@ def cmd_import(args) -> int:
     else:
         # No paths given: import everything in --logs, with the same
         # ground-session filtering and duplicate detection `fleet` uses.
-        fas, excluded = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
+        fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
 
     fleet = update_fleet(fas, excluded=excluded)
-    _write_workspace(workspace_dir, fas, fleet)
+    _write_workspace(workspace_dir, fas, fleet, source_paths)
 
     if args.json:
         _print_json({"flight_count": len(fas), "fleet_key": fleet.fleet_key, "workspace": str(workspace_dir)})
@@ -447,9 +489,49 @@ def cmd_export_bundle(args) -> int:
     return 2
 
 
+# ── workspace subcommands (Spec 01 v0.6 §7.1, Spec 02 v0.5 Q10) ─────────────
+# Flag/subcommand shape not pinned down further by either spec beyond "list"
+# and "create <name>" — this follows the existing `rules check`/`rules try`
+# nested-subparser style already in this file, and gives `create` an
+# optional --tail-number since Spec 02 §5.6 treats it as informational and
+# not required at creation (only engine_model is required/locked).
+
+def cmd_workspace_list(args) -> int:
+    registry_path = _workspace.resolve_registry_path()
+    entries = _workspace.list_workspaces(registry_path)
+    if args.json:
+        _print_json([e.to_dict() for e in entries])
+    else:
+        if not entries:
+            print("No workspaces yet. Create one with: slingology-eis workspace create <name> --engine <model>")
+        for e in entries:
+            print(f"{e.id:<20} {e.name:<30} {e.engine_model:<8} {e.flight_count} flight(s)")
+    return 0
+
+
+def cmd_workspace_create(args) -> int:
+    registry_path = _workspace.resolve_registry_path()
+    workspaces_root = _workspace.resolve_workspaces_root()
+    engine_name = _resolve_engine_name(args.engine)
+    try:
+        manifest = _workspace.create_workspace(
+            registry_path, workspaces_root, args.name, engine_name,
+            primary_tail_number=args.tail_number,
+        )
+    except ValueError as e:
+        raise CliOperationError(str(e))
+    ws_dir = workspaces_root / manifest.id
+    if args.json:
+        _print_json(manifest.to_dict())
+    else:
+        print(f"Created workspace {manifest.name!r} (id={manifest.id}, engine={manifest.engine_model}) at {ws_dir}")
+    return 0
+
+
 def cmd_serve(args) -> int:
-    _log("serve: not yet implemented — needs the Stage 4b local server adapter.", args.quiet)
-    return 2
+    from .server import run_server
+    run_server(args.logs, args.workspace, args.port, args.quiet)
+    return 0
 
 
 # ── argument parsing ──────────────────────────────────────────────────────
@@ -457,7 +539,8 @@ def cmd_serve(args) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--logs", metavar="DIR", help="Folder of G3X log CSVs")
-    common.add_argument("--workspace", metavar="DIR", help="Folder for cached/derived results")
+    common.add_argument("--workspace", metavar="NAME_OR_PATH",
+                         help="Registered workspace name/id, or a literal folder path")
     common.add_argument("--engine", metavar="NAME", help="Engine profile (e.g. 916iS)")
     common.add_argument("--json", action="store_true", help="Print the operation result as JSON")
     common.add_argument("--anonymize", action="store_true", help="Strip aircraft ident/system_id/airport hint")
@@ -501,10 +584,22 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--flight", metavar="LOG", help="Flight to evaluate (default: first log in --logs)")
     p.set_defaults(func=cmd_rules_try)
 
+    p_workspace = sub.add_parser("workspace", parents=[common], help="Manage workspaces (Spec 02 v0.5)")
+    workspace_sub = p_workspace.add_subparsers(dest="workspace_command", required=True)
+
+    p = workspace_sub.add_parser("list", parents=[common], help="List registered workspaces")
+    p.set_defaults(func=cmd_workspace_list)
+
+    p = workspace_sub.add_parser("create", parents=[common], help="Create a new workspace")
+    p.add_argument("name")
+    p.add_argument("--tail-number", metavar="IDENT", help="Primary tail number (informational only, Spec 02 §5.6)")
+    p.set_defaults(func=cmd_workspace_create)
+
     p = sub.add_parser("export-bundle", parents=[common], help="Export a results bundle (not yet implemented)")
     p.set_defaults(func=cmd_export_bundle)
 
-    p = sub.add_parser("serve", parents=[common], help="Start the local server + UI (not yet implemented)")
+    p = sub.add_parser("serve", parents=[common], help="Start the local server + UI (Spec 04 §9.2 adapter)")
+    p.add_argument("--port", type=int, default=8420, help="Port to bind on 127.0.0.1 (default: 8420)")
     p.set_defaults(func=cmd_serve)
 
     return parser

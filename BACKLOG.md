@@ -101,6 +101,28 @@ with the finding.
 
 ---
 
+### B5. Touch-and-go detection — LANDING_ROLL has no re-acceleration exit
+**Type:** Code
+Traced from `phases.py`'s current transition table — not yet tested against a real
+touch-and-go log, since none of the data used so far obviously contains one. `LANDING_ROLL`
+only exits via `v < 5 and r < 2500` -> `TAXI`, or `r < 500` -> `SHUTDOWN`. A genuine
+touch-and-go (wheels touch briefly, power added immediately, ground speed staying well
+above 5 kt throughout) satisfies neither condition, so the state machine likely never
+leaves `LANDING_ROLL`, and every subsequent circuit is silently misclassified for the
+rest of the flight.
+
+Stop-and-goes (full stop, taxi back, depart again) and go-arounds are both handled
+correctly already: `LANDING_ROLL -> TAXI -> TAKEOFF_ROLL` for the former, `APPROACH ->
+CLIMB` (triggered by VS > 400 fpm) for the latter. Only the no-full-stop touch-and-go
+case is the gap.
+
+**Needs:** a real touch-and-go / pattern-work log to confirm before fixing. If
+confirmed, the likely fix is a `LANDING_ROLL` exit back toward `TAKEOFF_ROLL`/`CLIMB`
+when ground speed and RPM start climbing again without ever dropping below the TAXI
+threshold — mirroring the go-around logic already in `APPROACH`.
+
+---
+
 ### B1, B2 — Ground session edge cases
 **Type:** Code
 Low urgency post-v0.8.0 loader filtering. Investigate if needed.

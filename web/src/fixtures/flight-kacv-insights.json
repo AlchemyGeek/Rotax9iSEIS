@@ -1,7 +1,7 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "ce3172c7f4689fbd64a12ecc956fa162227968483d3c9e307667ed1f1d326990",
-  "fleet_key": "12875952878634045fcbb4e4141a8dfe0be473691a218eea3a92cfbd9f4f50e2",
+  "analysis_key": "05609af5b77a010d569b94634c379f9e86f0f0fcd7c804180ff78317c0272a1e",
+  "fleet_key": "a5e7477ef78b650859b6e3bc6ccfdd1e76e9d45bc49ae59b34045fafb17ea710",
   "rules_hash": "80bab461cef45a5a3aca0ef1f99fef16b9c4cb73337adc1c6dfdc4de6ab21df5",
   "topics": [
     {
@@ -61,8 +61,9 @@
           },
           "evidence": [
             {
-              "kind": "metric",
-              "metric_id": "oil_coolant_ratio"
+              "kind": "baseline_point",
+              "metric_id": "oil_coolant_ratio",
+              "flight_id": "584e022a47517397"
             }
           ],
           "confidence": {
@@ -145,120 +146,184 @@
       },
       "insights": [
         {
-          "id": "c4da9edbf4551816",
+          "id": "47a733beea09898f",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': -0.4, 'start_utc': '2026-04-23T20:06:16', 'elapsed_s': 0.0, 'duration_s': 104.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+            "text": "\u26a0 [WARNING] Fuel pressure minimum: -0.4 psi below min 42.0 psi at 20:06:16 for 104s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [],
+              "start_s": 0,
+              "end_s": 156.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "9a6fbe46688e6603",
+          "id": "904ddc643a8868f1",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': 2.4, 'start_utc': '2026-04-23T20:08:05', 'elapsed_s': 109.0, 'duration_s': 14.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+            "text": "\u26a0 [WARNING] Fuel pressure minimum: 2.4 psi below min 42.0 psi at 20:08:05 for 14s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [],
+              "start_s": 94.0,
+              "end_s": 138.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "cb39c51635b671eb",
+          "id": "d5130955377298af",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'rpm', 'label': 'Idle RPM minimum', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MIN', 'limit_value': 1800, 'observed_value': 1730.0, 'start_utc': '2026-04-23T20:09:56', 'elapsed_s': 220.0, 'duration_s': 40.0, 'time_limit_s': None, 'note': 'Engine must idle at or above 1,800 rpm. Short dips are normal governor variation.'}"
+            "text": "\u26a0 [CAUTION] Idle RPM minimum: 1730.0 rpm below min 1800.0 rpm at 20:09:56 for 40s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "rpm"
+              ],
+              "start_s": 200.0,
+              "end_s": 280.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "bf642043af23cc46",
+          "id": "9917c7d173488496",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5780.0, 'start_utc': '2026-04-23T20:30:50', 'elapsed_s': 1474.0, 'duration_s': 5.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+            "text": "\u26a0 [CAUTION] Max continuous RPM: 5780.0 rpm above max 5500.0 rpm at 20:30:50 for 5s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "rpm"
+              ],
+              "start_s": 1459.0,
+              "end_s": 1494.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "823ef198633c188e",
+          "id": "14132874c4bfb963",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5810.0, 'start_utc': '2026-04-23T20:30:56', 'elapsed_s': 1480.0, 'duration_s': 61.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+            "text": "\u26a0 [CAUTION] Max continuous RPM: 5810.0 rpm above max 5500.0 rpm at 20:30:56 for 61s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "rpm"
+              ],
+              "start_s": 1449.5,
+              "end_s": 1571.5
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "147cb3e07ff4d9bc",
+          "id": "2c8548325823de7e",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'rpm', 'label': 'Max continuous RPM', 'unit': 'rpm', 'severity': 'CAUTION', 'limit_type': 'MAX', 'limit_value': 5500, 'observed_value': 5820.0, 'start_utc': '2026-04-23T22:30:57', 'elapsed_s': 8681.0, 'duration_s': 4.0, 'time_limit_s': None, 'note': '5,500 rpm is max continuous; 5,800 rpm allowed for 5 min'}"
+            "text": "\u26a0 [CAUTION] Max continuous RPM: 5820.0 rpm above max 5500.0 rpm at 22:30:57 for 4s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "rpm"
+              ],
+              "start_s": 8666.0,
+              "end_s": 8700.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "8cfc351cc0c887f7",
+          "id": "478d0c5f3964bc6c",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'fuel_press_psi', 'label': 'Fuel pressure minimum', 'unit': 'psi', 'severity': 'WARNING', 'limit_type': 'MIN', 'limit_value': 42.0, 'observed_value': -0.6, 'start_utc': '2026-04-24T00:35:05', 'elapsed_s': 16129.0, 'duration_s': 67.0, 'time_limit_s': None, 'note': '2.9 bar / 42 psi minimum at fuel rail relative to MAP'}"
+            "text": "\u26a0 [WARNING] Fuel pressure minimum: -0.6 psi below min 42.0 psi at 00:35:05 for 67s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [],
+              "start_s": 16095.5,
+              "end_s": 16229.5
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           }
         },
         {
-          "id": "4c66fdc7e98c92bc",
+          "id": "3eac93a6e4244662",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 {'param': 'main_volts', 'label': 'Bus voltage minimum', 'unit': 'V', 'severity': 'CAUTION', 'limit_type': 'MIN', 'limit_value': 11.5, 'observed_value': 0.0, 'start_utc': '2026-04-24T00:35:10', 'elapsed_s': 16134.0, 'duration_s': 62.0, 'time_limit_s': None, 'note': 'Below ~12V indicates alternator failure or excessive load'}"
+            "text": "\u26a0 [CAUTION] Bus voltage minimum: 0.0 V below min 11.5 V at 00:35:10 for 62s"
           },
-          "evidence": [],
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [],
+              "start_s": 16103.0,
+              "end_s": 16227.0
+            }
+          ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
@@ -286,7 +351,7 @@
     }
   ],
   "provenance": {
-    "engine_version": "0.10.0",
+    "engine_version": "0.11.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",

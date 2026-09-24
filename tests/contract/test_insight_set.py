@@ -123,6 +123,28 @@ def test_evaluate_insights_baseline_deviation_uses_leave_one_out_not_self_inclus
     assert loo["mean"] != self_inclusive_mean
 
 
+@requires_flight_logs
+def test_limit_exceedances_insights_carry_series_window_evidence(real_flight_analyses, real_fleet_analysis, rules):
+    """
+    _emit() builds evidence generically from metric_ids, but
+    limit_exceedances is per-event, not metric-shaped, and was always
+    called with metric_ids=[] — so every limit_exceedances insight had
+    evidence=[] regardless of the flight, silently breaking
+    evidence-click-to-zoom for the most common real insight severity.
+    """
+    flight_with_exceedances = next((fa for fa in real_flight_analyses if fa.exceedances), None)
+    if flight_with_exceedances is None:
+        pytest.skip("no local flight with a real exceedance")
+    iset = evaluate_insights(flight_with_exceedances, real_fleet_analysis, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "limit_exceedances")
+    assert topic["insights"], "expected at least one limit_exceedances insight"
+    for insight in topic["insights"]:
+        assert insight["evidence"], f"insight {insight['id']} has no evidence"
+        ev = insight["evidence"][0]
+        assert ev["kind"] == "series_window"
+        assert ev["end_s"] > ev["start_s"] >= 0
+
+
 def test_leave_one_out_baseline_empty_points():
     from slingology_eis.operations import _leave_one_out_baseline
     result = _leave_one_out_baseline([], "any_flight")
