@@ -781,24 +781,68 @@ def op_get_chart_presets(params: dict, ctx: dict) -> Any:
 
 
 def op_save_user_preset(params: dict, ctx: dict) -> Any:
-    """"Save as preset…" (Spec 07 §6.5/§6.6) — asks only for a name; the
-    id gets a user. prefix here so it can never collide with a shipped
-    id (§6.2). Rejects (doesn't just diagnostic-skip) an invalid preset,
+    """"Save as preset…" (Spec 07 §6.5) for creation — the id gets a
+    user. prefix here so it can never collide with a shipped id (§6.2) —
+    or an edit-in-place when params["id"] names an existing user preset
+    (§6.6's rename; also how "duplicate a shipped preset" works, since
+    that's just a creation call seeded with the shipped preset's
+    channels). Rejects (doesn't just diagnostic-skip) an invalid preset,
     since this is the save path validate_chart_preset exists to gate."""
     label = params["label"]
     channels = params["channels"]
-    preset_id = f"user.{uuid.uuid4().hex[:12]}"
+    settings = ws.load_app_settings(ctx["registry_path"])
+
+    edit_id = params.get("id")
+    existing = next(
+        (p for p in settings.chart_presets if isinstance(p, dict) and p.get("id") == edit_id), None
+    ) if edit_id else None
+    preset_id = existing["id"] if existing else f"user.{uuid.uuid4().hex[:12]}"
     preset = {"id": preset_id, "label": label, "description": params.get("description", ""), "channels": channels}
 
-    settings = ws.load_app_settings(ctx["registry_path"])
-    existing_ids = frozenset(p["id"] for p in settings.chart_presets if isinstance(p, dict) and p.get("id"))
+    # Excludes the preset's own id — editing it in place must not trip
+    # the duplicate-id check against itself.
+    existing_ids = frozenset(
+        p["id"] for p in settings.chart_presets
+        if isinstance(p, dict) and p.get("id") and p["id"] != preset_id
+    )
     issues = validate_chart_preset(preset, existing_ids=existing_ids)
     if issues:
         raise RpcError("BAD_PARAMS", "; ".join(d["message"] for d in issues))
 
-    settings.chart_presets = [*settings.chart_presets, preset]
+    if existing:
+        settings.chart_presets = [preset if p is existing else p for p in settings.chart_presets]
+    else:
+        settings.chart_presets = [*settings.chart_presets, preset]
     ws.save_app_settings(ctx["registry_path"], settings)
     return preset
+
+
+def op_delete_user_preset(params: dict, ctx: dict) -> Any:
+    """Spec 07 §6.6. Deleting a preset that happens to be someone's
+    flight_chart.last_preset_id is fine — the Flight view's own
+    last-preset resolution already falls back to "overview" whenever
+    the stored id no longer names a real preset."""
+    preset_id = params["id"]
+    settings = ws.load_app_settings(ctx["registry_path"])
+    before = len(settings.chart_presets)
+    settings.chart_presets = [p for p in settings.chart_presets if not (isinstance(p, dict) and p.get("id") == preset_id)]
+    deleted = len(settings.chart_presets) != before
+    if deleted:
+        ws.save_app_settings(ctx["registry_path"], settings)
+    return {"deleted": deleted}
+
+
+def op_reorder_user_presets(params: dict, ctx: dict) -> Any:
+    """Spec 07 §6.6. `order` must be exactly the current user preset ids,
+    just permuted — this isn't where an add/remove/rename also happens."""
+    order = params["order"]
+    settings = ws.load_app_settings(ctx["registry_path"])
+    by_id = {p["id"]: p for p in settings.chart_presets if isinstance(p, dict) and p.get("id")}
+    if set(order) != set(by_id.keys()):
+        raise RpcError("BAD_PARAMS", "order must contain exactly the current user preset ids, permuted")
+    settings.chart_presets = [by_id[pid] for pid in order]
+    ws.save_app_settings(ctx["registry_path"], settings)
+    return {"presets": settings.chart_presets}
 
 
 def op_get_workspace_settings(params: dict, ctx: dict) -> Any:
@@ -853,6 +897,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "save_app_settings": op_save_app_settings,
     "get_chart_presets": op_get_chart_presets,
     "save_user_preset": op_save_user_preset,
+    "delete_user_preset": op_delete_user_preset,
+    "reorder_user_presets": op_reorder_user_presets,
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
 }
