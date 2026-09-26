@@ -197,5 +197,43 @@
     "source_keys": [
       "fixture-source-key-2"
     ]
-  }
+  },
+  "available_channels": [
+    "baro_alt_ft",
+    "baro_inhg",
+    "batt_amps",
+    "co_ppm",
+    "coolant_temp_f",
+    "da_ft",
+    "egt1_f",
+    "egt2_f",
+    "egt3_f",
+    "egt4_f",
+    "egt_max_f",
+    "egt_mean_f",
+    "egt_min_f",
+    "egt_spread_f",
+    "fuel_flow_gph",
+    "fuel_press_psi",
+    "fuel_qty_l_gal",
+    "fuel_qty_r_gal",
+    "gnd_spd_kt",
+    "gps_alt_ft",
+    "ias_kt",
+    "lat_g",
+    "main_volts",
+    "map_inhg",
+    "norm_g",
+    "oat_c",
+    "oil_press_psi",
+    "oil_temp_f",
+    "pitch_deg",
+    "power_pct",
+    "press_alt_ft",
+    "roll_deg",
+    "rpm",
+    "tas_kt",
+    "vs_fpm",
+    "wind_spd_kt"
+  ]
 }

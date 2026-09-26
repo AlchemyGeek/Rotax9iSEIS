@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "overview",
+      "label": "Overview",
+      "description": "RPM, airspeed, oil temp and EGT spread — the default view",
+      "channels": ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"]
+    },
+    {
+      "id": "cylinders",
+      "label": "Cylinders",
+      "description": "Per-cylinder EGT against power — balance and outliers",
+      "channels": ["egt_cyl", "egt_spread_f", "power_pct"]
+    },
+    {
+      "id": "thermal",
+      "label": "Thermal",
+      "description": "Oil and coolant temperature against outside air and climb rate",
+      "channels": ["oil_temp_f", "coolant_temp_f", "oat_c", "vs_fpm"]
+    },
+    {
+      "id": "power",
+      "label": "Power",
+      "description": "RPM, manifold pressure, power and fuel flow together",
+      "channels": ["rpm", "map_inhg", "power_pct", "fuel_flow_gph"]
+    },
+    {
+      "id": "fuel",
+      "label": "Fuel system",
+      "description": "Fuel pressure, flow and both tank quantities",
+      "channels": ["fuel_press_psi", "fuel_flow_gph", "fuel_qty_l_gal", "fuel_qty_r_gal"]
+    },
+    {
+      "id": "electrical",
+      "label": "Electrical",
+      "description": "Bus voltage and battery current against RPM",
+      "channels": ["main_volts", "batt_amps", "rpm"]
+    }
+  ]
+}

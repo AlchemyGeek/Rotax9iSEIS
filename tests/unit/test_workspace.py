@@ -139,6 +139,67 @@ def test_engine_model_is_not_a_creatable_field_on_manifest_after_the_fact(tmp_pa
     assert not hasattr(ws, "update_engine_model")
 
 
+# ── Annotations (Spec 02 §6.5, R3) ───────────────────────────────────────
+
+def test_load_annotations_defaults_to_empty_store(tmp_path):
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "ann-empty", "916iS")
+    ws_dir = root / manifest.id
+
+    store = ws.load_annotations(ws_dir)
+    assert store == {"version": "1", "annotations": []}
+    assert not (ws_dir / "annotations.json").exists()
+
+
+def test_save_annotation_creates_then_updates_in_place(tmp_path):
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "ann-crud", "916iS")
+    ws_dir = root / manifest.id
+
+    created = ws.save_annotation(ws_dir, "fl_1", {"kind": "insight", "insight_id": "abc123"}, "first note")
+    assert created["flight_id"] == "fl_1"
+    assert created["note"] == "first note"
+    assert created["created_at"]
+    assert "updated_at" not in created
+
+    store = ws.load_annotations(ws_dir)
+    assert len(store["annotations"]) == 1
+    assert store["annotations"][0]["id"] == created["id"]
+
+    updated = ws.save_annotation(ws_dir, "fl_1", {"kind": "insight", "insight_id": "abc123"}, "edited note", annotation_id=created["id"])
+    assert updated["id"] == created["id"]
+    assert updated["note"] == "edited note"
+    assert updated["updated_at"]
+
+    store = ws.load_annotations(ws_dir)
+    assert len(store["annotations"]) == 1  # editing, not appending
+    assert store["annotations"][0]["note"] == "edited note"
+
+
+def test_delete_annotation_reports_whether_it_existed(tmp_path):
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "ann-delete", "916iS")
+    ws_dir = root / manifest.id
+
+    created = ws.save_annotation(ws_dir, "fl_1", {"kind": "ecu_run", "ref": "2026-05-27 20:03:44"}, "note")
+    assert ws.delete_annotation(ws_dir, created["id"]) is True
+    assert ws.load_annotations(ws_dir)["annotations"] == []
+    assert ws.delete_annotation(ws_dir, created["id"]) is False
+
+
+def test_annotations_for_flight_filters_by_flight_id(tmp_path):
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "ann-filter", "916iS")
+    ws_dir = root / manifest.id
+
+    ws.save_annotation(ws_dir, "fl_1", {"kind": "insight", "insight_id": "a"}, "note on fl_1")
+    ws.save_annotation(ws_dir, "fl_2", {"kind": "insight", "insight_id": "b"}, "note on fl_2")
+
+    fl_1_notes = ws.annotations_for_flight(ws_dir, "fl_1")
+    assert len(fl_1_notes) == 1
+    assert fl_1_notes[0]["note"] == "note on fl_1"
+
+
 # ── Missing vs unreachable folder — real logs required ───────────────────
 
 @requires_flight_logs

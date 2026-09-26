@@ -1,16 +1,36 @@
 import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
 import { EChartBase } from "./EChartBase";
-import { ChannelPicker } from "./ChannelPicker";
 import type { Phase, SeriesFixture } from "../types/contract";
-import { channelDef } from "../lib/channels";
 import { clipPhasesToWindow, phaseColorAlpha } from "../lib/phases";
 import { colors, fontMono } from "../theme/colors";
+
+// Each channel is now downsampled independently (Spec 07 §11.2) — active
+// series no longer share a point at every x, so the readout can't lean on
+// ECharts' own per-series axis-trigger matching. Binary search each
+// series' own [elapsed_s, pct, real] data for whichever point sits
+// nearest the cursor's x instead.
+function nearestPoint(data: (number | null)[][], t: number): (number | null)[] | undefined {
+  let lo = 0;
+  let hi = data.length - 1;
+  if (hi < 0) return undefined;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((data[mid][0] as number) < t) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo > 0) {
+    const dPrev = Math.abs((data[lo - 1][0] as number) - t);
+    const dCurr = Math.abs((data[lo][0] as number) - t);
+    if (dPrev <= dCurr) return data[lo - 1];
+  }
+  return data[lo];
+}
 
 interface Props {
   series: SeriesFixture;
   activeChannels: string[];
-  onToggleChannel: (id: string) => void;
+  colorFor: (id: string) => string;
   phases: Phase[];
   highlight?: { start_s: number; end_s: number } | null;
   zoomWindow?: [number, number] | null;
@@ -22,7 +42,9 @@ interface Props {
 // axis, not stacked small multiples (both tried and superseded). Real
 // values/units live in the synced-cursor tooltip, never the axis, so the
 // y-axis stays honest about being an index rather than a value scale.
-export function ChannelTimeline({ series, activeChannels, onToggleChannel, phases, highlight, zoomWindow, onZoomChange }: Props) {
+// The active-channel chip row / picker lives one level up (Spec 07 §8) —
+// this component only draws what's already been decided active.
+export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange }: Props) {
   // Must be memoized, not a plain .filter() — it's a dependency of the
   // option useMemo below, and an unmemoized array is a *new reference on
   // every render*. Dragging to pan fires 'dataZoom' events continuously,
@@ -35,14 +57,15 @@ export function ChannelTimeline({ series, activeChannels, onToggleChannel, phase
 
   const option = useMemo<EChartsOption>(() => {
     const seriesDefs = active.map((id) => {
-      const def = channelDef(id);
-      const points = series.channels[id].points;
+      const ch = series.channels[id];
+      const color = colorFor(id);
+      const points = ch.points;
       const values = points.map((p) => p[1]).filter((v): v is number => v !== null);
       const min = values.length ? Math.min(...values) : 0;
       const max = values.length ? Math.max(...values) : 1;
       const range = max - min || 1;
       const data = points.map(([t, v]) => [t, v === null ? null : ((v - min) / range) * 100, v]);
-      return { id, def, data };
+      return { id, unit: ch.unit, color, data };
     });
 
     // The zoom range is baked into the option itself (start/end percentages
@@ -95,15 +118,12 @@ export function ChannelTimeline({ series, activeChannels, onToggleChannel, phase
           const mm = String(Math.floor(t / 60)).padStart(2, "0");
           const ss = String(Math.round(t % 60)).padStart(2, "0");
           const lines = [`<div style="font-family:${fontMono};font-size:10px;color:${colors.textSecondary};margin-bottom:4px;">${mm}:${ss} elapsed</div>`];
-          for (const p of list) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const anyP = p as any;
-            const id = active[anyP.seriesIndex];
-            const def = channelDef(id);
-            const real = anyP.data?.[2];
+          for (const { unit, color, data } of seriesDefs) {
+            const point = nearestPoint(data, t);
+            const real = point?.[2];
             if (real === null || real === undefined) continue;
             lines.push(
-              `<div style="font-family:${fontMono};font-size:11px;color:${def.color};">${real.toFixed(1)} ${def.unit}</div>`
+              `<div style="font-family:${fontMono};font-size:11px;color:${color};">${real.toFixed(1)} ${unit}</div>`
             );
           }
           return lines.join("");
@@ -132,7 +152,7 @@ export function ChannelTimeline({ series, activeChannels, onToggleChannel, phase
         axisLine: { show: false },
         splitLine: { lineStyle: { color: colors.panelControl, type: "dashed" } },
       },
-      series: seriesDefs.map(({ def, data }, i) => ({
+      series: seriesDefs.map(({ color, data }, i) => ({
         type: "line",
         data,
         // data rows are [elapsed_s, normalized%, real value] — without an
@@ -141,16 +161,15 @@ export function ChannelTimeline({ series, activeChannels, onToggleChannel, phase
         // breaks dataZoom's startValue/endValue targeting.
         encode: { x: 0, y: 1 },
         showSymbol: false,
-        lineStyle: { width: 1.8, color: def.color },
-        color: def.color,
+        lineStyle: { width: 1.8, color },
+        color,
         markArea: i === 0 ? { silent: true, data: markAreaData } : undefined,
       })),
     } as EChartsOption;
-  }, [active, series, phases, highlight, zoomWindow]);
+  }, [active, series, colorFor, phases, highlight, zoomWindow]);
 
   return (
     <div>
-      <ChannelPicker active={active} onToggle={onToggleChannel} />
       <EChartBase option={option} height={260} onZoom={onZoomChange} />
       <div style={{ fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
         Each line is indexed to 0–100% of its own flight range so shapes line up — real values with units are at the cursor.

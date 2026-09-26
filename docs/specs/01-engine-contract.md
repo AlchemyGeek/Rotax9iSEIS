@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.10 — for review (no code written)
+**Status:** Draft v0.11 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -20,6 +20,7 @@
 | 0.8 | §8.4: `BaselineConfig` gains `outlier_z_threshold` (global default 2.0) and a per-metric `outlier_z_threshold_overrides` map — one number, driving both `FleetMetric.outliers` and the `baseline_deviation` insight trigger, which were previously implicitly separate. Per-metric override exists because a badly skewed metric (`overboost_total_s`) doesn't mean the same thing under a z-score threshold tuned for a roughly normal one. Follows Spec 03 §3's new persona principle: this lives in the rule playground, never surfaced to the casual-pilot workflow. |
 | 0.9 | §8.5: `engine_ecu_inflight` firing condition made explicit — only when the flight has a real `IN_FLIGHT`-classified `EcuRun`, never for ground-context presence alone. A wireframe had this backwards (warning-severity insight built from ground-context data, on a flight with zero real in-flight events); fixture and mockup corrected, this is the spec-level fix so it can't recur. Ground-context ECU presence is Analysis-only on every flight where that's all there is — flagging it per-flight would warn on nearly every flight in the fleet, the opposite of what an insight is for. |
 | 0.10 | §8.4: documented, not designed — `by_band`/`band_kind_by_metric` were typed with no real content; checked the actual repo and `baseline_stratified`/`trend_stratified` already exist, are already wired into `update_fleet`, and are backed by real physical reasoning ("the research paper §9") that was never written into this spec. Added the real `DA_BANDS`/`OAT_BANDS` boundaries, the real per-metric assignment (5 metrics → `oat_band`, 2 → `da_band`, the rest `null`), and the confidence-per-band trade-off, all pulled from the shipped code rather than invented. |
+| 0.11 | §8.4: `outlier_z_threshold` confirmed wired and unified (one resolver, both consumers) during implementation. One thing clarified rather than fixed: `outliers[]` (all-flights baseline) and the `baseline_deviation` insight (leave-one-out, R2) can legitimately disagree in count per metric — always by the same amount R2's own damping evidence predicts. Only the threshold was ever meant to be shared; the two baseline statistics were always meant to differ. Written down explicitly so it isn't mistaken for unfinished unification later. |
 
 ---
 
@@ -303,7 +304,7 @@ interface Trend    { n: number; slope: number|null; r_squared: number|null;
 interface MetricFleet { metric_id: string; baseline: Baseline; trend: Trend;
                         by_band?: { band_kind: "oat_band"|"da_band"; bands: Record<string, Baseline> };
                         points: { flight_id: string; date: string; x: number|null; value: number; band?: string }[];
-                        outliers: { flight_id: string; z_score: number }[] }
+                        outliers: { flight_id: string; z_score: number }[] }   // computed against the ALL-FLIGHTS baseline (`baseline` above), not leave-one-out — see note below
 interface Model    { id: "takeoff_map"; kind: "linear_regression"; features: string[];
                      coefficients: Record<string, number>; n: number; r_squared: number|null;
                      confidence: Baseline["confidence"]; capture: string }  // capture: e.g. "RPM>=5500 during TAKEOFF_ROLL"
@@ -339,6 +340,8 @@ Real per-metric assignment (this is `band_kind_by_metric`'s actual populated con
 Every metric not listed defaults to `null` (no stratification) unless a future topic explicitly assigns one.
 
 **Confidence is honestly lower per band, by design, not a bug to fix.** `confidence_label(n)`: `n<3` → `VERY_LOW` ("essentially anecdotal"), `n<10` → `LOW`, `n<30` → `MODERATE`, else `GOOD` (`MIN_FLIGHTS_FOR_CONFIDENCE = 10`, same threshold used fleet-wide). Splitting 23 flights into 4 DA bands means each band typically lands in `LOW` or `MODERATE` even when the unstratified fleet baseline is `GOOD` — this is the correct, stated trade-off for a cleaner comparison, not something a UI should try to hide or upgrade.
+
+**`outliers[]` and the `baseline_deviation` insight can legitimately disagree in count per metric — confirmed during implementation, not a bug to chase.** They share one threshold (`outlier_z_threshold`, above) but compare against two different statistics by design: `outliers[]` is computed against the **all-flights** baseline (the same `baseline` field used for the Trends display band), while the insight trigger uses the **leave-one-out** baseline (R2, below). Leave-one-out will always find equal-or-more flights crossing the threshold than all-flights does, for the reason R2's own evidence already documents — self-inclusion damps a flight's own z-score. So a point can be ringed as an outlier on Trends without a matching insight having fired, and that's the all-flights/leave-one-out difference showing through correctly, not the threshold-unification work leaving something half-fixed. Only the threshold was ever meant to be one number; the two baseline statistics were always meant to differ.
 
 **Baseline membership (resolved, R2).** The current code builds one baseline over all flights (script 03) and script 04 compares each flight against it, so a flight is compared against a baseline that includes itself. The contract instead specifies:
 

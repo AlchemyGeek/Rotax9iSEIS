@@ -22,6 +22,21 @@ function labelFor(id: string) {
   return id.replace(/_/g, " ");
 }
 
+// Same cool->warm gradient regardless of band_kind — cold/low both read
+// as "the calm end," hot/very_high both as "the extreme end," so the
+// color means the same thing whichever band_kind is actually active for
+// a given metric (Spec 01 §8.4 v0.10's real band sets, never a mixed
+// vocabulary the pilot has to relearn per metric).
+const BAND_ORDER: Record<string, number> = { cold: 0, low: 0, mild: 1, moderate: 1, warm: 2, high: 2, hot: 3, very_high: 3 };
+const BAND_PALETTE = ["#38BDF8", "#4FC3B0", "#F5A524", "#E5484D"];
+function bandColor(name: string): string {
+  const idx = BAND_ORDER[name];
+  return idx !== undefined ? BAND_PALETTE[idx] : "#94A3B8";
+}
+function bandLabel(name: string): string {
+  return name.replace(/_/g, " ");
+}
+
 export function Trends() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -76,10 +91,17 @@ export function Trends() {
   // drag-pannable, same as x — once the user manually nudges it, that
   // wins over the auto-fit until they switch metrics.
   const [yWindow, setYWindow] = useState<[number, number] | null>(null);
+  // Off by default even for a stratifiable metric (Spec 03 §5.3 v0.10) —
+  // a casual pilot reads the unstratified chart first, never required to
+  // understand DA/OAT banding to see it.
+  const [stratified, setStratified] = useState(false);
   useEffect(() => {
     setXWindow(null);
     setYWindow(null);
+    setStratified(false);
   }, [selected]);
+
+  const showStratified = stratified && !!metric?.by_band;
 
   const option = useMemo<EChartsOption | null>(() => {
     if (!metric) return null;
@@ -163,50 +185,109 @@ export function Trends() {
         axisLine: { show: false },
         splitLine: { lineStyle: { color: colors.panelControl } },
       },
-      series: [
-        {
-          type: "line",
-          data: [],
-          markArea: {
-            silent: true,
-            itemStyle: { color: "rgba(79,195,176,0.10)" },
-            data: [[{ yAxis: band.mean - band.std }, { yAxis: band.mean + band.std }]],
-          },
-          markLine: {
-            silent: true,
-            symbol: "none",
-            lineStyle: { color: colors.accent, type: "dashed", opacity: 0.6 },
-            label: {
-              formatter: "{c}",
-              color: colors.accent,
-              fontFamily: fontMono,
-              fontSize: 11,
-              fontWeight: 600,
-              backgroundColor: colors.panelControl,
-              padding: [3, 6],
-              borderRadius: 4,
+      series: showStratified
+        ? // Stratified (Spec 03 §5.3 v0.10): re-groups the same points and
+          // baseline data already fetched — no re-fetch. One baseline
+          // region + one scatter per band actually present for this
+          // metric (never a fixed 4), plus a neutral series for any point
+          // whose own band came back empty (never hidden, just ungrouped).
+          [
+            ...Object.entries(metric.by_band!.bands).flatMap(([name, stats]) => {
+              const c = bandColor(name);
+              return [
+                {
+                  type: "line" as const,
+                  data: [],
+                  markArea: {
+                    silent: true,
+                    itemStyle: { color: `${c}1A` },
+                    data:
+                      stats.mean != null && stats.std != null
+                        ? [[{ yAxis: stats.mean - stats.std }, { yAxis: stats.mean + stats.std }]]
+                        : [],
+                  },
+                  markLine: {
+                    silent: true,
+                    symbol: "none",
+                    lineStyle: { color: c, type: "dashed", opacity: 0.7 },
+                    label: { show: false },
+                    data: stats.mean != null ? [{ yAxis: stats.mean }] : [],
+                  },
+                },
+                {
+                  type: "scatter" as const,
+                  name: bandLabel(name),
+                  symbolSize: (val: [number, number, string]) => {
+                    if (val[2] === highlightFlight) return 14;
+                    return outlierIds.has(val[2]) ? 9 : 7;
+                  },
+                  data: metric.points.filter((p) => p.band === name).map((p) => [p.x, p.value, p.flight_id, p.date]),
+                  itemStyle: {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    color: (p: any) => {
+                      if (p.data[2] === highlightFlight) return colors.accent;
+                      return outlierIds.has(p.data[2]) ? colors.severityLimit : c;
+                    },
+                  },
+                },
+              ];
+            }),
+            {
+              type: "scatter",
+              name: "unbanded",
+              symbolSize: (val: [number, number, string]) => (outlierIds.has(val[2]) ? 9 : 7),
+              data: metric.points.filter((p) => !p.band).map((p) => [p.x, p.value, p.flight_id, p.date]),
+              itemStyle: {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                color: (p: any) => (outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textTertiary),
+                opacity: 0.5,
+              },
             },
-            data: [{ yAxis: band.mean }],
-          },
-        },
-        {
-          type: "scatter",
-          symbolSize: (val: [number, number, string]) => {
-            if (val[2] === highlightFlight) return 14;
-            return outlierIds.has(val[2]) ? 9 : 7;
-          },
-          data: points,
-          itemStyle: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            color: (p: any) => {
-              if (p.data[2] === highlightFlight) return colors.accent;
-              return outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textSecondary;
+          ]
+        : [
+            {
+              type: "line",
+              data: [],
+              markArea: {
+                silent: true,
+                itemStyle: { color: "rgba(79,195,176,0.10)" },
+                data: band.mean != null && band.std != null ? [[{ yAxis: band.mean - band.std }, { yAxis: band.mean + band.std }]] : [],
+              },
+              markLine: {
+                silent: true,
+                symbol: "none",
+                lineStyle: { color: colors.accent, type: "dashed", opacity: 0.6 },
+                label: {
+                  formatter: "{c}",
+                  color: colors.accent,
+                  fontFamily: fontMono,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  backgroundColor: colors.panelControl,
+                  padding: [3, 6],
+                  borderRadius: 4,
+                },
+                data: band.mean != null ? [{ yAxis: band.mean }] : [],
+              },
             },
-          },
-        },
-      ],
+            {
+              type: "scatter",
+              symbolSize: (val: [number, number, string]) => {
+                if (val[2] === highlightFlight) return 14;
+                return outlierIds.has(val[2]) ? 9 : 7;
+              },
+              data: points,
+              itemStyle: {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                color: (p: any) => {
+                  if (p.data[2] === highlightFlight) return colors.accent;
+                  return outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textSecondary;
+                },
+              },
+            },
+          ],
     } as EChartsOption;
-  }, [metric, highlightFlight, xWindow, yWindow]);
+  }, [metric, highlightFlight, xWindow, yWindow, showStratified]);
 
   const model = fleet.models.find((m) => m.id === "takeoff_map" && selected === "takeoff_map_inhg");
 
@@ -288,20 +369,34 @@ export function Trends() {
                   onZoomY={(s, e) => setYWindow([s, e])}
                 />
               )}
-              <div style={{ display: "flex", gap: 18, padding: "4px 4px 0" }}>
-                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>&#9679; fleet flight</span>
-                <span style={{ fontSize: 11, color: "var(--accent)" }}>&#9678; linked flight</span>
-                <span style={{ fontSize: 11, color: "var(--severity-limit)" }}>&#9679; outlier</span>
-                <span
-                  style={{ fontSize: 11, color: "var(--accent)", cursor: highlightFlight ? "pointer" : "default" }}
-                  onClick={() => highlightFlight && navigate(`/flights/${highlightFlight}`)}
-                >
-                  ▨ baseline band (leave-one-out, ±1&sigma;)
-                </span>
+              <div style={{ display: "flex", gap: 18, padding: "4px 4px 0", flexWrap: "wrap" }}>
+                {showStratified && metric.by_band ? (
+                  <>
+                    {Object.keys(metric.by_band.bands).map((name) => (
+                      <span key={name} style={{ fontSize: 11, color: bandColor(name) }}>
+                        &#9679; {bandLabel(name)}
+                      </span>
+                    ))}
+                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>&#9679; unbanded</span>
+                    <span style={{ fontSize: 11, color: "var(--severity-limit)" }}>&#9679; outlier</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>&#9679; fleet flight</span>
+                    <span style={{ fontSize: 11, color: "var(--accent)" }}>&#9678; linked flight</span>
+                    <span style={{ fontSize: 11, color: "var(--severity-limit)" }}>&#9679; outlier</span>
+                    <span
+                      style={{ fontSize: 11, color: "var(--accent)", cursor: highlightFlight ? "pointer" : "default" }}
+                      onClick={() => highlightFlight && navigate(`/flights/${highlightFlight}`)}
+                    >
+                      ▨ baseline band (leave-one-out, ±1&sigma;)
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12, marginTop: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: metric.by_band ? "repeat(3, minmax(0,1fr))" : "repeat(2, minmax(0,1fr))", gap: 12, marginTop: 16 }}>
               <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Trend</div>
                 {metric.trend ? (
@@ -320,14 +415,51 @@ export function Trends() {
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{metric.outliers.length} flight(s)</div>
                 <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>cross the z-score threshold</div>
               </div>
-              <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Stratify by</div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{metric.by_band?.band_kind ?? "—"}</div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                  {metric.by_band ? "not applied — toggle to split the band" : "no stratification for this metric"}
+              {/* Spec 03 §5.3 v0.10: hidden entirely (not grayed out) when
+                  this metric has no band_kind at all — nothing to offer,
+                  not a disabled control. */}
+              {metric.by_band && (
+                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Stratify by {bandLabel(metric.by_band.band_kind)}</span>
+                    <input
+                      type="checkbox"
+                      checked={stratified}
+                      onChange={(e) => setStratified(e.target.checked)}
+                      title={`split the baseline into its ${Object.keys(metric.by_band.bands).length} band(s)`}
+                    />
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{stratified ? "on" : "off"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                    {stratified
+                      ? `${Object.keys(metric.by_band.bands).length} band(s) shown below`
+                      : "single fleet-wide baseline shown"}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {showStratified && metric.by_band && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Object.keys(metric.by_band.bands).length, 4)}, minmax(0,1fr))`, gap: 12 }}>
+                  {Object.entries(metric.by_band.bands).map(([name, stats]) => (
+                    <div key={name} style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${bandColor(name)}` }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", marginBottom: 6 }}>{bandLabel(name)}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                        n={stats.n} &middot; mean {stats.mean ?? "—"} &middot; std {stats.std ?? "—"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>confidence: {stats.confidence.level}</div>
+                      {stats.trend && (
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, textTransform: "capitalize" }}>
+                          trend: {stats.trend.direction}
+                          {stats.trend.slope != null ? ` (R² ${stats.trend.r_squared})` : ""}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
             {model && (
               <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px", marginTop: 16 }}>

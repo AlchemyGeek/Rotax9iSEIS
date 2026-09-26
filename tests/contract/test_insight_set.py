@@ -145,6 +145,35 @@ def test_limit_exceedances_insights_carry_series_window_evidence(real_flight_ana
         assert ev["end_s"] > ev["start_s"] >= 0
 
 
+@requires_flight_logs
+def test_metric_evidence_uses_fleet_key_not_flight_metric_id(real_flight_analyses, real_fleet_analysis, rules):
+    """
+    _TOPIC_METRIC_MAP's two sides use different naming conventions
+    (registry.py's flight_metric_id vs. baselines.py's fleet_key) — for 7
+    of the 8 shared-baseline topics they're spelled differently (e.g.
+    "egt4_elevation_f" vs "egt4_elevation"). Evidence's metric_id feeds
+    straight into "View evidence" -> Trends ?metric=<id>, which only
+    recognizes fleet_key spellings; sending flight_metric_id there was a
+    real bug (Trends showed "No fleet data for this metric" for any
+    topic whose two names actually differ).
+    """
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    fleet_keys = set(real_fleet_analysis.to_dict()["metrics"].keys())
+    checked = 0
+    iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, rules)
+    for topic in iset.to_dict()["topics"]:
+        for insight in topic["insights"]:
+            for ev in insight["evidence"]:
+                if ev["kind"] == "metric":
+                    checked += 1
+                    assert ev["metric_id"] in fleet_keys, (
+                        f"{topic['topic_id']}: evidence metric_id {ev['metric_id']!r} "
+                        f"is not a real fleet metric key"
+                    )
+    assert checked > 0, "expected at least one metric-kind evidence to check"
+
+
 def test_leave_one_out_baseline_empty_points():
     from slingology_eis.operations import _leave_one_out_baseline
     result = _leave_one_out_baseline([], "any_flight")

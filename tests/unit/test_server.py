@@ -79,6 +79,80 @@ def test_list_engines(server):
     assert any(e["id"] == "916iS" for e in d["result"])
 
 
+def test_get_channel_registry(server):
+    d = rpc(server, "get_channel_registry", {})
+    assert d["ok"], d
+    result = d["result"]
+    assert result["max_chart_slots"] == 6
+    assert result["slot_groups"] == [{"id": "egt_cyl", "label": "Cylinder EGTs (1–4)", "members": ["egt1_f", "egt2_f", "egt3_f", "egt4_f"]}]
+    ids = {c["id"] for c in result["channels"]}
+    assert len(ids) == 36
+    assert "rpm" in ids
+    # Non-chartable channels (map/GPS track, wrapping-angle channels, the
+    # phase band, unit-variant twins) must never appear in this list.
+    assert "lat" not in ids and "lon" not in ids and "phase" not in ids
+    egt1 = next(c for c in result["channels"] if c["id"] == "egt1_f")
+    assert egt1["slot_group"] == "egt_cyl"
+    assert egt1["companions"] == ["egt_spread_f", "power_pct"]
+    oil_temp_f = next(c for c in result["channels"] if c["id"] == "oil_temp_f")
+    assert oil_temp_f["label"] == "Oil Temp"
+    assert oil_temp_f["group"] == "engine"
+    # Spec 07 v0.2 §13.1: every companions entry must itself be a
+    # chartable id, and a channel must never list itself.
+    for c in result["channels"]:
+        for comp in c["companions"]:
+            assert comp in ids, f"{c['id']}: companion {comp!r} is not a chartable channel"
+            assert comp != c["id"], f"{c['id']}: lists itself as a companion"
+
+
+def test_get_flight_series_expands_slot_group(server):
+    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),EGT1 (deg F),EGT2 (deg F),EGT3 (deg F),EGT4 (deg F)\n"
+    rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,1500,1510,1520,1530\n" for i in range(240))
+    flight_log = (_META + flight_header + rows).encode("utf-8")
+    b64 = base64.b64encode(flight_log).decode()
+    imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
+    assert imp["ok"], imp
+    flight_id = imp["result"]["results"][0]["flight_id"]
+
+    d = rpc(server, "get_flight_series", {"flight_id": flight_id, "channels": ["egt_cyl"]})
+    assert d["ok"], d
+    assert set(d["result"].keys()) == {"egt1_f", "egt2_f", "egt3_f", "egt4_f"}
+
+
+def test_get_chart_presets_returns_shipped_set(registry_server):
+    # registry_server (not the plain server fixture) is required here:
+    # get_chart_presets/save_user_preset persist through ctx["registry_path"],
+    # and only registry_server's isolated_packaged_home fixture points that
+    # at a tmp dir instead of this machine's real ~/SlingologyEIS or
+    # <repo>/data/settings.json — the plain server fixture only isolates
+    # workspace_dir, not registry_path, so using it here would silently
+    # write test presets into the real settings file (caught by hand once).
+    d = rpc(registry_server, "get_chart_presets", {})
+    assert d["ok"], d
+    assert d["result"]["diagnostics"] == []
+    ids = {p["id"] for p in d["result"]["presets"]}
+    assert ids == {"overview", "cylinders", "thermal", "power", "fuel", "electrical"}
+    assert d["result"]["max_chart_slots"] == 6
+
+
+def test_save_user_preset_persists_and_reappears(registry_server):
+    saved = rpc(registry_server, "save_user_preset", {
+        "label": "My climb view", "channels": ["rpm", "vs_fpm", "oil_temp_f"],
+    })
+    assert saved["ok"], saved
+    assert saved["result"]["id"].startswith("user.")
+    assert saved["result"]["label"] == "My climb view"
+
+    got = rpc(registry_server, "get_chart_presets", {})
+    assert saved["result"]["id"] in {p["id"] for p in got["result"]["presets"]}
+
+
+def test_save_user_preset_rejects_invalid_channels(registry_server):
+    bad = rpc(registry_server, "save_user_preset", {"label": "Bad", "channels": ["not_a_real_channel"]})
+    assert bad["ok"] is False
+    assert bad["error"]["code"] == "BAD_PARAMS"
+
+
 def test_get_default_rules(server):
     d = rpc(server, "get_default_rules", {})
     assert d["ok"]
@@ -98,6 +172,9 @@ def test_analyze_flight_synthetic_log(server):
     assert d["ok"]
     assert d["result"]["flight_id"]
     assert "metrics" in d["result"]
+    # Spec 07 §5: this synthetic log only has RPM and Oil Temp columns —
+    # available_channels must reflect exactly that, not the full registry.
+    assert set(d["result"]["available_channels"]) == {"rpm", "oil_temp_f"}
 
 
 def test_ingest_ground_session_detection(server):
@@ -272,6 +349,73 @@ def test_add_log_folder_and_scan_finds_real_flight(registry_server, tmp_path):
     assert removed["result"]["removed"] is True
     status_list = rpc(registry_server, "list_flights_with_status", {})
     assert all(r["flight_id"] != flight_id for r in status_list["result"]["rows"])
+
+
+def test_get_flight_series_works_for_folder_scanned_flight(registry_server, tmp_path):
+    """A flight added via 'Add folder' + Sync never gets a copy written
+    into the workspace (only import_files does that) — get_flight_series
+    must fall back to re-reading from the registered log folder, or the
+    Flight view's timeline has nowhere to read from at all."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    import shutil
+    from ..conftest import LOGS_DIR
+    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    if not src.exists():
+        pytest.skip("real flight logs not available in this environment")
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(src, folder / src.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+    scanned = rpc(registry_server, "scan_workspace", {})
+    [flight_id] = scanned["result"]["new_flight_ids"]
+
+    # confirms the fix, not just the fallback path: no copy exists inside
+    # the workspace itself for this flight.
+    flight_dir = ws.resolve_workspaces_root() / [
+        e["id"] for e in rpc(registry_server, "list_workspaces", {})["result"] if e["name"] == "N117ZS"
+    ][0] / "flights" / flight_id
+    assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] == []
+
+    # rpm is entirely NaN in this particular 8-row fixture (a GPS-only
+    # snippet with no engine columns populated) — with Spec 07 §11.2's
+    # per-channel NaN-excluded envelope, an all-NaN channel now correctly
+    # downsamples to zero points, so ias_kt (which does have real values
+    # here) is what actually exercises the fallback read.
+    series = rpc(registry_server, "get_flight_series", {"flight_id": flight_id, "channels": ["ias_kt"]})
+    assert series["ok"], series
+    assert "ias_kt" in series["result"]
+    assert len(series["result"]["ias_kt"]) > 0
+
+
+def test_get_flight_shows_real_filename_for_folder_scanned_flight(registry_server, tmp_path):
+    """Same root cause as the series test above, one op over: op_get_flight/
+    op_list_flights's source_filename only ever checked the workspace's own
+    copy too, so the Flight view header fell back to displaying the raw
+    flight_id/source_key hash for any folder-scanned flight instead of its
+    real log filename."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    import shutil
+    from ..conftest import LOGS_DIR
+    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    if not src.exists():
+        pytest.skip("real flight logs not available in this environment")
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(src, folder / src.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+    scanned = rpc(registry_server, "scan_workspace", {})
+    [flight_id] = scanned["result"]["new_flight_ids"]
+
+    got = rpc(registry_server, "get_flight", {"flight_id": flight_id})
+    assert got["ok"], got
+    assert got["result"]["source_filename"] == src.name
+
+    listed = rpc(registry_server, "list_flights", {})
+    assert listed["ok"], listed
+    row = next(r for r in listed["result"] if r["flight_id"] == flight_id)
+    assert row["source_filename"] == src.name
 
 
 def test_scan_workspace_reanalyzes_stale_flights_and_rebuilds_fleet(registry_server, tmp_path):
@@ -589,18 +733,158 @@ def test_import_files_writes_flight_sources_for_status_list(server):
     assert row["log_folder"] == "(uploaded)"
 
 
-def test_get_series_shares_x_grid_across_channels(server):
-    # A synced-cursor readout (Spec 05 v0.2) needs every active channel to
-    # have a point at the same elapsed_s — independently-downsampled
-    # channels used to land at different x values, so ECharts' axis-trigger
-    # tooltip only found whichever series happened to be near the cursor.
-    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(600))
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+def test_downsample_preserves_each_channels_own_peak(server):
+    # Spec 07 §11.2 / finding 6: channels used to be sampled at one
+    # reference channel's (RPM's) envelope row indices — a spike in any
+    # other channel landing off those rows silently vanished (a real CO
+    # spike and an overboost MAP peak both understated in the field). Oil
+    # press is flat except one isolated spike; RPM has no feature there.
+    n = 2000
+    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Oil Press (PSI)\n"
+    rows = []
+    for i in range(n):
+        rpm = 4000 + i
+        oil_press = 999.9 if i == 1000 else 5.0
+        rows.append(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{rpm},{oil_press}\n")
+    flight_log = (_META + header + "".join(rows)).encode("utf-8")
     b64 = base64.b64encode(flight_log).decode()
 
-    d = rpc(server, "get_series", {"content_base64": b64, "filename": "x.csv", "channels": ["rpm", "ias_kt", "oil_temp_f"]})
+    d = rpc(server, "get_series", {"content_base64": b64, "filename": "x.csv", "channels": ["rpm", "oil_press_psi"]})
     assert d["ok"], d
-    xs = {ch: [p[0] for p in pts] for ch, pts in d["result"].items()}
-    assert xs["rpm"] == xs["ias_kt"] == xs["oil_temp_f"]
-    assert len(xs["rpm"]) > 0
+    oil_vals = [p[1] for p in d["result"]["oil_press_psi"] if p[1] is not None]
+    assert max(oil_vals) == 999.9
+
+
+def test_downsample_excludes_nan_from_envelope(server):
+    # Spec 07 §11.2: a bucket's argmin/argmax must ignore NaN rows rather
+    # than let a run of missing values (e.g. a dropped GPS fix) corrupt
+    # which point represents that bucket, or hide a real peak sitting
+    # among them.
+    n = 2000
+    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt)\n"
+    rows = []
+    for i in range(n):
+        rpm = 4000 + i
+        # A gap of missing IAS for most of one bucket's rows, with one
+        # real low value at the end of the gap.
+        if 1000 <= i < 1004:
+            ias = ""
+        elif i == 1004:
+            ias = "12.0"
+        else:
+            ias = "95.0"
+        rows.append(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{rpm},{ias}\n")
+    flight_log = (_META + header + "".join(rows)).encode("utf-8")
+    b64 = base64.b64encode(flight_log).decode()
+
+    d = rpc(server, "get_series", {"content_base64": b64, "filename": "x.csv", "channels": ["ias_kt"]})
+    assert d["ok"], d
+    ias_vals = [p[1] for p in d["result"]["ias_kt"] if p[1] is not None]
+    assert min(ias_vals) == 12.0
+
+
+def test_downsample_alignment_is_independent_of_what_else_was_requested(server):
+    # Spec 07 §13.5 (alignment under lazy fetch): a channel's own
+    # downsampled points must be identical whether it's fetched alone or
+    # alongside others, and whether other channels are fetched before or
+    # after it — bucket edges depend only on row count, and each
+    # channel's own envelope depends only on its own values.
+    n = 1200
+    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Manifold Press (inch Hg)\n"
+    rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},{20 + (i % 37)}\n" for i in range(n))
+    flight_log = (_META + header + rows).encode("utf-8")
+    b64 = base64.b64encode(flight_log).decode()
+
+    alone = rpc(server, "get_series", {"content_base64": b64, "filename": "x.csv", "channels": ["rpm"]})
+    together = rpc(server, "get_series", {"content_base64": b64, "filename": "x.csv", "channels": ["rpm", "map_inhg"]})
+    assert alone["ok"] and together["ok"]
+    assert alone["result"]["rpm"] == together["result"]["rpm"]
+
+
+def _import_one_flight(base_url):
+    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
+    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
+    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+    b64 = base64.b64encode(flight_log).decode()
+    imp = rpc(base_url, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
+    assert imp["ok"], imp
+    return imp["result"]["results"][0]["flight_id"]
+
+
+def test_annotation_ops_create_list_filter_and_delete(server):
+    flight_id = _import_one_flight(server)
+
+    created = rpc(server, "save_annotation", {
+        "flight_id": flight_id, "ref": {"kind": "insight", "insight_id": "abc123"}, "note": "worth watching",
+    })
+    assert created["ok"], created
+    ann_id = created["result"]["id"]
+    assert created["result"]["note"] == "worth watching"
+
+    all_notes = rpc(server, "list_annotations", {})
+    assert all_notes["ok"]
+    assert [a["id"] for a in all_notes["result"]["annotations"]] == [ann_id]
+
+    scoped = rpc(server, "list_annotations", {"flight_id": flight_id})
+    assert scoped["ok"]
+    assert len(scoped["result"]["annotations"]) == 1
+
+    scoped_other = rpc(server, "list_annotations", {"flight_id": "not-a-real-flight"})
+    assert scoped_other["ok"]
+    assert scoped_other["result"]["annotations"] == []
+
+    edited = rpc(server, "save_annotation", {
+        "id": ann_id, "flight_id": flight_id, "ref": {"kind": "insight", "insight_id": "abc123"}, "note": "actually fine",
+    })
+    assert edited["ok"], edited
+    assert edited["result"]["id"] == ann_id
+    assert edited["result"]["note"] == "actually fine"
+    assert edited["result"]["updated_at"]
+
+    deleted = rpc(server, "delete_annotation", {"id": ann_id})
+    assert deleted["ok"]
+    assert deleted["result"]["deleted"] is True
+    assert rpc(server, "list_annotations", {})["result"]["annotations"] == []
+
+    deleted_again = rpc(server, "delete_annotation", {"id": ann_id})
+    assert deleted_again["result"]["deleted"] is False
+
+
+def test_get_flight_attaches_note_to_matching_insight(server):
+    # An ordinary flight alone in its own fleet won't trigger a
+    # baseline-comparison insight (nothing to compare against yet) — an
+    # ECU alert guarantees a real `engine_ecu_inflight` insight to attach
+    # the note to, same log shape as test_analyze_ecu_workspace_reflects_imported_flights.
+    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Press (PSI),CAS Alert\n"
+    rows = "".join(
+        f"2026-01-01,12:{i//60:02d}:{i%60:02d},4000,90,2.0,{'ENGINE ECU / OIL PRESS' if 5 <= i < 25 else ''}\n"
+        for i in range(240)
+    )
+    log = (_META + header + rows).encode("utf-8")
+    b64 = base64.b64encode(log).decode()
+    imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_ECU.csv"}]})
+    assert imp["ok"], imp
+    flight_id = imp["result"]["results"][0]["flight_id"]
+
+    got = rpc(server, "get_flight", {"flight_id": flight_id})
+    assert got["ok"], got
+    topics = got["result"]["insight_set"]["topics"]
+    all_insights = [i for topic in topics for i in topic.get("insights", [])]
+    assert all_insights, "fixture flight should produce at least one insight to annotate"
+    target = all_insights[0]
+    assert "note" not in target
+
+    saved = rpc(server, "save_annotation", {
+        "flight_id": flight_id, "ref": {"kind": "insight", "insight_id": target["id"]}, "note": "explained in briefing",
+    })
+    assert saved["ok"], saved
+
+    got_again = rpc(server, "get_flight", {"flight_id": flight_id})
+    topics_again = got_again["result"]["insight_set"]["topics"]
+    all_insights_again = [i for topic in topics_again for i in topic.get("insights", [])]
+    annotated = next(i for i in all_insights_again if i["id"] == target["id"])
+    assert annotated["note"] == "explained in briefing"
+
+    # an insight nobody annotated stays note-less
+    others = [i for i in all_insights_again if i["id"] != target["id"]]
+    assert all("note" not in i for i in others)

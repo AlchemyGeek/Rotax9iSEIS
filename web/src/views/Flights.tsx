@@ -65,6 +65,11 @@ function groupKeyForDate(row: FlightTableRow): string {
   return isNaN(d.getTime()) ? row.date : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
+function dateSortKey(dateStr: string): number {
+  const t = new Date(dateStr + "T00:00:00").getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 function TrashIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -306,7 +311,21 @@ export function Flights() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(row);
     }
-    return Array.from(map.entries());
+    const entries = Array.from(map.entries());
+    if (groupBy === "date") {
+      // Rows arrive in list_flight_ids' hash-sorted order, not
+      // chronological — insertion order alone (the old behavior here)
+      // just reflected whichever month's flight happened to come first
+      // in that hash order, not which month was actually most recent.
+      // Newest first, both across months and within one.
+      for (const [, groupRows] of entries) {
+        groupRows.sort((a, b) => dateSortKey(b.date) - dateSortKey(a.date) || (b.engine_hours ?? 0) - (a.engine_hours ?? 0));
+      }
+      entries.sort((a, b) => dateSortKey(b[1][0].date) - dateSortKey(a[1][0].date));
+    } else {
+      entries.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    return entries;
   }, [filtered, groupBy]);
 
   const summary = useMemo(() => {

@@ -321,13 +321,25 @@ class FleetSelection:
 class AppSettings:
     units: str = "imperial"  # "imperial" | "metric"
     last_active_workspace_id: Optional[str] = None
+    # User chart presets (Spec 07 §6.1 Q1) — app-level, not per-workspace:
+    # a preset describes a way of looking at data, not a property of a
+    # particular aircraft. flight_chart.last_preset_id is the only other
+    # key in that dict for v0.1 (§6.5).
+    chart_presets: list = field(default_factory=list)
+    flight_chart: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {"units": self.units, "last_active_workspace_id": self.last_active_workspace_id}
+        return {
+            "units": self.units, "last_active_workspace_id": self.last_active_workspace_id,
+            "chart_presets": self.chart_presets, "flight_chart": self.flight_chart,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> "AppSettings":
-        return cls(units=d.get("units", "imperial"), last_active_workspace_id=d.get("last_active_workspace_id"))
+        return cls(
+            units=d.get("units", "imperial"), last_active_workspace_id=d.get("last_active_workspace_id"),
+            chart_presets=d.get("chart_presets") or [], flight_chart=d.get("flight_chart") or {},
+        )
 
 
 @dataclass
@@ -727,13 +739,17 @@ def _relative_path(abspath: Path, folder: Path) -> str:
     return str(abspath.relative_to(folder))
 
 
-def _read_source_bytes_for_reanalysis(ws_dir: Path, src: "FlightSources") -> Optional[tuple[bytes, str]]:
-    """Best-effort re-read of a known flight's own source bytes, for the
-    engine-version staleness check below — the workspace's own persisted
-    copy for an uploaded flight, or the log_folders path for a scanned
-    one. None if nothing reachable right now (src.missing already covers
-    the common case; this only matters for one that just went
-    unreachable mid-scan)."""
+def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[bytes, str]]:
+    """Best-effort re-read of a known flight's own source bytes — the
+    workspace's own persisted copy for an uploaded flight, or the
+    log_folders path for a scanned one. Shared by scan_workspace's
+    engine-version staleness check (below) and server.py's
+    op_get_flight_series, which otherwise only ever checked the
+    workspace's own copy — a folder-scanned flight never has one (only
+    import_files persists raw bytes into the workspace itself), so its
+    timeline silently had nowhere to read from. None if nothing's
+    reachable right now (src.missing already covers the common scan-time
+    case; this also covers a folder that's since gone offline)."""
     for imp in reversed(src.imports):
         if imp.log_folder_path == UPLOADED_SOURCE:
             p = ws_dir / "flights" / src.flight_id / imp.filename
@@ -932,7 +948,7 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
         fa = load_flight_analysis(ws_dir, fid)
         if fa is None or fa.provenance.get("engine_version") == __version__:
             continue
-        found = _read_source_bytes_for_reanalysis(ws_dir, src)
+        found = read_source_bytes(ws_dir, src)
         if found is None:
             continue
         content, filename = found
@@ -992,3 +1008,60 @@ def engine_version_diagnostic(manifest: WorkspaceManifest) -> Optional[dict]:
                        f"newer than the running {__version__}.",
         }
     return None
+
+
+# ── Annotations (Spec 02 §6.5, R3) ──────────────────────────────────────────
+# annotations.json's shape was already fully specified — id/flight_id/ref/
+# note/created_at/updated_at — just never implemented anywhere. One store
+# per workspace, flat list; the host (server.py) does the flight_id/ref
+# filtering, matching R3's "the engine only attaches."
+
+_ANNOTATIONS_VERSION = "1"
+
+
+def load_annotations(ws_dir: Path) -> dict:
+    f = ws_dir / "annotations.json"
+    if not f.exists():
+        return {"version": _ANNOTATIONS_VERSION, "annotations": []}
+    return json.loads(f.read_text())
+
+
+def save_annotation(ws_dir: Path, flight_id: str, ref: dict, note: str, annotation_id: Optional[str] = None) -> dict:
+    """Create (annotation_id is None) or update (edits note + sets
+    updated_at, leaves created_at/flight_id/ref alone). Returns the
+    saved annotation dict."""
+    store = load_annotations(ws_dir)
+    now = _now()
+    if annotation_id:
+        for a in store["annotations"]:
+            if a["id"] == annotation_id:
+                a["note"] = note
+                a["updated_at"] = now
+                _write_json(ws_dir / "annotations.json", store)
+                return a
+        # id given but not found — fall through and create fresh rather
+        # than silently discarding the pilot's note.
+    annotation = {
+        "id": _new_id("ann"),
+        "flight_id": flight_id,
+        "ref": ref,
+        "note": note,
+        "created_at": now,
+    }
+    store["annotations"].append(annotation)
+    _write_json(ws_dir / "annotations.json", store)
+    return annotation
+
+
+def delete_annotation(ws_dir: Path, annotation_id: str) -> bool:
+    store = load_annotations(ws_dir)
+    before = len(store["annotations"])
+    store["annotations"] = [a for a in store["annotations"] if a["id"] != annotation_id]
+    if len(store["annotations"]) == before:
+        return False
+    _write_json(ws_dir / "annotations.json", store)
+    return True
+
+
+def annotations_for_flight(ws_dir: Path, flight_id: str) -> list[dict]:
+    return [a for a in load_annotations(ws_dir)["annotations"] if a["flight_id"] == flight_id]

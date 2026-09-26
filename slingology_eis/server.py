@@ -30,16 +30,20 @@ import base64
 import json
 import mimetypes
 import sys
+import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+import numpy as np
 import pandas as pd
 
 from . import serialize as _json_serialize
 from . import workspace as ws
+from .channels import CHANNEL_REGISTRY, MAX_CHART_SLOTS, SLOT_GROUPS
 from .cli import _REPO_ROOT, _write_workspace, resolve_logs_dir, resolve_workspace_dir
+from .presets import validate_chart_preset
 from .contract import content_hash
 from .limits import _resolve_engine_name, load_engine_config
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
@@ -63,6 +67,7 @@ from .rules import validate_rules
 _GROUND_SESSION_MIN_AIRBORNE_MIN = 3.0
 
 _DEFAULT_RULES_PATH = _REPO_ROOT / "insight_rules.json"
+_CHART_PRESETS_PATH = _REPO_ROOT / "chart_presets.json"
 
 _SEVERITY_RANK = {"limit": 0, "warning": 1, "watch": 2, "info": 3}
 
@@ -158,13 +163,20 @@ def _load_workspace_flights(workspace_dir: Path) -> list[FlightAnalysis]:
 
 def _downsample_series(content: bytes, filename: str, channels: list[str], n_buckets: int = 400) -> dict:
     """
-    All requested channels are sampled at the *same* row indices, picked
-    from one reference channel's min/max-preserving envelope — not each
-    channel downsampled independently. A synced-cursor readout (Spec 05
-    v0.2) needs every active channel to have a point at the exact x the
-    cursor is on; independently-downsampled channels land at different
-    elapsed_s values, so ECharts' axis-trigger tooltip only finds
-    whichever series happens to have a point near the cursor.
+    Each channel is downsampled independently, with its own min/max
+    envelope per bucket (Spec 07 §11.2) — not all channels sampled at one
+    reference channel's row indices, which silently dropped other
+    channels' real extremes (finding 6: a CO spike and an overboost MAP
+    peak both vanished behind RPM's envelope). Bucket edges depend only
+    on row count, never on any channel's values, so channels fetched at
+    different times under lazy fetch (§11.1) still land on identical
+    bucket boundaries as if fetched together (§13.5). NaN rows are
+    excluded from a bucket's argmin/argmax so a channel with scattered
+    gaps doesn't have its true peak edged out by comparing against NaN.
+
+    The synced-cursor readout no longer assumes every active channel has
+    a point at the exact cursor x — the frontend does its own
+    nearest-point lookup per series instead (§11.2).
     """
     df, _info = load_log_bytes(content, filename)
     t = df["elapsed_s"].to_numpy()
@@ -172,23 +184,25 @@ def _downsample_series(content: bytes, filename: str, channels: list[str], n_buc
     if not present:
         return {}
 
-    ref_col = "rpm" if "rpm" in present else present[0]
-    ref_vals = df[ref_col].to_numpy()
     edges = [int(round(i * len(df) / n_buckets)) for i in range(n_buckets + 1)]
-    indices: list[int] = []
-    for i in range(n_buckets):
-        lo, hi = edges[i], edges[i + 1]
-        if hi <= lo:
-            continue
-        seg = ref_vals[lo:hi]
-        indices.extend(lo + idx for idx in sorted({int(seg.argmin()), int(seg.argmax())}))
-    indices = sorted(set(indices))
 
     out: dict[str, list[list[Optional[float]]]] = {}
     for col in present:
-        vals = df[col].to_numpy()
+        vals = df[col].to_numpy(dtype=float)
+        indices: set[int] = set()
+        for i in range(n_buckets):
+            lo, hi = edges[i], edges[i + 1]
+            if hi <= lo:
+                continue
+            seg = vals[lo:hi]
+            finite = np.flatnonzero(~np.isnan(seg))
+            if len(finite) == 0:
+                continue
+            indices.add(lo + int(finite[np.argmin(seg[finite])]))
+            indices.add(lo + int(finite[np.argmax(seg[finite])]))
+
         points = []
-        for idx in indices:
+        for idx in sorted(indices):
             v = vals[idx]
             points.append([round(float(t[idx]), 1), None if v != v else round(float(v), 1)])
         out[col] = points
@@ -288,6 +302,23 @@ def op_list_engines(params: dict, ctx: dict) -> Any:
     return results
 
 
+def op_get_channel_registry(params: dict, ctx: dict) -> Any:
+    """Spec 07 v0.2 §4/§12: the chartable set, grouped, with each
+    channel's insight-evidence companions, plus slot-group membership
+    and the hard slot cap — the single source of truth the UI keeps no
+    parallel list of (D4)."""
+    channels = [
+        {
+            "id": c.id, "unit": c.unit, "description": c.description, "label": c.label,
+            "group": c.group, "slot_group": c.slot_group, "companions": list(c.companions),
+            "unit_variant_of": c.unit_variant_of,
+        }
+        for c in CHANNEL_REGISTRY.values() if c.chartable
+    ]
+    slot_groups = [{"id": sg.id, "label": sg.label, "members": list(sg.members)} for sg in SLOT_GROUPS.values()]
+    return {"channels": channels, "slot_groups": slot_groups, "max_chart_slots": MAX_CHART_SLOTS}
+
+
 def op_ingest_log(params: dict, ctx: dict) -> Any:
     content, filename = _decode_log(params)
     return _classify_ingest(content, filename, ctx["workspace_dir"])
@@ -301,10 +332,23 @@ def op_analyze_flight(params: dict, ctx: dict) -> Any:
     return fa.to_dict()
 
 
+def _expand_channels(channels: list[str]) -> list[str]:
+    """Spec 07 §11.1: a slot-group id expands to its members here, so a
+    caller can pass e.g. "egt_cyl" directly instead of pre-expanding it
+    client-side."""
+    out: list[str] = []
+    for cid in channels:
+        sg = SLOT_GROUPS.get(cid)
+        out.extend(sg.members if sg else [cid])
+    return out
+
+
 def op_get_series(params: dict, ctx: dict) -> Any:
     content, filename = _decode_log(params)
-    channels = params.get("channels") or ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"]
-    return _downsample_series(content, filename, channels)
+    channels = params.get("channels")
+    if not channels:
+        raise RpcError("BAD_PARAMS", "channels is required")
+    return _downsample_series(content, filename, _expand_channels(channels))
 
 
 def op_update_fleet(params: dict, ctx: dict) -> Any:
@@ -338,11 +382,21 @@ def op_validate_rules(params: dict, ctx: dict) -> Any:
 
 
 def _source_filename(workspace_dir: Path, flight_id: str) -> Optional[str]:
+    """The real log filename to show in the UI — not the flight_id hash,
+    which op_get_flight/op_list_flights fell back to displaying whenever
+    this returned None for a folder-scanned flight (same root cause as
+    op_get_flight_series before: only the workspace's own persisted copy
+    was ever checked, and only import_files writes one of those). A
+    folder-scanned flight still has its real filename recorded in
+    FlightSources.imports regardless — that's the actual source of truth
+    for "what was this log called," not the workspace copy's presence."""
     d = workspace_dir / "flights" / flight_id
-    if not d.is_dir():
-        return None
-    others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
-    return others[0] if others else None
+    if d.is_dir():
+        others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
+        if others:
+            return others[0]
+    src = ws.load_sources(workspace_dir, flight_id)
+    return src.imports[-1].filename if src and src.imports else None
 
 
 def op_list_flights(params: dict, ctx: dict) -> Any:
@@ -362,7 +416,8 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
         raise RpcError("NOT_FOUND", f"no flight {flight_id} in this workspace")
     fa = _dataclass_from_dict(FlightAnalysis, json.loads(f.read_text()))
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
-    iset = evaluate_insights(fa, fleet, _resolve_rules(ctx))
+    annotations = ws.annotations_for_flight(ctx["workspace_dir"], flight_id)
+    iset = evaluate_insights(fa, fleet, _resolve_rules(ctx), annotations=annotations)
     return {
         "flight_analysis": fa.to_dict(), "insight_set": iset.to_dict(),
         "source_filename": _source_filename(ctx["workspace_dir"], flight_id),
@@ -382,15 +437,31 @@ def op_get_fleet(params: dict, ctx: dict) -> Any:
 
 
 def op_get_flight_series(params: dict, ctx: dict) -> Any:
+    """The Flight view's timeline. Checks the workspace's own persisted
+    copy first (fast path — every upload-imported flight has one), then
+    falls back to re-reading from wherever ws.read_source_bytes can
+    actually find it (a scanned flight's registered log folder) — a
+    folder-scanned flight never gets a copy written into the workspace
+    itself (only import_files does that), so without this fallback its
+    timeline had nowhere to read from at all, regardless of whether the
+    source file was still perfectly reachable on disk."""
     flight_id = params["flight_id"]
-    channels = params.get("channels") or ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"]
-    flight_dir = ctx["workspace_dir"] / "flights" / flight_id
+    channels = params.get("channels")
+    if not channels:
+        raise RpcError("BAD_PARAMS", "channels is required")
+    workspace_dir = ctx["workspace_dir"]
+    flight_dir = workspace_dir / "flights" / flight_id
     source_files = [p for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] if flight_dir.is_dir() else []
-    if not source_files:
-        raise RpcError("NOT_FOUND", f"no source log retained for flight {flight_id} "
-                                     f"(only flights imported via the server's import_files keep one)")
-    content = source_files[0].read_bytes()
-    return _downsample_series(content, source_files[0].name, channels)
+    if source_files:
+        content, filename = source_files[0].read_bytes(), source_files[0].name
+    else:
+        src = ws.load_sources(workspace_dir, flight_id)
+        found = ws.read_source_bytes(workspace_dir, src) if src else None
+        if found is None:
+            raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
+                                         f"(not retained in the workspace, and its log folder isn't reachable right now)")
+        content, filename = found
+    return _downsample_series(content, filename, _expand_channels(channels))
 
 
 def op_rebuild_fleet(params: dict, ctx: dict) -> Any:
@@ -531,6 +602,27 @@ def op_include_flight(params: dict, ctx: dict) -> Any:
     return ws.include_flight(ctx["workspace_dir"], params["flight_id"]).to_dict()
 
 
+def op_list_annotations(params: dict, ctx: dict) -> Any:
+    """All annotations in the active workspace, or just one flight's
+    (Spec 03 §5.6 browse view vs. a single Flight view/ECU card's own
+    lookup)."""
+    flight_id = params.get("flight_id")
+    if flight_id:
+        return {"annotations": ws.annotations_for_flight(ctx["workspace_dir"], flight_id)}
+    return ws.load_annotations(ctx["workspace_dir"])
+
+
+def op_save_annotation(params: dict, ctx: dict) -> Any:
+    return ws.save_annotation(
+        ctx["workspace_dir"], params["flight_id"], params["ref"], params["note"],
+        annotation_id=params.get("id"),
+    )
+
+
+def op_delete_annotation(params: dict, ctx: dict) -> Any:
+    return {"deleted": ws.delete_annotation(ctx["workspace_dir"], params["id"])}
+
+
 def op_remove_missing_flight(params: dict, ctx: dict) -> Any:
     return {"removed": ws.remove_missing_flight(ctx["workspace_dir"], params["flight_id"])}
 
@@ -656,6 +748,48 @@ def op_save_app_settings(params: dict, ctx: dict) -> Any:
     return settings.to_dict()
 
 
+def op_get_chart_presets(params: dict, ctx: dict) -> Any:
+    """Shipped + user chart presets (Spec 07 §6.1/§12), each run through
+    validate_chart_preset — an invalid preset is skipped with a
+    PRESET_INVALID diagnostic rather than breaking the whole list."""
+    shipped = json.loads(_CHART_PRESETS_PATH.read_text())["presets"]
+    user = ws.load_app_settings(ctx["registry_path"]).chart_presets
+
+    presets: list[dict] = []
+    diagnostics: list[dict] = []
+    seen_ids: set[str] = set()
+    for preset in [*shipped, *user]:
+        issues = validate_chart_preset(preset, existing_ids=frozenset(seen_ids))
+        if issues:
+            diagnostics.extend(issues)
+            continue
+        seen_ids.add(preset["id"])
+        presets.append(preset)
+
+    return {"presets": presets, "diagnostics": diagnostics, "max_chart_slots": MAX_CHART_SLOTS}
+
+
+def op_save_user_preset(params: dict, ctx: dict) -> Any:
+    """"Save as preset…" (Spec 07 §6.5/§6.6) — asks only for a name; the
+    id gets a user. prefix here so it can never collide with a shipped
+    id (§6.2). Rejects (doesn't just diagnostic-skip) an invalid preset,
+    since this is the save path validate_chart_preset exists to gate."""
+    label = params["label"]
+    channels = params["channels"]
+    preset_id = f"user.{uuid.uuid4().hex[:12]}"
+    preset = {"id": preset_id, "label": label, "description": params.get("description", ""), "channels": channels}
+
+    settings = ws.load_app_settings(ctx["registry_path"])
+    existing_ids = frozenset(p["id"] for p in settings.chart_presets if isinstance(p, dict) and p.get("id"))
+    issues = validate_chart_preset(preset, existing_ids=existing_ids)
+    if issues:
+        raise RpcError("BAD_PARAMS", "; ".join(d["message"] for d in issues))
+
+    settings.chart_presets = [*settings.chart_presets, preset]
+    ws.save_app_settings(ctx["registry_path"], settings)
+    return preset
+
+
 def op_get_workspace_settings(params: dict, ctx: dict) -> Any:
     return ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
 
@@ -674,6 +808,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "save_baseline_config": op_save_baseline_config,
     "what_if_rules": op_what_if_rules,
     "list_engines": op_list_engines,
+    "get_channel_registry": op_get_channel_registry,
     "ingest_log": op_ingest_log,
     "analyze_flight": op_analyze_flight,
     "get_series": op_get_series,
@@ -691,6 +826,9 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_flights_with_status": op_list_flights_with_status,
     "exclude_flight": op_exclude_flight,
     "include_flight": op_include_flight,
+    "list_annotations": op_list_annotations,
+    "save_annotation": op_save_annotation,
+    "delete_annotation": op_delete_annotation,
     "remove_missing_flight": op_remove_missing_flight,
     "remove_flight": op_remove_flight,
     "remove_flights": op_remove_flights,
@@ -702,6 +840,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "scan_workspace": op_scan_workspace,
     "get_app_settings": op_get_app_settings,
     "save_app_settings": op_save_app_settings,
+    "get_chart_presets": op_get_chart_presets,
+    "save_user_preset": op_save_user_preset,
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
 }

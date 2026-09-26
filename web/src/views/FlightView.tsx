@@ -4,13 +4,20 @@ import { NavShell } from "../components/NavShell";
 import { InsightCard } from "../components/InsightCard";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { ChannelTimeline } from "../components/ChannelTimeline";
+import { ChannelPicker } from "../components/ChannelPicker";
+import { PresetBar } from "../components/PresetBar";
 import { PhaseCaption } from "../components/PhaseCaption";
 import { PhaseMinimap } from "../components/PhaseMinimap";
 import { fixtureFlightById, flightAnalysis as fixtureFlight, insightSet as fixtureInsights, kacvSeries, sourceFilename } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import { toSeriesFixture } from "../lib/series";
-import { ALL_CHANNEL_IDS, DEFAULT_ACTIVE_CHANNELS } from "../lib/channels";
-import type { FlightAnalysis, Insight, InsightSeverity, InsightSet, SeriesFixture, TopicResult } from "../types/contract";
+import { assignChannelColors } from "../lib/channels";
+import { useChartSession } from "../lib/chartSession";
+import { colors as themeColors } from "../theme/colors";
+import type {
+  Annotation, ChannelRegistryEntry, ChartPreset, FlightAnalysis,
+  Insight, InsightSeverity, InsightSet, SeriesFixture, SlotGroupEntry, TopicResult,
+} from "../types/contract";
 
 const SEVERITY_RANK: Record<InsightSeverity, number> = { limit: 0, warning: 1, watch: 2, info: 3 };
 const client = getEngineClient();
@@ -29,25 +36,97 @@ function noInsightSummaryText(topics: TopicResult[]): string {
   return `${topics.length} topic${topics.length === 1 ? "" : "s"} ${topics.length === 1 ? "was" : "were"} analyzed with nothing to flag — ${namesStr}. See Analysis section for the full picture.`;
 }
 
+function refsMatch(a: Annotation["ref"], b: Annotation["ref"]): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "insight" && b.kind === "insight") return a.insight_id === b.insight_id;
+  if (a.kind !== "insight" && b.kind !== "insight") return a.ref === b.ref;
+  return false;
+}
+
+// Order-independent — a preset's channels and the active slot list are
+// both "one entry per slot" (Spec 07 D3), just not necessarily in the
+// same order once channels have been added/removed by hand.
+function sameSlotSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((id) => setB.has(id));
+}
+
+const FALLBACK_OVERVIEW_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
+
+function expandSlotsWith(slots: string[], groups: SlotGroupEntry[]): string[] {
+  return slots.flatMap((id) => groups.find((sg) => sg.id === id)?.members ?? [id]);
+}
+
 export function FlightView() {
   const { flightId } = useParams();
   const navigate = useNavigate();
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
   const [visibleWindow, setVisibleWindow] = useState<[number, number]>([0, 0]);
   const [highlight, setHighlight] = useState<{ start_s: number; end_s: number } | null>(null);
-  const [activeChannels, setActiveChannels] = useState<string[]>(DEFAULT_ACTIVE_CHANNELS);
+
+  // Spec 07 §4/§6/§7 chart state — the picker/preset bar/timeline all
+  // read from this rather than each other, so there is exactly one
+  // source of truth for "what's on the chart right now." Held in a
+  // context above the router (D7), not local state, so it survives
+  // navigating away from and back to Flight view within a session.
+  const {
+    initialized: chartInitialized, setInitialized: setChartInitialized,
+    activeSlots, setActiveSlots, presetId, setPresetId, chartState, setChartState,
+    channelColors, setChannelColors,
+    insightSnapshot, setInsightSnapshot, insightLabel, setInsightLabel,
+  } = useChartSession();
+  const [channelRegistry, setChannelRegistry] = useState<ChannelRegistryEntry[]>([]);
+  const [slotGroups, setSlotGroups] = useState<SlotGroupEntry[]>([]);
+  const [maxSlots, setMaxSlots] = useState(6);
+  const [presets, setPresets] = useState<ChartPreset[]>([]);
+  const [seriesCache, setSeriesCache] = useState<SeriesFixture>({ flight_id: "", channels: {} });
+  const [hasTimeline, setHasTimeline] = useState(true);
+  const [savePresetDraft, setSavePresetDraft] = useState<string | null>(null);
 
   const [flightAnalysis, setFlightAnalysis] = useState<FlightAnalysis>(fixtureFlight);
   const [insightSet, setInsightSet] = useState<InsightSet>(fixtureInsights);
-  const [series, setSeries] = useState<SeriesFixture | null>(kacvSeries);
   const [filename, setFilename] = useState(sourceFilename(fixtureFlight.source_keys[0]));
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+
+  function expandSlots(slots: string[]): string[] {
+    return expandSlotsWith(slots, slotGroups);
+  }
+
+  function channelMetaFor(id: string, registry: ChannelRegistryEntry[]): { label: string; unit: string } | undefined {
+    const c = registry.find((r) => r.id === id);
+    return c ? { label: c.label, unit: c.unit ?? "" } : undefined;
+  }
+
+  // Spec 07 D7: chart state (a preset or a Modified set) carries across
+  // flights within a session — only resolved from
+  // AppSettings.flight_chart.last_preset_id the first time Flight view
+  // opens this session (chartInitialized, from the session context —
+  // survives this component unmounting/remounting via the Flights list).
 
   useEffect(() => {
     let cancelled = false;
     setZoomWindow(null);
     setHighlight(null);
+
+    // D7's Insight exception: an insight belongs to one flight, so
+    // moving to another leaves Insight and restores the state before it
+    // — computed as a plain local value (not read back from state) since
+    // the setState calls below don't apply until next render.
+    const carriedState =
+      chartState === "insight" && insightSnapshot
+        ? insightSnapshot
+        : { activeSlots, presetId, chartState: chartState as "preset" | "modified" };
+    if (chartState === "insight") {
+      setActiveSlots(carriedState.activeSlots);
+      setPresetId(carriedState.presetId);
+      setChartState(carriedState.chartState);
+    }
+    setInsightSnapshot(null);
+    setInsightLabel(undefined);
+    setSavePresetDraft(null);
 
     async function load() {
       if (!flightId) {
@@ -67,17 +146,65 @@ export function FlightView() {
       }
       setLoading(true);
       try {
-        const got = await client.getFlight(flightId);
+        const [got, registryResult, presetsResult, appSettings] = await Promise.all([
+          client.getFlight(flightId),
+          client.getChannelRegistry(),
+          client.getChartPresets(),
+          client.getAppSettings(),
+        ]);
         if (cancelled) return;
         setFlightAnalysis(got.flight_analysis);
         setInsightSet(got.insight_set);
-        setFilename(got.source_filename ?? got.flight_analysis.source_keys[0]);
+        // A raw content-hash source_key is not a filename — if the server
+        // genuinely has no recorded filename for this flight (no import
+        // history at all, not just no persisted copy — that gap is
+        // server.py's _source_filename's job to close), say so plainly
+        // rather than showing what looks like a broken/garbled name.
+        setFilename(got.source_filename ?? "unknown source file");
         setUsingFixture(false);
+
+        setChannelRegistry(registryResult.channels);
+        setSlotGroups(registryResult.slot_groups);
+        setMaxSlots(registryResult.max_chart_slots);
+        setPresets(presetsResult.presets);
+
+        let slotsToLoad: string[];
+        if (!chartInitialized) {
+          const lastPresetId = appSettings.flight_chart?.last_preset_id as string | undefined;
+          const initialPreset =
+            presetsResult.presets.find((p) => p.id === lastPresetId) ??
+            presetsResult.presets.find((p) => p.id === "overview") ??
+            presetsResult.presets[0] ?? null;
+          slotsToLoad = initialPreset?.channels ?? [];
+          setActiveSlots(slotsToLoad);
+          setPresetId(initialPreset?.id ?? null);
+          setChartState("preset");
+          setChartInitialized(true);
+        } else {
+          // Already had a selection this session (D7) — carry it into
+          // this flight unchanged; only the underlying series data (and
+          // per-flight availability) is flight-specific.
+          slotsToLoad = carriedState.activeSlots;
+        }
+        setSeriesCache({ flight_id: flightId, channels: {} });
+
         try {
-          const s = await client.getFlightSeries(flightId, ALL_CHANNEL_IDS);
-          if (!cancelled) setSeries(toSeriesFixture(flightId, s));
+          const idsToFetch = expandSlotsWith(slotsToLoad, registryResult.slot_groups);
+          const raw = await client.getFlightSeries(flightId, idsToFetch);
+          if (!cancelled) {
+            const fixture = toSeriesFixture(flightId, raw, (id) => channelMetaFor(id, registryResult.channels));
+            setSeriesCache({ flight_id: flightId, channels: fixture.channels });
+            setHasTimeline(true);
+          }
         } catch {
-          if (!cancelled) setSeries(null); // no source log retained for this flight — show insights/analysis without a timeline
+          if (!cancelled) setHasTimeline(false);
+        }
+
+        try {
+          const annRes = await client.listAnnotations(flightId);
+          if (!cancelled) setAnnotations(annRes.annotations);
+        } catch {
+          if (!cancelled) setAnnotations([]);
         }
       } catch {
         if (!cancelled) {
@@ -88,11 +215,43 @@ export function FlightView() {
           // own actual flight instead of a stand-in that can't show it.
           const known = fixtureFlightById(flightId);
           const fa = known?.analysis ?? fixtureFlight;
+          const series = known ? known.series : kacvSeries;
           setFlightAnalysis(fa);
           setInsightSet(known?.insightSet ?? fixtureInsights);
-          setSeries(known ? known.series : kacvSeries);
           setFilename(sourceFilename(fa.source_keys[0]));
+          setAnnotations([]); // fixture mode has no server to persist notes through
           setUsingFixture(true);
+
+          // No live registry/presets endpoint to fall back to either — a
+          // small registry synthesized from whatever this fixture's own
+          // series actually carries keeps the picker functional, just
+          // limited to that fixture's channels rather than the full 36.
+          const syntheticRegistry: ChannelRegistryEntry[] = series
+            ? Object.entries(series.channels).map(([id, ch]) => ({
+                id, unit: ch.unit, description: ch.label, label: ch.label,
+                group: "flight", slot_group: null, companions: [], unit_variant_of: null,
+              }))
+            : [];
+          const overviewIds = FALLBACK_OVERVIEW_IDS.filter((id) => series?.channels[id]);
+          const syntheticPreset: ChartPreset = { id: "overview", label: "Overview", description: "", channels: overviewIds };
+          setChannelRegistry(syntheticRegistry);
+          setSlotGroups([]);
+          setMaxSlots(6);
+          setPresets(overviewIds.length ? [syntheticPreset] : []);
+
+          if (!chartInitialized) {
+            setActiveSlots(overviewIds);
+            setPresetId(overviewIds.length ? "overview" : null);
+            setChartState("preset");
+            setChartInitialized(true);
+          } else {
+            // D7 still applies in fixture mode: carry the selection over,
+            // restricted to whatever this particular fixture actually has.
+            const carried = carriedState.activeSlots.filter((id) => series?.channels[id]);
+            setActiveSlots(carried.length ? carried : overviewIds);
+          }
+          setSeriesCache(series ?? { flight_id: flightId, channels: {} });
+          setHasTimeline(series !== null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -102,7 +261,140 @@ export function FlightView() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flightId, navigate]);
+
+  // Slot colors are assigned by identity, not position (Spec 07 §9) — a
+  // channel keeps its color for as long as it stays active, so this has
+  // to carry the previous assignment forward rather than recompute from
+  // nothing on every render.
+  const activeChannelIds = useMemo(() => expandSlots(activeSlots), [activeSlots, slotGroups]);
+  useEffect(() => {
+    setChannelColors((prev) => assignChannelColors(activeChannelIds, prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChannelIds]);
+  const colorFor = useMemo(() => (id: string) => channelColors[id] ?? themeColors.textSecondary, [channelColors]);
+
+  function ensureLoaded(ids: string[]) {
+    if (usingFixture || !flightId) return; // fixture series is already fully present in the cache
+    const missing = ids.filter((id) => !seriesCache.channels[id]);
+    if (missing.length === 0) return;
+    client
+      .getFlightSeries(flightId, missing)
+      .then((raw) => {
+        const fixture = toSeriesFixture(flightId, raw, (id) => channelMetaFor(id, channelRegistry));
+        setSeriesCache((prev) => ({ flight_id: flightId, channels: { ...prev.channels, ...fixture.channels } }));
+      })
+      .catch(() => {
+        // leave the cache as-is — ChannelTimeline already skips channels it has no data for
+      });
+  }
+
+  function handleTogglePickerChannel(slotId: string) {
+    const isActive = activeSlots.includes(slotId);
+    let next: string[];
+    if (isActive) {
+      next = activeSlots.filter((id) => id !== slotId);
+    } else {
+      // Spec 07 §7.1: the EGT group and its own members are mutually
+      // exclusive on the chart — picking one swaps out the other rather
+      // than just adding a slot, so this can free a slot as often as it
+      // uses one (never blocked by a full chart either way).
+      const asGroup = slotGroups.find((sg) => sg.id === slotId);
+      const parentGroup = slotGroups.find((sg) => sg.members.includes(slotId) && activeSlots.includes(sg.id));
+      const base = asGroup
+        ? activeSlots.filter((id) => !asGroup.members.includes(id))
+        : parentGroup
+          ? activeSlots.filter((id) => id !== parentGroup.id)
+          : activeSlots;
+      if (base.length >= maxSlots) return; // picker already disables this; a no-op guard either way
+      next = [...base, slotId];
+    }
+    setActiveSlots(next);
+    ensureLoaded(expandSlots(next));
+    const basePreset = presets.find((p) => p.id === presetId);
+    setChartState(basePreset && sameSlotSet(basePreset.channels, next) ? "preset" : "modified");
+  }
+
+  function handleSelectPreset(id: string) {
+    const preset = presets.find((p) => p.id === id);
+    if (!preset) return;
+    setActiveSlots(preset.channels);
+    setPresetId(id);
+    setChartState("preset");
+    ensureLoaded(expandSlots(preset.channels));
+    if (!usingFixture) {
+      client
+        .getAppSettings()
+        .then((s) => client.saveAppSettings({ ...s, flight_chart: { ...(s.flight_chart ?? {}), last_preset_id: id } }))
+        .catch(() => {
+          // remembering the last preset is a convenience, not required for this session to work
+        });
+    }
+  }
+
+  function handleRevert() {
+    const basePreset = presets.find((p) => p.id === presetId);
+    if (!basePreset) return;
+    setActiveSlots(basePreset.channels);
+    setChartState("preset");
+    ensureLoaded(expandSlots(basePreset.channels));
+  }
+
+  async function handleConfirmSaveAsPreset() {
+    if (!savePresetDraft?.trim() || usingFixture) return;
+    try {
+      const saved = await client.saveUserPreset({ label: savePresetDraft.trim(), channels: activeSlots });
+      const presetsRes = await client.getChartPresets();
+      setPresets(presetsRes.presets);
+      setPresetId(saved.id);
+      setChartState("preset");
+      setSavePresetDraft(null);
+    } catch {
+      // leave the draft open so the pilot can see the field still has their text and retry
+    }
+  }
+
+  function handleBackFromInsight() {
+    if (!insightSnapshot) return;
+    setActiveSlots(insightSnapshot.activeSlots);
+    setPresetId(insightSnapshot.presetId);
+    setChartState(insightSnapshot.chartState);
+    ensureLoaded(expandSlots(insightSnapshot.activeSlots));
+    setInsightSnapshot(null);
+    setInsightLabel(undefined);
+  }
+
+  async function refreshAnnotations() {
+    if (!flightId || usingFixture) return;
+    try {
+      const res = await client.listAnnotations(flightId);
+      setAnnotations(res.annotations);
+    } catch {
+      // leave whatever was already loaded — a save/delete that reached
+      // the server but couldn't refresh isn't worth losing the list over
+    }
+  }
+
+  async function handleSaveNote(ref: Annotation["ref"], text: string) {
+    if (!flightId) return;
+    const existing = annotations.find((a) => refsMatch(a.ref, ref));
+    try {
+      await client.saveAnnotation({ id: existing?.id, flightId, ref, note: text });
+      await refreshAnnotations();
+    } catch {
+      // server unreachable — nothing persisted, leave state as-is
+    }
+  }
+
+  async function handleDeleteNote(annotationId: string) {
+    try {
+      await client.deleteAnnotation(annotationId);
+      await refreshAnnotations();
+    } catch {
+      // server unreachable — nothing persisted, leave state as-is
+    }
+  }
 
   const flatInsights = useMemo(() => {
     const items: { insight: Insight; topicId: string }[] = [];
@@ -113,6 +405,12 @@ export function FlightView() {
   }, [insightSet]);
 
   const noInsightTopics = useMemo(() => insightSet.topics.filter((t) => t.insights.length === 0), [insightSet]);
+
+  const annotationByInsightId = useMemo(() => {
+    const map = new Map<string, Annotation>();
+    for (const a of annotations) if (a.ref.kind === "insight") map.set(a.ref.insight_id, a);
+    return map;
+  }, [annotations]);
 
   const h = flightAnalysis.header;
   const durationMin = flightAnalysis.metrics.duration_min?.value;
@@ -160,6 +458,26 @@ export function FlightView() {
         setVisibleWindow([ev.start_s, ev.end_s]);
         setHighlight({ start_s: ev.start_s, end_s: ev.end_s });
         document.getElementById("timeline")?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // Spec 07 §10/D8: enter the Insight chart state and show the
+        // evidence's subject channels plus each subject's registry
+        // companions (not a display hint carried on the evidence itself
+        // — resolved here so editing companions never touches the rules
+        // hash) — but only if evidence actually names channels; some
+        // evidence is zoom-only and shouldn't touch the chart's channel
+        // selection at all.
+        if (ev.channels.length > 0) {
+          const companionsFor = (id: string) => channelRegistry.find((c) => c.id === id)?.companions ?? [];
+          const combined = [...new Set([...ev.channels, ...ev.channels.flatMap(companionsFor)])];
+          const capped = combined.slice(0, maxSlots);
+          if (chartState !== "insight") {
+            setInsightSnapshot({ activeSlots, presetId, chartState: chartState as "preset" | "modified" });
+          }
+          setActiveSlots(capped);
+          setChartState("insight");
+          setInsightLabel(insight.message.text);
+          ensureLoaded(expandSlots(capped));
+        }
         return;
       }
       if (ev.kind === "baseline_point") {
@@ -174,6 +492,46 @@ export function FlightView() {
       }
     }
   }
+
+  const previousStateLabel = insightSnapshot ? presets.find((p) => p.id === insightSnapshot.presetId)?.label : undefined;
+
+  // Spec 07 §5: an unavailable channel in the current selection applies
+  // the rest and shows a quiet note rather than being silently dropped —
+  // the selection itself stays exactly as-is (D7) even for a flight that
+  // doesn't record it.
+  const unavailableActiveLabels = useMemo(() => {
+    const available = flightAnalysis.available_channels;
+    if (!available) return [];
+    const availableSet = new Set(available);
+    return activeSlots
+      .filter((id) => {
+        const sg = slotGroups.find((s) => s.id === id);
+        const ids = sg ? sg.members : [id];
+        return !ids.some((cid) => availableSet.has(cid));
+      })
+      .map((id) => slotGroups.find((s) => s.id === id)?.label ?? channelRegistry.find((c) => c.id === id)?.label ?? id);
+  }, [activeSlots, flightAnalysis.available_channels, slotGroups, channelRegistry]);
+
+  // A deselected channel from the current (non-Overview) preset's own
+  // topic should stay visible as an inactive tag, not disappear into the
+  // "+ Add channel" popover — every chartable channel sharing a group
+  // with the preset's own channels shows as a tag either way. Overview
+  // stays minimal on purpose (null here keeps ChannelPicker's old
+  // active-only row).
+  const expandGroups = useMemo<Set<string> | null>(() => {
+    if (!presetId || presetId === "overview") return null;
+    const basePreset = presets.find((p) => p.id === presetId);
+    if (!basePreset) return null;
+    const groups = new Set<string>();
+    for (const id of basePreset.channels) {
+      const sg = slotGroups.find((s) => s.id === id);
+      const group = sg
+        ? channelRegistry.find((c) => sg.members.includes(c.id))?.group
+        : channelRegistry.find((c) => c.id === id)?.group;
+      if (group) groups.add(group);
+    }
+    return groups.size > 0 ? groups : null;
+  }, [presetId, presets, slotGroups, channelRegistry]);
 
   return (
     <NavShell
@@ -216,9 +574,21 @@ export function FlightView() {
               </div>
             </div>
             <div style={{ flexGrow: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              {flatInsights.map(({ insight, topicId }) => (
-                <InsightCard key={insight.id} insight={insight} topicId={topicId} onClick={() => handleEvidenceClick(insight)} />
-              ))}
+              {flatInsights.map(({ insight, topicId }) => {
+                const existing = annotationByInsightId.get(insight.id);
+                return (
+                  <InsightCard
+                    key={insight.id}
+                    insight={insight}
+                    topicId={topicId}
+                    onClick={() => handleEvidenceClick(insight)}
+                    note={existing?.note}
+                    notesEnabled={!usingFixture}
+                    onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
+                    onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
+                  />
+                );
+              })}
               {flatInsights.length === 0 && noInsightTopics.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No insights fired for this flight.</div>
               )}
@@ -243,7 +613,7 @@ export function FlightView() {
             <div id="timeline" style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px", flexShrink: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Timeline</span>
-                {series && (
+                {hasTimeline && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", marginRight: 4 }}>
                       {formatTimeRange(visibleWindow[0], visibleWindow[1])}
@@ -309,18 +679,70 @@ export function FlightView() {
                 }}
               />
 
-              {series ? (
-                <ChannelTimeline
-                  series={series}
-                  activeChannels={activeChannels}
-                  onToggleChannel={(id) =>
-                    setActiveChannels((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
-                  }
-                  phases={flightAnalysis.phases}
-                  highlight={highlight}
-                  zoomWindow={zoomWindow}
-                  onZoomChange={(s, e) => setVisibleWindow([s, e])}
-                />
+              {hasTimeline ? (
+                <>
+                  <PresetBar
+                    presets={presets}
+                    chartState={chartState}
+                    activePresetId={presetId}
+                    insightLabel={insightLabel}
+                    previousLabel={previousStateLabel}
+                    onSelectPreset={handleSelectPreset}
+                    onRevert={handleRevert}
+                    onSaveAsPreset={() => setSavePresetDraft("")}
+                    onBack={handleBackFromInsight}
+                  />
+                  {savePresetDraft !== null && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Preset name…"
+                        value={savePresetDraft}
+                        onChange={(e) => setSavePresetDraft(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleConfirmSaveAsPreset()}
+                        style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 9px", color: "var(--text-primary)", fontSize: 12 }}
+                      />
+                      <button
+                        onClick={handleConfirmSaveAsPreset}
+                        disabled={!savePresetDraft.trim()}
+                        style={{ padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: savePresetDraft.trim() ? "pointer" : "default" }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setSavePresetDraft(null)}
+                        style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  <ChannelPicker
+                    registry={channelRegistry}
+                    slotGroups={slotGroups}
+                    maxSlots={maxSlots}
+                    activeSlots={activeSlots}
+                    availableChannels={flightAnalysis.available_channels ?? null}
+                    colorFor={colorFor}
+                    onToggle={handleTogglePickerChannel}
+                    expandGroups={expandGroups}
+                  />
+                  {unavailableActiveLabels.length > 0 && (
+                    <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10, marginTop: -6 }}>
+                      {unavailableActiveLabels.join(", ")} not recorded in this log.
+                    </div>
+                  )}
+                  <ChannelTimeline
+                    series={seriesCache}
+                    activeChannels={activeChannelIds}
+                    colorFor={colorFor}
+                    phases={flightAnalysis.phases}
+                    highlight={highlight}
+                    zoomWindow={zoomWindow}
+                    onZoomChange={(s, e) => setVisibleWindow([s, e])}
+                  />
+                </>
               ) : (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "16px 0" }}>
                   No timeline available for this flight (its source log wasn't retained by the server).

@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { annotationStore as fixtureAnnotations } from "../lib/fixtures";
+import { getEngineClient } from "../lib/engineClient";
 import type { Annotation } from "../types/contract";
+
+const client = getEngineClient();
 
 type TypeFilter = "all" | "insight" | "event";
 
@@ -40,11 +43,36 @@ function formatDate(iso: string): string {
 export function Annotations() {
   const navigate = useNavigate();
   const [annotations, setAnnotations] = useState<Annotation[]>(fixtureAnnotations.annotations);
+  const [usingFixture, setUsingFixture] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [flightFilter, setFlightFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await client.listAnnotations();
+        if (cancelled) return;
+        setAnnotations(res.annotations);
+        setUsingFixture(false);
+      } catch {
+        if (!cancelled) {
+          setAnnotations(fixtureAnnotations.annotations);
+          setUsingFixture(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const flightDates = useMemo(() => {
     const map = new Map<string, string>();
@@ -62,23 +90,57 @@ export function Annotations() {
 
   const flightCount = new Set(annotations.map((a) => a.flight_id)).size;
 
+  async function refresh() {
+    if (usingFixture) return;
+    try {
+      const res = await client.listAnnotations();
+      setAnnotations(res.annotations);
+    } catch {
+      // leave whatever was already loaded
+    }
+  }
+
   function startEdit(a: Annotation) {
     setEditingId(a.id);
     setDraft(a.note);
   }
-  function saveEdit(id: string) {
-    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, note: draft, updated_at: new Date().toISOString() } : a)));
+  async function saveEdit(id: string) {
+    const existing = annotations.find((a) => a.id === id);
+    if (!existing) return;
+    if (usingFixture) {
+      setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, note: draft, updated_at: new Date().toISOString() } : a)));
+      setEditingId(null);
+      return;
+    }
+    try {
+      await client.saveAnnotation({ id, flightId: existing.flight_id, ref: existing.ref, note: draft });
+      await refresh();
+    } catch {
+      // server unreachable
+    }
     setEditingId(null);
   }
-  function deleteAnnotation(id: string) {
-    setAnnotations((prev) => prev.filter((a) => a.id !== id));
+  async function deleteAnnotation(id: string) {
+    if (usingFixture) {
+      setAnnotations((prev) => prev.filter((a) => a.id !== id));
+      return;
+    }
+    try {
+      await client.deleteAnnotation(id);
+      await refresh();
+    } catch {
+      // server unreachable
+    }
   }
 
   return (
     <NavShell>
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
         <div>
-          <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>Annotations</h1>
+          <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>
+            Annotations {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
+            {loading && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}> · loading…</span>}
+          </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
             {annotations.length} notes across {flightCount} flights
           </span>

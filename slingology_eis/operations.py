@@ -148,6 +148,7 @@ class FlightAnalysis:
     ecu_runs: list[dict] = field(default_factory=list)
     quality: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    available_channels: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -162,6 +163,7 @@ class FlightAnalysis:
             "ecu_runs": self.ecu_runs,
             "quality": self.quality,
             "provenance": self.provenance,
+            "available_channels": self.available_channels,
         }
 
 
@@ -189,6 +191,14 @@ def analyze_flight(
     t0 = df["datetime"].iloc[0]
     phases_present = set(df["phase"].unique()) if "phase" in df.columns else set()
     channels_present = set(df.columns)
+    # Spec 07 §5: which chartable channels this particular log actually has
+    # data for — an older or Garmin Pilot export may be missing columns the
+    # registry declares, and the picker needs to know before the user taps
+    # rather than showing an empty line for the whole flight.
+    available_channels = sorted(
+        cid for cid, cdef in CHANNEL_REGISTRY.items()
+        if cdef.chartable and cid in df.columns and df[cid].notna().any()
+    )
 
     fm = compute_flight_metrics(df, info, engine_config)
 
@@ -270,6 +280,7 @@ def analyze_flight(
         ecu_runs=ecu_runs,
         quality=[d.to_dict() for d in quality],
         provenance=provenance.to_dict(),
+        available_channels=available_channels,
     )
 
 
@@ -502,7 +513,7 @@ def update_fleet(
     per flight from the `points` this returns (R2, §8.4).
     """
     from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model
-    from .fleet import baseline, baseline_stratified, outliers, trend
+    from .fleet import baseline, baseline_stratified, outliers, trend, trend_stratified
 
     excluded = excluded or []
     baseline_config = baseline_config or {
@@ -542,10 +553,21 @@ def update_fleet(
         }
         if band_col and band_col in df.columns:
             stratified = baseline_stratified(df, col, band_column=band_col)
+            # Spec 03 §5.3 v0.10: stratified view redraws one trend line
+            # per band too, same n_min gate as the unstratified one — not
+            # just a split baseline. trend_stratified existed in fleet.py
+            # unused until now; nothing else in the pipeline needed it.
+            trend_by_band = trend_stratified(df, col, x="engine_hours", band_column=band_col)
             if stratified:
                 entry["by_band"] = {
                     "band_kind": band_col,
-                    "bands": {name: _fleet_baseline_dict(sb) for name, sb in stratified.items()},
+                    "bands": {
+                        name: {
+                            **_fleet_baseline_dict(sb),
+                            **({"trend": _fleet_trend_dict(trend_by_band[name])} if name in trend_by_band else {}),
+                        }
+                        for name, sb in stratified.items()
+                    },
                 }
         metrics_out[key] = entry
 
@@ -657,7 +679,10 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
     return "limit" if trigger_type == "threshold" else "watch"
 
 
-def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict) -> "InsightSet":
+def evaluate_insights(
+    flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict,
+    annotations: Optional[list[dict]] = None,
+) -> "InsightSet":
     """
     Spec 01 §7 `evaluate_insights` / §8.5. Wraps topics.py's 13 topic
     functions, attributing each triggered insight to a rule and severity
@@ -672,6 +697,16 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     what the current text report actually prints. Per §8's own note,
     "type sketches are illustrative."
 
+    `annotations` (Spec 02 §6.5, R3): pilot notes already filtered to
+    this flight_id — "the host is responsible for matching; the engine
+    only attaches." Matched here by insight_id, which is itself a
+    content_hash of {flight_id, topic_id, trigger, text} (below) — stable
+    across re-evaluations only as long as an insight's exact wording
+    doesn't change; a Sync reanalysis or a rule-playground edit that
+    shifts a z-score enough to change the rendered text would orphan an
+    existing note. A real edge, not fixed here, just not silently
+    smoothed over either.
+
     Known gap: `cylinder_rank` isn't wired here — its analysis needs
     per-cylinder rank order (egt_health()'s rank_order), which isn't a
     registered metric on FlightAnalysis today, only the boolean
@@ -682,6 +717,9 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     rules_hash = content_hash(rules)
     fm = flight_analysis.metrics
     flight_id = flight_analysis.flight_id
+    notes_by_insight_id = {
+        a["ref"]["insight_id"]: a["note"] for a in (annotations or []) if a.get("ref", {}).get("kind") == "insight"
+    }
     # Same BaselineConfig update_fleet resolved fleet_analysis's outliers
     # from (carried in provenance) — not a fresh param, so this can never
     # be called with a config that disagrees with the fleet it's paired
@@ -695,9 +733,10 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
         insights = []
         for ins in raw["insights"]:
             severity = _severity_for(rules, topic_id, ins["trigger"])
-            insights.append({
-                "id": content_hash({"flight_id": flight_id, "topic_id": topic_id,
-                                     "trigger": ins["trigger"], "text": ins["text"]})[:16],
+            insight_id = content_hash({"flight_id": flight_id, "topic_id": topic_id,
+                                        "trigger": ins["trigger"], "text": ins["text"]})[:16]
+            insight = {
+                "id": insight_id,
                 "topic_id": topic_id,
                 "rule_id": f"{topic_id}.{ins['trigger']}",
                 "trigger": ins["trigger"],
@@ -705,7 +744,10 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
                 "message": {"text": ins["text"]},
                 "evidence": [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
                 "confidence": confidence,
-            })
+            }
+            if insight_id in notes_by_insight_id:
+                insight["note"] = notes_by_insight_id[insight_id]
+            insights.append(insight)
         topics_out.append({
             "topic_id": topic_id,
             "analysis": {"text": raw["analysis"]},
@@ -758,7 +800,11 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
         else:  # pragma: no cover — exhaustive per _TOPIC_METRIC_MAP
             continue
 
-        _emit(topic_id, raw, [flight_metric_id], fleet_n)
+        # Evidence and the topic's own metric_ids must carry the fleet-side
+        # key (Trends/get_fleet's naming), not flight_metric_id — "View
+        # evidence" navigates with this id as ?metric=, and the two sides
+        # of _TOPIC_METRIC_MAP disagree on naming for 7 of 8 topics.
+        _emit(topic_id, raw, [fleet_key], fleet_n)
         if low_n:
             topics_out[-1]["_low_n"] = True
 
@@ -793,17 +839,25 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
         for r in flight_analysis.ecu_runs
     ]
     raw = topics.engine_ecu_inflight(adapted_runs)
-    ecu_topic = {
-        "topic_id": "engine_ecu_inflight",
-        "analysis": {"text": raw["analysis"]},
-        "insights": [{
-            "id": content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16],
+
+    def _ecu_insight(e: dict) -> dict:
+        iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16]
+        d = {
+            "id": iid,
             "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
             "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
             "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
             "evidence": [{"kind": "ecu_run", "ref": str(e["start_time"])}],
             "confidence": _confidence(0),
-        } for e in raw["events"]],
+        }
+        if iid in notes_by_insight_id:
+            d["note"] = notes_by_insight_id[iid]
+        return d
+
+    ecu_topic = {
+        "topic_id": "engine_ecu_inflight",
+        "analysis": {"text": raw["analysis"]},
+        "insights": [_ecu_insight(e) for e in raw["events"]],
         "metric_ids": ["inflight_ecu_count"],
     }
     topics_out.append(ecu_topic)
@@ -819,9 +873,10 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     limit_insights = []
     for ins, exc in zip(raw["insights"], flight_analysis.exceedances):
         pad = max(exc["duration_s"] * 0.5, 15)
-        limit_insights.append({
-            "id": content_hash({"flight_id": flight_id, "topic_id": "limit_exceedances",
-                                 "trigger": ins["trigger"], "text": ins["text"]})[:16],
+        iid = content_hash({"flight_id": flight_id, "topic_id": "limit_exceedances",
+                             "trigger": ins["trigger"], "text": ins["text"]})[:16]
+        limit_insight = {
+            "id": iid,
             "topic_id": "limit_exceedances",
             "rule_id": "limit_exceedances.threshold",
             "trigger": ins["trigger"],
@@ -834,7 +889,10 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
                 "end_s": exc["elapsed_s"] + exc["duration_s"] + pad,
             }],
             "confidence": _confidence(0),
-        })
+        }
+        if iid in notes_by_insight_id:
+            limit_insight["note"] = notes_by_insight_id[iid]
+        limit_insights.append(limit_insight)
     topics_out.append({
         "topic_id": "limit_exceedances",
         "analysis": {"text": raw["analysis"]},

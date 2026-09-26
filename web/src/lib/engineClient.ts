@@ -1,7 +1,12 @@
 import type {
   ActiveWorkspace,
+  Annotation,
+  AnnotationRef,
   AppSettings,
   BaselineConfig,
+  ChannelRegistry,
+  ChartPreset,
+  ChartPresetsResult,
   Diagnostic,
   EcuAnalysis,
   FleetAnalysis,
@@ -65,6 +70,19 @@ export interface EngineClient {
   rebuildFleet(): Promise<FleetAnalysis>;
   getFlightSeries(flightId: string, channels: string[]): Promise<SeriesResult>;
   analyzeEcuWorkspace(): Promise<EcuAnalysis>;
+
+  // Spec 02 §6.5 annotations — pilot notes on a specific insight or ECU
+  // event, never a chart point or config (Spec 03's "not a valid ref
+  // target" reasoning).
+  listAnnotations(flightId?: string): Promise<{ annotations: Annotation[] }>;
+  saveAnnotation(args: { id?: string; flightId: string; ref: AnnotationRef; note: string }): Promise<Annotation>;
+  deleteAnnotation(id: string): Promise<{ deleted: boolean }>;
+
+  // Spec 07 §4/§6 — the channel registry (single source of truth, D4) and
+  // chart presets (shipped + user, D1).
+  getChannelRegistry(): Promise<ChannelRegistry>;
+  getChartPresets(): Promise<ChartPresetsResult>;
+  saveUserPreset(args: { label: string; channels: string[]; description?: string }): Promise<ChartPreset>;
 
   // Spec 03 §5.1 Flights table + Spec 02 §6.3 FleetSelection
   listFlightsWithStatus(): Promise<{ rows: FlightTableRow[] }>;
@@ -198,6 +216,30 @@ export class LocalServerClient implements EngineClient {
 
   analyzeEcuWorkspace() {
     return this.rpc<EcuAnalysis>("analyze_ecu_workspace", {});
+  }
+
+  listAnnotations(flightId?: string) {
+    return this.rpc<{ annotations: Annotation[] }>("list_annotations", flightId ? { flight_id: flightId } : {});
+  }
+
+  saveAnnotation(args: { id?: string; flightId: string; ref: AnnotationRef; note: string }) {
+    return this.rpc<Annotation>("save_annotation", { id: args.id, flight_id: args.flightId, ref: args.ref, note: args.note });
+  }
+
+  deleteAnnotation(id: string) {
+    return this.rpc<{ deleted: boolean }>("delete_annotation", { id });
+  }
+
+  getChannelRegistry() {
+    return this.rpc<ChannelRegistry>("get_channel_registry", {});
+  }
+
+  getChartPresets() {
+    return this.rpc<ChartPresetsResult>("get_chart_presets", {});
+  }
+
+  saveUserPreset(args: { label: string; channels: string[]; description?: string }) {
+    return this.rpc<ChartPreset>("save_user_preset", { label: args.label, channels: args.channels, description: args.description });
   }
 
   listFlightsWithStatus() {

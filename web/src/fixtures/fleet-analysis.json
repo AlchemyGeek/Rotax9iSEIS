@@ -1,5 +1,5 @@
 {
-  "fleet_key": "6644c6c2c5f7da02619dda084ba3f705ebe9c0aa90493157ea096d97947a21a6",
+  "fleet_key": "9a5ac9117bcc9ffb629b0e128b7c14fa8fb41077cb8a708006ab39f60daa0934",
   "flight_ids": [
     "ebb63d351dccbac8",
     "e0d5de55bc6f39fb",
@@ -37,7 +37,18 @@
     "6509deccbb08e9f5",
     "52ed07baad5f7668",
     "4b0d94be7f9a9f86",
-    "54b85ee48c519d3f"
+    "54b85ee48c519d3f",
+    "359b223e06789cfe",
+    "10285670c98641de",
+    "b4fd722ff6022173",
+    "cd88cb8a16a5e3d8",
+    "defd669a4e252d54",
+    "8bc537f17546a07b",
+    "1a5c0b0ff91b5421",
+    "406d7ebf268b0214",
+    "672d48d4db912d05",
+    "f255e90f0cacaac6",
+    "b0d9ab627f8732c7"
   ],
   "excluded": [
     {
@@ -57,25 +68,25 @@
     "egt_spread": {
       "metric_id": "egt_spread",
       "baseline": {
-        "n": 37,
-        "mean": 57.79,
-        "std": 4.71,
+        "n": 48,
+        "mean": 58.59,
+        "std": 4.73,
         "min": 46.6,
         "max": 67.3,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": 0.12771,
-        "r_squared": 0.311,
+        "n": 48,
+        "slope": 0.09547,
+        "r_squared": 0.293,
         "direction": "increasing",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -326,30 +337,115 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 59.4
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 66.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 64.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 67.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 62.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 56.9,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 60.7
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 63.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 59.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 60.1
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 54.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 59.4
         }
       ],
       "outliers": [
         {
           "flight_id": "0e8784425c25c656",
-          "z_score": -2.37
+          "z_score": -2.53
         },
         {
-          "flight_id": "0c530710a1c60e1c",
-          "z_score": 2.02
+          "flight_id": "f98a62808a81935a",
+          "z_score": -2.07
         }
       ],
       "by_band": {
         "band_kind": "oat_band",
         "bands": {
           "mild": {
-            "n": 23,
-            "mean": 59.03,
-            "std": 4.98,
+            "n": 30,
+            "mean": 59.82,
+            "std": 5.0,
             "min": 46.6,
             "max": 67.3,
             "confidence": {
-              "level": "MODERATE",
-              "n": 23
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.09583,
+              "r_squared": 0.241,
+              "direction": "increasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
             }
           },
           "cold": {
@@ -361,6 +457,39 @@
             "confidence": {
               "level": "LOW",
               "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": -0.05314,
+              "r_squared": 0.485,
+              "direction": "decreasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 56.9,
+            "std": 0.0,
+            "min": 56.9,
+            "max": 56.9,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
             }
           }
         }
@@ -369,25 +498,25 @@
     "egt4_elevation": {
       "metric_id": "egt4_elevation",
       "baseline": {
-        "n": 37,
-        "mean": 45.17,
-        "std": 4.7,
+        "n": 48,
+        "mean": 45.53,
+        "std": 4.55,
         "min": 32.7,
         "max": 54.1,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": 0.0578,
+        "n": 48,
+        "slope": 0.04275,
         "r_squared": 0.064,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -638,26 +767,111 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 44.3
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 48.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 48.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 53.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 47.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 40.7,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 44.0
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 53.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 47.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 45.6
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 42.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 44.2
         }
       ],
       "outliers": [
         {
           "flight_id": "f98a62808a81935a",
-          "z_score": -2.65
+          "z_score": -2.82
         }
       ],
       "by_band": {
         "band_kind": "oat_band",
         "bands": {
           "mild": {
-            "n": 23,
-            "mean": 46.75,
-            "std": 4.54,
+            "n": 30,
+            "mean": 47.17,
+            "std": 4.36,
             "min": 37.0,
             "max": 54.1,
             "confidence": {
-              "level": "MODERATE",
-              "n": 23
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.03465,
+              "r_squared": 0.041,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
             }
           },
           "cold": {
@@ -669,6 +883,39 @@
             "confidence": {
               "level": "LOW",
               "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": -0.14242,
+              "r_squared": 0.872,
+              "direction": "decreasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 40.7,
+            "std": 0.0,
+            "min": 40.7,
+            "max": 40.7,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
             }
           }
         }
@@ -677,25 +924,25 @@
     "oil_temp_peak": {
       "metric_id": "oil_temp_peak",
       "baseline": {
-        "n": 37,
-        "mean": 203.86,
-        "std": 12.55,
+        "n": 48,
+        "mean": 202.35,
+        "std": 12.4,
         "min": 180.0,
         "max": 225.0,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": 0.04016,
-        "r_squared": 0.004,
+        "n": 48,
+        "slope": -0.06759,
+        "r_squared": 0.021,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -946,6 +1193,80 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 184.0
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 200.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 207.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 200.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 212.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 212.0,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 191.0
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 198.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 191.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 198.0
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 181.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 180.0
         }
       ],
       "outliers": [],
@@ -953,14 +1274,25 @@
         "band_kind": "oat_band",
         "bands": {
           "mild": {
-            "n": 23,
-            "mean": 203.7,
-            "std": 12.52,
+            "n": 30,
+            "mean": 202.47,
+            "std": 12.06,
             "min": 180.0,
             "max": 225.0,
             "confidence": {
-              "level": "MODERATE",
-              "n": 23
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.01607,
+              "r_squared": 0.001,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
             }
           },
           "cold": {
@@ -972,6 +1304,39 @@
             "confidence": {
               "level": "LOW",
               "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": 0.36674,
+              "r_squared": 0.705,
+              "direction": "increasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 212.0,
+            "std": 0.0,
+            "min": 212.0,
+            "max": 212.0,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
             }
           }
         }
@@ -980,25 +1345,25 @@
     "coolant_temp_peak": {
       "metric_id": "coolant_temp_peak",
       "baseline": {
-        "n": 37,
-        "mean": 181.97,
-        "std": 7.44,
+        "n": 48,
+        "mean": 181.96,
+        "std": 7.0,
         "min": 170.0,
         "max": 198.0,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": 0.04295,
-        "r_squared": 0.014,
+        "n": 48,
+        "slope": 0.01685,
+        "r_squared": 0.004,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -1249,26 +1614,115 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 175.0
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 183.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 184.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 180.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 185.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 192.0,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 177.0
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 182.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 179.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 177.0
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 189.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 173.0
         }
       ],
       "outliers": [
         {
+          "flight_id": "ebb63d351dccbac8",
+          "z_score": 2.01
+        },
+        {
           "flight_id": "f52342eb6fc37071",
-          "z_score": 2.15
+          "z_score": 2.29
         }
       ],
       "by_band": {
         "band_kind": "oat_band",
         "bands": {
           "mild": {
-            "n": 23,
-            "mean": 182.35,
-            "std": 7.71,
+            "n": 30,
+            "mean": 182.53,
+            "std": 6.89,
             "min": 170.0,
             "max": 198.0,
             "confidence": {
-              "level": "MODERATE",
-              "n": 23
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.05648,
+              "r_squared": 0.044,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
             }
           },
           "cold": {
@@ -1280,6 +1734,39 @@
             "confidence": {
               "level": "LOW",
               "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": 0.3781,
+              "r_squared": 0.797,
+              "direction": "increasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 192.0,
+            "std": 0.0,
+            "min": 192.0,
+            "max": 192.0,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
             }
           }
         }
@@ -1288,25 +1775,25 @@
     "oil_coolant_ratio": {
       "metric_id": "oil_coolant_ratio",
       "baseline": {
-        "n": 37,
-        "mean": 1.12,
+        "n": 48,
+        "mean": 1.11,
         "std": 0.04,
-        "min": 1.04,
+        "min": 0.96,
         "max": 1.19,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": -6e-05,
-        "r_squared": 0.001,
+        "n": 48,
+        "slope": -0.00047,
+        "r_squared": 0.088,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -1557,26 +2044,111 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 1.051
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 1.093,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 1.125,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 1.111,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 1.146,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 1.104,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 1.079
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 1.088,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 1.067,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 1.119
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 0.958,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 1.04
         }
       ],
       "outliers": [
         {
-          "flight_id": "5b686ab1daabc3f5",
-          "z_score": -2.14
+          "flight_id": "f255e90f0cacaac6",
+          "z_score": -3.58
         }
       ],
       "by_band": {
         "band_kind": "oat_band",
         "bands": {
           "mild": {
-            "n": 23,
-            "mean": 1.12,
-            "std": 0.03,
-            "min": 1.04,
+            "n": 30,
+            "mean": 1.11,
+            "std": 0.04,
+            "min": 0.96,
             "max": 1.17,
             "confidence": {
-              "level": "MODERATE",
-              "n": 23
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": -0.00024,
+              "r_squared": 0.021,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
             }
           },
           "cold": {
@@ -1588,6 +2160,39 @@
             "confidence": {
               "level": "LOW",
               "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": -0.0004,
+              "r_squared": 0.967,
+              "direction": "decreasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 1.1,
+            "std": 0.0,
+            "min": 1.1,
+            "max": 1.1,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
             }
           }
         }
@@ -1596,25 +2201,25 @@
     "overboost_time": {
       "metric_id": "overboost_time",
       "baseline": {
-        "n": 37,
-        "mean": 110.73,
-        "std": 97.48,
+        "n": 48,
+        "mean": 108.31,
+        "std": 89.18,
         "min": 0.0,
         "max": 449.0,
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "trend": {
-        "n": 37,
-        "slope": -0.57291,
-        "r_squared": 0.015,
+        "n": 48,
+        "slope": -0.38986,
+        "r_squared": 0.014,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "GOOD",
-          "n": 37
+          "n": 48
         }
       },
       "points": [
@@ -1839,41 +2444,107 @@
           "date": "2026-08-10",
           "x": 102.0,
           "value": 156
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 61
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 192
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 52
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 66
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 109
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 103
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 190
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 48
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 158
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 57
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 66
         }
       ],
       "outliers": [
         {
           "flight_id": "afa3994b502aa2d1",
-          "z_score": 2.83
+          "z_score": 3.13
         },
         {
           "flight_id": "eefe8c71499d54b9",
-          "z_score": 3.47
+          "z_score": 3.82
         }
       ]
     },
     "cruise_efficiency": {
       "metric_id": "cruise_efficiency",
       "baseline": {
-        "n": 22,
-        "mean": 19.45,
-        "std": 1.67,
+        "n": 29,
+        "mean": 19.23,
+        "std": 1.59,
         "min": 15.46,
         "max": 22.66,
         "confidence": {
           "level": "MODERATE",
-          "n": 22
+          "n": 29
         }
       },
       "trend": {
-        "n": 22,
-        "slope": -0.02111,
-        "r_squared": 0.06,
-        "direction": "flat",
+        "n": 29,
+        "slope": -0.02189,
+        "r_squared": 0.112,
+        "direction": "decreasing",
         "x": "engine_hours",
         "confidence": {
           "level": "MODERATE",
-          "n": 22
+          "n": 29
         }
       },
       "points": [
@@ -2030,37 +2701,112 @@
           "x": 97.8,
           "value": 18.69,
           "band": "very_high"
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 17.89,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 19.06,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 18.64,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 19.29,
+          "band": "high"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 16.44,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 20.03,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 18.39,
+          "band": "moderate"
         }
       ],
       "outliers": [
         {
+          "flight_id": "e0d5de55bc6f39fb",
+          "z_score": 2.15
+        },
+        {
           "flight_id": "2b2945dbdee75885",
-          "z_score": -2.39
+          "z_score": -2.37
         }
       ],
       "by_band": {
         "band_kind": "da_band",
         "bands": {
           "moderate": {
-            "n": 9,
-            "mean": 19.39,
-            "std": 2.0,
+            "n": 15,
+            "mean": 19.0,
+            "std": 1.75,
             "min": 15.46,
             "max": 22.66,
             "confidence": {
-              "level": "LOW",
-              "n": 9
+              "level": "MODERATE",
+              "n": 15
+            },
+            "trend": {
+              "n": 15,
+              "slope": -0.02851,
+              "r_squared": 0.198,
+              "direction": "decreasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "MODERATE",
+                "n": 15
+              }
             }
           },
           "high": {
-            "n": 3,
-            "mean": 19.12,
-            "std": 1.07,
+            "n": 4,
+            "mean": 19.16,
+            "std": 0.88,
             "min": 18.06,
             "max": 20.2,
             "confidence": {
               "level": "LOW",
-              "n": 3
+              "n": 4
+            },
+            "trend": {
+              "n": 4,
+              "slope": 0.01944,
+              "r_squared": 0.528,
+              "direction": "increasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 4
+              }
             }
           },
           "low": {
@@ -2072,6 +2818,17 @@
             "confidence": {
               "level": "VERY_LOW",
               "n": 2
+            },
+            "trend": {
+              "n": 2,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 2
+              }
             }
           },
           "very_high": {
@@ -2083,6 +2840,17 @@
             "confidence": {
               "level": "LOW",
               "n": 8
+            },
+            "trend": {
+              "n": 8,
+              "slope": -0.02367,
+              "r_squared": 0.058,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 8
+              }
             }
           }
         }
@@ -2091,25 +2859,25 @@
     "cruise_fuel_flow": {
       "metric_id": "cruise_fuel_flow",
       "baseline": {
-        "n": 22,
-        "mean": 6.4,
-        "std": 0.51,
+        "n": 29,
+        "mean": 6.39,
+        "std": 0.53,
         "min": 5.46,
-        "max": 7.44,
+        "max": 7.48,
         "confidence": {
           "level": "MODERATE",
-          "n": 22
+          "n": 29
         }
       },
       "trend": {
-        "n": 22,
-        "slope": 0.01163,
-        "r_squared": 0.194,
-        "direction": "increasing",
+        "n": 29,
+        "slope": 0.00477,
+        "r_squared": 0.047,
+        "direction": "flat",
         "x": "engine_hours",
         "confidence": {
           "level": "MODERATE",
-          "n": 22
+          "n": 29
         }
       },
       "points": [
@@ -2266,37 +3034,108 @@
           "x": 97.8,
           "value": 6.7,
           "band": "very_high"
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 6.66,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 6.43,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 6.28,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 6.32,
+          "band": "high"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 7.48,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 5.78,
+          "band": "moderate"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 5.54,
+          "band": "moderate"
         }
       ],
       "outliers": [
         {
-          "flight_id": "90132d8dd417225c",
-          "z_score": 2.03
+          "flight_id": "defd669a4e252d54",
+          "z_score": 2.05
         }
       ],
       "by_band": {
         "band_kind": "da_band",
         "bands": {
           "moderate": {
-            "n": 9,
-            "mean": 6.06,
-            "std": 0.38,
+            "n": 15,
+            "mean": 6.18,
+            "std": 0.52,
             "min": 5.46,
-            "max": 6.57,
+            "max": 7.48,
             "confidence": {
-              "level": "LOW",
-              "n": 9
+              "level": "MODERATE",
+              "n": 15
+            },
+            "trend": {
+              "n": 15,
+              "slope": 0.00597,
+              "r_squared": 0.097,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "MODERATE",
+                "n": 15
+              }
             }
           },
           "high": {
-            "n": 3,
-            "mean": 6.43,
-            "std": 0.2,
+            "n": 4,
+            "mean": 6.4,
+            "std": 0.17,
             "min": 6.24,
             "max": 6.63,
             "confidence": {
               "level": "LOW",
-              "n": 3
+              "n": 4
+            },
+            "trend": {
+              "n": 4,
+              "slope": -0.00041,
+              "r_squared": 0.006,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 4
+              }
             }
           },
           "low": {
@@ -2308,6 +3147,17 @@
             "confidence": {
               "level": "VERY_LOW",
               "n": 2
+            },
+            "trend": {
+              "n": 2,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 2
+              }
             }
           },
           "very_high": {
@@ -2319,6 +3169,17 @@
             "confidence": {
               "level": "LOW",
               "n": 8
+            },
+            "trend": {
+              "n": 8,
+              "slope": 0.00379,
+              "r_squared": 0.035,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 8
+              }
             }
           }
         }
@@ -2327,25 +3188,25 @@
     "climb_thermal_rate": {
       "metric_id": "climb_thermal_rate",
       "baseline": {
-        "n": 27,
-        "mean": 1.35,
-        "std": 3.58,
+        "n": 35,
+        "mean": 1.54,
+        "std": 3.73,
         "min": -1.39,
         "max": 12.39,
         "confidence": {
-          "level": "MODERATE",
-          "n": 27
+          "level": "GOOD",
+          "n": 35
         }
       },
       "trend": {
-        "n": 27,
-        "slope": -0.03907,
-        "r_squared": 0.044,
+        "n": 35,
+        "slope": -0.00723,
+        "r_squared": 0.002,
         "direction": "flat",
         "x": "engine_hours",
         "confidence": {
-          "level": "MODERATE",
-          "n": 27
+          "level": "GOOD",
+          "n": 35
         }
       },
       "points": [
@@ -2510,41 +3371,93 @@
           "date": "2026-07-23",
           "x": 97.8,
           "value": -0.17
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": -0.74
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 0.22
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 12.36
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": -0.2
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": -0.21
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 1.9
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 0.19
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 3.97
         }
       ],
       "outliers": [
         {
           "flight_id": "e0d5de55bc6f39fb",
-          "z_score": 3.08
+          "z_score": 2.91
         },
         {
           "flight_id": "df3c2e9ffe08091e",
-          "z_score": 2.47
+          "z_score": 2.32
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "z_score": 2.9
         }
       ]
     },
     "cruise_da_ft": {
       "metric_id": "cruise_da_ft",
       "baseline": {
-        "n": 26,
-        "mean": 6150.12,
-        "std": 4356.02,
+        "n": 34,
+        "mean": 5530.71,
+        "std": 4007.97,
         "min": 775.0,
         "max": 15506.0,
         "confidence": {
-          "level": "MODERATE",
-          "n": 26
+          "level": "GOOD",
+          "n": 34
         }
       },
       "trend": {
-        "n": 26,
-        "slope": 113.81351,
-        "r_squared": 0.263,
-        "direction": "increasing",
+        "n": 34,
+        "slope": 18.38299,
+        "r_squared": 0.013,
+        "direction": "flat",
         "x": "engine_hours",
         "confidence": {
-          "level": "MODERATE",
-          "n": 26
+          "level": "GOOD",
+          "n": 34
         }
       },
       "points": [
@@ -2703,37 +3616,85 @@
           "date": "2026-07-23",
           "x": 97.8,
           "value": 11823.0
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 2892.0
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 4056.0
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 3236.0
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 6501.0
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 4047.0
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 2689.0
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 2480.0
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 2240.0
         }
       ],
       "outliers": [
         {
           "flight_id": "52ed07baad5f7668",
-          "z_score": 2.15
+          "z_score": 2.49
         }
       ]
     },
     "takeoff_map_inhg": {
       "metric_id": "takeoff_map_inhg",
       "baseline": {
-        "n": 26,
-        "mean": 46.51,
-        "std": 1.6,
+        "n": 34,
+        "mean": 46.57,
+        "std": 1.42,
         "min": 44.1,
         "max": 49.5,
         "confidence": {
-          "level": "MODERATE",
-          "n": 26
+          "level": "GOOD",
+          "n": 34
         }
       },
       "trend": {
-        "n": 26,
-        "slope": 0.04258,
-        "r_squared": 0.273,
+        "n": 34,
+        "slope": 0.0228,
+        "r_squared": 0.164,
         "direction": "increasing",
         "x": "engine_hours",
         "confidence": {
-          "level": "MODERATE",
-          "n": 26
+          "level": "GOOD",
+          "n": 34
         }
       },
       "points": [
@@ -2892,9 +3853,62 @@
           "date": "2026-07-23",
           "x": 97.8,
           "value": 49.5
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 46.7
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 46.35
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 46.45
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 47.2
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 47.9
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 46.6
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 46.9
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 46.1
         }
       ],
-      "outliers": []
+      "outliers": [
+        {
+          "flight_id": "4b0d94be7f9a9f86",
+          "z_score": 2.06
+        }
+      ]
     }
   },
   "models": [
@@ -2906,22 +3920,22 @@
         "oat_c"
       ],
       "coefficients": {
-        "intercept": 42.4835,
-        "pressure_alt_ft": 0.000647,
-        "oat_c": 0.1711
+        "intercept": 42.5661,
+        "pressure_alt_ft": 0.000645,
+        "oat_c": 0.1692
       },
-      "n": 26,
-      "r_squared": 0.8148,
+      "n": 34,
+      "r_squared": 0.7916,
       "confidence": {
-        "level": "MODERATE",
-        "n": 26
+        "level": "GOOD",
+        "n": 34
       },
       "capture": "RPM>=5500 during TAKEOFF_ROLL"
     }
   ],
   "quality": [],
   "provenance": {
-    "engine_version": "0.11.0",
+    "engine_version": "0.12.0",
     "schema_version": "0.1.0",
     "source_keys": [
       "0db4d83ea14aff74",
@@ -2930,10 +3944,15 @@
       "233ccf8a60482cb4",
       "31a4c615053a9a3f",
       "3a8c33f345eedc2a",
+      "425e1941027968cc",
+      "461a561653b46ff6",
+      "4daf9323b3deb708",
       "52bc629683a09ec4",
       "54a340b64d13bf4d",
       "5874fbc0e8df32d5",
+      "5becc732898d854b",
       "5eaec2c987c928f1",
+      "6379a3d549442616",
       "6bac92e54d766a3a",
       "72289e0229709bc7",
       "72dac3f301c53976",
@@ -2941,16 +3960,21 @@
       "78a871fb37235d16",
       "7a5bd9c0598dbeef",
       "7d55379ac6334084",
+      "88e35c2def141e6b",
       "8902fb583cbd428f",
+      "8ab02234e17a07fa",
       "8cef203727fafb95",
       "94e8e30e363338c8",
       "a007daed173e0490",
       "a2630faa6dfae704",
       "a34ba6fe98dd598f",
       "a9b47463d084d3d2",
+      "aecb22fb29d1bfa2",
+      "b73db0e402a8c4ea",
       "bbf1be330c83f7b0",
       "c259e9c31c2e8ada",
       "c39abe2b3012fc19",
+      "c3b7faaa29621f26",
       "cbaca4d2ad1f1168",
       "cdc1932db504af77",
       "d0ebc0e277114cbb",
@@ -2959,47 +3983,59 @@
       "e6db755e9c40fa8c",
       "efbc69e68d7530f5",
       "f3532fbd577aa2f3",
+      "f670546186eceb72",
       "f8ee78aa1f58690d",
       "fc7712a20e534223"
     ],
     "flight_analysis_keys": [
-      "00dd5c919615b11f5fd15454eea2a90fc0d2a80ebd6dd0ac625b3814a1f9bf41",
-      "010d7cd9fc1418d1030d574bfd9b575b2e620875b5bd5cf84e42cdf939bb83a6",
-      "055c7cfaf0de6b6ef1857b60cf4f4ec8464afb11a5995386b52204df00831ab6",
-      "05609af5b77a010d569b94634c379f9e86f0f0fcd7c804180ff78317c0272a1e",
-      "0c2e2e4e34adcc9132d09b3561fe437a73c3d79bedc2e9710755512a1892fa0d",
-      "0fc022ad4022480ba02658ef5f6949a8723c8173b4c7f13821aedebe1e0865aa",
-      "22c03415093acfd2aa0ced5db1f60274349d47b67755e6104784c5a76973e588",
-      "297cd43005aac2a5ff8425369573fb7a1ad3f736b75954e9cd212e485c6182b5",
-      "29d348a76a08f5179af475d74da90ca7f3f6d5929adc2d913bd9e2de573e8f76",
-      "39aca2c0ec5e69fdf1bab855b4eb8df12d10c6915acc22471767dc7bb1cab63b",
-      "4142c5362d785a46f6e3302b4cb5ba3409868f903d93bd8a57ef7d2bce2ef95d",
-      "5d0bbe63088bfb260f18805968fcc0e68731a337ea268d563a01d8d0fc991ec4",
-      "6c3d794b4db2aa6cb9458f624c4938fdc3342c139a02678d94b1134ad30e50d2",
-      "77d759de5973b1bfa53f11217582d4f0bb8ea46d3c55a3f9c8bb2e6daae1a8de",
-      "7b1fd4d99b6b52559fb34a3ea69b6e1e15d74bd7112c6dc6177bf44363ef9049",
-      "7e06bc4662770508d7b9d87627e1a5f779cae0f9b4f7d06805239902997524c0",
-      "8e381fe3af347ce1640e4fa66a673ae8564f87420591b88531a4f3930e600cb8",
-      "90be77e01654768beb6cb30cbc66cdfd54755a6e889bd98dca08d1a7232792f9",
-      "98e32ce0243310ca75767dc4445806881de3da7cb4936d9f9826255f1d868996",
-      "9b5200d28d67f114cd3a27b966a60b8379031e7febdfcdbae464607758e3b13f",
-      "a023c89b118c1592f8e4d6458b83c7faa0e35665418201bc0644b76a854b8102",
-      "a3089f0fef9b6844893053f871e9d84d0359c216322a6ead3e1060d985e7a780",
-      "b488c528282b5e5d723928762a1bda434610feec5eecb157d24451c0400fba1d",
-      "bd1a968dd99da3fe2303d706bf1dd9508cf0bf2b09bfc3905329866c34e4408d",
-      "d8f7dc20bf5ddd70db53c7e7225ffd22aa99b5e949fdaf4c37e00b8437a15d03",
-      "ddb9a79879f11839f1bf25584f14bb7aed14a4d9b56630074a0b7dec2860a793",
-      "e48c7d3fba037348ace7b5dd25211775dab24076cf1b6e62bffb7374381adacd",
-      "e81b6e39e6e1f0fc72a8bf3c34937ae5aa1379255361af99e8681e3a2d3810e4",
-      "ec62ae786efa9468e5f3148afef75f2d26853fdc523a7ef41d9ef55633d2e53f",
-      "ede4b94f5e7c4d72b5858a77ad31a647a6e47b0c6c500a0b8c4b5464a509be37",
-      "f01abc97bd737b4f44ba3d6ca0f2021060dc7afaa511930ec89a809d93ff450d",
-      "f03dfc2283417e1e8f211f87c15400a6469728523bbbebfa96a4eb165d055a87",
-      "f17fbf2432879b428a35c5d35e6277a65e9b1ce9f314512fcb4f7bd2e87f8d2b",
-      "f924bfeafd75dc6b2bf4c0c4b04ca80cdd6ca515a44d7cc6aef40db83c6ed9e1",
-      "faae6ec4d3728a455d9072f237261519901320e24b3c01c3ddd870aad2ef2589",
-      "ff3612416c7e026afee2a56bf7c8b6bc79844f098f95085179450f76a3fec28a",
-      "ffabd48f8d5d528d425c966e52b6b1d31c03201f4238b8cda5b8fb34ce74281e"
+      "00355f2f84e06b1cb153ae4abbb6e79b6a6ae2c69bf09de036917e0948163912",
+      "017a5c109cbcb3885692fd4ac63d365c74b31851891becd9b52103eac01edd47",
+      "01d8898888fa61e66aa9c35c3efcd56cc67a8486683f4ddece9cdef6656ffa97",
+      "034613ee6e20121dbc9675f86b67eae52efb12fe59f6445552a9617ddf2b982b",
+      "057de873489bb862f83be6a07dd11c42e00b7b98a525b71f9973a6449dc0fd1f",
+      "173c9bf0efe77fda0bea074595df94e17f788f87aace0ec6ecdab8e8a2648182",
+      "1a9a4059e13bac5e465bb294d19ad6369a584b0375f031f5fa47bd49b97e0771",
+      "1b4e3b2abb9b08f7fd76570072ee7d59bb4a8a364b8da259d200701282ba3ed6",
+      "1ca3ea82624eb658a34ebf84ebb321c27279d779ec71be1fe01df41d5883a990",
+      "2035feb7bce2e26eb5fe5639cf82d407ebf5904da5172fb5a51436c8dc94514e",
+      "20cefc4273b49bc20ecedc120237ce2047ba6374ea56d6d76753fbce378b48a3",
+      "2ee57a56aa75c9722cfb87a86df312cdb4d486f57bd659d1d04c0eb8f11f5ff6",
+      "38f33231f2178ef3140b9bada57ac1402259447d617cd2f56f74d9a1fd6e7659",
+      "48eecfbe9d19b475eb07e5081708cce10f9507c80326cca77cb63d96cf9cc4de",
+      "539f6fc8b74845d65f8d78ff79b61484a56a22dcdb8f7eb3076ef66558d8dd96",
+      "5740cdfb079f227aebac823b04504e8ff3d6993fb0f1ca8c5674a74791dd7cab",
+      "6d137e720dcd9d6bdcdeafd318235813c9352eebf1e4141cacd0c4e600960eb3",
+      "6e4a4b309f57faa5133c2e8ca2ca7fd2c7c60208cba0afff149ffa3fde4093da",
+      "6f39865b6f0723944b20b986ba09f925a145415eaacb0f9b0e33ec16087e21e9",
+      "89748b48053c8005fd6ee5473e7d2f12a82f9ee5eeeeec658809dcadb7aac071",
+      "89f9f29d88d071bd4637c06cc8ab64ae324b54f0c952f09fffa533c8a7f0f853",
+      "966387de13ff79f498a1f32e4f72821143af306ed54ae85618c3219ef88708aa",
+      "991db931588fc729de0d4984bf482fb705d5f4302daf433576ea82f4aa1659d4",
+      "9a86915780c27981a97b3b4fbc5d8f736c7fd6c4752f64d18a5e5ef786d48ce1",
+      "9ec51d627ad63daf7eaa36103c8d66dad32ea31108d00f6eb7b5215b8c1f529e",
+      "a46c558dc544be694b2550d661f3fa87553d255f78bc4744ae6ed871465b4511",
+      "a72f02389b1acc627ba5a1942dd8e7aaadbd779643a1554d923bebdb50646450",
+      "a7a9f5ee26d7acbc5ca5891070155eccfa1faa6faeb66d4dfa4d102a056b4a98",
+      "b1db0e2156d1aadb0685eb65b4784d9466e65c5cdab6ce5a9aa7c1f8606dfaff",
+      "b3d5c772ce4792fd682e4ef6b20f0cc908c5dc91a37e444cca306447b233b2cc",
+      "b6a4b1f183d54739c91cac95c4bb051a1fc1825f8a622176ba75f7084be167fc",
+      "b80b314bed69b11c6fb04f5be05b539326b8224e28ba271b66881ed23bc8fa90",
+      "b89bef0cee3e07da22e12415e6b8fc660852b11c52df6a65e7f24fbe0b8b9009",
+      "bbec09c5f3c6286f27b728a0a8aa0e07c65cea1c0dda70a8550b28aef30e0e84",
+      "bc82465533ad727d2cae33e09e17df9ee97603c65809553ed1240457a6b5d625",
+      "c1e1fe8cd5a29c460f8dad4a55d7989224022e7549647283bdbbea71d3b43788",
+      "c40da638a4dd782a17cbf1e12fb8f2e61432bb79f9ac013f2feb1c08d0105cfe",
+      "c944caf633fd6b72cb56b11288055572e72a7633791392c0c4eae6b4a14a2592",
+      "da5c6ab689457e0ff70190bcde0efe77049097a357fc2652767d19c776127008",
+      "dc97b39434a16267a2e938345705b15184b04bb916a2b5d5b5400ceb82c8efea",
+      "dd61c4bbb096b3b50bc0c93cf1c3d8d5a1ffc29f1a8970ebba3afaf0c3ee291f",
+      "e7338ce0e3116119e961607701b8c4522aa38f965e1a08d1efae600c83754811",
+      "ed2ed9a28e21e4c8de3b1dc19ffca45884b48d1ceef2dfff69787ecf765a0e40",
+      "f16f32a7c2a6efc321f308c341a60b8043c44cb4c51dcef6a5a402c931ca0610",
+      "f5f305adfab5a5c11b99155c50d729a19ec9b7a31232c578ccbd495ba6219740",
+      "f7a613f3c1e4495f090e7e59a6bf141a909bb7c5ca2cd6a8c2c743e01015ef73",
+      "fcd92156b60989db52ad10a70d666d7f2197c317f398edc8ad748977ebb44bc4",
+      "fd631a60a19c65415659258f6ee9c00b9949b0eb205992c80a22d3a7332ffdf1"
     ],
     "baseline_config": {
       "membership": "leave_one_out",

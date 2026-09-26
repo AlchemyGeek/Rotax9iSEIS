@@ -6,7 +6,8 @@
   "type": "object",
   "required": [
     "flight_id", "analysis_key", "source_keys", "header", "phases",
-    "metrics", "exceedances", "cas_events", "ecu_runs", "quality", "provenance"
+    "metrics", "exceedances", "cas_events", "ecu_runs", "quality", "provenance",
+    "available_channels"
   ],
   "additionalProperties": false,
   "properties": {
@@ -110,7 +111,12 @@
       "type": "array",
       "items": { "$ref": "#/$defs/diagnostic" }
     },
-    "provenance": { "$ref": "#/$defs/provenance" }
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "available_channels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Spec 07 §5: chartable registry ids present in this flight's log and not entirely NaN."
+    }
   },
   "$defs": {
     "missingReason": {

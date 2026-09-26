@@ -74,6 +74,7 @@ export interface FlightAnalysis {
   ecu_runs: unknown[];
   quality: Diagnostic[];
   provenance: Provenance;
+  available_channels: string[];
 }
 
 export type Evidence =
@@ -147,31 +148,45 @@ export interface FleetMetricPoint {
   date: string;
   x: number;
   value: number;
+  // Sparse — only set when this metric has a band_kind and this flight's
+  // own reading fell in a defined band (Spec 01 §8.4 v0.10). Determines
+  // which stratified region a point draws in when Trends' "Stratify by"
+  // toggle (Spec 03 §5.3 v0.10) is on.
+  band?: string;
+}
+
+export interface FleetMetricTrend {
+  n: number;
+  slope: number | null;
+  r_squared: number | null;
+  direction: "increasing" | "decreasing" | "flat" | "insufficient_data";
+  x: string;
+  confidence: { level: string; n: number };
 }
 
 export interface FleetMetricBand {
   n: number;
-  mean: number;
-  std: number;
-  min: number;
-  max: number;
+  mean: number | null;
+  std: number | null;
+  min: number | null;
+  max: number | null;
   confidence: { level: string; n: number };
+}
+
+// A per-band entry under by_band.bands — the same baseline shape, plus
+// its own trend (gated by the same n_min as the unstratified one, Spec
+// 03 §5.3 v0.10), absent when that band didn't clear trend()'s own n>0.
+export interface FleetBandStats extends FleetMetricBand {
+  trend?: FleetMetricTrend;
 }
 
 export interface FleetMetric {
   metric_id: string;
   baseline: FleetMetricBand;
-  trend: {
-    n: number;
-    slope: number;
-    r_squared: number;
-    direction: "increasing" | "decreasing" | "flat";
-    x: string;
-    confidence: { level: string; n: number };
-  } | null;
+  trend: FleetMetricTrend | null;
   points: FleetMetricPoint[];
   outliers: { flight_id: string; z_score: number }[];
-  by_band?: { band_kind: string; bands: Record<string, FleetMetricBand> };
+  by_band?: { band_kind: string; bands: Record<string, FleetBandStats> };
 }
 
 // Spec 01 §8.4 v0.8 — outlier_z_threshold (resolved per metric as
@@ -282,6 +297,44 @@ export interface AnnotationStore {
   annotations: Annotation[];
 }
 
+// ── Chart channels and presets (Spec 07) ──────────────────────────────────────
+
+export interface ChannelRegistryEntry {
+  id: string;
+  unit: string | null;
+  description: string;
+  label: string;
+  group: string;
+  slot_group: string | null;
+  companions: string[];
+  unit_variant_of: string | null;
+}
+
+export interface SlotGroupEntry {
+  id: string;
+  label: string;
+  members: string[];
+}
+
+export interface ChannelRegistry {
+  channels: ChannelRegistryEntry[];
+  slot_groups: SlotGroupEntry[];
+  max_chart_slots: number;
+}
+
+export interface ChartPreset {
+  id: string;
+  label: string;
+  description: string;
+  channels: string[];
+}
+
+export interface ChartPresetsResult {
+  presets: ChartPreset[];
+  diagnostics: Diagnostic[];
+  max_chart_slots: number;
+}
+
 // ── Workspace (Spec 02 v0.5 §5-6) ─────────────────────────────────────────────
 
 export interface WorkspaceRegistryEntry {
@@ -323,6 +376,8 @@ export interface WorkspaceManifest {
 export interface AppSettings {
   units: "imperial" | "metric";
   last_active_workspace_id: string | null;
+  chart_presets: ChartPreset[];
+  flight_chart: { last_preset_id?: string };
 }
 
 export interface WorkspaceSettings {
