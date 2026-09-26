@@ -13,8 +13,8 @@ export const colors = {
   borderSubtle: "#1f2427",
 
   textPrimary: "#e8eaed",
-  textSecondary: "#9aa4ac",
-  textTertiary: "#5b6570",
+  textSecondary: "#c9d0d6",
+  textTertiary: "#aeb7bf",
 
   accent: "#4fc3b0",
   accentHover: "#6dd4c3",
