@@ -1,8 +1,8 @@
-# Spec 06 — Cylinder Balance Trends (Mini-Spec)
+# Spec 08 — Cylinder Balance Trends (Mini-Spec)
 
 **Project:** SlingologyEIS
 **Status:** Draft v0.1 — mini-spec, not yet implemented
-**Suggested repo path:** `docs/specs/06-cylinder-balance-trends.md`
+**Suggested repo path:** `docs/specs/08-cylinder-balance-trends.md`
 **Builds on:** Spec 01 (engine contract, metric registry, insight rules), Spec 03 (Trends view), Spec 05 (frontend bootstrap)
 **Revision history**
 
@@ -10,7 +10,7 @@
 |---|---|
 | 0.1 | Initial mini-spec. |
 
-**Note on numbering:** Spec 05 noted that a tabled "research mode" feature would take the next number if revisited. It hasn't been revisited, so this document takes 06; research mode, if it returns, takes the next free number.
+**Note on numbering:** This document is numbered 08. Number 06 stays reserved for the tabled "research mode" feature noted in Spec 05.
 
 ---
 
