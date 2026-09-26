@@ -11,6 +11,32 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.14.0 — September 26, 2026
+
+**Cylinder balance (Spec 08).** The toolkit no longer assumes cylinder 4 is the hottest. It
+learns each aircraft's usual hottest cylinder from its own flights and flags when that changes.
+
+- **New per-flight metrics:** `egt1..4_deviation_f` (each cylinder's cruise EGT minus the
+  mean of the others), `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order`.
+  `egt4_elevation_f` remains as a deprecated alias of `egt4_deviation_f`.
+- **Fixed:** `egt_rank_stable` now means "the same cylinder was hottest for ≥ 80% of cruise".
+  It used to test only whether the most common hottest cylinder was unique.
+- **Fleet:** four new baselined metrics (`egt1..4_deviation`, OAT-stratified) and
+  `FleetAnalysis.cylinder_balance`: per-flight hottest cylinder plus the aircraft's usual one
+  (learned after 10 clear flights at ≥ 70% agreement, else the engine profile's new
+  `expected_hot_cylinder`: 4 for the 916iS/915iS, none for the 912iS/914iS).
+- **Insights:** `cylinder_rank` is wired. It warns when a different cylinder runs hottest by
+  ≥ 15°F for 2 consecutive flights; it is informational only when the aircraft's own pattern
+  isn't learned yet. New `egt_cyl_deviation` watches each cylinder's balance against its own
+  baseline and trend in either direction. The `egt4_elevation` rule now ships disabled.
+- **Rules:** `applies_to` (one rule block for several metrics) and trend `"direction": "either"`.
+- **Web UI:** Trends → EGT → *cylinder balance*: four deviation lines, a hottest-cylinder strip
+  and the usual-hottest chip. The rule playground edits the new rule parameters.
+- Existing workspaces re-analyse their flights on the next scan (engine version change), which
+  fills in the new metrics.
+
+---
+
 ## 0.11.0 — September 23, 2026
 
 **The engine contract refactor (Stages 0–4a) and the new `slingology-eis` CLI.** The

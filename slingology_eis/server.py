@@ -353,7 +353,9 @@ def op_get_series(params: dict, ctx: dict) -> Any:
 
 def op_update_fleet(params: dict, ctx: dict) -> Any:
     fas = [_dataclass_from_dict(FlightAnalysis, d) for d in params["flight_analyses"]]
-    fleet = update_fleet(fas, excluded=params.get("excluded"), baseline_config=params.get("baseline_config"))
+    engine_cfg = load_engine_config(_resolve_engine_name(params.get("engine")))
+    fleet = update_fleet(fas, excluded=params.get("excluded"), baseline_config=params.get("baseline_config"),
+                         engine_config=engine_cfg)
     return fleet.to_dict()
 
 
@@ -424,12 +426,21 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
     }
 
 
+def _engine_config_for(workspace_dir: Path) -> dict:
+    """The workspace's locked engine profile when it has a manifest, else
+    the standalone precedence (see _current_engine) — update_fleet needs
+    it only for the expected-hottest-cylinder prior (Spec 08 §3)."""
+    if (workspace_dir / "manifest.json").exists():
+        return load_engine_config(ws.load_manifest(workspace_dir).engine_model)
+    return load_engine_config(_resolve_engine_name(None))
+
+
 def _get_or_build_fleet(workspace_dir: Path) -> FleetAnalysis:
     cache = workspace_dir / "fleet" / "analysis.json"
     if cache.exists():
         return _dataclass_from_dict(FleetAnalysis, json.loads(cache.read_text()))
     fas = _load_workspace_flights(workspace_dir)
-    return update_fleet(fas)
+    return update_fleet(fas, engine_config=_engine_config_for(workspace_dir))
 
 
 def op_get_fleet(params: dict, ctx: dict) -> Any:
@@ -468,7 +479,7 @@ def op_rebuild_fleet(params: dict, ctx: dict) -> Any:
     if ctx.get("active_workspace_id"):
         return ws.rebuild_fleet(ctx["workspace_dir"]).to_dict()
     fas = _load_workspace_flights(ctx["workspace_dir"])
-    fleet = update_fleet(fas)
+    fleet = update_fleet(fas, engine_config=_engine_config_for(ctx["workspace_dir"]))
     _write_workspace(ctx["workspace_dir"], fas, fleet)
     return fleet.to_dict()
 
@@ -526,7 +537,7 @@ def op_import_files(params: dict, ctx: dict) -> Any:
     all_fas = _load_workspace_flights(workspace_dir) + new_fas
     # de-dupe in case a file was re-imported in the same batch as an existing one
     by_id = {fa.flight_id: fa for fa in all_fas}
-    fleet = update_fleet(list(by_id.values()))
+    fleet = update_fleet(list(by_id.values()), engine_config=_engine_config_for(workspace_dir))
     _write_workspace(workspace_dir, list(by_id.values()), fleet)
 
     if ctx.get("active_workspace_id"):

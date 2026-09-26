@@ -671,7 +671,10 @@ def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
     selection = load_selection(ws_dir)
     excluded_ids = {e["flight_id"] for e in selection.excluded}
     included = [fa for fa in load_all_flight_analyses(ws_dir) if fa.flight_id not in excluded_ids]
-    fleet = update_fleet(included, excluded=selection.excluded, baseline_config=selection.baseline_config)
+    fleet = update_fleet(
+        included, excluded=selection.excluded, baseline_config=selection.baseline_config,
+        engine_config=load_engine_config(load_manifest(ws_dir).engine_model),
+    )
     save_fleet_analysis(ws_dir, fleet)
     return fleet
 

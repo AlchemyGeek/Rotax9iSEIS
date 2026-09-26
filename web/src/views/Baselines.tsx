@@ -4,7 +4,7 @@ import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { fleetAnalysis as fixtureFleet, insightRules as fixtureRules } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
-import type { BaselineConfig, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTrigger, WhatIfResult } from "../types/contract";
+import type { BaselineConfig, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -350,6 +350,11 @@ export function Baselines() {
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
               <div>
                 <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>{selectedTopic}</h1>
+                {topic.applies_to && (
+                  <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
+                    applies to: {topic.applies_to.join(", ")}
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   {usingFixture
                     ? "Sample rule — connect to a live workspace to edit for real."
@@ -410,6 +415,24 @@ export function Baselines() {
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>structural — not editable here</div>
                       </>
                     )}
+                    {trig.type === "threshold" && trig.margin_min_f !== undefined && (
+                      <>
+                        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Min lead over next cylinder (°F)</label>
+                        {numberInput(trig.margin_min_f, (v) => updateTrigger(selectedTopic, i, { margin_min_f: v }), { min: 0 })}
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          shipped default: {shippedTopic?.triggers[i]?.margin_min_f ?? "—"}
+                        </div>
+                      </>
+                    )}
+                    {trig.type === "threshold" && trig.consecutive_flights !== undefined && (
+                      <>
+                        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Consecutive flights</label>
+                        {numberInput(trig.consecutive_flights, (v) => updateTrigger(selectedTopic, i, { consecutive_flights: v }), { min: 1 })}
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          shipped default: {shippedTopic?.triggers[i]?.consecutive_flights ?? "—"}
+                        </div>
+                      </>
+                    )}
 
                     {trig.type === "baseline_deviation" && (
                       <>
@@ -443,11 +466,12 @@ export function Baselines() {
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Direction</label>
                         <select
                           value={trig.direction}
-                          onChange={(e) => updateTrigger(selectedTopic, i, { direction: e.target.value as "increasing" | "decreasing" })}
+                          onChange={(e) => updateTrigger(selectedTopic, i, { direction: e.target.value as TrendDirection })}
                           style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 13, width: 130 }}
                         >
                           <option value="increasing">increasing</option>
                           <option value="decreasing">decreasing</option>
+                          <option value="either">either</option>
                         </select>
                         <div />
 
@@ -475,7 +499,9 @@ export function Baselines() {
                   </div>
                 </div>
               ))}
-              {!hasBaselineDeviation && topic.triggers.every((t) => t.type === "threshold" && t.limit === undefined) && (
+              {!hasBaselineDeviation && topic.triggers.every(
+                (t) => t.type === "threshold" && t.limit === undefined && t.margin_min_f === undefined && t.consecutive_flights === undefined,
+              ) && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   This rule's condition is structural (not a tunable number) — nothing to drag here, but severity is still editable.
                 </div>

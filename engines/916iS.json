@@ -12,6 +12,8 @@
   "fadec": true,
   "turbocharged": true,
   "cylinders": 4,
+  "_expected_hot_cylinder_note": "Spec 08 §3: prior for the usual hottest cylinder until an aircraft's own is learned; a display hint, never a limit. Observed on N117ZS; turbo exhaust proximity.",
+  "expected_hot_cylinder": 4,
   "rated_power_kw": 117,
   "rated_power_hp": 157,
   "rated_rpm": 5800,

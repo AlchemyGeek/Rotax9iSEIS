@@ -1,7 +1,7 @@
 # Spec 08 — Cylinder Balance Trends (Mini-Spec)
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.1 — mini-spec, not yet implemented
+**Status:** v0.2 — implemented (engine 0.14.0); constants not yet tuned against real data
 **Suggested repo path:** `docs/specs/08-cylinder-balance-trends.md`
 **Builds on:** Spec 01 (engine contract, metric registry, insight rules), Spec 03 (Trends view), Spec 05 (frontend bootstrap)
 **Revision history**
@@ -9,6 +9,7 @@
 | Version | Change |
 |---|---|
 | 0.1 | Initial mini-spec. |
+| 0.2 | Implemented. Decisions made during implementation are recorded in §11. |
 
 **Note on numbering:** This document is numbered 08. Number 06 stays reserved for the tabled "research mode" feature noted in Spec 05.
 
@@ -145,3 +146,21 @@ These are initial guesses; tune against the N117ZS dataset and record the result
 4. A 912iS workspace with no learned pattern produces no `hot_cyl_changed` insight and shows "Usual hottest: not yet established".
 5. Existing bundles containing only `egt4_elevation_f` still load and render.
 6. Trends → EGT → cylinder balance renders the four-line panel, the hot-cylinder strip and the header chip from fixtures.
+
+## 11. Implementation notes (v0.2)
+
+Decisions made while building this, where the draft above was silent or had to bend:
+
+- **"Usual" hottest cylinder is judged without the flights under test.** When `cylinder_rank` evaluates a flight, `established_hot_cyl` is recomputed from the fleet's points minus that flight and the preceding `consecutive_flights − 1` (the same leave-out principle as Spec 01 R2). Otherwise a switch that persists would dilute the very baseline it's compared against. `FleetAnalysis.cylinder_balance.established_hot_cyl` (the header chip) still uses all flights.
+- **Shape of `FleetAnalysis.cylinder_balance`:** `{margin_min_f, expected_hot_cyl, established_hot_cyl: {cyl, share, n, source}, points: [{flight_id, date, x, hottest_cyl, margin_f, rank_order}]}`. `n` and `share` count only flights whose hottest cylinder led by ≥ `margin_min_f`. Optional in the schema, so fleet caches written before Spec 08 still load.
+- **Prior plumbing:** `update_fleet(..., engine_config=None)` reads only `expected_hot_cylinder`. The CLI, server and workspace callers pass the workspace's locked profile.
+- **Consecutive flights** are ordered by engine hours, then date.
+- **Legacy condition:** a workspace `rules/active.json` that still says `"condition": "rank_changed"` is evaluated as `hot_cyl_changed` with default parameters.
+- **Severity override:** an insight may carry its own severity; `hot_cyl_changed` against a prior (not yet learned) emits `info` regardless of the rule's severity.
+- **Z-threshold overrides:** the rule playground keys overrides by rule id. For `egt1..4_deviation`, a per-metric override wins, then an `egt_cyl_deviation` override, then the global default.
+- **Evidence:** `egt_cyl_deviation` insights point at the one cylinder's `egtN_deviation`; `hot_cyl_changed` points at both the new and the usual cylinder. Trends opens the cylinder-balance view, focused on that cylinder, for any `egtN_deviation` (or legacy `egt4_elevation`) link.
+- **`egt4_elevation`** stays computed, baselined and in the registry, but its rule ships `enabled: false` (otherwise it duplicates cylinder 4's deviation insights) and it's gone from the Trends menu.
+- **Strip encoding:** the draft said marks are coloured by cylinder. Colour alone isn't enough (cylinders 1 and 3, blue and violet, are the closest pair for colour-blind readers), and number labels collided where flights cluster, so each cylinder also gets its own marker shape (● ■ ▲ ◆). The "off-pattern" ring marks any flight whose hottest cylinder differed from the usual one by ≥ `margin_min_f`; it is descriptive and doesn't claim the rule fired (that depends on the consecutive-flight rule and the evaluated rule set).
+- **Web fixtures:** `fleet-analysis.json` and `flight-kacv-*.json` were extended without the private logs. Cylinder 4's deviation is the real `egt4_elevation` value per flight; the split of the remainder across cylinders 1–3 is synthetic (deviations always sum to zero). Every derived number (baselines, trends, `cylinder_balance`, the two new topics) was then computed by the engine. Regenerate from real logs when convenient.
+- **Acceptance status:** §10.2–10.5 are covered by `tests/unit/test_cylinder_balance.py` on synthetic fleets; §10.6 was checked by rendering the fixtures. §10.1 needs the private N117ZS logs and hasn't been run here. The fixture script did confirm that `egt4_deviation`'s baseline equals the shipped `egt4_elevation` baseline exactly, on the fixture's 48 real values.
+

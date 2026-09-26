@@ -11,6 +11,7 @@ from .operations import FlightAnalysis, FleetAnalysis, evaluate_insights
 
 _VALID_TRIGGER_TYPES = {"threshold", "baseline_deviation", "trend"}
 _VALID_SEVERITIES = {"info", "watch", "warning", "limit"}
+_VALID_TREND_DIRECTIONS = {"increasing", "decreasing", "either"}
 
 
 def validate_rules(rules: dict) -> list[dict]:
@@ -42,6 +43,15 @@ def validate_rules(rules: dict) -> list[dict]:
                 message=f"{topic_id}: missing or non-boolean 'enabled'.",
                 refs={"topic_id": topic_id},
             ))
+        applies_to = topic.get("applies_to")
+        if applies_to is not None and not (
+            isinstance(applies_to, list) and applies_to and all(isinstance(m, str) for m in applies_to)
+        ):
+            diagnostics.append(Diagnostic(
+                code="RULES_SCHEMA_ERROR", severity="error", scope="topic",
+                message=f"{topic_id}: 'applies_to' must be a non-empty list of metric ids.",
+                refs={"topic_id": topic_id},
+            ))
         triggers = topic.get("triggers")
         if not isinstance(triggers, list):
             diagnostics.append(Diagnostic(
@@ -58,6 +68,12 @@ def validate_rules(rules: dict) -> list[dict]:
                     refs={"topic_id": topic_id, "index": i},
                 ))
                 continue
+            if trig["type"] == "trend" and trig.get("direction") not in _VALID_TREND_DIRECTIONS:
+                diagnostics.append(Diagnostic(
+                    code="RULES_SCHEMA_ERROR", severity="warn", scope="topic",
+                    message=f"{topic_id}.triggers[{i}]: unknown trend direction {trig.get('direction')!r}.",
+                    refs={"topic_id": topic_id, "index": i},
+                ))
             severity = trig.get("severity")
             if severity is not None and severity not in _VALID_SEVERITIES:
                 diagnostics.append(Diagnostic(

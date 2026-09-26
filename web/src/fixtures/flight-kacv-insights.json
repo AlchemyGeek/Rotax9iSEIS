@@ -15,13 +15,29 @@
       ]
     },
     {
-      "topic_id": "egt4_elevation",
+      "topic_id": "egt_cyl_deviation",
       "analysis": {
-        "text": "EGT4 is +42\u00b0F vs cylinders 1\u20133. Your average: +45\u00b0F \u00b1 5\u00b0F (36 flights)."
+        "text": "Vs. mean of the other cylinders: Cyl 1 -14\u00b0F (avg -14), Cyl 2 -15\u00b0F (avg -17), Cyl 3 -12\u00b0F (avg -15), Cyl 4 +42\u00b0F (avg +46) (47 flights)."
       },
       "insights": [],
       "metric_ids": [
-        "egt4_elevation_f"
+        "egt1_deviation",
+        "egt2_deviation",
+        "egt3_deviation",
+        "egt4_deviation"
+      ]
+    },
+    {
+      "topic_id": "cylinder_rank",
+      "analysis": {
+        "text": "Hottest this flight: Cyl 4 (+40\u00b0F over next). Usual hottest for this aircraft: Cyl 4 (100% of 46 flights)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "egt1_deviation",
+        "egt2_deviation",
+        "egt3_deviation",
+        "egt4_deviation"
       ]
     },
     {

@@ -55,7 +55,10 @@ def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
         return False, ""
     if r2 < rule.get("r2_min", 0.5) or n < rule.get("n_min", 10):
         return False, ""
-    if direction == rule.get("direction"):
+    wanted = rule.get("direction")
+    # "either" (Spec 08 §6): a drift in both directions matters, e.g. a
+    # cylinder running hotter (lean injector) or cooler (ignition, probe).
+    if direction == wanted or (wanted == "either" and direction in ("increasing", "decreasing")):
         return True, (f"⚠ Trending {direction} over engine hours "
                       f"(slope={t['slope']:+.3f}/hr, R²={r2:.2f}, n={n}).")
     return False, ""
@@ -145,6 +148,108 @@ def cylinder_rank(rank_order: list, rank_stable: Optional[bool], fleet_note: str
                 "injector or ignition imbalance. Compare per-cylinder EGT means "
                 "in script 01.",
     }]
+    return {"analysis": analysis, "insights": insights}
+
+
+def hot_cylinder_change(
+    window: list[dict],
+    established: dict,
+    rule: Optional[dict],
+    engine_name: Optional[str] = None,
+) -> dict:
+    """
+    Spec 08 §6 `cylinder_rank` topic. `window` is this flight's hottest-
+    cylinder point preceded by up to `consecutive_flights - 1` earlier ones
+    (oldest first, each {"hottest_cyl", "margin_f"}); `established` is
+    baselines.established_hot_cylinder()'s result, computed without the
+    flights in the window. `rule` is the hot_cyl_changed trigger, or None
+    when the rule is disabled.
+
+    Insights carry their own "severity" when it differs from the rule's —
+    a mismatch against a profile prior (not yet learned for this aircraft)
+    is informational, not a warning.
+    """
+    if not window:
+        return {"analysis": "Insufficient cruise data for cylinder rank analysis.", "insights": []}
+    this = window[-1]
+    cyl, margin = this["hottest_cyl"], this.get("margin_f")
+    margin_min = (rule or {}).get("margin_min_f", 15)
+    margin_str = f"+{margin:.0f}°F over next" if margin is not None else "margin unknown"
+    ambiguous = margin is None or margin < margin_min
+    too_close = " — too close to call" if ambiguous else ""
+    analysis = f"Hottest this flight: Cyl {cyl} ({margin_str}{too_close}). "
+
+    src, usual = established.get("source"), established.get("cyl")
+    if src == "learned":
+        analysis += (f"Usual hottest for this aircraft: Cyl {usual} "
+                     f"({established['share'] * 100:.0f}% of {established['n']} flights).")
+    elif src == "prior":
+        analysis += (f"Typical hottest for the {engine_name or 'engine'} profile: Cyl {usual} "
+                     f"(not yet learned for this aircraft — {established['n']} usable flights).")
+    else:
+        analysis += "Usual hottest cylinder not yet established for this aircraft."
+
+    insights = []
+    if rule is None or src == "none":
+        return {"analysis": analysis, "insights": insights}
+    consecutive = max(1, int(rule.get("consecutive_flights", 2)))
+    if len(window) < consecutive:
+        return {"analysis": analysis, "insights": insights}
+    changed = all(
+        p["hottest_cyl"] != usual and p.get("margin_f") is not None and p["margin_f"] >= margin_min
+        for p in window[-consecutive:]
+    )
+    if not changed:
+        return {"analysis": analysis, "insights": insights}
+
+    flights = f"for {consecutive} consecutive flights" if consecutive > 1 else "this flight"
+    if src == "learned":
+        text = (f"⚠ Cyl {cyl} ran hottest ({margin_str}) {flights}; this aircraft's usual "
+                f"hottest is Cyl {usual}. A cylinder running hotter is consistent with a lean "
+                f"injector; the usual hottest cooling can point to an ignition/plug issue or "
+                f"an EGT probe fault. Compare the per-cylinder balance trend.")
+        insights.append({"trigger": "threshold", "text": text})
+    else:
+        text = (f"Cyl {cyl} ran hottest ({margin_str}) {flights}; the typical "
+                f"{engine_name or 'engine'} pattern is Cyl {usual}. Not an anomaly by itself — "
+                f"this aircraft's own pattern isn't established yet.")
+        insights.append({"trigger": "threshold", "text": text, "severity": "info"})
+    return {"analysis": analysis, "insights": insights}
+
+
+def cyl_deviation(cyls: list[dict]) -> dict:
+    """
+    Spec 08 §6 `egt_cyl_deviation` topic: each cylinder's cruise EGT vs.
+    the mean of the others, against its own baseline. `cyls` holds one
+    {"cyl", "value", "b", "triggers"} per cylinder (b: the topic-baseline
+    shape baseline_triggered/trend_triggered read; triggers: the rule's
+    triggers as they apply to that cylinder). Insights carry a
+    "cyl" key so the caller can attach per-cylinder evidence.
+    """
+    present = [c for c in cyls if c["value"] is not None]
+    if not present:
+        return {"analysis": "Per-cylinder EGT balance not available.", "insights": []}
+    parts = []
+    for c in present:
+        b = c["b"]
+        avg = f" (avg {b['mean']:+.0f})" if b.get("mean") is not None else ""
+        parts.append(f"Cyl {c['cyl']} {c['value']:+.0f}°F{avg}")
+    n = max((c["b"].get("n") or 0) for c in present)
+    analysis = "Vs. mean of the other cylinders: " + ", ".join(parts) + f" ({n} flights{confidence_note({'n': n})})."
+
+    insights = []
+    for c in present:
+        for rule in c["triggers"]:
+            if rule["type"] == "baseline_deviation":
+                triggered, text = baseline_triggered(c["value"], c["b"], rule)
+                if triggered:
+                    insights.append({"trigger": "baseline_deviation", "cyl": c["cyl"],
+                                     "text": f"Cyl {c['cyl']}: {text}"})
+            elif rule["type"] == "trend":
+                triggered, text = trend_triggered(c["b"], rule)
+                if triggered:
+                    insights.append({"trigger": "trend", "cyl": c["cyl"],
+                                     "text": f"Cyl {c['cyl']}: {text}"})
     return {"analysis": analysis, "insights": insights}
 
 

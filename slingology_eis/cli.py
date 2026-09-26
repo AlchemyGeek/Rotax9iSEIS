@@ -248,6 +248,7 @@ def _fleet_analysis_from_dict(d: dict) -> FleetAnalysis:
         fleet_key=d["fleet_key"], flight_ids=d["flight_ids"], excluded=d.get("excluded", []),
         metrics=d.get("metrics", {}), models=d.get("models", []),
         quality=d.get("quality", []), provenance=d.get("provenance", {}),
+        cylinder_balance=d.get("cylinder_balance"),
     )
 
 
@@ -290,7 +291,7 @@ def _load_or_build_fleet(logs_dir: Path, workspace_dir: Path, engine_cfg: dict, 
     _log(f"No cached fleet baseline at {cache} — recomputing from {logs_dir} "
          f"(slow; run 'fleet' or 'import' first to cache)", quiet)
     fas, excluded, _source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, quiet)
-    return update_fleet(fas, excluded=excluded)
+    return update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
 
 
 # ── subcommands ───────────────────────────────────────────────────────────
@@ -362,7 +363,7 @@ def cmd_fleet(args) -> int:
     engine_name = _resolve_engine_name(args.engine)
     engine_cfg = load_engine_config(engine_name)
     fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
-    fleet = update_fleet(fas, excluded=excluded)
+    fleet = update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
     _write_workspace(workspace_dir, fas, fleet, source_paths)
     d = fleet.to_dict()
     if args.json:
@@ -426,7 +427,7 @@ def cmd_import(args) -> int:
         # ground-session filtering and duplicate detection `fleet` uses.
         fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
 
-    fleet = update_fleet(fas, excluded=excluded)
+    fleet = update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
     _write_workspace(workspace_dir, fas, fleet, source_paths)
 
     if args.json:

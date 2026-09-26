@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "rules": {
     "egt_spread": {
       "enabled": true,
@@ -19,7 +19,8 @@
       ]
     },
     "egt4_elevation": {
-      "enabled": true,
+      "_comment": "Deprecated (Spec 08): superseded by egt_cyl_deviation, which covers cylinder 4 and the others. Kept disabled for one minor version.",
+      "enabled": false,
       "triggers": [
         {
           "type": "baseline_deviation",
@@ -35,12 +36,32 @@
         }
       ]
     },
+    "egt_cyl_deviation": {
+      "enabled": true,
+      "applies_to": ["egt1_deviation", "egt2_deviation", "egt3_deviation", "egt4_deviation"],
+      "triggers": [
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        },
+        {
+          "type": "trend",
+          "direction": "either",
+          "r2_min": 0.5,
+          "n_min": 10,
+          "severity": "watch"
+        }
+      ]
+    },
     "cylinder_rank": {
       "enabled": true,
       "triggers": [
         {
           "type": "threshold",
-          "condition": "rank_changed",
+          "condition": "hot_cyl_changed",
+          "margin_min_f": 15,
+          "consecutive_flights": 2,
           "severity": "warning"
         }
       ]

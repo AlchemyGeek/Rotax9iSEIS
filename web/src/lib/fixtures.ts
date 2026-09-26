@@ -37,6 +37,12 @@ import type {
 // (Spec 05 §5) — not hand-authored. See CHANGELOG / BACKLOG G-series for
 // the two contract gaps these fixtures work around (evidence backfill,
 // no literal source filename).
+//
+// Exception (Spec 08 §11): the cylinder-balance data (egt1..4_deviation,
+// cylinder_balance, and the cylinder_rank / egt_cyl_deviation topics) was
+// added without the private logs. Cyl 4 is the real egt4_elevation per
+// flight; the split across cyls 1–3 is synthetic. Everything derived from
+// it was computed by the engine.
 export const flightAnalysis = flightAnalysisRaw as FlightAnalysis;
 export const insightSet = insightSetRaw as InsightSet;
 export const fleetAnalysis = fleetAnalysisRaw as FleetAnalysis;

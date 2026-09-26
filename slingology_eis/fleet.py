@@ -29,7 +29,7 @@ import pandas as pd
 
 from .loader import log_summary
 from .phases import detect_phases, overboost_time
-from .egt import egt_health
+from .egt import cyl_number, egt_health
 from .fuel import integrate_fuel, cruise_efficiency
 from .cas import parse_cas
 from .climb import climb_thermal_profile, VS_BUCKETS
@@ -101,8 +101,15 @@ class FlightMetrics:
     # EGT
     egt_spread_mean_f: Optional[float] = None
     egt_spread_max_f: Optional[float] = None
-    egt4_elevation_f: Optional[float] = None
+    egt1_deviation_f: Optional[float] = None
+    egt2_deviation_f: Optional[float] = None
+    egt3_deviation_f: Optional[float] = None
+    egt4_deviation_f: Optional[float] = None
+    egt_hottest_cyl: Optional[int] = None
+    egt_hottest_margin_f: Optional[float] = None
+    egt_rank_order: Optional[list] = None   # cylinder numbers, hottest first
     egt_rank_stable: Optional[bool] = None
+    egt4_elevation_f: Optional[float] = None  # deprecated alias of egt4_deviation_f
 
     # Fuel
     fadec_gallons: Optional[float] = None
@@ -290,8 +297,15 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         airborne_min=round(s["airborne_min"], 1),
         egt_spread_mean_f=egt.get("spread_mean_f"),
         egt_spread_max_f=egt.get("spread_max_f"),
-        egt4_elevation_f=egt.get("egt4_elevation_f"),
+        egt1_deviation_f=egt.get("egt1_deviation_f"),
+        egt2_deviation_f=egt.get("egt2_deviation_f"),
+        egt3_deviation_f=egt.get("egt3_deviation_f"),
+        egt4_deviation_f=egt.get("egt4_deviation_f"),
+        egt_hottest_cyl=egt.get("hottest_cyl"),
+        egt_hottest_margin_f=egt.get("hottest_margin_f"),
+        egt_rank_order=[cyl_number(c) for c in egt["rank_order"]] if egt.get("rank_order") else None,
         egt_rank_stable=egt.get("rank_stable"),
+        egt4_elevation_f=egt.get("egt4_elevation_f"),
         fadec_gallons=fuel_total.get("fadec_gallons"),
         cruise_nmpg=eff.get("nmpg") if eff else None,
         cruise_fuel_flow_gph=eff.get("mean_fuel_flow_gph") if eff else None,

@@ -20,7 +20,8 @@ export interface Diagnostic {
 
 export interface MetricValue {
   id: string;
-  value: number | string | boolean | null;
+  // number[] only for list-valued metrics, e.g. egt_rank_order (Spec 08 §4).
+  value: number | string | boolean | number[] | null;
   unit?: string;
   missing?: MissingReason;
 }
@@ -125,13 +126,20 @@ export interface RuleTrigger {
   condition?: string;
   tolerance_hpa?: number;
   n_min?: number;
-  direction?: "increasing" | "decreasing";
+  // "either" (Spec 08 §6) fires on a clear trend in both directions.
+  direction?: TrendDirection;
   r2_min?: number;
+  // cylinder_rank's hot_cyl_changed condition (Spec 08 §6).
+  margin_min_f?: number;
+  consecutive_flights?: number;
 }
+
+export type TrendDirection = "increasing" | "decreasing" | "either";
 
 export interface RuleSet {
   version: string;
-  rules: Record<string, { enabled: boolean; triggers: RuleTrigger[] }>;
+  // applies_to (Spec 08 §6): one rule block shared by several fleet metric ids.
+  rules: Record<string, { enabled: boolean; triggers: RuleTrigger[]; applies_to?: string[]; _comment?: string }>;
 }
 
 export interface WorkspaceRulesResult {
@@ -212,6 +220,24 @@ export interface FleetProvenance {
   baseline_config: BaselineConfig;
 }
 
+// Spec 08 §5 — each flight's hottest cylinder, and the aircraft's usual one:
+// "learned" from its own flights, else the engine profile's "prior", else "none".
+export interface HotCylinderPoint {
+  flight_id: string;
+  date: string;
+  x: number | null;
+  hottest_cyl: number;
+  margin_f: number | null;
+  rank_order: number[] | null;
+}
+
+export interface CylinderBalance {
+  margin_min_f: number;
+  expected_hot_cyl: number | null;
+  established_hot_cyl: { cyl: number | null; share: number | null; n: number; source: "learned" | "prior" | "none" };
+  points: HotCylinderPoint[];
+}
+
 export interface FleetAnalysis {
   fleet_key: string;
   flight_ids: string[];
@@ -220,6 +246,8 @@ export interface FleetAnalysis {
   models: { id: string; n: number; r_squared: number; [key: string]: unknown }[];
   quality: Diagnostic[];
   provenance: FleetProvenance;
+  // Optional: fleet results written before Spec 08 don't carry it.
+  cylinder_balance?: CylinderBalance;
 }
 
 // ── ECU (Spec 01 §8.6) ───────────────────────────────────────────────────────

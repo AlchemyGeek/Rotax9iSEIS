@@ -469,9 +469,11 @@ class FleetAnalysis:
     models: list[dict] = field(default_factory=list)
     quality: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    # Spec 08 §5. Optional so fleet caches written before it still load.
+    cylinder_balance: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "fleet_key": self.fleet_key,
             "flight_ids": self.flight_ids,
             "excluded": self.excluded,
@@ -480,6 +482,12 @@ class FleetAnalysis:
             "quality": self.quality,
             "provenance": self.provenance,
         }
+        if self.cylinder_balance is not None:
+            d["cylinder_balance"] = self.cylinder_balance
+        return d
+
+
+_CYL_DEVIATION_KEYS = [f"egt{n}_deviation" for n in range(1, 5)]
 
 
 def resolve_outlier_z_threshold(baseline_config: dict, metric_id: str) -> float:
@@ -494,13 +502,59 @@ def resolve_outlier_z_threshold(baseline_config: dict, metric_id: str) -> float:
     overrides = baseline_config.get("outlier_z_threshold_overrides") or {}
     if metric_id in overrides:
         return overrides[metric_id]
+    # The rule playground keys overrides by rule id; one rule block covers
+    # all four cylinder-balance metrics (Spec 08 §6 `applies_to`).
+    if metric_id in _CYL_DEVIATION_KEYS and "egt_cyl_deviation" in overrides:
+        return overrides["egt_cyl_deviation"]
     return baseline_config.get("outlier_z_threshold", 2.0)
+
+
+def _hot_cyl_points(df: pd.DataFrame) -> list[dict]:
+    """Per-flight hottest cylinder, its margin and rank order (Spec 08 §5),
+    oldest first. Flights with no hottest cylinder are left out."""
+    if "egt_hottest_cyl" not in df.columns:
+        return []
+    sub = df[df["egt_hottest_cyl"].notna()]
+    points = []
+    for _, row in sub.iterrows():
+        rank = row.get("egt_rank_order")
+        points.append({
+            "flight_id": row["source_file"],
+            "date": str(row["date"]),
+            "x": float(row["engine_hours"]) if pd.notna(row.get("engine_hours")) else None,
+            "hottest_cyl": int(row["egt_hottest_cyl"]),
+            "margin_f": _to_plain(row.get("egt_hottest_margin_f")),
+            "rank_order": [int(c) for c in rank] if isinstance(rank, list) else None,
+        })
+    return _chronological(points)
+
+
+def _chronological(points: list[dict]) -> list[dict]:
+    # Engine hours first (monotonic per engine), date as the tie-break and
+    # the fallback when a log carries no engine-hours metadata.
+    return sorted(points, key=lambda p: (p["x"] is None, p["x"] or 0.0, p["date"]))
+
+
+def _cylinder_balance(df: pd.DataFrame, expected_cyl: Optional[int]) -> dict:
+    from .baselines import established_hot_cylinder
+    from .egt import MARGIN_MIN_F
+
+    points = _hot_cyl_points(df)
+    return {
+        "margin_min_f": MARGIN_MIN_F,
+        "expected_hot_cyl": expected_cyl,
+        "established_hot_cyl": established_hot_cylinder(
+            [(p["hottest_cyl"], p["margin_f"]) for p in points], expected_cyl, MARGIN_MIN_F,
+        ),
+        "points": points,
+    }
 
 
 def update_fleet(
     flight_analyses: list[FlightAnalysis],
     excluded: Optional[list[dict]] = None,
     baseline_config: Optional[dict] = None,
+    engine_config: Optional[dict] = None,
 ) -> FleetAnalysis:
     """
     Spec 01 §7 `update_fleet` / §8.4. Computes the all-flights baseline,
@@ -511,11 +565,16 @@ def update_fleet(
     numbers. Membership here is always all-flights (for display, trend
     charts); evaluate_insights derives its own leave-one-out comparison
     per flight from the `points` this returns (R2, §8.4).
+
+    `engine_config` supplies only the profile's `expected_hot_cylinder`
+    (Spec 08 §3), the prior used until an aircraft's own hottest cylinder
+    is learned; without it there is no prior.
     """
     from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model
     from .fleet import baseline, baseline_stratified, outliers, trend, trend_stratified
 
     excluded = excluded or []
+    expected_cyl = (engine_config or {}).get("expected_hot_cylinder")
     baseline_config = baseline_config or {
         "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
     }
@@ -528,6 +587,7 @@ def update_fleet(
                 "engine_version": __version__, "schema_version": CONTRACT_VERSION,
                 "source_keys": [], "flight_analysis_keys": [], "baseline_config": baseline_config,
             },
+            cylinder_balance=_cylinder_balance(pd.DataFrame(), expected_cyl),
         )
 
     df = _metrics_dataframe_from_flight_analyses(flight_analyses)
@@ -618,6 +678,7 @@ def update_fleet(
         models=models,
         quality=[d.to_dict() for d in quality],
         provenance=provenance,
+        cylinder_balance=_cylinder_balance(df, expected_cyl),
     )
 
 
@@ -679,6 +740,96 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
     return "limit" if trigger_type == "threshold" else "watch"
 
 
+# Legacy workspace rule copies still say "rank_changed" (never wired);
+# Spec 08 §6 renamed the condition to what it now checks.
+_HOT_CYL_CONDITIONS = ("hot_cyl_changed", "rank_changed")
+
+
+def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) -> None:
+    """Spec 08 §6 `egt_cyl_deviation`: one rule block applied to each
+    cylinder's balance metric (`applies_to`), each against its own
+    leave-one-out baseline."""
+    rule = r_data.get("egt_cyl_deviation", {})
+    enabled = rule.get("enabled", True)
+    all_triggers = rule.get("triggers", []) if enabled else []
+    applies_to = set(rule.get("applies_to") or _CYL_DEVIATION_KEYS)
+    bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
+
+    cyls, metric_ids, low_n, fleet_n = [], [], False, 0
+    for n, key in enumerate(_CYL_DEVIATION_KEYS, start=1):
+        fleet_metric = fleet.metrics.get(key)
+        value = fa.metrics.get(f"{key}_f", {}).get("value")
+        if fleet_metric is None and value is None:
+            continue
+        metric_ids.append(key)
+        b = _topic_baseline(fleet_metric, fa.flight_id)
+        fleet_n = max(fleet_n, b.get("n", 0))
+        cyl_low_n = 0 < b.get("n", 0) < bd_n_min
+        low_n = low_n or cyl_low_n
+        z = resolve_outlier_z_threshold(baseline_config, key)
+        triggers = [] if key not in applies_to else [
+            {**t, "z_score_threshold": z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+            if not (cyl_low_n and t.get("type") == "baseline_deviation")
+        ]
+        cyls.append({"cyl": n, "value": value, "b": b, "triggers": triggers})
+
+    if not cyls:
+        return
+    raw = topics.cyl_deviation(cyls)
+    for ins in raw["insights"]:
+        ins["evidence"] = [{"kind": "metric", "metric_id": f"egt{ins.pop('cyl')}_deviation"}]
+    emit("egt_cyl_deviation", raw, metric_ids, fleet_n)
+    if low_n:
+        topics_out[-1]["_low_n"] = True
+
+
+def _emit_hot_cylinder(fa, fleet, r_data, emit) -> None:
+    """Spec 08 §6 `cylinder_rank`: has the hottest cylinder moved away from
+    the aircraft's usual one, by a clear margin, for N flights running?"""
+    from .baselines import established_hot_cylinder
+    from .egt import MARGIN_MIN_F
+
+    cb = fleet.cylinder_balance or {}
+    rule_cfg = r_data.get("cylinder_rank", {})
+    rule = None
+    if rule_cfg.get("enabled", True):
+        rule = next((t for t in rule_cfg.get("triggers", [])
+                     if t.get("type") == "threshold" and t.get("condition") in _HOT_CYL_CONDITIONS), None)
+    margin_min = (rule or {}).get("margin_min_f", cb.get("margin_min_f", MARGIN_MIN_F))
+    consecutive = max(1, int((rule or {}).get("consecutive_flights", 2)))
+
+    window: list[dict] = []
+    hottest = fa.metrics.get("egt_hottest_cyl", {}).get("value")
+    if hottest is not None:
+        this = {
+            "flight_id": fa.flight_id,
+            "date": str(fa.header.get("date")),
+            "x": fa.header.get("engine_hours_start"),
+            "hottest_cyl": int(hottest),
+            "margin_f": fa.metrics.get("egt_hottest_margin_f", {}).get("value"),
+        }
+        seq = _chronological([p for p in cb.get("points", []) if p["flight_id"] != fa.flight_id] + [this])
+        i = next(k for k, p in enumerate(seq) if p["flight_id"] == fa.flight_id)
+        window = seq[max(0, i - consecutive + 1): i + 1]
+
+    # "Usual" is judged without the flights under test, the same
+    # leave-out principle as the metric baselines (R2).
+    window_ids = {p["flight_id"] for p in window}
+    established = established_hot_cylinder(
+        [(p["hottest_cyl"], p.get("margin_f")) for p in cb.get("points", []) if p["flight_id"] not in window_ids],
+        cb.get("expected_hot_cyl"), margin_min,
+    )
+    engine_name = (fa.provenance.get("engine_profile") or {}).get("id")
+    raw = topics.hot_cylinder_change(window, established, rule, engine_name)
+    if raw["insights"] and window:
+        keys = {f"egt{window[-1]['hottest_cyl']}_deviation", f"egt{established['cyl']}_deviation"}
+        for ins in raw["insights"]:
+            ins["evidence"] = [{"kind": "metric", "metric_id": k} for k in sorted(keys) if k in fleet.metrics]
+    metric_ids = [k for k in _CYL_DEVIATION_KEYS if k in fleet.metrics]
+    emit("cylinder_rank", raw, metric_ids, established.get("n") or 0)
+
+
 def evaluate_insights(
     flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict,
     annotations: Optional[list[dict]] = None,
@@ -707,11 +858,9 @@ def evaluate_insights(
     existing note. A real edge, not fixed here, just not silently
     smoothed over either.
 
-    Known gap: `cylinder_rank` isn't wired here — its analysis needs
-    per-cylinder rank order (egt_health()'s rank_order), which isn't a
-    registered metric on FlightAnalysis today, only the boolean
-    `egt_rank_stable` is. Extending the registry to carry it is a
-    reasonable follow-up, not done in this pass.
+    `cylinder_rank` (Spec 08 §6) compares this flight's hottest cylinder
+    with the aircraft's usual one, from FleetAnalysis.cylinder_balance;
+    `egt_cyl_deviation` baselines each cylinder's balance separately.
     """
     r_data = rules.get("rules", {})
     rules_hash = content_hash(rules)
@@ -732,7 +881,7 @@ def evaluate_insights(
         confidence = _confidence(fleet_n)
         insights = []
         for ins in raw["insights"]:
-            severity = _severity_for(rules, topic_id, ins["trigger"])
+            severity = ins.get("severity") or _severity_for(rules, topic_id, ins["trigger"])
             insight_id = content_hash({"flight_id": flight_id, "topic_id": topic_id,
                                         "trigger": ins["trigger"], "text": ins["text"]})[:16]
             insight = {
@@ -742,7 +891,7 @@ def evaluate_insights(
                 "trigger": ins["trigger"],
                 "severity": severity,
                 "message": {"text": ins["text"]},
-                "evidence": [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
+                "evidence": ins.get("evidence") or [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
                 "confidence": confidence,
             }
             if insight_id in notes_by_insight_id:
@@ -757,6 +906,11 @@ def evaluate_insights(
 
     # ── The 8 topics driven by a single flight metric + fleet baseline ──────
     for topic_id, (flight_metric_id, fleet_key) in _TOPIC_METRIC_MAP.items():
+        # Deprecated alias of egt_cyl_deviation's cylinder 4 (Spec 08 §4):
+        # shipped disabled, still evaluated for a workspace rule set that
+        # enables it.
+        if topic_id == "egt4_elevation" and not r_data.get(topic_id, {}).get("enabled", False):
+            continue
         value = fm.get(flight_metric_id, {}).get("value")
         fleet_metric = fleet_analysis.metrics.get(fleet_key)
         b = _topic_baseline(fleet_metric, flight_id)
@@ -807,6 +961,9 @@ def evaluate_insights(
         _emit(topic_id, raw, [fleet_key], fleet_n)
         if low_n:
             topics_out[-1]["_low_n"] = True
+
+    _emit_cyl_deviation(flight_analysis, fleet_analysis, r_data, baseline_config, _emit, topics_out)
+    _emit_hot_cylinder(flight_analysis, fleet_analysis, r_data, _emit)
 
     # ── Topics with their own data source (no shared baseline pattern) ──────
     ob_triggers = r_data.get("overboost_time", {}).get("triggers", [])

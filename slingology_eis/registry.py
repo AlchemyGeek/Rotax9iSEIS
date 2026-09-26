@@ -67,8 +67,17 @@ _register("phases", [
 _register("egt", [
     ("egt_spread_mean_f", "°F", "Mean EGT spread during cruise", "CRUISE"),
     ("egt_spread_max_f", "°F", "Max EGT spread during cruise", "CRUISE"),
-    ("egt4_elevation_f", "°F", "Cylinder 4 EGT elevation vs. cylinders 1-3", "CRUISE"),
-    ("egt_rank_stable", None, "Whether the hottest cylinder was stable throughout cruise", "CRUISE"),
+    ("egt1_deviation_f", "°F", "Cylinder 1 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt1_f"),
+    ("egt2_deviation_f", "°F", "Cylinder 2 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt2_f"),
+    ("egt3_deviation_f", "°F", "Cylinder 3 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt3_f"),
+    ("egt4_deviation_f", "°F", "Cylinder 4 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt4_f"),
+    ("egt_hottest_cyl", None, "Cylinder with the highest cruise-mean EGT (1-4)", "CRUISE"),
+    ("egt_hottest_margin_f", "°F", "Cruise-mean EGT of the hottest cylinder minus the next hottest", "CRUISE"),
+    ("egt_rank_order", None, "Cylinders ordered hottest to coldest by cruise-mean EGT", "CRUISE"),
+    ("egt_rank_stable", None, "Whether the same cylinder was hottest for at least 80% of cruise", "CRUISE"),
+    # Deprecated alias of egt4_deviation_f (Spec 08 §4) — kept one minor
+    # version so existing bundles, baselines and fixtures still load.
+    ("egt4_elevation_f", "°F", "Deprecated: same as egt4_deviation_f", "CRUISE"),
 ])
 
 _register("fuel", [

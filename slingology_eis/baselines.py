@@ -9,16 +9,28 @@ result wherever they need.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from .fleet import baseline, baseline_stratified, trend, confidence_label
+from .egt import MARGIN_MIN_F
+from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, baseline, baseline_stratified, trend, confidence_label
+
+# Spec 08 §5: the usual hottest cylinder counts as "learned" only when it
+# wins at least this share of unambiguous flights, over at least n_min.
+ESTABLISHED_SHARE = 0.7
+ESTABLISHED_N_MIN = MIN_FLIGHTS_FOR_CONFIDENCE
 
 # Fleet baseline metric definitions: (key, source column, stratification band column)
 BASELINE_METRIC_DEFS = [
     ("egt_spread", "egt_spread_mean_f", "oat_band"),
+    ("egt1_deviation", "egt1_deviation_f", "oat_band"),
+    ("egt2_deviation", "egt2_deviation_f", "oat_band"),
+    ("egt3_deviation", "egt3_deviation_f", "oat_band"),
+    ("egt4_deviation", "egt4_deviation_f", "oat_band"),
+    # Deprecated alias of egt4_deviation (Spec 08 §4), kept one minor version.
     ("egt4_elevation", "egt4_elevation_f", "oat_band"),
     ("oil_temp_peak", "oil_temp_max_f", "oat_band"),
     ("coolant_temp_peak", "coolant_temp_max_f", "oat_band"),
@@ -166,3 +178,34 @@ def build_models(metrics: pd.DataFrame) -> dict:
             "takeoff_map": build_takeoff_map_model(metrics),
         },
     }
+
+
+# ── Hottest cylinder (Spec 08 §5) ─────────────────────────────────────────────
+
+def established_hot_cylinder(
+    hottest: list[tuple[Optional[int], Optional[float]]],
+    expected_cyl: Optional[int] = None,
+    margin_min_f: float = MARGIN_MIN_F,
+) -> dict:
+    """
+    The aircraft's usual hottest cylinder, from per-flight (hottest_cyl,
+    margin_f) pairs. Flights whose hottest cylinder led by less than
+    `margin_min_f` are ambiguous and don't count. Learned when one cylinder
+    wins ≥ ESTABLISHED_SHARE of at least ESTABLISHED_N_MIN counted flights;
+    otherwise the engine profile's `expected_cyl` is used as a prior, else
+    nothing is established.
+
+    Returns {"cyl", "share", "n", "source"}; source is "learned" | "prior"
+    | "none". `share` and `n` describe the counted flights either way.
+    """
+    counted = [c for c, m in hottest if c is not None and m is not None and m >= margin_min_f]
+    n = len(counted)
+    share = None
+    if n:
+        top_cyl, top_count = Counter(counted).most_common(1)[0]
+        share = round(top_count / n, 3)
+        if n >= ESTABLISHED_N_MIN and share >= ESTABLISHED_SHARE:
+            return {"cyl": int(top_cyl), "share": share, "n": n, "source": "learned"}
+    if expected_cyl is not None:
+        return {"cyl": int(expected_cyl), "share": share, "n": n, "source": "prior"}
+    return {"cyl": None, "share": share, "n": n, "source": "none"}

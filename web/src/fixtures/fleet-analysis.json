@@ -495,6 +495,1726 @@
         }
       }
     },
+    "egt1_deviation": {
+      "metric_id": "egt1_deviation",
+      "baseline": {
+        "n": 48,
+        "mean": -13.53,
+        "std": 2.33,
+        "min": -18.6,
+        "max": -8.5,
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "trend": {
+        "n": 48,
+        "slope": -0.00681,
+        "r_squared": 0.006,
+        "direction": "flat",
+        "x": "engine_hours",
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "points": [
+        {
+          "flight_id": "ebb63d351dccbac8",
+          "date": "2026-04-08",
+          "x": 28.2,
+          "value": -13.0
+        },
+        {
+          "flight_id": "e0d5de55bc6f39fb",
+          "date": "2026-04-09",
+          "x": 29.0,
+          "value": -14.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "0e8784425c25c656",
+          "date": "2026-04-17",
+          "x": 29.4,
+          "value": -15.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c355c8f176ece094",
+          "date": "2026-04-21",
+          "x": 30.2,
+          "value": -12.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f98a62808a81935a",
+          "date": "2026-04-22",
+          "x": 32.5,
+          "value": -9.2
+        },
+        {
+          "flight_id": "afa3994b502aa2d1",
+          "date": "2026-04-23",
+          "x": 33.0,
+          "value": -13.5
+        },
+        {
+          "flight_id": "584e022a47517397",
+          "date": "2026-04-23",
+          "x": 38.2,
+          "value": -14.5
+        },
+        {
+          "flight_id": "d9cf4cb3ad16129e",
+          "date": "2026-04-30",
+          "x": 42.8,
+          "value": -12.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c3e1129443d78b39",
+          "date": "2026-05-08",
+          "x": 44.1,
+          "value": -12.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "9c371069cd31b889",
+          "date": "2026-05-08",
+          "x": 44.8,
+          "value": -11.6
+        },
+        {
+          "flight_id": "2ecf6193fb4bba2f",
+          "date": "2026-05-08",
+          "x": 46.9,
+          "value": -12.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "39d4610e6a691915",
+          "date": "2026-05-18",
+          "x": 50.3,
+          "value": -11.6
+        },
+        {
+          "flight_id": "df3c2e9ffe08091e",
+          "date": "2026-05-18",
+          "x": 51.1,
+          "value": -10.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c924536e435145ed",
+          "date": "2026-05-20",
+          "x": 51.8,
+          "value": -18.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "a603d96498fb1db0",
+          "date": "2026-05-27",
+          "x": 53.5,
+          "value": -16.4,
+          "band": "cold"
+        },
+        {
+          "flight_id": "076889019f6a405b",
+          "date": "2026-05-27",
+          "x": 56.2,
+          "value": -15.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "bd03e79c9a3aa5c1",
+          "date": "2026-06-02",
+          "x": 58.4,
+          "value": -14.1
+        },
+        {
+          "flight_id": "5c45821c81da250e",
+          "date": "2026-06-02",
+          "x": 59.1,
+          "value": -12.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "5b686ab1daabc3f5",
+          "date": "2026-06-04",
+          "x": 60.0,
+          "value": -9.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "2b2945dbdee75885",
+          "date": "2026-06-08",
+          "x": 60.4,
+          "value": -8.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f2e63159ec0d6632",
+          "date": "2026-06-13",
+          "x": 61.6,
+          "value": -13.3
+        },
+        {
+          "flight_id": "90132d8dd417225c",
+          "date": "2026-06-17",
+          "x": 63.5,
+          "value": -17.0,
+          "band": "cold"
+        },
+        {
+          "flight_id": "0c530710a1c60e1c",
+          "date": "2026-06-18",
+          "x": 66.3,
+          "value": -17.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "8cf33695e94227bf",
+          "date": "2026-06-22",
+          "x": 69.9,
+          "value": -15.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "abbcb5dde18f399f",
+          "date": "2026-07-03",
+          "x": 70.4,
+          "value": -14.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "68d91c240953f50f",
+          "date": "2026-07-06",
+          "x": 71.5,
+          "value": -15.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6ab567cc2f46e677",
+          "date": "2026-07-06",
+          "x": 72.2,
+          "value": -14.7
+        },
+        {
+          "flight_id": "eefe8c71499d54b9",
+          "date": "2026-07-08",
+          "x": 72.5,
+          "value": -12.5
+        },
+        {
+          "flight_id": "f6ac8353a8589aa4",
+          "date": "2026-07-14",
+          "x": 73.5,
+          "value": -13.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "62843b1a45406ade",
+          "date": "2026-07-17",
+          "x": 75.3,
+          "value": -16.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f52342eb6fc37071",
+          "date": "2026-07-17",
+          "x": 80.3,
+          "value": -11.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3e6575a23df359a6",
+          "date": "2026-07-18",
+          "x": 85.4,
+          "value": -13.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3c8493c674d56815",
+          "date": "2026-07-22",
+          "x": 87.7,
+          "value": -13.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6509deccbb08e9f5",
+          "date": "2026-07-22",
+          "x": 90.9,
+          "value": -15.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "52ed07baad5f7668",
+          "date": "2026-07-23",
+          "x": 93.8,
+          "value": -13.5,
+          "band": "cold"
+        },
+        {
+          "flight_id": "4b0d94be7f9a9f86",
+          "date": "2026-07-23",
+          "x": 97.8,
+          "value": -13.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "54b85ee48c519d3f",
+          "date": "2026-08-10",
+          "x": 102.0,
+          "value": -11.0
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": -13.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": -11.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": -16.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": -15.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": -13.2,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": -13.2
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": -18.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": -15.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": -13.1
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": -10.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": -9.9
+        }
+      ],
+      "outliers": [
+        {
+          "flight_id": "c924536e435145ed",
+          "z_score": -2.04
+        },
+        {
+          "flight_id": "2b2945dbdee75885",
+          "z_score": 2.16
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "z_score": -2.17
+        }
+      ],
+      "by_band": {
+        "band_kind": "oat_band",
+        "bands": {
+          "mild": {
+            "n": 30,
+            "mean": -13.81,
+            "std": 2.51,
+            "min": -18.6,
+            "max": -8.5,
+            "confidence": {
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": -0.01683,
+              "r_squared": 0.03,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
+            }
+          },
+          "cold": {
+            "n": 3,
+            "mean": -15.63,
+            "std": 1.87,
+            "min": -17.0,
+            "max": -13.5,
+            "confidence": {
+              "level": "LOW",
+              "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": 0.0821,
+              "r_squared": 0.847,
+              "direction": "increasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": -13.2,
+            "std": 0.0,
+            "min": -13.2,
+            "max": -13.2,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "egt2_deviation": {
+      "metric_id": "egt2_deviation",
+      "baseline": {
+        "n": 48,
+        "mean": -16.95,
+        "std": 2.98,
+        "min": -23.0,
+        "max": -9.2,
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "trend": {
+        "n": 48,
+        "slope": -0.00017,
+        "r_squared": 0.0,
+        "direction": "flat",
+        "x": "engine_hours",
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "points": [
+        {
+          "flight_id": "ebb63d351dccbac8",
+          "date": "2026-04-08",
+          "x": 28.2,
+          "value": -14.2
+        },
+        {
+          "flight_id": "e0d5de55bc6f39fb",
+          "date": "2026-04-09",
+          "x": 29.0,
+          "value": -23.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "0e8784425c25c656",
+          "date": "2026-04-17",
+          "x": 29.4,
+          "value": -11.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c355c8f176ece094",
+          "date": "2026-04-21",
+          "x": 30.2,
+          "value": -17.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f98a62808a81935a",
+          "date": "2026-04-22",
+          "x": 32.5,
+          "value": -9.2
+        },
+        {
+          "flight_id": "afa3994b502aa2d1",
+          "date": "2026-04-23",
+          "x": 33.0,
+          "value": -18.0
+        },
+        {
+          "flight_id": "584e022a47517397",
+          "date": "2026-04-23",
+          "x": 38.2,
+          "value": -15.4
+        },
+        {
+          "flight_id": "d9cf4cb3ad16129e",
+          "date": "2026-04-30",
+          "x": 42.8,
+          "value": -20.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c3e1129443d78b39",
+          "date": "2026-05-08",
+          "x": 44.1,
+          "value": -15.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "9c371069cd31b889",
+          "date": "2026-05-08",
+          "x": 44.8,
+          "value": -20.1
+        },
+        {
+          "flight_id": "2ecf6193fb4bba2f",
+          "date": "2026-05-08",
+          "x": 46.9,
+          "value": -19.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "39d4610e6a691915",
+          "date": "2026-05-18",
+          "x": 50.3,
+          "value": -20.2
+        },
+        {
+          "flight_id": "df3c2e9ffe08091e",
+          "date": "2026-05-18",
+          "x": 51.1,
+          "value": -20.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c924536e435145ed",
+          "date": "2026-05-20",
+          "x": 51.8,
+          "value": -14.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "a603d96498fb1db0",
+          "date": "2026-05-27",
+          "x": 53.5,
+          "value": -18.8,
+          "band": "cold"
+        },
+        {
+          "flight_id": "076889019f6a405b",
+          "date": "2026-05-27",
+          "x": 56.2,
+          "value": -15.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "bd03e79c9a3aa5c1",
+          "date": "2026-06-02",
+          "x": 58.4,
+          "value": -14.4
+        },
+        {
+          "flight_id": "5c45821c81da250e",
+          "date": "2026-06-02",
+          "x": 59.1,
+          "value": -19.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "5b686ab1daabc3f5",
+          "date": "2026-06-04",
+          "x": 60.0,
+          "value": -18.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "2b2945dbdee75885",
+          "date": "2026-06-08",
+          "x": 60.4,
+          "value": -16.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f2e63159ec0d6632",
+          "date": "2026-06-13",
+          "x": 61.6,
+          "value": -18.3
+        },
+        {
+          "flight_id": "90132d8dd417225c",
+          "date": "2026-06-17",
+          "x": 63.5,
+          "value": -13.7,
+          "band": "cold"
+        },
+        {
+          "flight_id": "0c530710a1c60e1c",
+          "date": "2026-06-18",
+          "x": 66.3,
+          "value": -20.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "8cf33695e94227bf",
+          "date": "2026-06-22",
+          "x": 69.9,
+          "value": -14.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "abbcb5dde18f399f",
+          "date": "2026-07-03",
+          "x": 70.4,
+          "value": -12.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "68d91c240953f50f",
+          "date": "2026-07-06",
+          "x": 71.5,
+          "value": -14.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6ab567cc2f46e677",
+          "date": "2026-07-06",
+          "x": 72.2,
+          "value": -21.5
+        },
+        {
+          "flight_id": "eefe8c71499d54b9",
+          "date": "2026-07-08",
+          "x": 72.5,
+          "value": -12.5
+        },
+        {
+          "flight_id": "f6ac8353a8589aa4",
+          "date": "2026-07-14",
+          "x": 73.5,
+          "value": -20.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "62843b1a45406ade",
+          "date": "2026-07-17",
+          "x": 75.3,
+          "value": -15.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f52342eb6fc37071",
+          "date": "2026-07-17",
+          "x": 80.3,
+          "value": -18.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3e6575a23df359a6",
+          "date": "2026-07-18",
+          "x": 85.4,
+          "value": -21.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3c8493c674d56815",
+          "date": "2026-07-22",
+          "x": 87.7,
+          "value": -19.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6509deccbb08e9f5",
+          "date": "2026-07-22",
+          "x": 90.9,
+          "value": -13.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "52ed07baad5f7668",
+          "date": "2026-07-23",
+          "x": 93.8,
+          "value": -16.4,
+          "band": "cold"
+        },
+        {
+          "flight_id": "4b0d94be7f9a9f86",
+          "date": "2026-07-23",
+          "x": 97.8,
+          "value": -19.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "54b85ee48c519d3f",
+          "date": "2026-08-10",
+          "x": 102.0,
+          "value": -18.2
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": -15.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": -20.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": -16.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": -13.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": -15.7,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": -17.6
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": -16.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": -17.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": -18.6
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": -15.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": -14.5
+        }
+      ],
+      "outliers": [
+        {
+          "flight_id": "e0d5de55bc6f39fb",
+          "z_score": -2.03
+        },
+        {
+          "flight_id": "f98a62808a81935a",
+          "z_score": 2.6
+        }
+      ],
+      "by_band": {
+        "band_kind": "oat_band",
+        "bands": {
+          "mild": {
+            "n": 30,
+            "mean": -17.2,
+            "std": 2.92,
+            "min": -23.0,
+            "max": -11.8,
+            "confidence": {
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.01368,
+              "r_squared": 0.014,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
+            }
+          },
+          "cold": {
+            "n": 3,
+            "mean": -16.3,
+            "std": 2.55,
+            "min": -18.8,
+            "max": -13.7,
+            "confidence": {
+              "level": "LOW",
+              "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": 0.02495,
+              "r_squared": 0.042,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": -15.7,
+            "std": 0.0,
+            "min": -15.7,
+            "max": -15.7,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "egt3_deviation": {
+      "metric_id": "egt3_deviation",
+      "baseline": {
+        "n": 48,
+        "mean": -15.05,
+        "std": 3.45,
+        "min": -23.3,
+        "max": -6.4,
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "trend": {
+        "n": 48,
+        "slope": -0.03517,
+        "r_squared": 0.075,
+        "direction": "flat",
+        "x": "engine_hours",
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "points": [
+        {
+          "flight_id": "ebb63d351dccbac8",
+          "date": "2026-04-08",
+          "x": 28.2,
+          "value": -12.6
+        },
+        {
+          "flight_id": "e0d5de55bc6f39fb",
+          "date": "2026-04-09",
+          "x": 29.0,
+          "value": -14.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "0e8784425c25c656",
+          "date": "2026-04-17",
+          "x": 29.4,
+          "value": -10.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c355c8f176ece094",
+          "date": "2026-04-21",
+          "x": 30.2,
+          "value": -18.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f98a62808a81935a",
+          "date": "2026-04-22",
+          "x": 32.5,
+          "value": -14.4
+        },
+        {
+          "flight_id": "afa3994b502aa2d1",
+          "date": "2026-04-23",
+          "x": 33.0,
+          "value": -11.9
+        },
+        {
+          "flight_id": "584e022a47517397",
+          "date": "2026-04-23",
+          "x": 38.2,
+          "value": -11.7
+        },
+        {
+          "flight_id": "d9cf4cb3ad16129e",
+          "date": "2026-04-30",
+          "x": 42.8,
+          "value": -12.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c3e1129443d78b39",
+          "date": "2026-05-08",
+          "x": 44.1,
+          "value": -13.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "9c371069cd31b889",
+          "date": "2026-05-08",
+          "x": 44.8,
+          "value": -8.4
+        },
+        {
+          "flight_id": "2ecf6193fb4bba2f",
+          "date": "2026-05-08",
+          "x": 46.9,
+          "value": -10.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "39d4610e6a691915",
+          "date": "2026-05-18",
+          "x": 50.3,
+          "value": -12.2
+        },
+        {
+          "flight_id": "df3c2e9ffe08091e",
+          "date": "2026-05-18",
+          "x": 51.1,
+          "value": -23.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c924536e435145ed",
+          "date": "2026-05-20",
+          "x": 51.8,
+          "value": -18.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "a603d96498fb1db0",
+          "date": "2026-05-27",
+          "x": 53.5,
+          "value": -12.8,
+          "band": "cold"
+        },
+        {
+          "flight_id": "076889019f6a405b",
+          "date": "2026-05-27",
+          "x": 56.2,
+          "value": -13.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "bd03e79c9a3aa5c1",
+          "date": "2026-06-02",
+          "x": 58.4,
+          "value": -15.6
+        },
+        {
+          "flight_id": "5c45821c81da250e",
+          "date": "2026-06-02",
+          "x": 59.1,
+          "value": -17.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "5b686ab1daabc3f5",
+          "date": "2026-06-04",
+          "x": 60.0,
+          "value": -14.8,
+          "band": "mild"
+        },
+        {
+          "flight_id": "2b2945dbdee75885",
+          "date": "2026-06-08",
+          "x": 60.4,
+          "value": -17.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f2e63159ec0d6632",
+          "date": "2026-06-13",
+          "x": 61.6,
+          "value": -11.1
+        },
+        {
+          "flight_id": "90132d8dd417225c",
+          "date": "2026-06-17",
+          "x": 63.5,
+          "value": -18.1,
+          "band": "cold"
+        },
+        {
+          "flight_id": "0c530710a1c60e1c",
+          "date": "2026-06-18",
+          "x": 66.3,
+          "value": -15.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "8cf33695e94227bf",
+          "date": "2026-06-22",
+          "x": 69.9,
+          "value": -18.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "abbcb5dde18f399f",
+          "date": "2026-07-03",
+          "x": 70.4,
+          "value": -17.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "68d91c240953f50f",
+          "date": "2026-07-06",
+          "x": 71.5,
+          "value": -16.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6ab567cc2f46e677",
+          "date": "2026-07-06",
+          "x": 72.2,
+          "value": -6.4
+        },
+        {
+          "flight_id": "eefe8c71499d54b9",
+          "date": "2026-07-08",
+          "x": 72.5,
+          "value": -16.1
+        },
+        {
+          "flight_id": "f6ac8353a8589aa4",
+          "date": "2026-07-14",
+          "x": 73.5,
+          "value": -19.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "62843b1a45406ade",
+          "date": "2026-07-17",
+          "x": 75.3,
+          "value": -16.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f52342eb6fc37071",
+          "date": "2026-07-17",
+          "x": 80.3,
+          "value": -13.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3e6575a23df359a6",
+          "date": "2026-07-18",
+          "x": 85.4,
+          "value": -15.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3c8493c674d56815",
+          "date": "2026-07-22",
+          "x": 87.7,
+          "value": -18.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6509deccbb08e9f5",
+          "date": "2026-07-22",
+          "x": 90.9,
+          "value": -18.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "52ed07baad5f7668",
+          "date": "2026-07-23",
+          "x": 93.8,
+          "value": -13.0,
+          "band": "cold"
+        },
+        {
+          "flight_id": "4b0d94be7f9a9f86",
+          "date": "2026-07-23",
+          "x": 97.8,
+          "value": -8.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "54b85ee48c519d3f",
+          "date": "2026-08-10",
+          "x": 102.0,
+          "value": -15.1
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": -19.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": -16.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": -20.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": -18.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": -11.8,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": -13.2
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": -18.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": -14.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": -13.9
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": -16.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": -19.9
+        }
+      ],
+      "outliers": [
+        {
+          "flight_id": "df3c2e9ffe08091e",
+          "z_score": -2.39
+        },
+        {
+          "flight_id": "6ab567cc2f46e677",
+          "z_score": 2.51
+        }
+      ],
+      "by_band": {
+        "band_kind": "oat_band",
+        "bands": {
+          "mild": {
+            "n": 30,
+            "mean": -16.14,
+            "std": 3.19,
+            "min": -23.3,
+            "max": -8.3,
+            "confidence": {
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": -0.03056,
+              "r_squared": 0.06,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
+            }
+          },
+          "cold": {
+            "n": 3,
+            "mean": -14.63,
+            "std": 3.0,
+            "min": -18.1,
+            "max": -12.8,
+            "confidence": {
+              "level": "LOW",
+              "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": 0.03538,
+              "r_squared": 0.061,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": -11.8,
+            "std": 0.0,
+            "min": -11.8,
+            "max": -11.8,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "egt4_deviation": {
+      "metric_id": "egt4_deviation",
+      "baseline": {
+        "n": 48,
+        "mean": 45.53,
+        "std": 4.55,
+        "min": 32.7,
+        "max": 54.1,
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "trend": {
+        "n": 48,
+        "slope": 0.04275,
+        "r_squared": 0.064,
+        "direction": "flat",
+        "x": "engine_hours",
+        "confidence": {
+          "level": "GOOD",
+          "n": 48
+        }
+      },
+      "points": [
+        {
+          "flight_id": "ebb63d351dccbac8",
+          "date": "2026-04-08",
+          "x": 28.2,
+          "value": 39.8
+        },
+        {
+          "flight_id": "e0d5de55bc6f39fb",
+          "date": "2026-04-09",
+          "x": 29.0,
+          "value": 51.5,
+          "band": "mild"
+        },
+        {
+          "flight_id": "0e8784425c25c656",
+          "date": "2026-04-17",
+          "x": 29.4,
+          "value": 37.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c355c8f176ece094",
+          "date": "2026-04-21",
+          "x": 30.2,
+          "value": 48.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f98a62808a81935a",
+          "date": "2026-04-22",
+          "x": 32.5,
+          "value": 32.7
+        },
+        {
+          "flight_id": "afa3994b502aa2d1",
+          "date": "2026-04-23",
+          "x": 33.0,
+          "value": 43.4
+        },
+        {
+          "flight_id": "584e022a47517397",
+          "date": "2026-04-23",
+          "x": 38.2,
+          "value": 41.6
+        },
+        {
+          "flight_id": "d9cf4cb3ad16129e",
+          "date": "2026-04-30",
+          "x": 42.8,
+          "value": 44.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c3e1129443d78b39",
+          "date": "2026-05-08",
+          "x": 44.1,
+          "value": 41.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "9c371069cd31b889",
+          "date": "2026-05-08",
+          "x": 44.8,
+          "value": 40.0
+        },
+        {
+          "flight_id": "2ecf6193fb4bba2f",
+          "date": "2026-05-08",
+          "x": 46.9,
+          "value": 42.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "39d4610e6a691915",
+          "date": "2026-05-18",
+          "x": 50.3,
+          "value": 44.1
+        },
+        {
+          "flight_id": "df3c2e9ffe08091e",
+          "date": "2026-05-18",
+          "x": 51.1,
+          "value": 54.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "c924536e435145ed",
+          "date": "2026-05-20",
+          "x": 51.8,
+          "value": 50.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "a603d96498fb1db0",
+          "date": "2026-05-27",
+          "x": 53.5,
+          "value": 48.0,
+          "band": "cold"
+        },
+        {
+          "flight_id": "076889019f6a405b",
+          "date": "2026-05-27",
+          "x": 56.2,
+          "value": 44.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "bd03e79c9a3aa5c1",
+          "date": "2026-06-02",
+          "x": 58.4,
+          "value": 44.0
+        },
+        {
+          "flight_id": "5c45821c81da250e",
+          "date": "2026-06-02",
+          "x": 59.1,
+          "value": 49.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "5b686ab1daabc3f5",
+          "date": "2026-06-04",
+          "x": 60.0,
+          "value": 42.7,
+          "band": "mild"
+        },
+        {
+          "flight_id": "2b2945dbdee75885",
+          "date": "2026-06-08",
+          "x": 60.4,
+          "value": 42.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f2e63159ec0d6632",
+          "date": "2026-06-13",
+          "x": 61.6,
+          "value": 42.7
+        },
+        {
+          "flight_id": "90132d8dd417225c",
+          "date": "2026-06-17",
+          "x": 63.5,
+          "value": 48.8,
+          "band": "cold"
+        },
+        {
+          "flight_id": "0c530710a1c60e1c",
+          "date": "2026-06-18",
+          "x": 66.3,
+          "value": 54.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "8cf33695e94227bf",
+          "date": "2026-06-22",
+          "x": 69.9,
+          "value": 47.4,
+          "band": "mild"
+        },
+        {
+          "flight_id": "abbcb5dde18f399f",
+          "date": "2026-07-03",
+          "x": 70.4,
+          "value": 44.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "68d91c240953f50f",
+          "date": "2026-07-06",
+          "x": 71.5,
+          "value": 46.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6ab567cc2f46e677",
+          "date": "2026-07-06",
+          "x": 72.2,
+          "value": 42.6
+        },
+        {
+          "flight_id": "eefe8c71499d54b9",
+          "date": "2026-07-08",
+          "x": 72.5,
+          "value": 41.1
+        },
+        {
+          "flight_id": "f6ac8353a8589aa4",
+          "date": "2026-07-14",
+          "x": 73.5,
+          "value": 53.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "62843b1a45406ade",
+          "date": "2026-07-17",
+          "x": 75.3,
+          "value": 48.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "f52342eb6fc37071",
+          "date": "2026-07-17",
+          "x": 80.3,
+          "value": 43.9,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3e6575a23df359a6",
+          "date": "2026-07-18",
+          "x": 85.4,
+          "value": 50.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "3c8493c674d56815",
+          "date": "2026-07-22",
+          "x": 87.7,
+          "value": 50.2,
+          "band": "mild"
+        },
+        {
+          "flight_id": "6509deccbb08e9f5",
+          "date": "2026-07-22",
+          "x": 90.9,
+          "value": 47.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "52ed07baad5f7668",
+          "date": "2026-07-23",
+          "x": 93.8,
+          "value": 42.9,
+          "band": "cold"
+        },
+        {
+          "flight_id": "4b0d94be7f9a9f86",
+          "date": "2026-07-23",
+          "x": 97.8,
+          "value": 41.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "54b85ee48c519d3f",
+          "date": "2026-08-10",
+          "x": 102.0,
+          "value": 44.3
+        },
+        {
+          "flight_id": "359b223e06789cfe",
+          "date": "2026-08-11",
+          "x": 102.5,
+          "value": 48.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "10285670c98641de",
+          "date": "2026-08-11",
+          "x": 103.2,
+          "value": 48.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b4fd722ff6022173",
+          "date": "2026-08-14",
+          "x": 104.4,
+          "value": 53.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "cd88cb8a16a5e3d8",
+          "date": "2026-08-14",
+          "x": 105.0,
+          "value": 47.3,
+          "band": "mild"
+        },
+        {
+          "flight_id": "defd669a4e252d54",
+          "date": "2026-08-25",
+          "x": 105.9,
+          "value": 40.7,
+          "band": "warm"
+        },
+        {
+          "flight_id": "8bc537f17546a07b",
+          "date": "2026-08-26",
+          "x": 107.2,
+          "value": 44.0
+        },
+        {
+          "flight_id": "1a5c0b0ff91b5421",
+          "date": "2026-08-31",
+          "x": 107.6,
+          "value": 53.0,
+          "band": "mild"
+        },
+        {
+          "flight_id": "406d7ebf268b0214",
+          "date": "2026-09-02",
+          "x": 109.0,
+          "value": 47.1,
+          "band": "mild"
+        },
+        {
+          "flight_id": "672d48d4db912d05",
+          "date": "2026-09-02",
+          "x": 109.4,
+          "value": 45.6
+        },
+        {
+          "flight_id": "f255e90f0cacaac6",
+          "date": "2026-09-02",
+          "x": 111.9,
+          "value": 42.6,
+          "band": "mild"
+        },
+        {
+          "flight_id": "b0d9ab627f8732c7",
+          "date": "2026-09-25",
+          "x": 112.5,
+          "value": 44.2
+        }
+      ],
+      "outliers": [
+        {
+          "flight_id": "f98a62808a81935a",
+          "z_score": -2.82
+        }
+      ],
+      "by_band": {
+        "band_kind": "oat_band",
+        "bands": {
+          "mild": {
+            "n": 30,
+            "mean": 47.17,
+            "std": 4.36,
+            "min": 37.0,
+            "max": 54.1,
+            "confidence": {
+              "level": "GOOD",
+              "n": 30
+            },
+            "trend": {
+              "n": 30,
+              "slope": 0.03465,
+              "r_squared": 0.041,
+              "direction": "flat",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "GOOD",
+                "n": 30
+              }
+            }
+          },
+          "cold": {
+            "n": 3,
+            "mean": 46.57,
+            "std": 3.2,
+            "min": 42.9,
+            "max": 48.8,
+            "confidence": {
+              "level": "LOW",
+              "n": 3
+            },
+            "trend": {
+              "n": 3,
+              "slope": -0.14242,
+              "r_squared": 0.872,
+              "direction": "decreasing",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "LOW",
+                "n": 3
+              }
+            }
+          },
+          "warm": {
+            "n": 1,
+            "mean": 40.7,
+            "std": 0.0,
+            "min": 40.7,
+            "max": 40.7,
+            "confidence": {
+              "level": "VERY_LOW",
+              "n": 1
+            },
+            "trend": {
+              "n": 1,
+              "slope": null,
+              "r_squared": null,
+              "direction": "insufficient_data",
+              "x": "engine_hours",
+              "confidence": {
+                "level": "VERY_LOW",
+                "n": 1
+              }
+            }
+          }
+        }
+      }
+    },
     "egt4_elevation": {
       "metric_id": "egt4_elevation",
       "baseline": {
@@ -4042,5 +5762,641 @@
       "band_kind_by_metric": {},
       "outlier_z_threshold": 2.0
     }
+  },
+  "cylinder_balance": {
+    "margin_min_f": 15.0,
+    "expected_hot_cyl": 4,
+    "established_hot_cyl": {
+      "cyl": 4,
+      "share": 1.0,
+      "n": 48,
+      "source": "learned"
+    },
+    "points": [
+      {
+        "flight_id": "ebb63d351dccbac8",
+        "date": "2026-04-08",
+        "x": 28.2,
+        "hottest_cyl": 4,
+        "margin_f": 39.3,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "e0d5de55bc6f39fb",
+        "date": "2026-04-09",
+        "x": 29.0,
+        "hottest_cyl": 4,
+        "margin_f": 49.1,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "0e8784425c25c656",
+        "date": "2026-04-17",
+        "x": 29.4,
+        "hottest_cyl": 4,
+        "margin_f": 35.3,
+        "rank_order": [
+          4,
+          3,
+          2,
+          1
+        ]
+      },
+      {
+        "flight_id": "c355c8f176ece094",
+        "date": "2026-04-21",
+        "x": 30.2,
+        "hottest_cyl": 4,
+        "margin_f": 45.6,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "f98a62808a81935a",
+        "date": "2026-04-22",
+        "x": 32.5,
+        "hottest_cyl": 4,
+        "margin_f": 31.4,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "afa3994b502aa2d1",
+        "date": "2026-04-23",
+        "x": 33.0,
+        "hottest_cyl": 4,
+        "margin_f": 41.5,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "584e022a47517397",
+        "date": "2026-04-23",
+        "x": 38.2,
+        "hottest_cyl": 4,
+        "margin_f": 40.0,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "d9cf4cb3ad16129e",
+        "date": "2026-04-30",
+        "x": 42.8,
+        "hottest_cyl": 4,
+        "margin_f": 42.7,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "c3e1129443d78b39",
+        "date": "2026-05-08",
+        "x": 44.1,
+        "hottest_cyl": 4,
+        "margin_f": 40.7,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "9c371069cd31b889",
+        "date": "2026-05-08",
+        "x": 44.8,
+        "hottest_cyl": 4,
+        "margin_f": 36.3,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "2ecf6193fb4bba2f",
+        "date": "2026-05-08",
+        "x": 46.9,
+        "hottest_cyl": 4,
+        "margin_f": 40.0,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "39d4610e6a691915",
+        "date": "2026-05-18",
+        "x": 50.3,
+        "hottest_cyl": 4,
+        "margin_f": 41.8,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "df3c2e9ffe08091e",
+        "date": "2026-05-18",
+        "x": 51.1,
+        "hottest_cyl": 4,
+        "margin_f": 48.1,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "c924536e435145ed",
+        "date": "2026-05-20",
+        "x": 51.8,
+        "hottest_cyl": 4,
+        "margin_f": 48.4,
+        "rank_order": [
+          4,
+          2,
+          3,
+          1
+        ]
+      },
+      {
+        "flight_id": "a603d96498fb1db0",
+        "date": "2026-05-27",
+        "x": 53.5,
+        "hottest_cyl": 4,
+        "margin_f": 45.6,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "076889019f6a405b",
+        "date": "2026-05-27",
+        "x": 56.2,
+        "hottest_cyl": 4,
+        "margin_f": 43.1,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "bd03e79c9a3aa5c1",
+        "date": "2026-06-02",
+        "x": 58.4,
+        "hottest_cyl": 4,
+        "margin_f": 43.6,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "5c45821c81da250e",
+        "date": "2026-06-02",
+        "x": 59.1,
+        "hottest_cyl": 4,
+        "margin_f": 46.8,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "5b686ab1daabc3f5",
+        "date": "2026-06-04",
+        "x": 60.0,
+        "hottest_cyl": 4,
+        "margin_f": 39.2,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "2b2945dbdee75885",
+        "date": "2026-06-08",
+        "x": 60.4,
+        "hottest_cyl": 4,
+        "margin_f": 38.0,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "f2e63159ec0d6632",
+        "date": "2026-06-13",
+        "x": 61.6,
+        "hottest_cyl": 4,
+        "margin_f": 40.4,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "90132d8dd417225c",
+        "date": "2026-06-17",
+        "x": 63.5,
+        "hottest_cyl": 4,
+        "margin_f": 46.9,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "0c530710a1c60e1c",
+        "date": "2026-06-18",
+        "x": 66.3,
+        "hottest_cyl": 4,
+        "margin_f": 52.3,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "8cf33695e94227bf",
+        "date": "2026-06-22",
+        "x": 69.9,
+        "hottest_cyl": 4,
+        "margin_f": 46.3,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "abbcb5dde18f399f",
+        "date": "2026-07-03",
+        "x": 70.4,
+        "hottest_cyl": 4,
+        "margin_f": 42.2,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "68d91c240953f50f",
+        "date": "2026-07-06",
+        "x": 71.5,
+        "hottest_cyl": 4,
+        "margin_f": 45.8,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "6ab567cc2f46e677",
+        "date": "2026-07-06",
+        "x": 72.2,
+        "hottest_cyl": 4,
+        "margin_f": 36.8,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "eefe8c71499d54b9",
+        "date": "2026-07-08",
+        "x": 72.5,
+        "hottest_cyl": 4,
+        "margin_f": 40.2,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "f6ac8353a8589aa4",
+        "date": "2026-07-14",
+        "x": 73.5,
+        "hottest_cyl": 4,
+        "margin_f": 49.9,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "62843b1a45406ade",
+        "date": "2026-07-17",
+        "x": 75.3,
+        "hottest_cyl": 4,
+        "margin_f": 47.8,
+        "rank_order": [
+          4,
+          2,
+          3,
+          1
+        ]
+      },
+      {
+        "flight_id": "f52342eb6fc37071",
+        "date": "2026-07-17",
+        "x": 80.3,
+        "hottest_cyl": 4,
+        "margin_f": 41.8,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "3e6575a23df359a6",
+        "date": "2026-07-18",
+        "x": 85.4,
+        "hottest_cyl": 4,
+        "margin_f": 48.1,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "3c8493c674d56815",
+        "date": "2026-07-22",
+        "x": 87.7,
+        "hottest_cyl": 4,
+        "margin_f": 47.5,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "6509deccbb08e9f5",
+        "date": "2026-07-22",
+        "x": 90.9,
+        "hottest_cyl": 4,
+        "margin_f": 45.8,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "52ed07baad5f7668",
+        "date": "2026-07-23",
+        "x": 93.8,
+        "hottest_cyl": 4,
+        "margin_f": 41.9,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "4b0d94be7f9a9f86",
+        "date": "2026-07-23",
+        "x": 97.8,
+        "hottest_cyl": 4,
+        "margin_f": 37.4,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "54b85ee48c519d3f",
+        "date": "2026-08-10",
+        "x": 102.0,
+        "hottest_cyl": 4,
+        "margin_f": 41.5,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "359b223e06789cfe",
+        "date": "2026-08-11",
+        "x": 102.5,
+        "hottest_cyl": 4,
+        "margin_f": 46.4,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "10285670c98641de",
+        "date": "2026-08-11",
+        "x": 103.2,
+        "hottest_cyl": 4,
+        "margin_f": 44.6,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "b4fd722ff6022173",
+        "date": "2026-08-14",
+        "x": 104.4,
+        "hottest_cyl": 4,
+        "margin_f": 52.2,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "cd88cb8a16a5e3d8",
+        "date": "2026-08-14",
+        "x": 105.0,
+        "hottest_cyl": 4,
+        "margin_f": 45.5,
+        "rank_order": [
+          4,
+          2,
+          1,
+          3
+        ]
+      },
+      {
+        "flight_id": "defd669a4e252d54",
+        "date": "2026-08-25",
+        "x": 105.9,
+        "hottest_cyl": 4,
+        "margin_f": 39.4,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "8bc537f17546a07b",
+        "date": "2026-08-26",
+        "x": 107.2,
+        "hottest_cyl": 4,
+        "margin_f": 42.9,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "1a5c0b0ff91b5421",
+        "date": "2026-08-31",
+        "x": 107.6,
+        "hottest_cyl": 4,
+        "margin_f": 51.8,
+        "rank_order": [
+          4,
+          2,
+          3,
+          1
+        ]
+      },
+      {
+        "flight_id": "406d7ebf268b0214",
+        "date": "2026-09-02",
+        "x": 109.0,
+        "hottest_cyl": 4,
+        "margin_f": 45.8,
+        "rank_order": [
+          4,
+          3,
+          1,
+          2
+        ]
+      },
+      {
+        "flight_id": "672d48d4db912d05",
+        "date": "2026-09-02",
+        "x": 109.4,
+        "hottest_cyl": 4,
+        "margin_f": 44.0,
+        "rank_order": [
+          4,
+          1,
+          3,
+          2
+        ]
+      },
+      {
+        "flight_id": "f255e90f0cacaac6",
+        "date": "2026-09-02",
+        "x": 111.9,
+        "hottest_cyl": 4,
+        "margin_f": 39.5,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "flight_id": "b0d9ab627f8732c7",
+        "date": "2026-09-25",
+        "x": 112.5,
+        "hottest_cyl": 4,
+        "margin_f": 40.6,
+        "rank_order": [
+          4,
+          1,
+          2,
+          3
+        ]
+      }
+    ]
   }
 }

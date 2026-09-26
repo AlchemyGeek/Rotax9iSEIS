@@ -5,13 +5,17 @@ import { NavShell } from "../components/NavShell";
 import { EChartBase } from "../components/EChartBase";
 import { fleetAnalysis as fixtureFleet, flightAnalysis as fixtureFlight } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
+import { CylinderBalance } from "../components/CylinderBalance";
+import { cylinderFocusFor, hasCylinderBalance } from "../lib/cylinders";
 import { colors, fontMono, fontSans } from "../theme/colors";
 import type { FleetAnalysis } from "../types/contract";
 
 const client = getEngineClient();
 
 const GROUPS: { label: string; metrics: string[] }[] = [
-  { label: "EGT", metrics: ["egt_spread", "egt4_elevation"] },
+  // cylinder_balance is a composite view over egt1..4_deviation (Spec 08 §7),
+  // not a fleet metric of its own; egt4_elevation is its deprecated predecessor.
+  { label: "EGT", metrics: ["egt_spread", "cylinder_balance"] },
   { label: "FUEL", metrics: ["cruise_efficiency", "cruise_fuel_flow"] },
   { label: "THERMAL", metrics: ["oil_temp_peak", "coolant_temp_peak", "oil_coolant_ratio", "climb_thermal_rate"] },
   { label: "BOOST", metrics: ["overboost_time"] },
@@ -79,7 +83,11 @@ export function Trends() {
     };
   }, []);
 
-  const metric = fleet.metrics[selected];
+  // egt{n}_deviation / egt4_elevation links (insight evidence, old URLs)
+  // land on the cylinder balance view, focused on that cylinder.
+  const cylFocusParam = cylinderFocusFor(selected);
+  const showCylinderBalance = cylFocusParam !== undefined && hasCylinderBalance(fleet);
+  const metric = showCylinderBalance ? undefined : fleet.metrics[selected];
 
   // Only the x-axis (engine hours) is wheel/pinch-zoomable. An
   // independent y-zoom, anchored wherever the cursor happens to be
@@ -309,8 +317,10 @@ export function Trends() {
               {g.label}
             </div>
             {g.metrics
-              .filter((id) => fleet.metrics[id])
-              .map((id) => (
+              .filter((id) => (id === "cylinder_balance" ? hasCylinderBalance(fleet) : fleet.metrics[id]))
+              .map((id) => {
+                const active = id === selected || (id === "cylinder_balance" && showCylinderBalance);
+                return (
                 <div
                   key={id}
                   onClick={() => setParams({ metric: id })}
@@ -319,21 +329,35 @@ export function Trends() {
                     borderRadius: 8,
                     cursor: "pointer",
                     marginBottom: 2,
-                    background: id === selected ? "var(--accent-15)" : "transparent",
-                    color: id === selected ? "var(--accent)" : "var(--text-secondary)",
+                    background: active ? "var(--accent-15)" : "transparent",
+                    color: active ? "var(--accent)" : "var(--text-secondary)",
                     fontSize: 13,
-                    fontWeight: id === selected ? 600 : 400,
+                    fontWeight: active ? 600 : 400,
                   }}
                 >
                   {labelFor(id)}
                 </div>
-              ))}
+                );
+              })}
           </div>
         ))}
       </div>
 
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px" }}>
-        {!metric ? (
+        {showCylinderBalance ? (
+          <CylinderBalance
+            fleet={fleet}
+            engineId={engineId}
+            focusCyl={cylFocusParam ?? null}
+            onFocus={(cyl) => {
+              const next: Record<string, string> = { metric: cyl == null ? "cylinder_balance" : `egt${cyl}_deviation` };
+              if (highlightFlight) next.flight = highlightFlight;
+              setParams(next);
+            }}
+            highlightFlight={highlightFlight}
+            onOpenFlight={(id) => navigate(`/flights/${id}`)}
+          />
+        ) : !metric ? (
           <div style={{ color: "var(--text-tertiary)" }}>No fleet data for this metric.</div>
         ) : (
           <>

@@ -129,7 +129,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "value": { "type": ["number", "boolean", "string", "null"] },
+        "value": {
+          "type": ["number", "boolean", "string", "null", "array"],
+          "items": { "type": "integer" },
+          "description": "Arrays only for list-valued metrics, e.g. egt_rank_order (cylinder numbers, hottest first; Spec 08 §4)."
+        },
         "unit": { "type": "string" },
         "missing": { "$ref": "#/$defs/missingReason" },
         "window": {

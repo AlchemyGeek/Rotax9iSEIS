@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.11 — for review (no code written)
+**Status:** Draft v0.12 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -21,6 +21,7 @@
 | 0.9 | §8.5: `engine_ecu_inflight` firing condition made explicit — only when the flight has a real `IN_FLIGHT`-classified `EcuRun`, never for ground-context presence alone. A wireframe had this backwards (warning-severity insight built from ground-context data, on a flight with zero real in-flight events); fixture and mockup corrected, this is the spec-level fix so it can't recur. Ground-context ECU presence is Analysis-only on every flight where that's all there is — flagging it per-flight would warn on nearly every flight in the fleet, the opposite of what an insight is for. |
 | 0.10 | §8.4: documented, not designed — `by_band`/`band_kind_by_metric` were typed with no real content; checked the actual repo and `baseline_stratified`/`trend_stratified` already exist, are already wired into `update_fleet`, and are backed by real physical reasoning ("the research paper §9") that was never written into this spec. Added the real `DA_BANDS`/`OAT_BANDS` boundaries, the real per-metric assignment (5 metrics → `oat_band`, 2 → `da_band`, the rest `null`), and the confidence-per-band trade-off, all pulled from the shipped code rather than invented. |
 | 0.11 | §8.4: `outlier_z_threshold` confirmed wired and unified (one resolver, both consumers) during implementation. One thing clarified rather than fixed: `outliers[]` (all-flights baseline) and the `baseline_deviation` insight (leave-one-out, R2) can legitimately disagree in count per metric — always by the same amount R2's own damping evidence predicts. Only the threshold was ever meant to be shared; the two baseline statistics were always meant to differ. Written down explicitly so it isn't mistaken for unfinished unification later. |
+| 0.12 | Spec 08 (cylinder balance) lands: §8.2 EGT registry gains `egt1..4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order` (the first list-valued metric — `MetricValue.value` may now be an integer array); `egt4_elevation_f` stays one minor version as a deprecated alias of `egt4_deviation_f`. §8.4 `FleetAnalysis` gains optional `cylinder_balance` and the four `egtN_deviation` fleet metrics (`oat_band`). §8.5 `cylinder_rank` is wired (it was the one unimplemented topic) and `egt_cyl_deviation` is new; `egt4_elevation` ships disabled. `update_fleet` takes an optional engine config for the profile's `expected_hot_cylinder` prior. |
 
 ---
 
@@ -266,7 +267,7 @@ The **metric registry** replaces the implicit `FlightMetrics` dataclass. Ids are
 |---|---|
 | Header | `date`, `engine_hours`, `duration_min`, `airborne_min`, `max_altitude_ft`, `max_ias_kt`, `fadec_gallons` |
 | Phases | `phase_climb_min`, `phase_cruise_min`, `phase_descent_min` |
-| EGT | `egt_spread_mean_f`, `egt_spread_max_f`, `egt4_elevation_f`, `egt_rank_stable` |
+| EGT | `egt_spread_mean_f`, `egt_spread_max_f`, `egt1_deviation_f`…`egt4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order`, `egt_rank_stable`, `egt4_elevation_f` (deprecated alias of `egt4_deviation_f`; Spec 08) |
 | Fuel | `cruise_nmpg`, `cruise_fuel_flow_gph` |
 | Thermal | `oil_temp_max_f`, `oil_temp_below_optimal_pct`, `coolant_temp_max_f`, `oil_coolant_ratio`, `climb_oil_rise_f_per_min`, `climb_coolant_rise_f_per_min`, `climb_vs_bucket_dominant` |
 | Boost | `overboost_total_s`, `overboost_max_block_s` |
@@ -310,7 +311,8 @@ interface Model    { id: "takeoff_map"; kind: "linear_regression"; features: str
                      confidence: Baseline["confidence"]; capture: string }  // capture: e.g. "RPM>=5500 during TAKEOFF_ROLL"
 interface FleetAnalysis { fleet_key: string; flight_ids: string[]; excluded: {flight_id:string; reason:string}[];
                           metrics: Record<string, MetricFleet>; models: Model[];
-                          quality: Diagnostic[]; provenance: Provenance }
+                          quality: Diagnostic[]; provenance: Provenance;
+                          cylinder_balance?: CylinderBalance }  // Spec 08 §5; absent in pre-Spec-08 results
 ```
 
 `confidence.level` is a **structured enum**; the human sentence ("MODERATE (n=15 …)") is a renderer concern. The `points` array replaces the `raw` blocks in `baselines.json` and is what the trend charts draw.
@@ -332,7 +334,7 @@ Real per-metric assignment (this is `band_kind_by_metric`'s actual populated con
 | Metric | `band_kind` | Metric | `band_kind` |
 |---|---|---|---|
 | `egt_spread_mean_f` | `oat_band` | `cruise_nmpg` (cruise efficiency) | `da_band` |
-| `egt4_elevation_f` | `oat_band` | `cruise_fuel_flow_gph` | `da_band` |
+| `egt1..4_deviation_f` (and deprecated `egt4_elevation_f`) | `oat_band` | `cruise_fuel_flow_gph` | `da_band` |
 | `oil_temp_max_f` | `oat_band` | `overboost_total_s` | `null` — no physical reason to stratify a boost event by weather |
 | `coolant_temp_max_f` | `oat_band` | `climb_oil_rise_f_per_min` | `null` |
 | `oil_coolant_ratio` | `oat_band` | `cruise_da_ft`, `takeoff_map_inhg` | `null` — these describe the condition itself |
@@ -369,7 +371,7 @@ Evidence from the review (23 real flights in `fleet_metrics.csv`, |z| ≥ 2.0): 
 
 ```ts
 interface TopicResult {
-  topic_id: string;               // rule id: egt_spread, egt4_elevation, cylinder_rank, oil_temp_peak,
+  topic_id: string;               // rule id: egt_spread, egt_cyl_deviation, cylinder_rank (Spec 08), oil_temp_peak,
                                   // coolant_temp_peak, oil_coolant_ratio, overboost_time, cruise_efficiency,
                                   // cruise_fuel_flow, map_at_takeoff, engine_ecu_inflight, flight_phase_mix,
                                   // limit_exceedances, climb_thermal_rate

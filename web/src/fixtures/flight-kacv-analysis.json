@@ -102,6 +102,44 @@
       "value": 75.0,
       "unit": "\u00b0F"
     },
+    "egt1_deviation_f": {
+      "id": "egt1_deviation_f",
+      "value": -14.5,
+      "unit": "\u00b0F"
+    },
+    "egt2_deviation_f": {
+      "id": "egt2_deviation_f",
+      "value": -15.4,
+      "unit": "\u00b0F"
+    },
+    "egt3_deviation_f": {
+      "id": "egt3_deviation_f",
+      "value": -11.7,
+      "unit": "\u00b0F"
+    },
+    "egt4_deviation_f": {
+      "id": "egt4_deviation_f",
+      "value": 41.6,
+      "unit": "\u00b0F"
+    },
+    "egt_hottest_cyl": {
+      "id": "egt_hottest_cyl",
+      "value": 4
+    },
+    "egt_hottest_margin_f": {
+      "id": "egt_hottest_margin_f",
+      "value": 40.0,
+      "unit": "\u00b0F"
+    },
+    "egt_rank_order": {
+      "id": "egt_rank_order",
+      "value": [
+        4,
+        3,
+        1,
+        2
+      ]
+    },
     "egt4_elevation_f": {
       "id": "egt4_elevation_f",
       "value": 41.6,

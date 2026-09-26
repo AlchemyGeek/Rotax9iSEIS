@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slingology-eis"
-version = "0.13.0"
+version = "0.14.0"
 description = "Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines"
 readme = "README.md"
 requires-python = ">=3.10"

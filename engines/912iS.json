@@ -10,6 +10,8 @@
   "fadec": true,
   "turbocharged": true,
   "cylinders": 4,
+  "_expected_hot_cylinder_note": "Spec 08 §3: prior for the usual hottest cylinder until an aircraft's own is learned; a display hint, never a limit. No turbo, so no expected pattern.",
+  "expected_hot_cylinder": null,
   "rated_power_kw": 73,
   "rated_power_hp": 100,
   "rated_rpm": 5800,

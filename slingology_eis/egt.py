@@ -3,8 +3,8 @@ egt.py — EGT health analytics for the Rotax 916iS.
 
 Key metrics:
   - EGT spread (Split) vs OM limits
-  - Per-cylinder rank consistency
-  - EGT4 elevation pattern
+  - Per-cylinder balance (each cylinder vs. the mean of the others)
+  - Hottest cylinder, its margin over the next, and rank consistency
   - Trend across engine hours
 
 All temperature limits from OM-916 i/C24, Chapter 2.1.
@@ -27,6 +27,19 @@ EGT_MAX_F  = 1742.0   # 950°C — absolute per-cylinder max (OM 2.1)
 SPREAD_HI_FLOW_F = 392.0  # 200°C — limit when fuel flow > 3 L/hr (OM 2.1)
 SPREAD_LO_FLOW_F = 932.0  # 500°C — limit when fuel flow < 3 L/hr (OM 2.1)
 LO_FLOW_GPH = 0.793    # 3 L/hr in gal/hr
+
+# Spec 08 §9. Below this hottest-vs-next gap the "hottest cylinder" is
+# treated as ambiguous — two cylinders within a few °F trade places on
+# noise alone.
+MARGIN_MIN_F = 15.0
+# Spec 08 §4: rank_stable means the modal hottest cylinder was hottest in
+# at least this share of cruise samples.
+RANK_STABLE_SHARE = 0.8
+
+
+def cyl_number(col: str) -> int:
+    """'egt3_f' -> 3."""
+    return int(col.replace("egt", "").replace("_f", ""))
 
 
 def _cruise_mask(df: pd.DataFrame) -> pd.Series:
@@ -61,9 +74,13 @@ def egt_health(
         spread_max_f         : max EGT spread during cruise
         spread_hi_limit_f    : applicable spread limit (392°F at normal flow)
         spread_pct_of_limit  : spread_mean as % of limit (>80% = approaching limit)
-        egt4_elevation_f     : mean EGT4 − mean of EGT1–3 (expect positive for 916iS)
-        rank_order           : most common cylinder rank order (hottest first)
-        rank_stable          : True if the hottest cylinder is consistent
+        egt{n}_deviation_f   : mean EGTn − mean of the other cylinders, per cylinder
+        egt4_elevation_f     : deprecated alias of egt4_deviation_f (Spec 08 §4)
+        hottest_cyl          : cylinder number with the highest cruise-mean EGT
+        hottest_margin_f     : cruise-mean EGT of hottest − second hottest
+        rank_order           : EGT column names by cruise mean, hottest first
+        rank_stable          : True if the modal hottest cylinder was hottest in
+                               ≥ RANK_STABLE_SHARE of cruise samples
         limit_exceedances    : list of brief strings describing any limit hits
     """
     avail = [c for c in EGT_COLS if c in df.columns and not df[c].isna().all()]
@@ -121,24 +138,29 @@ def egt_health(
                 f"EGT spread exceeded limit {limit_f:.0f}°F: max={spread.max():.0f}°F"
             )
 
-    # ── EGT4 elevation (expected pattern for 916iS) ───────────────────────────
-    if "egt4_f" in avail and len(avail) > 1:
-        others  = [c for c in avail if c != "egt4_f"]
-        mean4   = cruise["egt4_f"].mean()
-        mean_rest = cruise[others].stack().mean()
-        result["egt4_elevation_f"] = round(float(mean4 - mean_rest), 1)
+    # ── Per-cylinder balance (Spec 08 §4) ─────────────────────────────────────
+    # Each cylinder's cruise mean vs. the pooled mean of the others — no
+    # cylinder is assumed to be the hot one. Pooled over all cruise rows
+    # (not the row-aligned egt_data) so egt4_deviation_f stays identical to
+    # the egt4_elevation_f it replaces.
+    if len(avail) > 1:
+        for col in avail:
+            others = [c for c in avail if c != col]
+            dev = cruise[col].mean() - cruise[others].stack().mean()
+            if not pd.isna(dev):
+                result[f"egt{cyl_number(col)}_deviation_f"] = round(float(dev), 1)
+        if "egt4_deviation_f" in result:
+            result["egt4_elevation_f"] = result["egt4_deviation_f"]
 
-    # ── Cylinder rank order (most common hottest→coldest ordering) ────────────
-    if len(avail) >= 2:
-        ranks  = egt_data[avail].rank(axis=1, ascending=False)
-        # Most common rank for each cylinder
-        hottest_col = egt_data[avail].idxmax(axis=1).mode()
-        result["rank_order"] = (
-            egt_data[avail].mean()
-            .sort_values(ascending=False)
-            .index.tolist()
-        )
-        result["rank_stable"] = len(hottest_col) == 1  # True if one cylinder dominates
+    # ── Hottest cylinder and rank order ───────────────────────────────────────
+    if len(avail) >= 2 and len(egt_data) > 0:
+        means = egt_data[avail].mean().sort_values(ascending=False)
+        result["rank_order"] = means.index.tolist()
+        result["hottest_cyl"] = cyl_number(means.index[0])
+        result["hottest_margin_f"] = round(float(means.iloc[0] - means.iloc[1]), 1)
+        per_sample_hottest = egt_data[avail].idxmax(axis=1)
+        modal_share = per_sample_hottest.value_counts(normalize=True).iloc[0]
+        result["rank_stable"] = bool(modal_share >= RANK_STABLE_SHARE)
 
     return result
 
@@ -169,6 +191,8 @@ def egt_trend(
             "spread_max_f":    h.get("spread_max_f"),
             "spread_pct_limit":h.get("spread_pct_of_limit"),
             "egt4_elevation_f":h.get("egt4_elevation_f"),
+            "hottest_cyl":     h.get("hottest_cyl"),
+            "hottest_margin_f":h.get("hottest_margin_f"),
             "rank_stable":     h.get("rank_stable"),
             "exceedances":     len(h.get("limit_exceedances", [])),
         }
@@ -207,13 +231,18 @@ def egt_report(df: pd.DataFrame) -> str:
                      f"limit {h['spread_hi_limit_f']:.0f}°F  "
                      f"({pct:.0f}% of limit) {flag}")
 
-    if "egt4_elevation_f" in h:
-        elev = h["egt4_elevation_f"]
-        note = "(typical for 916iS — turbo exhaust proximity)" if elev > 0 else ""
-        lines.append(f"  EGT4 elevation vs EGT1–3: {elev:+.0f}°F {note}")
+    devs = [(n, h[f"egt{n}_deviation_f"]) for n in range(1, 5) if f"egt{n}_deviation_f" in h]
+    if devs:
+        lines.append("  Cylinder balance vs. mean of the others: "
+                     + "  ".join(f"Cyl {n} {d:+.0f}°F" for n, d in devs))
+
+    if "hottest_cyl" in h:
+        ambiguous = f" — ambiguous, below the {MARGIN_MIN_F:.0f}°F margin" if h["hottest_margin_f"] < MARGIN_MIN_F else ""
+        lines.append(f"  Hottest: Cyl {h['hottest_cyl']} "
+                     f"(+{h['hottest_margin_f']:.0f}°F over next{ambiguous})")
 
     if "rank_order" in h:
-        order = " > ".join(c.replace("egt","").replace("_f","") for c in h["rank_order"])
+        order = " > ".join(str(cyl_number(c)) for c in h["rank_order"])
         stable = "stable" if h.get("rank_stable") else "variable"
         lines.append(f"  Cylinder heat rank (hottest→coldest): {order} ({stable})")
 
