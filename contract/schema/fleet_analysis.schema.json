@@ -58,6 +58,19 @@
         "confidence": { "$ref": "#/$defs/confidence" }
       }
     },
+    "bandStats": {
+      "type": "object",
+      "required": ["n", "mean", "std", "min", "max", "confidence"],
+      "properties": {
+        "n": { "type": "integer" },
+        "mean": { "type": ["number", "null"] },
+        "std": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "trend": { "$ref": "#/$defs/trend" }
+      }
+    },
     "metricFleet": {
       "type": "object",
       "required": ["metric_id", "baseline", "trend", "points", "outliers"],
@@ -70,7 +83,7 @@
           "required": ["band_kind", "bands"],
           "properties": {
             "band_kind": { "type": "string", "enum": ["oat_band", "da_band"] },
-            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseline" } }
+            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/bandStats" } }
           }
         },
         "points": {

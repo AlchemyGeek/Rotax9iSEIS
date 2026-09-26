@@ -1,0 +1,100 @@
+/* Design tokens — sourced from design/wireframes/*.dc.html (Spec 05 §4).
+   The dark/teal/IBM-Plex look is a placeholder pending real branding
+   (Spec 05 §3): tokens, not literals, so restyling later is a swap here. */
+:root {
+  --bg: #0f1214;
+  --panel: #171b1e;
+  --panel-control: #20252a;
+  --border: #2a3136;
+  --border-subtle: #1f2427;
+
+  --text-primary: #e8eaed;
+  --text-secondary: #c9d0d6;
+  --text-tertiary: #aeb7bf;
+
+  --accent: #4fc3b0;
+  --accent-hover: #6dd4c3;
+  --accent-15: rgba(79, 195, 176, 0.15);
+  --accent-10: rgba(79, 195, 176, 0.1);
+  --accent-06: rgba(79, 195, 176, 0.06);
+  --success: #3ddc97;
+
+  --severity-limit: #e5484d;
+  --severity-warning: #f5a524;
+  --severity-watch: #fde047; /* Spec 03 v0.3 §5.2 — was #eab308, too close to warning's #f5a524 */
+  --severity-info: #64748b;
+  --severity-info-text: #93a0ad;
+
+  --chart-rpm: #4fc3b0;
+  --chart-ias: #8b7fe8;
+  --chart-oil-temp: #e5484d;
+  --chart-egt-spread: #eab308;
+
+  --phase-ground: #383f44;
+  --phase-engine-start: #f5a524;
+  --phase-airborne: #3b6ea5;
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+button {
+  font-family: inherit;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}

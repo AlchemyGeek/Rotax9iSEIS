@@ -33,6 +33,7 @@ DIAGNOSTIC_CATALOG = (
     "ENGINE_PLACEHOLDER_CONFIG",
     "ENGINE_CUSTOM_OVERRIDE",
     "RULES_SCHEMA_ERROR",
+    "PRESET_INVALID",
 )
 
 Severity = str    # "info" | "warn" | "error"
