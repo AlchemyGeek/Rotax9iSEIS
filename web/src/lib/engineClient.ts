@@ -79,10 +79,14 @@ export interface EngineClient {
   deleteAnnotation(id: string): Promise<{ deleted: boolean }>;
 
   // Spec 07 §4/§6 — the channel registry (single source of truth, D4) and
-  // chart presets (shipped + user, D1).
+  // chart presets (shipped + user, D1). saveUserPreset with an id edits
+  // that user preset in place (§6.6 rename); duplicating a shipped
+  // preset is the same call with no id, seeded from its channels.
   getChannelRegistry(): Promise<ChannelRegistry>;
   getChartPresets(): Promise<ChartPresetsResult>;
-  saveUserPreset(args: { label: string; channels: string[]; description?: string }): Promise<ChartPreset>;
+  saveUserPreset(args: { id?: string; label: string; channels: string[]; description?: string }): Promise<ChartPreset>;
+  deleteUserPreset(id: string): Promise<{ deleted: boolean }>;
+  reorderUserPresets(order: string[]): Promise<{ presets: ChartPreset[] }>;
 
   // Spec 03 §5.1 Flights table + Spec 02 §6.3 FleetSelection
   listFlightsWithStatus(): Promise<{ rows: FlightTableRow[] }>;
@@ -238,8 +242,16 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<ChartPresetsResult>("get_chart_presets", {});
   }
 
-  saveUserPreset(args: { label: string; channels: string[]; description?: string }) {
-    return this.rpc<ChartPreset>("save_user_preset", { label: args.label, channels: args.channels, description: args.description });
+  saveUserPreset(args: { id?: string; label: string; channels: string[]; description?: string }) {
+    return this.rpc<ChartPreset>("save_user_preset", { id: args.id, label: args.label, channels: args.channels, description: args.description });
+  }
+
+  deleteUserPreset(id: string) {
+    return this.rpc<{ deleted: boolean }>("delete_user_preset", { id });
+  }
+
+  reorderUserPresets(order: string[]) {
+    return this.rpc<{ presets: ChartPreset[] }>("reorder_user_presets", { order });
   }
 
   listFlightsWithStatus() {

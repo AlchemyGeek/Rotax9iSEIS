@@ -7,7 +7,7 @@ import {
   workspaceManifest as fixtureManifest,
   workspaceSettings as fixtureWorkspaceSettings,
 } from "../lib/fixtures";
-import type { AppSettings, WorkspaceManifest, WorkspaceSettings } from "../types/contract";
+import type { AppSettings, ChartPreset, WorkspaceManifest, WorkspaceSettings } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -35,11 +35,22 @@ export function Settings() {
   const [exportAnonymize, setExportAnonymize] = useState(false);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
 
+  // Spec 07 §6.6 — managing user chart presets lives here, not on the
+  // Flight view; shipped presets come along read-only so "Duplicate"
+  // has something to duplicate from.
+  const [shippedPresets, setShippedPresets] = useState<ChartPreset[]>([]);
+  const [userPresets, setUserPresets] = useState<ChartPreset[]>([]);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [presetDraft, setPresetDraft] = useState("");
+  const [presetError, setPresetError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [app, active] = await Promise.all([client.getAppSettings(), client.getActiveWorkspace()]);
+        const [app, active, chartPresets] = await Promise.all([
+          client.getAppSettings(), client.getActiveWorkspace(), client.getChartPresets(),
+        ]);
         if (cancelled) return;
         setAppSettings(app);
         if (active.active && active.manifest && active.settings) {
@@ -48,12 +59,17 @@ export function Settings() {
         } else {
           setManifest(LEGACY_MANIFEST);
         }
+        const userIds = new Set(app.chart_presets.map((p) => p.id));
+        setShippedPresets(chartPresets.presets.filter((p) => !userIds.has(p.id)));
+        setUserPresets(chartPresets.presets.filter((p) => userIds.has(p.id)));
         setUsingFixture(false);
       } catch {
         if (!cancelled) {
           setAppSettings(fixtureAppSettings);
           setWorkspaceSettings(fixtureWorkspaceSettings);
           setManifest(fixtureManifest);
+          setShippedPresets([]);
+          setUserPresets([]);
           setUsingFixture(true);
         }
       } finally {
@@ -65,6 +81,67 @@ export function Settings() {
       cancelled = true;
     };
   }, []);
+
+  async function refreshPresets() {
+    if (usingFixture) return;
+    try {
+      const [app, chartPresets] = await Promise.all([client.getAppSettings(), client.getChartPresets()]);
+      setAppSettings(app);
+      const userIds = new Set(app.chart_presets.map((p) => p.id));
+      setShippedPresets(chartPresets.presets.filter((p) => !userIds.has(p.id)));
+      setUserPresets(chartPresets.presets.filter((p) => userIds.has(p.id)));
+    } catch {
+      // leave whatever was already loaded
+    }
+  }
+
+  function startRename(preset: ChartPreset) {
+    setEditingPresetId(preset.id);
+    setPresetDraft(preset.label);
+    setPresetError(null);
+  }
+
+  async function confirmRename(preset: ChartPreset) {
+    if (!presetDraft.trim()) return;
+    try {
+      await client.saveUserPreset({ id: preset.id, label: presetDraft.trim(), channels: preset.channels, description: preset.description });
+      setEditingPresetId(null);
+      await refreshPresets();
+    } catch (e) {
+      setPresetError(e instanceof Error ? e.message : "Couldn't save that name");
+    }
+  }
+
+  async function deletePreset(id: string) {
+    try {
+      await client.deleteUserPreset(id);
+      await refreshPresets();
+    } catch {
+      // leave the list as-is — the delete just didn't reach the server
+    }
+  }
+
+  async function duplicatePreset(preset: ChartPreset) {
+    try {
+      await client.saveUserPreset({ label: `${preset.label} copy`, channels: preset.channels, description: preset.description });
+      await refreshPresets();
+    } catch {
+      // leave the list as-is
+    }
+  }
+
+  async function movePreset(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= userPresets.length) return;
+    const reordered = [...userPresets];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setUserPresets(reordered); // optimistic — reorder feels instant, not round-trip-gated
+    try {
+      await client.reorderUserPresets(reordered.map((p) => p.id));
+    } catch {
+      await refreshPresets(); // couldn't persist — fall back to whatever the server actually has
+    }
+  }
 
   async function updateAppSettings(patch: Partial<AppSettings>) {
     const next = { ...appSettings, ...patch };
@@ -160,6 +237,90 @@ export function Settings() {
               />
             </div>
           </div>
+        </div>
+
+        <div style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Chart presets</div>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 14 }}>
+            One set for the whole app, shared across workspaces (Spec 07 §6.1). Create a new preset from the Flight view's "Save as preset…" — this is where you rename, reorder, delete, or duplicate a shipped one afterward.
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", marginBottom: 8 }}>
+            SHIPPED
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+            {shippedPresets.map((p) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                <div>
+                  <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{p.label}</span>
+                  <span style={{ color: "var(--text-tertiary)", marginLeft: 8 }}>{p.channels.length} channel{p.channels.length === 1 ? "" : "s"}</span>
+                </div>
+                <button
+                  onClick={() => duplicatePreset(p)}
+                  disabled={usingFixture}
+                  style={{ padding: "3px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11, cursor: usingFixture ? "default" : "pointer", opacity: usingFixture ? 0.5 : 1 }}
+                >
+                  Duplicate
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", marginBottom: 8 }}>
+            YOURS
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {userPresets.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "1px solid var(--border-subtle)" }}>
+                {editingPresetId === p.id ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexGrow: 1 }}>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={presetDraft}
+                      onChange={(e) => setPresetDraft(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && confirmRename(p)}
+                      style={{ flexGrow: 1, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text-primary)", fontSize: 12 }}
+                    />
+                    <button
+                      onClick={() => confirmRename(p)}
+                      disabled={!presetDraft.trim()}
+                      style={{ padding: "3px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: presetDraft.trim() ? "pointer" : "default" }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => { setEditingPresetId(null); setPresetError(null); }}
+                      style={{ padding: "3px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{p.label}</span>
+                      <span style={{ color: "var(--text-tertiary)", marginLeft: 8 }}>{p.channels.length} channel{p.channels.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button onClick={() => movePreset(i, -1)} disabled={i === 0} style={{ background: "none", border: "none", color: i === 0 ? "var(--text-tertiary)" : "var(--text-secondary)", cursor: i === 0 ? "default" : "pointer", fontSize: 12, opacity: i === 0 ? 0.4 : 1 }} title="Move up">↑</button>
+                      <button onClick={() => movePreset(i, 1)} disabled={i === userPresets.length - 1} style={{ background: "none", border: "none", color: i === userPresets.length - 1 ? "var(--text-tertiary)" : "var(--text-secondary)", cursor: i === userPresets.length - 1 ? "default" : "pointer", fontSize: 12, opacity: i === userPresets.length - 1 ? 0.4 : 1 }} title="Move down">↓</button>
+                      <a href="#" onClick={(e) => { e.preventDefault(); startRename(p); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Rename</a>
+                      <a href="#" onClick={(e) => { e.preventDefault(); deletePreset(p.id); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Delete</a>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {userPresets.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "6px 0" }}>
+                No presets of your own yet — save one from the Flight view, or duplicate a shipped preset above.
+              </div>
+            )}
+          </div>
+          {presetError && (
+            <div style={{ fontSize: 11, color: "var(--severity-limit)", marginTop: 8 }}>{presetError}</div>
+          )}
         </div>
 
         <div style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px" }}>

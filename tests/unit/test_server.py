@@ -153,6 +153,89 @@ def test_save_user_preset_rejects_invalid_channels(registry_server):
     assert bad["error"]["code"] == "BAD_PARAMS"
 
 
+def test_save_user_preset_with_id_renames_in_place(registry_server):
+    created = rpc(registry_server, "save_user_preset", {"label": "Climb", "channels": ["rpm", "vs_fpm"]})
+    pid = created["result"]["id"]
+
+    renamed = rpc(registry_server, "save_user_preset", {
+        "id": pid, "label": "Climb (renamed)", "channels": ["rpm", "vs_fpm", "oil_temp_f"],
+    })
+    assert renamed["ok"], renamed
+    assert renamed["result"]["id"] == pid  # same id, not a second preset
+    assert renamed["result"]["label"] == "Climb (renamed)"
+    assert renamed["result"]["channels"] == ["rpm", "vs_fpm", "oil_temp_f"]
+
+    got = rpc(registry_server, "get_chart_presets", {})
+    user_presets = [p for p in got["result"]["presets"] if p["id"] == pid]
+    assert len(user_presets) == 1
+    assert user_presets[0]["label"] == "Climb (renamed)"
+
+
+def test_duplicate_shipped_preset_creates_independent_user_preset(registry_server):
+    shipped = rpc(registry_server, "get_chart_presets", {})
+    cylinders = next(p for p in shipped["result"]["presets"] if p["id"] == "cylinders")
+
+    duplicated = rpc(registry_server, "save_user_preset", {
+        "label": f"{cylinders['label']} copy", "channels": cylinders["channels"],
+    })
+    assert duplicated["ok"], duplicated
+    assert duplicated["result"]["id"] != "cylinders"
+    assert duplicated["result"]["id"].startswith("user.")
+    assert duplicated["result"]["channels"] == cylinders["channels"]
+
+    # editing the shipped preset itself is not a thing — only the copy exists as a user preset
+    got = rpc(registry_server, "get_chart_presets", {})
+    ids = {p["id"] for p in got["result"]["presets"]}
+    assert "cylinders" in ids and duplicated["result"]["id"] in ids
+
+
+def test_delete_user_preset(registry_server):
+    created = rpc(registry_server, "save_user_preset", {"label": "Temp", "channels": ["rpm"]})
+    pid = created["result"]["id"]
+
+    deleted = rpc(registry_server, "delete_user_preset", {"id": pid})
+    assert deleted["ok"], deleted
+    assert deleted["result"]["deleted"] is True
+
+    got = rpc(registry_server, "get_chart_presets", {})
+    assert pid not in {p["id"] for p in got["result"]["presets"]}
+
+    deleted_again = rpc(registry_server, "delete_user_preset", {"id": pid})
+    assert deleted_again["result"]["deleted"] is False
+
+
+def test_cannot_delete_a_shipped_preset(registry_server):
+    # delete_user_preset only ever touches AppSettings.chart_presets
+    # (user presets) — a shipped id simply isn't found there.
+    deleted = rpc(registry_server, "delete_user_preset", {"id": "cylinders"})
+    assert deleted["ok"], deleted
+    assert deleted["result"]["deleted"] is False
+    got = rpc(registry_server, "get_chart_presets", {})
+    assert "cylinders" in {p["id"] for p in got["result"]["presets"]}
+
+
+def test_reorder_user_presets(registry_server):
+    a = rpc(registry_server, "save_user_preset", {"label": "A", "channels": ["rpm"]})["result"]
+    b = rpc(registry_server, "save_user_preset", {"label": "B", "channels": ["ias_kt"]})["result"]
+    c = rpc(registry_server, "save_user_preset", {"label": "C", "channels": ["oil_temp_f"]})["result"]
+
+    reordered = rpc(registry_server, "reorder_user_presets", {"order": [c["id"], a["id"], b["id"]]})
+    assert reordered["ok"], reordered
+    assert [p["id"] for p in reordered["result"]["presets"]] == [c["id"], a["id"], b["id"]]
+
+    got = rpc(registry_server, "get_chart_presets", {})
+    user_ids_in_order = [p["id"] for p in got["result"]["presets"] if p["id"] in {a["id"], b["id"], c["id"]}]
+    assert user_ids_in_order == [c["id"], a["id"], b["id"]]
+
+
+def test_reorder_user_presets_rejects_mismatched_set(registry_server):
+    a = rpc(registry_server, "save_user_preset", {"label": "A", "channels": ["rpm"]})["result"]
+
+    bad = rpc(registry_server, "reorder_user_presets", {"order": [a["id"], "user.doesnotexist"]})
+    assert bad["ok"] is False
+    assert bad["error"]["code"] == "BAD_PARAMS"
+
+
 def test_get_default_rules(server):
     d = rpc(server, "get_default_rules", {})
     assert d["ok"]
