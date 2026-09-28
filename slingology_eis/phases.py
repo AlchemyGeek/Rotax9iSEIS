@@ -81,22 +81,51 @@ def _estimate_field_elevation(df: pd.DataFrame) -> float:
 
     ias = df["ias_kt"] if "ias_kt" in df.columns else pd.Series(0, index=df.index)
 
+    # Restrict the search to before the flight's first climb-out. Without
+    # this, a short departure taxi (few matching "on the ground" rows)
+    # lets .iloc[:60] below reach past it into a later ground segment —
+    # taxi-in after landing, a fuel stop — which can be at a completely
+    # different field elevation and silently dominates the median,
+    # corrupting AGL for the whole flight (a real case: 14 genuine
+    # departure-taxi rows at ~630 ft MSL plus 46 landing/taxi-in rows at
+    # ~137 ft MSL from the destination produced a 137 ft "field
+    # elevation" — AGL never cleared the 50 ft takeoff-roll gate again).
+    # 50 kt mirrors the TAKEOFF_ROLL -> CLIMB transition's own "clearly
+    # airborne" threshold below, so this and the main state machine agree
+    # on what counts as having left the ground.
+    airborne = np.flatnonzero(ias.fillna(0).to_numpy() > 50)
+    departure_window = df.iloc[:airborne[0]] if len(airborne) else df
+    departure_ias = ias.iloc[:airborne[0]] if len(airborne) else ias
+
     # Widen progressively if the strict ground filter doesn't yield enough
     # valid (non-NaN) altitude samples — e.g. a brief sensor dropout right
     # at engine start can leave the first few "ground" rows all NaN.
+    #
+    # The median is taken over every matching row in the departure
+    # window, not just the first N — a real log (log_20260613_193731_
+    # KAWO.csv) had its baro altimeter read a physically-impossible
+    # ~-330 ft for the first ~170 seconds after power-on before settling
+    # on the real ~131 ft field elevation; capping the window to the
+    # first 60 matching rows caught only the glitch (it alone was over
+    # 60 rows long) and never reached the ~150 stable rows that followed
+    # in the same departure window. The full-window median instead lets
+    # the majority (the real, stable reading) win outright.
     for rpm_ceiling, ias_ceiling, min_valid in [
         (2500, 5,  10),    # strict: clearly stationary, engine idling
         (3000, 15, 10),    # looser: still clearly on the ground
         (4500, 30, 5),     # taxi-speed fallback
     ]:
-        candidate = df[
-            (df["rpm"].fillna(9999) < rpm_ceiling) &
-            (ias.fillna(99) < ias_ceiling)
+        candidate = departure_window[
+            (departure_window["rpm"].fillna(9999) < rpm_ceiling) &
+            (departure_ias.fillna(99) < ias_ceiling)
         ]["baro_alt_ft"].dropna()
         if len(candidate) >= min_valid:
-            return float(candidate.iloc[:60].median())
+            return float(candidate.median())
 
-    # Last resort: first non-NaN altitude anywhere in the log
+    # Last resort: first non-NaN altitude before climb-out, else anywhere in the log
+    first_valid = departure_window["baro_alt_ft"].dropna()
+    if len(first_valid):
+        return float(first_valid.iloc[0])
     first_valid = df["baro_alt_ft"].dropna()
     return float(first_valid.iloc[0]) if len(first_valid) else 0.0
 
@@ -209,7 +238,20 @@ def detect_phases(
                 transition(Phase.SHUTDOWN, i)
 
         elif state == Phase.TAXI:
-            if r > 4500 and v < 35 and a < 50:
+            # v's ceiling is deliberately generous, not a tight "just
+            # starting to roll" gate: a turbocharged Rotax iS can spool
+            # from idle to full power within a single 1 Hz sample, so on
+            # a real flight (log_20260408_141810_KTOA.csv, and the KACV
+            # fixture flight) IAS was already well past a 35 kt ceiling
+            # by the very first row where RPM cleared 4500 — the
+            # transition's own gate never opened, and TAXI never
+            # recovers once missed (unlike every other phase here, which
+            # can at least fall back to SHUTDOWN or WARMUP). AGL < 50 ft
+            # is still what actually distinguishes this from being
+            # airborne; a brief high-power/high-IAS ground event that
+            # isn't a real takeoff (a gusty runup) just falls back out to
+            # TAXI again below, same as before.
+            if r > 4500 and v < 60 and a < 50:
                 transition(Phase.TAKEOFF_ROLL, i)
             elif r < 500:
                 transition(Phase.SHUTDOWN, i)
