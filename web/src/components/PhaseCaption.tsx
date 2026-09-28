@@ -1,5 +1,5 @@
 import type { Phase } from "../types/contract";
-import { clipPhasesToWindow, phaseColor, phaseLabel, PHASE_ORDER } from "../lib/phases";
+import { clipPhasesToWindow, formatDuration, phaseColor, phaseLabel, PHASE_ORDER, totalsByPhase } from "../lib/phases";
 
 interface Props {
   phases: Phase[];
@@ -12,11 +12,12 @@ function captionText(segments: ReturnType<typeof clipPhasesToWindow>, undifferen
   if (segments.length === 0) return "no phase data in view";
   if (segments.length === 1) {
     const seg = segments[0];
-    const durS = Math.round(seg.end_s - seg.start_s);
     const name = undifferentiatedNote && seg.phase === "TAXI" ? undifferentiatedNote : phaseLabel(seg.phase);
-    return `${name} (${durS}s)`;
+    return `${name} (${formatDuration(seg.end_s - seg.start_s)})`;
   }
-  return segments.map((seg) => `${phaseLabel(seg.phase)} (${Math.round(seg.end_s - seg.start_s)}s)`).join(" · ");
+  return totalsByPhase(segments)
+    .map((t) => `${phaseLabel(t.phase)} ${formatDuration(t.totalS)}`)
+    .join(" · ");
 }
 
 // Spec 03 v0.7 §5.2: the standalone colored phase band is gone — it was

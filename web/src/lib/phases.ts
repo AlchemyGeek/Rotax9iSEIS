@@ -71,3 +71,33 @@ export function clipPhasesToWindow(phases: Phase[], windowStart: number, windowE
   }
   return segments;
 }
+
+export interface PhaseTotal {
+  phase: string;
+  totalS: number;
+}
+
+// A flight revisits phases (e.g. climb/cruise/descent repeat every leg of
+// a multi-stop or pattern flight) — summing each phase's segments into one
+// total is far more readable than a chronological list of every individual
+// occurrence, and matches how a pilot actually thinks about a flight's time
+// breakdown ("47 minutes of cruise", not six separate cruise segments).
+export function totalsByPhase(segments: ClippedSegment[]): PhaseTotal[] {
+  const totals = new Map<string, number>();
+  for (const seg of segments) {
+    totals.set(seg.phase, (totals.get(seg.phase) ?? 0) + (seg.end_s - seg.start_s));
+  }
+  return PHASE_ORDER
+    .filter((phase) => totals.has(phase))
+    .map((phase) => ({ phase, totalS: totals.get(phase)! }));
+}
+
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${sec}s`;
+}
