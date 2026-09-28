@@ -224,7 +224,17 @@ def detect_phases(
                 transition(Phase.ENGINE_START, i)
 
         elif state == Phase.ENGINE_START:
-            if r > 1500 and r < 3000 and v < 10:
+            # v's ceiling is deliberately generous, not a tight "still
+            # motionless" gate — several real flights (one over 5 hours
+            # long) have a genuine ground/idle IAS baseline of 10-25 kt
+            # while parked (a breezy ramp, or just this pitot/static
+            # system's noise floor), well above a 10 kt ceiling. Unlike
+            # every other phase here, ENGINE_START has no fallback path
+            # at all if this gate never opens — every flight passes
+            # through it, so this was the single most consequential of
+            # the phase-detection gates being too tight for this fleet's
+            # real sensor behavior.
+            if r > 1500 and r < 3000 and v < 30:
                 transition(Phase.WARMUP, i)
 
         elif state == Phase.WARMUP:

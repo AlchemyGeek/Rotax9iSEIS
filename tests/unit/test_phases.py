@@ -25,6 +25,17 @@ duration, each for a different reason:
    glitch alone was longer than the `.iloc[:60]` cap, so the estimate
    never reached the ~150 stable rows that followed it in the same
    departure window.
+
+A fourth bug, found from a separate report ("flight
+log_20260927_181026_KAWO.csv fails to detect phases"), was more severe
+than any of the above: ENGINE_START -> WARMUP required `IAS < 10` kt,
+but several real aircraft in this fleet have a genuine ground/idle IAS
+baseline of 10-25 kt while parked (wind over the pitot, or just this
+static system's noise floor) that never dips under 10 kt even once.
+Unlike every other phase transition, ENGINE_START has no fallback path
+if this gate is missed — every flight passes through it, so a fleet
+sweep found 7 real flights (one over 5 hours long) stuck classified as
+ENGINE_START for nearly their entire duration.
 """
 import numpy as np
 import pandas as pd
@@ -100,11 +111,32 @@ def test_taxi_to_takeoff_roll_survives_rpm_and_ias_crossing_in_the_same_sample()
     assert "CLIMB" in set(result["phase"])
 
 
+def test_engine_start_to_warmup_survives_a_high_ground_idle_ias_baseline():
+    # IAS never drops below 14 kt on the ground — comfortably above the
+    # old 10 kt ceiling but well under the new 30 kt one — the exact
+    # shape that left several real flights stuck classified as
+    # ENGINE_START for their entire duration.
+    rows = [{"rpm": 0.0, "ias_kt": 14.0, "baro_alt_ft": 100.0, "vs_fpm": 0.0} for _ in range(20)]
+    rows += [{"rpm": 2200.0, "ias_kt": 14.0, "baro_alt_ft": 100.0, "vs_fpm": 0.0} for _ in range(20)]
+    rows += [{"rpm": 1800.0, "ias_kt": 18.0, "baro_alt_ft": 100.0, "vs_fpm": 0.0} for _ in range(60)]
+    df = pd.DataFrame(rows)
+    df["press_alt_ft"] = df["baro_alt_ft"]
+    df["oil_temp_f"] = 180.0
+    df["power_pct"] = np.where(df["rpm"] > 4000, 80.0, 20.0)
+
+    result = detect_phases(df, field_elev_ft=100.0, verbose=False)
+    counts = result["phase"].value_counts()
+    assert counts.get("WARMUP", 0) > 0
+    assert counts.get("TAXI", 0) > 0
+    assert counts.get("ENGINE_START", 0) < len(df) / 2
+
+
 @requires_flight_logs
 @pytest.mark.parametrize("filename", [
     "log_20260927_212613_4S2.csv",       # bug 1: departure/arrival elevation mismatch
     "log_20260408_141810_KTOA.csv",      # bug 2: RPM/IAS crossing in one sample (also the KACV fixture flight's issue)
     "log_20260613_193731_KAWO.csv",      # bug 3: startup sensor glitch
+    "log_20260927_181026_KAWO.csv",      # bug 4: high ground-idle IAS baseline
 ])
 def test_real_flights_affected_by_these_bugs_now_reach_cruise(filename):
     path = LOGS_DIR / filename
