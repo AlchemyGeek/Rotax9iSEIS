@@ -50,6 +50,27 @@ class Phase(str, Enum):
     UNKNOWN      = "UNKNOWN"
 
 
+# Phases where the aircraft is off the ground. A file with no row in any of
+# these is a ground session (Spec: Ground Session Detection) — the engine
+# ran, it may have taxied or even run up to full power, but it never flew.
+# Exported so callers outside this module (loader.py's ground-session check)
+# don't hardcode the same phase list a second time.
+#
+# Deliberately excludes TAKEOFF_ROLL, unlike the spec's first draft — it's
+# still a ground-roll phase by definition, and unlike CLIMB/CRUISE/DESCENT/
+# APPROACH/LANDING_ROLL (all reachable only via TAKEOFF_ROLL -> CLIMB's real
+# altitude-gain gate, `v>50 and s>200`), TAXI -> TAKEOFF_ROLL fires on RPM
+# alone with a documented fallback straight back to TAXI if the aircraft
+# never actually leaves the ground. A real fleet flight (a ground run-up
+# that spiked RPM past 4500 with altitude flat at 158-168 ft the whole
+# time) hit exactly this: 42 rows labeled TAKEOFF_ROLL, zero of them
+# airborne. Including TAKEOFF_ROLL here would have kept that ground
+# session in the flight list.
+AIRBORNE_PHASES = frozenset({
+    Phase.CLIMB, Phase.CRUISE, Phase.DESCENT, Phase.APPROACH, Phase.LANDING_ROLL,
+})
+
+
 # ── Smoothing helper ──────────────────────────────────────────────────────────
 
 def _smooth(series: pd.Series, window: int = 5) -> pd.Series:

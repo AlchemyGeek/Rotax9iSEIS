@@ -42,9 +42,27 @@ import pandas as pd
 import pytest
 
 from slingology_eis.loader import load_log_bytes
-from slingology_eis.phases import _estimate_field_elevation, detect_phases
+from slingology_eis.phases import AIRBORNE_PHASES, Phase, _estimate_field_elevation, detect_phases
 
 from ..conftest import LOGS_DIR, requires_flight_logs
+
+
+def test_airborne_phases_excludes_every_ground_phase():
+    # Ground-session detection (loader.py) trusts this set completely — a
+    # phase wrongly included here would make a ground-only log look like
+    # it flew; one wrongly excluded would make a real flight look grounded.
+    # TAKEOFF_ROLL is deliberately NOT here despite being an airborne-
+    # adjacent name — it's still a ground-roll phase, and TAXI ->
+    # TAKEOFF_ROLL fires on RPM alone with a fallback straight back to
+    # TAXI if the aircraft never actually leaves the ground (see the
+    # comment on AIRBORNE_PHASES for the real fleet flight that hit this).
+    assert AIRBORNE_PHASES == {
+        Phase.CLIMB, Phase.CRUISE, Phase.DESCENT, Phase.APPROACH, Phase.LANDING_ROLL,
+    }
+    ground_phases = {Phase.PRE_START, Phase.ENGINE_START, Phase.WARMUP,
+                      Phase.TAXI, Phase.TAKEOFF_ROLL, Phase.SHUTDOWN, Phase.UNKNOWN}
+    assert AIRBORNE_PHASES.isdisjoint(ground_phases)
+    assert AIRBORNE_PHASES | ground_phases == set(Phase)
 
 
 def _synthetic_flight(departure_ground_rows: int, arrival_ground_rows: int,

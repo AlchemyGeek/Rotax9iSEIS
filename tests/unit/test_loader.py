@@ -1,10 +1,39 @@
 """
-Unit tests for the Stage 1 bytes-based core loader (Spec 01 §11 Stage 1).
+Unit tests for the Stage 1 bytes-based core loader (Spec 01 §11 Stage 1),
+plus load_directory()'s ground-session detection (Spec: Ground Session
+Detection).
 
-Uses fabricated, synthetic log content only — not real flight data — so
-these run without any private local logs.
+Most tests here use fabricated, synthetic log content only — not real
+flight data — so they run without any private local logs. The
+ground-session tests are the exception: they're gated on real logs
+(`requires_flight_logs`) because building a synthetic file that survives
+`detect_phases()`'s full state machine end to end would just re-implement
+tests/unit/test_phases.py's synthetic fixtures for no added coverage —
+what actually needs verifying here is load_directory()'s wiring to
+detect_phases()/AIRBORNE_PHASES, not the state machine itself.
 """
-from slingology_eis.loader import load_log, load_log_bytes
+import shutil
+
+import pytest
+
+from slingology_eis.loader import load_directory, load_log, load_log_bytes
+from slingology_eis.phases import AIRBORNE_PHASES
+
+from ..conftest import LOGS_DIR, requires_flight_logs
+
+# A confirmed ground session (RPM peaks at 2290, IAS at 18.2 — taxi and a
+# partial run-up, never airborne) and a confirmed real flight, both already
+# used elsewhere in the suite (tests/unit/test_phases.py) as known-good
+# fixtures.
+_GROUND_SESSION_LOG = "log_20260825_194740_KAWO.csv"
+_REAL_FLIGHT_LOG = "log_20260408_141810_KTOA.csv"
+
+# A ground run-up that spikes RPM past 4500 (TAXI -> TAKEOFF_ROLL's gate)
+# with altitude flat the whole time (158-168 ft) — found while verifying
+# this fix against the full fleet. Confirms AIRBORNE_PHASES correctly
+# excludes TAKEOFF_ROLL: without that exclusion this file would wrongly
+# survive the ground-session filter.
+_RUNUP_GROUND_SESSION_LOG = "log_20260706_180003_KAWO.csv"
 
 _META = (
     'aircraft_ident="N999XX", product="GDU 460", system_id="123456789", '
@@ -60,3 +89,51 @@ def test_load_log_is_a_thin_wrapper_over_load_log_bytes(tmp_path):
 
     assert df_path.equals(df_bytes)
     assert info_path == info_bytes
+
+
+@requires_flight_logs
+def test_load_directory_skips_confirmed_ground_session(tmp_path):
+    ground_path = LOGS_DIR / _GROUND_SESSION_LOG
+    flight_path = LOGS_DIR / _REAL_FLIGHT_LOG
+    if not ground_path.exists() or not flight_path.exists():
+        pytest.skip("fixture log(s) not present locally")
+    shutil.copy(ground_path, tmp_path)
+    shutil.copy(flight_path, tmp_path)
+
+    flights = load_directory(str(tmp_path), verbose=False)
+
+    kept_names = {df["_source_file"].iloc[0] for df, _info in flights}
+    assert _REAL_FLIGHT_LOG in kept_names
+    assert _GROUND_SESSION_LOG not in kept_names
+    # Every kept DataFrame carries a populated phase column.
+    for df, _info in flights:
+        assert "phase" in df.columns
+        assert df["phase"].notna().all()
+
+
+@requires_flight_logs
+def test_load_directory_keeps_ground_session_when_skip_disabled(tmp_path):
+    ground_path = LOGS_DIR / _GROUND_SESSION_LOG
+    if not ground_path.exists():
+        pytest.skip("fixture log not present locally")
+    shutil.copy(ground_path, tmp_path)
+
+    flights = load_directory(str(tmp_path), skip_ground_sessions=False, verbose=False)
+
+    assert len(flights) == 1
+    df, _info = flights[0]
+    assert "phase" in df.columns
+    # A ground session — no airborne phase anywhere in it.
+    assert not any(p in AIRBORNE_PHASES for p in df["phase"].unique())
+
+
+@requires_flight_logs
+def test_load_directory_skips_ground_runup_that_briefly_enters_takeoff_roll(tmp_path):
+    path = LOGS_DIR / _RUNUP_GROUND_SESSION_LOG
+    if not path.exists():
+        pytest.skip("fixture log not present locally")
+    shutil.copy(path, tmp_path)
+
+    flights = load_directory(str(tmp_path), verbose=False)
+
+    assert flights == []

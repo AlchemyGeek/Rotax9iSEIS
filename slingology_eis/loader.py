@@ -25,6 +25,8 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 
+from .phases import AIRBORNE_PHASES, detect_phases
+
 
 # ── Column renaming: G3X names → short aliases ───────────────────────────────
 
@@ -325,7 +327,6 @@ def load_directory(
     directory: str | Path,
     pattern: str = "*.csv",
     skip_ground_sessions: bool = True,
-    min_airborne_min: float = 3.0,
     verbose: bool = True,
 ) -> list[tuple[pd.DataFrame, AirframeInfo]]:
     """
@@ -341,16 +342,21 @@ def load_directory(
     skip_ground_sessions : bool, default True
         Exclude ground-only sessions (engine run-up, taxi test, avionics
         check) where the aircraft never actually flew. These sessions have
-        near-zero airborne time and no useful flight analytics — including
-        them produces misleading results in every downstream module
-        (false temperature outliers, meaningless phase labels, blank cells
-        across most analytics columns). They also inflate counts and degrade
-        trend quality by adding x-axis points with identical engine-hours.
+        no useful flight analytics — including them produces misleading
+        results in every downstream module (false temperature outliers,
+        meaningless phase labels, blank cells across most analytics
+        columns). They also inflate counts and degrade trend quality by
+        adding x-axis points with identical engine-hours.
 
-        Ground-session detection: a file is excluded if its estimated
-        airborne time (rows with RPM > 3,000 AND IAS > 30kt) is less than
-        min_airborne_min. This is an approximation that doesn't require
-        running the full phase-detection state machine at load time.
+        Ground-session detection (Spec: Ground Session Detection): a file
+        is excluded if and only if `detect_phases()` finds no row in an
+        airborne phase (`phases.AIRBORNE_PHASES` — CLIMB, CRUISE, DESCENT,
+        APPROACH, LANDING_ROLL; deliberately not TAKEOFF_ROLL, which is
+        reachable from a ground run-up alone with no confirmed liftoff —
+        see the comment on AIRBORNE_PHASES). This replaced an earlier
+        RPM/IAS threshold approximation that was a proxy for what the phase
+        detector already answers definitively — same state machine that
+        labels the rest of the flight, not a second, cruder opinion.
 
         Pass skip_ground_sessions=False only if you specifically need to
         examine ground sessions (e.g. for ENGINE ECU powerup behavior
@@ -358,13 +364,12 @@ def load_directory(
         contain all the same POWERUP/LANE_CHECK/SHUTDOWN patterns and are
         sufficient to establish those baselines without the noise).
 
-    min_airborne_min : float, default 3.0
-        Threshold in minutes for the ground-session filter. Files with
-        estimated airborne time below this are excluded when
-        skip_ground_sessions=True.
-
-    Returns a list of (DataFrame, AirframeInfo) tuples,
-    sorted chronologically by the datetime of the first record.
+    Returns a list of (DataFrame, AirframeInfo) tuples, sorted
+    chronologically by the datetime of the first record. Every DataFrame
+    carries a populated `phase` column (`detect_phases()` runs on every
+    file regardless of `skip_ground_sessions`) — downstream callers that
+    already re-run `detect_phases()` on the result get the same answer,
+    just redundantly; nothing breaks either way.
     """
     directory = Path(directory)
 
@@ -400,22 +405,19 @@ def load_directory(
         try:
             df, info = load_log(f)
 
-            # ── Ground-session detection ───────────────────────────────────
-            # Estimate airborne time without running the full phase-detection
-            # state machine: count rows where the engine is running AND the
-            # aircraft is moving at flight speed. This is fast (no VS/altitude
-            # smoothing needed) and sufficient for a binary ground/flight split.
-            if skip_ground_sessions:
-                ias = df["ias_kt"].fillna(0) if "ias_kt" in df.columns else pd.Series(0, index=df.index)
-                rpm = df["rpm"].fillna(0)    if "rpm"    in df.columns else pd.Series(0, index=df.index)
-                airborne_rows = ((rpm > 3000) & (ias > 30)).sum()
-                airborne_min  = airborne_rows / 60.0   # 1Hz logging → rows ≈ seconds
-                if airborne_min < min_airborne_min:
-                    skipped.append(f.name)
-                    if verbose:
-                        print(f"  · {f.name}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
-                              f"ground session ({airborne_min:.1f} min airborne) — skipped")
-                    continue
+            # ── Phase detection ──────────────────────────────────────────────
+            # Runs regardless of skip_ground_sessions so every returned
+            # DataFrame carries a populated 'phase' column (Spec: Ground
+            # Session Detection) — ground-session status is then read
+            # directly off it rather than approximated separately.
+            df = detect_phases(df, verbose=False)
+
+            if skip_ground_sessions and not any(p in AIRBORNE_PHASES for p in df["phase"].unique()):
+                skipped.append(f.name)
+                if verbose:
+                    print(f"  · {f.name}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
+                          f"ground session — skipped")
+                continue
 
             results.append((df, info))
             if verbose:
@@ -442,7 +444,6 @@ def load_directory(
             print(f"⚠ Failed files:")
             for name, err in failed:
                 print(f"    {name}: {err}")
-    return results
     return results
 
 
