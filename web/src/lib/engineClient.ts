@@ -100,6 +100,7 @@ export interface EngineClient {
   listWorkspaces(): Promise<WorkspaceRegistryEntry[]>;
   createWorkspace(name: string, engineModel: string, tailNumber?: string): Promise<WorkspaceManifest>;
   switchWorkspace(workspaceId: string): Promise<ActiveWorkspace>;
+  deleteWorkspace(workspaceId: string): Promise<{ deleted: boolean; workspace_id: string }>;
   getActiveWorkspace(): Promise<ActiveWorkspace>;
   addLogFolder(path: string): Promise<WorkspaceManifest>;
   scanWorkspace(): Promise<ScanResult>;
@@ -288,6 +289,10 @@ export class LocalServerClient implements EngineClient {
 
   switchWorkspace(workspaceId: string) {
     return this.rpc<ActiveWorkspace>("switch_workspace", { workspace_id: workspaceId });
+  }
+
+  deleteWorkspace(workspaceId: string) {
+    return this.rpc<{ deleted: boolean; workspace_id: string }>("delete_workspace", { workspace_id: workspaceId });
   }
 
   getActiveWorkspace() {

@@ -481,6 +481,33 @@ def create_workspace(
     return manifest
 
 
+def delete_workspace(registry_path: Path, workspaces_root: Path, workspace_id: str) -> None:
+    """
+    Permanently remove a workspace: its registry entry and its entire
+    on-disk directory (flights/, fleet/, rules/, manifest, settings,
+    exclusions.json — everything derived from it). There is no undo.
+
+    This function itself doesn't ask for confirmation — that's the
+    caller's job (server.py's op_delete_workspace, and ultimately the
+    UI's "type DELETE to confirm" control). By the time this runs, the
+    decision has already been made.
+    """
+    registry = load_registry(registry_path)
+    if not any(w.id == workspace_id for w in registry.workspaces):
+        raise ValueError(f"no workspace {workspace_id!r}")
+    registry.workspaces = [w for w in registry.workspaces if w.id != workspace_id]
+    save_registry(registry_path, registry)
+
+    app_settings = load_app_settings(registry_path)
+    if app_settings.last_active_workspace_id == workspace_id:
+        app_settings.last_active_workspace_id = None
+        save_app_settings(registry_path, app_settings)
+
+    ws_dir = workspaces_root / workspace_id
+    if ws_dir.exists():
+        shutil.rmtree(ws_dir)
+
+
 def list_workspaces(registry_path: Path) -> list[WorkspaceRegistryEntry]:
     return load_registry(registry_path).workspaces
 

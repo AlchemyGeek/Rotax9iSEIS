@@ -119,6 +119,10 @@ export function Flights() {
   const [removeMessage, setRemoveMessage] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirming, setBulkConfirming] = useState(false);
+  const [deletingWorkspace, setDeletingWorkspace] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -215,6 +219,26 @@ export function Flights() {
       // no active workspace, or server unreachable — nothing to do beyond leaving state as-is
     } finally {
       setRescanning(false);
+    }
+  }
+
+  // Deleting a workspace is permanent (every flight, exclusion, baseline,
+  // and rule override in it) — the typed "DELETE" is the only gate, no
+  // second modal, matching how deliberately blunt the rest of this app's
+  // destructive confirmations are (see bulkConfirming above). A full
+  // reload afterward matches NavShell's own switch/create handlers — no
+  // cross-component store keeps Flights/NavShell/etc. in sync today.
+  async function handleDeleteWorkspace() {
+    if (deleteConfirmText !== "DELETE") return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await client.deleteWorkspace(manifest.id);
+      window.location.hash = "#/flights";
+      window.location.reload();
+    } catch {
+      setDeleteError("Delete failed — the server may be unreachable. Try again.");
+      setDeleteBusy(false);
     }
   }
 
@@ -413,14 +437,24 @@ export function Flights() {
               {summary.otherAircraft > 0 && ` · ${summary.otherAircraft} other aircraft`}
             </div>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={rescanning || !isRegistryActive}
-            title={!isRegistryActive ? "no active workspace with log folders to sync — create/switch to one first" : "finds new/missing/moved files and re-analyzes any flight whose result predates the current engine"}
-            style={{ padding: "7px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: isRegistryActive ? "var(--text-primary)" : "var(--text-tertiary)", fontSize: 12, cursor: rescanning || !isRegistryActive ? "default" : "pointer", flexShrink: 0 }}
-          >
-            {rescanning ? "Syncing…" : "Sync"}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={handleSync}
+              disabled={rescanning || !isRegistryActive}
+              title={!isRegistryActive ? "no active workspace with log folders to sync — create/switch to one first" : "finds new/missing/moved files and re-analyzes any flight whose result predates the current engine"}
+              style={{ padding: "7px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: isRegistryActive ? "var(--text-primary)" : "var(--text-tertiary)", fontSize: 12, cursor: rescanning || !isRegistryActive ? "default" : "pointer", flexShrink: 0 }}
+            >
+              {rescanning ? "Syncing…" : "Sync"}
+            </button>
+            <button
+              onClick={() => { setDeletingWorkspace(true); setDeleteConfirmText(""); setDeleteError(null); }}
+              disabled={!isRegistryActive}
+              title={!isRegistryActive ? "no active workspace to delete" : "permanently delete this workspace and everything in it"}
+              style={{ padding: "7px 14px", borderRadius: 8, background: "transparent", border: "1px solid var(--border)", color: isRegistryActive ? "#e5484d" : "var(--text-tertiary)", fontSize: 12, cursor: isRegistryActive ? "pointer" : "default", flexShrink: 0 }}
+            >
+              Delete workspace
+            </button>
+          </div>
         </div>
 
         {syncMessage && (
@@ -429,6 +463,49 @@ export function Flights() {
             <a href="#" onClick={(e) => { e.preventDefault(); setSyncMessage(null); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
               dismiss
             </a>
+          </div>
+        )}
+
+        {deletingWorkspace && (
+          <div style={{ padding: "14px", borderRadius: 8, background: "var(--panel)", border: "1px solid #e5484d", fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ color: "#e5484d", fontWeight: 600 }}>
+              Delete workspace "{manifest.name}"?
+            </div>
+            <div style={{ color: "var(--text-secondary)" }}>
+              This permanently removes every flight, exclusion, baseline, and rule override in this workspace. This cannot be undone.
+              Your original log files are not touched — this only deletes what SlingologyEIS derived from them, not the source CSVs on disk.
+              Type <span className="mono" style={{ fontWeight: 600 }}>DELETE</span> to confirm.
+            </div>
+            {deleteError && <div style={{ color: "#e5484d" }}>{deleteError}</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                autoFocus
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleDeleteWorkspace()}
+                placeholder="DELETE"
+                className="mono"
+                style={{ fontSize: 12, padding: "6px 10px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 140 }}
+              />
+              <button
+                onClick={handleDeleteWorkspace}
+                disabled={deleteConfirmText !== "DELETE" || deleteBusy}
+                style={{
+                  padding: "6px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, color: "#fff",
+                  background: deleteConfirmText === "DELETE" ? "#e5484d" : "var(--border)",
+                  cursor: deleteConfirmText === "DELETE" && !deleteBusy ? "pointer" : "default",
+                }}
+              >
+                {deleteBusy ? "Deleting…" : "Permanently delete"}
+              </button>
+              <button
+                onClick={() => { setDeletingWorkspace(false); setDeleteConfirmText(""); setDeleteError(null); }}
+                disabled={deleteBusy}
+                style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 

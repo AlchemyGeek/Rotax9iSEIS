@@ -713,6 +713,31 @@ def op_switch_workspace(params: dict, ctx: dict) -> Any:
     return op_get_active_workspace(params, ctx)
 
 
+def op_delete_workspace(params: dict, ctx: dict) -> Any:
+    """
+    The confirmation itself ("type DELETE") is a UI-only gate — the RPC
+    layer has no separate confirm step, matching every other destructive
+    op here (remove_flights, etc.). By the time this call arrives, the
+    decision has already been made client-side.
+    """
+    workspace_id = params["workspace_id"]
+    registry = ws.load_registry(ctx["registry_path"])
+    if not any(e.id == workspace_id for e in registry.workspaces):
+        raise RpcError("NOT_FOUND", f"no workspace {workspace_id}")
+    ws.delete_workspace(ctx["registry_path"], ctx["workspaces_root"], workspace_id)
+
+    if ctx.get("active_workspace_id") == workspace_id:
+        remaining = ws.load_registry(ctx["registry_path"]).workspaces
+        if remaining:
+            _activate_workspace(ctx, remaining[0].id)
+        else:
+            ctx["active_workspace_id"] = None
+            ctx["workspace_dir"] = resolve_workspace_dir(None)
+            (ctx["workspace_dir"] / "flights").mkdir(parents=True, exist_ok=True)
+
+    return {"deleted": True, "workspace_id": workspace_id}
+
+
 def op_get_active_workspace(params: dict, ctx: dict) -> Any:
     if not ctx.get("active_workspace_id"):
         return {"active": False, "workspace_dir": str(ctx["workspace_dir"])}
@@ -890,6 +915,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_workspaces": op_list_workspaces,
     "create_workspace": op_create_workspace,
     "switch_workspace": op_switch_workspace,
+    "delete_workspace": op_delete_workspace,
     "get_active_workspace": op_get_active_workspace,
     "add_log_folder": op_add_log_folder,
     "scan_workspace": op_scan_workspace,

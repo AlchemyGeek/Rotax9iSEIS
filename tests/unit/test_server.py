@@ -366,6 +366,52 @@ def test_switch_workspace(registry_server):
     assert d["error"]["code"] == "NOT_FOUND"
 
 
+def test_delete_workspace_removes_registry_entry_and_reactivates_another(registry_server):
+    a = rpc(registry_server, "create_workspace", {"name": "A", "engine_model": "916iS"})["result"]
+    b = rpc(registry_server, "create_workspace", {"name": "B", "engine_model": "912iS"})["result"]
+    # b is active (most recently created)
+
+    deleted = rpc(registry_server, "delete_workspace", {"workspace_id": b["id"]})
+    assert deleted["ok"], deleted
+    assert deleted["result"] == {"deleted": True, "workspace_id": b["id"]}
+
+    listed = rpc(registry_server, "list_workspaces", {})["result"]
+    assert [w["id"] for w in listed] == [a["id"]]
+
+    # The other remaining workspace becomes active — not left dangling.
+    active = rpc(registry_server, "get_active_workspace", {})["result"]
+    assert active["active"] is True
+    assert active["manifest"]["id"] == a["id"]
+
+
+def test_delete_last_workspace_falls_back_to_no_active_workspace(registry_server):
+    only = rpc(registry_server, "create_workspace", {"name": "Only", "engine_model": "916iS"})["result"]
+
+    deleted = rpc(registry_server, "delete_workspace", {"workspace_id": only["id"]})
+    assert deleted["ok"], deleted
+
+    active = rpc(registry_server, "get_active_workspace", {})["result"]
+    assert active["active"] is False
+
+    listed = rpc(registry_server, "list_workspaces", {})["result"]
+    assert listed == []
+
+
+def test_delete_workspace_unknown_id(registry_server):
+    d = rpc(registry_server, "delete_workspace", {"workspace_id": "nonexistent"})
+    assert d["ok"] is False
+    assert d["error"]["code"] == "NOT_FOUND"
+
+
+def test_delete_workspace_removes_on_disk_directory(registry_server, isolated_packaged_home):
+    created = rpc(registry_server, "create_workspace", {"name": "A", "engine_model": "916iS"})["result"]
+    ws_dir = ws.resolve_workspaces_root() / created["id"]
+    assert ws_dir.exists()
+
+    rpc(registry_server, "delete_workspace", {"workspace_id": created["id"]})
+    assert not ws_dir.exists()
+
+
 def test_app_and_workspace_settings_round_trip(registry_server):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 
