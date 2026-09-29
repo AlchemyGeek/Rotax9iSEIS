@@ -18,13 +18,14 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
+from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from . import workspace as _workspace
 from .contract import content_hash
 from .limits import _resolve_engine_name, load_engine_config
 from .loader import deduplicate_flights, find_duplicate_flights, flight_fingerprint
 from .loader import flight_id as _compute_flight_id
-from .loader import load_directory
+from .loader import load_directory, load_log
 from .operations import (
     EcuAnalysis,
     FlightAnalysis,
@@ -193,13 +194,20 @@ def render_fleet_summary(fleet: FleetAnalysis) -> str:
 # ── loading a directory + minimal workspace persistence ──────────────────────
 
 def _load_flight_analyses(
-    logs_dir: Path, engine_cfg: dict, engine_name: str, quiet: bool
+    logs_dir: Path, engine_cfg: dict, engine_name: str, quiet: bool,
+    workspace_dir: Optional[Path] = None,
 ) -> tuple[list[FlightAnalysis], list[dict], dict[str, Path]]:
     """
-    Load every log in `logs_dir`, applying the same ground-session
-    filtering and overlap-aware duplicate detection load_directory()/
-    find_duplicate_flights() already provide and are tested (Stage 0),
-    then run analyze_flight() on what survives.
+    Load every log in `logs_dir`, applying the same ground-session/short-
+    flight/corrupt-log filtering and overlap-aware duplicate detection
+    load_directory()/find_duplicate_flights() already provide and are
+    tested (Stage 0), then run analyze_flight() on what survives.
+
+    workspace_dir, when given, makes exclusions.json the record of what
+    got filtered and why (Spec: Workspace Flight Exclusions) — omit it
+    (as `_load_or_build_fleet`'s cache-miss path can't avoid doing, since
+    it only receives logs_dir there) to fall back to the unpersisted
+    ground-session-only behavior.
 
     Each surviving file is parsed twice — once here (for filtering) and
     once inside analyze_flight() — rather than reusing the DataFrame,
@@ -213,7 +221,7 @@ def _load_flight_analyses(
     get_flight_series/get_series can't build a timeline for it.
     """
     try:
-        flights = load_directory(str(logs_dir), verbose=not quiet)
+        flights = load_directory(str(logs_dir), workspace_dir=workspace_dir, verbose=not quiet)
     except ValueError as e:
         raise CliOperationError(str(e))
 
@@ -290,7 +298,7 @@ def _load_or_build_fleet(logs_dir: Path, workspace_dir: Path, engine_cfg: dict, 
         return _fleet_analysis_from_dict(json.loads(cache.read_text()))
     _log(f"No cached fleet baseline at {cache} — recomputing from {logs_dir} "
          f"(slow; run 'fleet' or 'import' first to cache)", quiet)
-    fas, excluded, _source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, quiet)
+    fas, excluded, _source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, quiet, workspace_dir)
     return update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
 
 
@@ -362,7 +370,7 @@ def cmd_fleet(args) -> int:
     workspace_dir = resolve_workspace_dir(args.workspace)
     engine_name = _resolve_engine_name(args.engine)
     engine_cfg = load_engine_config(engine_name)
-    fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
+    fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet, workspace_dir)
     fleet = update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
     _write_workspace(workspace_dir, fas, fleet, source_paths)
     d = fleet.to_dict()
@@ -425,7 +433,7 @@ def cmd_import(args) -> int:
     else:
         # No paths given: import everything in --logs, with the same
         # ground-session filtering and duplicate detection `fleet` uses.
-        fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet)
+        fas, excluded, source_paths = _load_flight_analyses(logs_dir, engine_cfg, engine_name, args.quiet, workspace_dir)
 
     fleet = update_fleet(fas, excluded=excluded, engine_config=engine_cfg)
     _write_workspace(workspace_dir, fas, fleet, source_paths)
@@ -434,6 +442,102 @@ def cmd_import(args) -> int:
         _print_json({"flight_count": len(fas), "fleet_key": fleet.fleet_key, "workspace": str(workspace_dir)})
     else:
         print(f"Imported {len(fas)} flight(s). Workspace: {workspace_dir}")
+    return 0
+
+
+# ── flights / exclude / include (Spec: Workspace Flight Exclusions) ─────────
+
+def cmd_flights(args) -> int:
+    logs_dir = resolve_logs_dir(args.logs)
+    workspace_dir = resolve_workspace_dir(args.workspace)
+
+    flights = load_directory(str(logs_dir), workspace_dir=workspace_dir, verbose=False)
+    exclusions_data = _exclusions.load_exclusions(workspace_dir)
+    summary = _exclusions.exclusion_summary(exclusions_data)
+
+    included_rows = []
+    for df, info in flights:
+        start, end = df["datetime"].iloc[0], df["datetime"].iloc[-1]
+        included_rows.append({
+            "date": start.strftime("%Y-%m-%d"),
+            "filename": df["_source_file"].iloc[0],
+            "duration_min": round((end - start).total_seconds() / 60),
+            "aircraft_ident": info.aircraft_ident,
+        })
+    included_rows.sort(key=lambda r: r["date"])
+
+    excluded_rows = []
+    if args.show_excluded:
+        for entry in exclusions_data.get("entries", []):
+            # exclusions.json doesn't store the flight's own date (only
+            # when it was excluded) — re-parse just this file to show one,
+            # best-effort, since it's opt-in and only runs for excluded
+            # files, not the whole fleet.
+            date = None
+            log_path = logs_dir / entry["filename"]
+            if log_path.exists():
+                try:
+                    edf, _einfo = load_log(log_path)
+                    date = edf["datetime"].iloc[0].strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            excluded_rows.append({**entry, "date": date})
+        excluded_rows.sort(key=lambda r: r["date"] or "")
+
+    if args.json:
+        _print_json({
+            "included": included_rows,
+            "excluded_summary": summary,
+            "excluded": excluded_rows if args.show_excluded else None,
+        })
+        return 0
+
+    ident = included_rows[0]["aircraft_ident"] if included_rows else "?"
+    header_bits = [f"{len(included_rows)} flights"]
+    for cat, label in [("ground_session", "ground session"), ("short_flight", "short flight"),
+                        ("corrupt_log", "corrupt log")]:
+        n = summary.get(cat, 0)
+        if n:
+            header_bits.append(f"{n} {label}{'s' if n != 1 else ''} excluded")
+    print(f"{ident} — " + "  ·  ".join(header_bits))
+    print("─" * 70)
+    for r in included_rows:
+        print(f"{r['date']}  {r['filename']:<32}  {r['duration_min']:>3} min  ✓ in baselines")
+
+    if args.show_excluded:
+        print("\n--- Excluded (not in baselines, unless overridden) ---")
+        for r in excluded_rows:
+            tag = "  [overridden by user]" if r.get("user_override") else ""
+            print(f"{r['date'] or '?':<10}  {r['filename']:<32}  {r['reason']}{tag}")
+    return 0
+
+
+def cmd_exclude(args) -> int:
+    workspace_dir = resolve_workspace_dir(args.workspace)
+    _exclusions.add_user_exclusion(workspace_dir, args.filename, args.reason)
+    if args.json:
+        _print_json({"filename": args.filename, "excluded": True})
+    else:
+        print(f"Excluded {args.filename}: {args.reason}")
+    return 0
+
+
+def cmd_include(args) -> int:
+    workspace_dir = resolve_workspace_dir(args.workspace)
+    # Always an override, never a delete — exclusions.json's own design
+    # principle (§"user_override behaviour": "There is no 'delete from
+    # exclusions.json' operation — the record is permanent") applies the
+    # same way to a user_defined entry as to an auto one; the spec's CLI
+    # section's one-line "removes a user_defined entry" reads as a slip
+    # against that more deliberately-stated invariant, not a second rule.
+    try:
+        _exclusions.set_user_override(workspace_dir, args.filename, True, args.reason)
+    except ValueError as e:
+        raise CliOperationError(str(e))
+    if args.json:
+        _print_json({"filename": args.filename, "excluded": False})
+    else:
+        print(f"Included {args.filename}" + (f": {args.reason}" if args.reason else ""))
     return 0
 
 
@@ -572,6 +676,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("import", parents=[common], help="Analyze logs/folders and update the workspace")
     p.add_argument("paths", nargs="*", help="Specific logs or folders (default: all logs in --logs)")
     p.set_defaults(func=cmd_import)
+
+    p = sub.add_parser("flights", parents=[common], help="List known flights and exclusion status")
+    p.add_argument("--show-excluded", action="store_true", help="Also list excluded flights with category and reason")
+    p.set_defaults(func=cmd_flights)
+
+    p = sub.add_parser("exclude", parents=[common], help="Manually exclude a flight from analysis")
+    p.add_argument("filename")
+    p.add_argument("--reason", required=True, help="Why this flight is excluded")
+    p.set_defaults(func=cmd_exclude)
+
+    p = sub.add_parser("include", parents=[common], help="Bring an excluded flight back into analysis")
+    p.add_argument("filename")
+    p.add_argument("--reason", default="", help="Optional explanation for the override")
+    p.set_defaults(func=cmd_include)
 
     p_rules = sub.add_parser("rules", parents=[common], help="Rule validation / what-if")
     rules_sub = p_rules.add_subparsers(dest="rules_command", required=True)

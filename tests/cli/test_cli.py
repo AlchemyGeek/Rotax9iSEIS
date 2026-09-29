@@ -287,3 +287,74 @@ def test_import_then_fleet_uses_cached_workspace(tmp_path, capsys):
     # Trying the currently-shipped rules against themselves: no diff.
     assert diff["added"] == []
     assert diff["removed"] == []
+
+
+# ── flights / exclude / include (Spec: Workspace Flight Exclusions) ─────────
+
+def test_flights_lists_ground_session_and_persists_exclusion(synthetic_logs_dir, tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    rc = main(["flights", "--logs", str(synthetic_logs_dir), "--workspace", str(workspace),
+               "--show-excluded", "--json", "--quiet"])
+    assert rc == 0
+    d = json.loads(capsys.readouterr().out)
+    # The shared synthetic fixture has no ias_kt/baro_alt_ft — RPM alone
+    # never clears TAXI -> TAKEOFF_ROLL, so it's a ground session.
+    assert d["included"] == []
+    assert d["excluded_summary"]["ground_session"] == 1
+    assert (workspace / "exclusions.json").exists()
+
+
+def test_flights_without_show_excluded_omits_excluded_detail(synthetic_logs_dir, tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    rc = main(["flights", "--logs", str(synthetic_logs_dir), "--workspace", str(workspace),
+               "--json", "--quiet"])
+    assert rc == 0
+    d = json.loads(capsys.readouterr().out)
+    assert d["excluded"] is None
+    # The header summary is always present, regardless of --show-excluded.
+    assert d["excluded_summary"]["ground_session"] == 1
+
+
+def test_exclude_requires_reason(synthetic_logs_dir, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        main(["exclude", _SYNTHETIC_NAME, "--logs", str(synthetic_logs_dir),
+              "--workspace", str(tmp_path / "workspace")])
+    assert exc.value.code == 2
+
+
+def test_include_unknown_filename_exits_one(tmp_path, capsys):
+    rc = main(["include", "never-seen.csv", "--workspace", str(tmp_path / "workspace"), "--quiet"])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+
+
+@requires_flight_logs
+def test_exclude_then_include_roundtrip(tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    first_log = sorted(LOGS_DIR.glob("*.csv"))[0]
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    assert rc == 0
+    before = json.loads(capsys.readouterr().out)
+    before_names = {r["filename"] for r in before["included"]}
+    assert first_log.name in before_names
+
+    rc = main(["exclude", first_log.name, "--reason", "test: ferry flight",
+               "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--quiet"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    after_exclude = json.loads(capsys.readouterr().out)
+    assert first_log.name not in {r["filename"] for r in after_exclude["included"]}
+    assert len(after_exclude["included"]) == len(before["included"]) - 1
+
+    rc = main(["include", first_log.name, "--reason", "actually keep it",
+               "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--quiet"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    after_include = json.loads(capsys.readouterr().out)
+    assert first_log.name in {r["filename"] for r in after_include["included"]}
+    assert len(after_include["included"]) == len(before["included"])

@@ -81,6 +81,28 @@ def _resolve_engine_name(engine: Optional[str] = None) -> str:
     return _DEFAULT_ENGINE
 
 
+_DEFAULT_MIN_FLIGHT_DURATION_MIN = 10
+
+
+def resolve_min_flight_duration_min(override: Optional[int] = None) -> int:
+    """
+    Resolve min_flight_duration_min: argument -> toolkit config.json ->
+    default 10 (Spec: Workspace Flight Exclusions, "config.json addition").
+    No environment variable, unlike engine resolution — this isn't a
+    per-invocation override, it's a workspace-wide auto-exclusion setting.
+    """
+    if override is not None:
+        return override
+    if _TOOLKIT_CONFIG.exists():
+        try:
+            cfg = json.loads(_TOOLKIT_CONFIG.read_text())
+            if "min_flight_duration_min" in cfg:
+                return int(cfg["min_flight_duration_min"])
+        except Exception:
+            pass
+    return _DEFAULT_MIN_FLIGHT_DURATION_MIN
+
+
 def parse_engine_config(text: str, name: str = "") -> dict:
     """
     Parse engine config JSON text into a dict. No file I/O — the core
