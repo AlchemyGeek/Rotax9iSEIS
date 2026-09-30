@@ -62,6 +62,8 @@
       "unit": "psi",
       "min_val": 29.0,
       "severity": "WARNING",
+      "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
+      "filter_policy": { "filterable": false },
       "phases": ["CLIMB", "CRUISE", "DESCENT"],
       "note": "Minimum 2.0 bar / 29 psi above 3,500 rpm (0.8 bar / 11.6 psi minimum below 3,500 rpm). Phase-filtered — pre-flight and engine start readings excluded."
     },

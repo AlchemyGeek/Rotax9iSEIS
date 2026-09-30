@@ -61,6 +61,7 @@ from .operations import (
 )
 from .phases import detect_phases
 from .rules import validate_rules
+from . import filters as _filters
 
 _DEFAULT_RULES_PATH = _REPO_ROOT / "insight_rules.json"
 _CHART_PRESETS_PATH = _REPO_ROOT / "chart_presets.json"
@@ -291,10 +292,11 @@ def op_what_if_rules(params: dict, ctx: dict) -> Any:
         if candidate_baseline_config is not None else current_fleet
     )
 
+    filters = _workspace_filters(ctx)
     out: dict[str, dict] = {}
     for fa in _load_workspace_flights(workspace_dir):
-        before = evaluate_insights(fa, current_fleet, current_rules)
-        after = evaluate_insights(fa, candidate_fleet, candidate_rules)
+        before = evaluate_insights(fa, current_fleet, current_rules, filters=filters)
+        after = evaluate_insights(fa, candidate_fleet, candidate_rules, filters=filters)
         out[fa.flight_id] = {"before": before.to_dict(), "after": after.to_dict()}
     return {"flights": out}
 
@@ -373,7 +375,8 @@ def op_evaluate_insights(params: dict, ctx: dict) -> Any:
     fa = _dataclass_from_dict(FlightAnalysis, params["flight_analysis"])
     fleet = _dataclass_from_dict(FleetAnalysis, params["fleet_analysis"])
     rules = params.get("rules") or _default_rules()
-    return evaluate_insights(fa, fleet, rules).to_dict()
+    return evaluate_insights(fa, fleet, rules, annotations=params.get("annotations"),
+                             filters=params.get("filters")).to_dict()
 
 
 def op_analyze_ecu(params: dict, ctx: dict) -> Any:
@@ -430,7 +433,8 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
     fa = _dataclass_from_dict(FlightAnalysis, json.loads(f.read_text()))
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
     annotations = ws.annotations_for_flight(ctx["workspace_dir"], flight_id)
-    iset = evaluate_insights(fa, fleet, _resolve_rules(ctx), annotations=annotations)
+    iset = evaluate_insights(fa, fleet, _resolve_rules(ctx), annotations=annotations,
+                             filters=_workspace_filters(ctx))
     return {
         "flight_analysis": fa.to_dict(), "insight_set": iset.to_dict(),
         "source_filename": _source_filename(ctx["workspace_dir"], flight_id),
@@ -571,6 +575,7 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
     excluded = {e["flight_id"]: e["reason"] for e in selection.excluded}
     fleet = _get_or_build_fleet(workspace_dir)
     rules = _resolve_rules(ctx)
+    filters = _workspace_filters(ctx)
 
     unreachable_folders: set[str] = set()
     if ctx.get("active_workspace_id"):
@@ -583,7 +588,7 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
         if fa is None:
             continue
         src = ws.load_sources(workspace_dir, fid)
-        iset = evaluate_insights(fa, fleet, rules)
+        iset = evaluate_insights(fa, fleet, rules, filters=filters)
         insights = [i for t in iset.topics for i in t.get("insights", [])]
         worst = None
         for ins in insights:
@@ -664,6 +669,103 @@ def op_include_excluded_log(params: dict, ctx: dict) -> Any:
     if scan_result.new_flight_ids:
         ws.rebuild_fleet(workspace_dir)
     return {"filename": filename, "included": True, "scan_result": scan_result.to_dict()}
+
+
+# ── Limit filters (Spec 09 §11.5) ───────────────────────────────────────────
+
+def _workspace_filters(ctx: dict) -> list[dict]:
+    return ws.load_filters(ctx["workspace_dir"])["filters"]
+
+
+def _latest_engine_hours(flight_analyses: list[FlightAnalysis]) -> Optional[float]:
+    hours = [fa.header.get("engine_hours_end") or fa.header.get("engine_hours_start") for fa in flight_analyses]
+    hours = [h for h in hours if h is not None]
+    return max(hours) if hours else None
+
+
+def op_list_filters(params: dict, ctx: dict) -> Any:
+    """The workspace's filters, each with its limit, whether it currently
+    applies (the engine's own validation) and a summary of its band."""
+    engine_cfg, _ = _current_engine(ctx)
+    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
+    fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    out = []
+    for f in _workspace_filters(ctx):
+        diags = _filters.validate_filter(f, limits, fleet)
+        lim = limits.get(f.get("limit_id"))
+        out.append({
+            "filter": f,
+            "limit": lim,
+            "policy": _filters.resolve_filter_policy(lim) if lim else None,
+            "valid": not diags,
+            "diagnostics": diags,
+            "summary": _filters.band_text(f, lim) if lim else "",
+        })
+    return {"filters": out}
+
+
+def op_propose_filter(params: dict, ctx: dict) -> Any:
+    engine_cfg, _ = _current_engine(ctx)
+    fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    try:
+        draft = _filters.propose_limit_filter(_load_workspace_flights(ctx["workspace_dir"]), fleet,
+                                              params["limit_id"], engine_cfg)
+    except ValueError as e:
+        raise RpcError("NOT_FOUND", str(e))
+    draft["existing"] = next((f for f in _workspace_filters(ctx) if f.get("limit_id") == params["limit_id"]), None)
+    return draft
+
+
+def op_preview_filter(params: dict, ctx: dict) -> Any:
+    fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    draft = dict(params["filter"])
+    if not draft.get("reference"):
+        engine_cfg, _ = _current_engine(ctx)
+        lim = next((l for l in limit_catalog(engine_cfg) if l["id"] == draft.get("limit_id")), None)
+        if lim is not None:
+            draft["reference"] = {"flight_ids": _filters.select_reference(fleet, lim)}
+    return _filters.preview_limit_filter(_load_workspace_flights(ctx["workspace_dir"]), fleet,
+                                         _resolve_rules(ctx), _workspace_filters(ctx), draft)
+
+
+def op_save_filter(params: dict, ctx: dict) -> Any:
+    """Validate first (§7.3) — an invalid filter is refused, not stored —
+    then save. A new filter, or an edit to its band or duration, takes a
+    fresh reference of the most recent flights (§8.1)."""
+    workspace_dir = ctx["workspace_dir"]
+    engine_cfg, _ = _current_engine(ctx)
+    fleet = _get_or_build_fleet(workspace_dir)
+    fields = dict(params["filter"])
+    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
+    lim = limits.get(fields.get("limit_id"))
+    existing = ws.get_filter(workspace_dir, fields["id"]) if fields.get("id") else None
+    if fields.get("id") and existing is None:
+        raise RpcError("NOT_FOUND", f"no filter {fields['id']}")
+    if existing is None:
+        other = next((f for f in _workspace_filters(ctx) if f.get("limit_id") == fields.get("limit_id")), None)
+        if other is not None:
+            raise RpcError("ALREADY_EXISTS", f"{fields.get('limit_id')} already has a filter; edit it instead")
+    elif existing["limit_id"] != fields.get("limit_id"):
+        raise RpcError("BAD_PARAMS", "a filter's limit can't be changed")
+
+    new_reference = None
+    if lim is not None and (existing is None or ws.filter_conditions_changed(existing, fields)):
+        new_reference = _filters.select_reference(fleet, lim)
+    candidate = {**(existing or {}), **fields,
+                 "reference": {"flight_ids": new_reference} if new_reference is not None
+                 else (existing or {}).get("reference", {"flight_ids": []})}
+    for k in ("magnitude", "duration"):
+        if not fields.get(k):
+            candidate.pop(k, None)
+    diags = _filters.validate_filter(candidate, limits, fleet)
+    if diags:
+        raise RpcError("INVALID_FILTER", " ".join(d["message"] for d in diags))
+    hours = _latest_engine_hours(_load_workspace_flights(workspace_dir)) if existing is None else None
+    return ws.save_filter(workspace_dir, fields, reference_flight_ids=new_reference, engine_hours=hours)
+
+
+def op_delete_filter(params: dict, ctx: dict) -> Any:
+    return {"deleted": ws.delete_filter(ctx["workspace_dir"], params["id"])}
 
 
 def op_list_annotations(params: dict, ctx: dict) -> Any:
@@ -978,6 +1080,11 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_exclusions": op_list_exclusions,
     "include_excluded_log": op_include_excluded_log,
     "list_annotations": op_list_annotations,
+    "list_filters": op_list_filters,
+    "propose_filter": op_propose_filter,
+    "preview_filter": op_preview_filter,
+    "save_filter": op_save_filter,
+    "delete_filter": op_delete_filter,
     "save_annotation": op_save_annotation,
     "delete_annotation": op_delete_annotation,
     "remove_missing_flight": op_remove_missing_flight,

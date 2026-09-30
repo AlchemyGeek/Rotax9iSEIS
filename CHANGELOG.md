@@ -11,6 +11,41 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.19.0 — September 30, 2026
+
+**Limit filters (Spec 09 Phase 3).** Silence a known, consistent exceedance without losing it.
+
+- **Filter this limit…** on any limit card in the Flight view opens an inline editor,
+  pre-filled with this aircraft's typical and worst excess and a suggested band. Two separate
+  conditions, and an event needs only one to be tolerated: **magnitude** (absolute, % of the
+  limit, or z against the filter's reference flights) and **duration** (events up to N s).
+  **Preview** shows how many events on how many flights the filter would hide, and how many
+  flights would still breach it, before you save.
+- **Suppressed, not deleted:** a filtered limit's tolerated events collapse into one quiet
+  insight (info for CAUTION limits, watch for WARNING) that still expands to every event;
+  anything beyond the filter is reported at the limit's normal severity, marked "beyond your
+  filter". Topic thresholds (oil/coolant peak, overboost) follow the same filter; baseline
+  deviation and trend insights are never filtered.
+- **Guardrails, enforced in the engine:** WARNING limits are filterable only up to caps the
+  engine profile declares, never in z mode, and only with a note. `oil_press_min` is never
+  filterable. The 916iS ships **PLACEHOLDER caps** (e.g. oil and coolant temperature 5°F / 10 s,
+  EGT 20°F / 10 s, MAP 0.5 inHg / 5 s, fuel pressure minimum 1 psi / 10 s, overboost +30 s) —
+  review them. Other profiles have no caps, so their WARNING limits aren't filterable yet. An
+  invalid or hand-edited filter is ignored with a diagnostic; the limit reports unfiltered.
+- **Overboost:** a band moves both the effective limit and the close call.
+- **Notes page:** a new *Limit filters* section lists filters with their band and note, with
+  edit and remove, and a short explanation of how filters differ from baselines. Change
+  monitoring (Stable / Drifting / Breached / Review due) follows in the next phase.
+- **Storage:** `filters.json` in the workspace, with each filter's history. The CLI `report`
+  command applies the workspace's filters too.
+- **Contract:** `evaluate_insights(…, filters=)`; `InsightSet.filters_hash`; new operations
+  `validate_limit_filter`, `propose_limit_filter`, `preview_limit_filter`; server ops
+  `list_filters`, `propose_filter`, `preview_filter`, `save_filter`, `delete_filter`.
+- Existing workspaces re-analyse their flights on the next scan (engine version change), so
+  each flight carries the new filter policies.
+
+---
+
 ## 0.18.0 — September 30, 2026
 
 **Per-limit baseline metrics (Spec 09 Phase 2).** Groundwork for limit filters: each limit's

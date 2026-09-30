@@ -269,7 +269,15 @@ def cyl_deviation(cyls: list[dict]) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optional[float] = None) -> dict:
+def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optional[float] = None,
+              filter_limit: Optional[float] = None, filter_text: str = "") -> dict:
+    """
+    `filter_limit` (Spec 09 §6.4/§10.3): with a filter on the overboost
+    limit, the effective limit (OM limit + band). A block past the OM
+    limit but within it is reported quietly (outcome "suppressed"); past it,
+    "beyond your filter" (outcome "breach"). The caller passes the close
+    call already shifted with the band.
+    """
     if ob_max is None:
         return {"analysis": "Overboost data not available (no RPM channel).", "insights": []}
     analysis = (
@@ -277,7 +285,14 @@ def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optio
         f"OM limit: {ob_limit}s."
     )
     insights = []
-    if ob_exceeded:
+    if ob_exceeded and filter_limit is not None:
+        if ob_max <= filter_limit:
+            insights.append({"trigger": "threshold", "filter_outcome": "suppressed",
+                             "text": f"Longest block {ob_max}s, past the OM {ob_limit}s limit but within your filter ({filter_text})."})
+        else:
+            insights.append({"trigger": "threshold", "filter_outcome": "breach",
+                             "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s — beyond your filter ({filter_text})."})
+    elif ob_exceeded:
         insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s."})
     elif ob_max >= (close_call_s if close_call_s is not None else ob_limit - 60):
         insights.append({"trigger": "threshold", "text": f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
@@ -524,19 +539,24 @@ def _fmt_duration(seconds: float) -> str:
 
 def limit_exceedance_groups(groups: list[dict]) -> dict:
     """
-    Spec 09 §10.1: one insight per limit per flight. `groups` holds one
+    Spec 09 §10.1: one insight per limit per flight — or, for a filtered
+    limit, a quiet "filtered" insight for the events the filter tolerates
+    plus a "breach" insight for any it doesn't. `groups` holds one
     {"limit": {label, unit, limit_type, limit_value, severity}, "events":
-    [serialized exceedance, ...]} per limit with events, in display
-    order. Returns {"analysis", "insights"}; each insight carries its
-    group index under "group" so the caller can attach limit_id, events
-    and evidence.
+    [serialized exceedance, ...], "kind": "exceedance"|"breach"|"filtered",
+    "filter_text": str} per insight, in display order. Returns
+    {"analysis", "insights"}; each insight carries its group index under
+    "group" so the caller can attach limit_id, events and evidence.
     """
     if not groups:
         return {"analysis": "No OM hard-limit exceedances this flight.", "insights": []}
     insights = []
-    total = 0
+    total = suppressed = 0
+    limits_seen = set()
     for i, g in enumerate(groups):
         lim, events = g["limit"], g["events"]
+        kind = g.get("kind", "exceedance")
+        limits_seen.add(lim.get("id", lim["label"]))
         total += len(events)
         worst = max(events, key=lambda e: e.get("excess") if e.get("excess") is not None else
                     (e["observed_value"] if lim["limit_type"] == "MAX" else -e["observed_value"]))
@@ -544,12 +564,22 @@ def limit_exceedance_groups(groups: list[dict]) -> dict:
         unit = lim.get("unit", "")
         side = "min" if lim["limit_type"] == "MIN" else "max"
         count = f"{len(events)} event{'s' if len(events) != 1 else ''}"
-        text = (f"⚠ [{lim['severity']}] {lim['label']}: {count}, worst {worst['observed_value']:.1f} {unit} "
-                f"({side} {lim['limit_value']:.1f} {unit}), {_fmt_duration(time_above)} past the limit.")
+        worst_text = f"worst {worst['observed_value']:.1f} {unit} ({side} {lim['limit_value']:.1f} {unit})"
+        if kind == "filtered":
+            suppressed += len(events)
+            text = (f"{lim['label']}: {count} within your filter ({g.get('filter_text', '')}), "
+                    f"{worst_text}, {_fmt_duration(time_above)} past the limit.")
+        elif kind == "breach":
+            text = (f"⚠ [{lim['severity']}] {lim['label']}: {count} beyond your filter "
+                    f"({g.get('filter_text', '')}), {worst_text}, {_fmt_duration(time_above)} past the limit.")
+        else:
+            text = (f"⚠ [{lim['severity']}] {lim['label']}: {count}, {worst_text}, "
+                    f"{_fmt_duration(time_above)} past the limit.")
         insights.append({"trigger": "threshold", "text": text, "group": i})
-    n_limits = len(groups)
+    n_limits = len(limits_seen)
     analysis = (f"{n_limits} OM limit{'s' if n_limits != 1 else ''} exceeded this flight "
-                f"({total} event{'s' if total != 1 else ''}):")
+                f"({total} event{'s' if total != 1 else ''}"
+                + (f", {suppressed} within your filters" if suppressed else "") + "):")
     return {"analysis": analysis, "insights": insights}
 
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InsightCard } from "../components/InsightCard";
+import { FilterEditor } from "../components/FilterEditor";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { ChannelTimeline } from "../components/ChannelTimeline";
 import { ChannelPicker } from "../components/ChannelPicker";
@@ -399,6 +400,23 @@ export function FlightView() {
   const limitFor = (insight: Insight) =>
     insight.limit_id ? flightAnalysis.limits?.find((l) => l.id === insight.limit_id) : undefined;
 
+  // Spec 09 §12.1: which insight's filter editor is open, if any. Limit
+  // cards filter their own limit; the overboost threshold filters the
+  // profile's overboost limit.
+  const [filterEditorFor, setFilterEditorFor] = useState<string | null>(null);
+  const filterLimitId = (insight: Insight, topicId: string) =>
+    insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
+
+  async function reloadInsights() {
+    if (!flightId) return;
+    try {
+      const got = await client.getFlight(flightId);
+      setInsightSet(got.insight_set);
+    } catch {
+      // server unreachable — leave the current state
+    }
+  }
+
   const flatInsights = useMemo(() => {
     const items: { insight: Insight; topicId: string }[] = [];
     for (const topic of insightSet.topics) {
@@ -581,20 +599,40 @@ export function FlightView() {
             <div style={{ flexGrow: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
               {flatInsights.map(({ insight, topicId }) => {
                 const existing = annotationByInsightId.get(insight.id);
+                const limitId = usingFixture ? undefined : filterLimitId(insight, topicId);
+                const peak = insight.events?.length ? Math.max(...insight.events.map((e) => e.excess ?? 0)) : null;
                 return (
+                  <div key={insight.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <InsightCard
-                    key={insight.id}
                     insight={insight}
                     topicId={topicId}
                     onClick={() => handleEvidenceClick(insight)}
                     onEventClick={(i) => handleEvidenceClick(insight, i)}
                     unit={limitFor(insight)?.unit}
                     limitType={limitFor(insight)?.limit_type}
-                    note={existing?.note}
+                    filterAction={
+                      limitId
+                        ? { label: insight.filter ? "Edit filter…" : "Filter this limit…", onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id) }
+                        : undefined
+                    }
+                    note={existing?.note ?? insight.note}
                     notesEnabled={!usingFixture}
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
                     onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
                   />
+                  {limitId && filterEditorFor === insight.id && (
+                    <FilterEditor
+                      limitId={limitId}
+                      flightPeak={peak}
+                      createdFrom={{ flight_id: flightAnalysis.flight_id, insight_id: insight.id }}
+                      onSaved={() => {
+                        setFilterEditorFor(null);
+                        void reloadInsights();
+                      }}
+                      onCancel={() => setFilterEditorFor(null)}
+                    />
+                  )}
+                  </div>
                 );
               })}
               {flatInsights.length === 0 && noInsightTopics.length === 0 && (

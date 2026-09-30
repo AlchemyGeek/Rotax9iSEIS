@@ -579,3 +579,91 @@ export interface SeriesFixture {
   flight_id: string;
   channels: Record<string, SeriesChannel>;
 }
+
+// ── Limit filters (Spec 09 §9, §11) ─────────────────────────────────────────
+
+export type FilterMagnitudeMode = "absolute" | "percent" | "z";
+
+export interface LimitFilter {
+  id: string;
+  limit_id: string;
+  magnitude?: { mode: FilterMagnitudeMode; value: number };
+  duration?: { max_event_s: number };
+  note: string;
+  created_from?: { flight_id: string; insight_id: string };
+  reference: { flight_ids: string[]; set_at: string };
+  created_at: string;
+  created_engine_hours?: number;
+  updated_at?: string;
+  reviewed_at?: string;
+  reviewed_engine_hours?: number;
+  history: { at: string; action: "created" | "edited" | "rebaselined" | "reviewed"; before?: Partial<LimitFilter>; after?: Partial<LimitFilter> }[];
+}
+
+// What the filter editor sends: a new filter has no id and no reference yet.
+export type LimitFilterDraft = Pick<LimitFilter, "limit_id" | "magnitude" | "duration" | "note" | "created_from"> & { id?: string };
+
+export interface FilterPolicy {
+  filterable: boolean;
+  reason: string | null;
+  severity: string;
+  magnitude_modes: FilterMagnitudeMode[];
+  duration_allowed: boolean;
+  max_band_abs: number | null;
+  max_duration_s: number | null;
+  note_required: boolean;
+  review_interval_h: number;
+}
+
+export interface BaselineStats {
+  n: number;
+  mean?: number | null;
+  std?: number | null;
+  min?: number | null;
+  max?: number | null;
+}
+
+export interface FilterProposal {
+  limit: LimitDef;
+  policy: FilterPolicy;
+  live: {
+    magnitude_metric: string;
+    magnitude: BaselineStats;
+    time_above_pct?: BaselineStats;
+    share_with_events?: number | null;
+  };
+  suggested: { magnitude?: { mode: FilterMagnitudeMode; value: number } };
+  reference: { flight_ids: string[]; n_with_events: number; collecting: boolean };
+  z_available: boolean;
+  z_n_min: number;
+  existing: LimitFilter | null;
+}
+
+export interface FilterPreview {
+  limit_id: string;
+  valid: boolean;
+  diagnostics: Diagnostic[];
+  flights_considered: number;
+  events_total: number;
+  events_hidden: number;
+  flights_affected: number;
+  flights_with_breach: number;
+  flights: {
+    flight_id: string;
+    date: string | null;
+    events: number;
+    suppressed: number;
+    newly_suppressed: number;
+    breaches: number;
+    topic_insights_removed: { id: string; topic_id: string; text: string }[];
+  }[];
+}
+
+export interface FilterListEntry {
+  filter: LimitFilter;
+  limit: LimitDef | null;
+  policy: FilterPolicy | null;
+  valid: boolean;
+  diagnostics: Diagnostic[];
+  summary: string;
+}

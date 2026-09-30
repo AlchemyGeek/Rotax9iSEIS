@@ -11,6 +11,7 @@
     "analysis_key": { "type": "string" },
     "fleet_key": { "type": "string" },
     "rules_hash": { "type": "string" },
+    "filters_hash": { "type": "string", "description": "Spec 09 §11.2: hash of the limit filters applied." },
     "topics": {
       "type": "array",
       "items": {
