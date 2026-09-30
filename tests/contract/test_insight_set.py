@@ -380,3 +380,40 @@ def test_evaluate_insights_baseline_deviation_band_comparison_matches_recomputed
                     checked_a_differing_case = True
     if not checked_a_differing_case:
         pytest.skip("no band-scoped insight with a differing all-flights n found in this fleet")
+
+
+# ── Spec 09 §14 acceptance 4 and 5, across the whole local log set ──────────
+
+@requires_flight_logs
+def test_one_limit_insight_per_limit_matching_exceedances(real_flight_analyses, real_fleet_analysis, rules):
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
+        limit_ids = [i["limit_id"] for i in topic["insights"]]
+        assert len(limit_ids) == len(set(limit_ids)), fa.flight_id
+        events = sorted(e["event_id"] for i in topic["insights"] for e in i["events"])
+        assert events == sorted(e["event_id"] for e in fa.exceedances), fa.flight_id
+        jsonschema.validate(iset.to_dict(), _SCHEMA)
+
+
+@requires_flight_logs
+def test_topic_thresholds_match_limit_events(real_flight_analyses, real_fleet_analysis, rules):
+    """oil/coolant peak thresholds fire exactly when the flight has an event
+    for the referenced limit; overboost exactly when its block passes the
+    profile limit."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        by_topic = {t["topic_id"]: t for t in iset.topics}
+        has_baseline = lambda tid: "not available" not in by_topic[tid]["analysis"]["text"]
+        for topic_id, limit_id in (("oil_temp_peak", "oil_temp_max"), ("coolant_temp_peak", "coolant_temp_max")):
+            if not has_baseline(topic_id):
+                continue
+            fired = any(i["trigger"] == "threshold" for i in by_topic[topic_id]["insights"])
+            assert fired == any(e["limit_id"] == limit_id for e in fa.exceedances), (fa.flight_id, topic_id)
+        ob_max = fa.metrics.get("overboost_max_block_s", {}).get("value")
+        exceeded = any("Exceeded" in i["message"]["text"] for i in by_topic["overboost_time"]["insights"])
+        assert exceeded == (ob_max is not None and ob_max > 300), fa.flight_id

@@ -18,18 +18,25 @@
   "rated_power_hp": 139,
   "rated_rpm": 5800,
 
+  "_exceedance_merge_gap_s_note": "Spec 09 §6.2: an exceedance event ends only after the reading has stayed within the limit this many seconds; shorter dips are absorbed into the event.",
+  "exceedance_merge_gap_s": 30,
+
   "limits": [
 
     {
+      "id": "rpm_idle_min",
       "param": "rpm",
       "label": "Idle RPM minimum",
       "unit": "rpm",
       "min_val": 1800,
       "severity": "CAUTION",
+      "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
+      "exceedance_merge_gap_s": 0,
       "min_duration_s": 30,
       "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
     },
     {
+      "id": "rpm_continuous_max",
       "param": "rpm",
       "label": "Max continuous RPM",
       "unit": "rpm",
@@ -38,6 +45,7 @@
       "note": "5,500 rpm is max continuous (99 kW); 5,800 rpm allowed for 5 min (104 kW take-off)"
     },
     {
+      "id": "rpm_takeoff_max",
       "param": "rpm",
       "label": "Takeoff RPM (5-min limit)",
       "unit": "rpm",
@@ -48,6 +56,7 @@
     },
 
     {
+      "id": "oil_press_min",
       "param": "oil_press_psi",
       "label": "Oil pressure min (>3500 rpm)",
       "unit": "psi",
@@ -57,6 +66,7 @@
       "note": "Minimum 2.0 bar / 29 psi above 3,500 rpm (0.8 bar / 11.6 psi minimum below 3,500 rpm). Phase-filtered — pre-flight and engine start readings excluded."
     },
     {
+      "id": "oil_press_max",
       "param": "oil_press_psi",
       "label": "Oil pressure max (>3500 rpm)",
       "unit": "psi",
@@ -65,6 +75,7 @@
       "note": "Maximum 5.0 bar / 72.5 psi normal operation"
     },
     {
+      "id": "oil_press_cold_max",
       "param": "oil_press_psi",
       "label": "Oil pressure max (cold start)",
       "unit": "psi",
@@ -74,6 +85,7 @@
     },
 
     {
+      "id": "oil_temp_takeoff_min",
       "param": "oil_temp_f",
       "label": "Oil temp minimum (takeoff)",
       "unit": "°F",
@@ -83,6 +95,7 @@
       "note": "Must reach 50°C / 122°F before takeoff. Phase-filtered — pre-flight readings excluded."
     },
     {
+      "id": "oil_temp_max",
       "param": "oil_temp_f",
       "label": "Oil temp maximum",
       "unit": "°F",
@@ -91,6 +104,7 @@
       "note": "Maximum 130°C / 266°F normal operation (915iS; differs from 916iS 120°C)"
     },
     {
+      "id": "oil_temp_optimal_low",
       "param": "oil_temp_f",
       "label": "Oil temp optimal band (low)",
       "unit": "°F",
@@ -101,6 +115,7 @@
     },
 
     {
+      "id": "coolant_temp_max",
       "param": "coolant_temp_f",
       "label": "Coolant temp maximum",
       "unit": "°F",
@@ -110,6 +125,7 @@
     },
 
     {
+      "id": "egt1_max",
       "param": "egt1_f",
       "label": "EGT1 maximum",
       "unit": "°F",
@@ -118,6 +134,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt2_max",
       "param": "egt2_f",
       "label": "EGT2 maximum",
       "unit": "°F",
@@ -126,6 +143,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt3_max",
       "param": "egt3_f",
       "label": "EGT3 maximum",
       "unit": "°F",
@@ -134,6 +152,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt4_max",
       "param": "egt4_f",
       "label": "EGT4 maximum",
       "unit": "°F",
@@ -143,6 +162,7 @@
     },
 
     {
+      "id": "map_max",
       "param": "map_inhg",
       "label": "Manifold pressure maximum",
       "unit": "inHg",
@@ -152,6 +172,7 @@
     },
 
     {
+      "id": "fuel_press_min",
       "param": "fuel_press_psi",
       "label": "Fuel pressure minimum",
       "unit": "psi",
@@ -161,6 +182,7 @@
       "note": "2.9 bar / 42 psi minimum at fuel rail. 36 psi allowed for 3 sec after power change per OM."
     },
     {
+      "id": "fuel_press_max",
       "param": "fuel_press_psi",
       "label": "Fuel pressure maximum",
       "unit": "psi",
@@ -178,6 +200,7 @@
     },
 
     {
+      "id": "volts_min",
       "param": "main_volts",
       "label": "Bus voltage minimum",
       "unit": "V",
@@ -186,6 +209,7 @@
       "note": "Not an OM limit — 12 V airframe bus heuristic. Below ~12V indicates alternator failure or excessive load. Not valid for C24 (24 V bus) installations."
     },
     {
+      "id": "volts_max",
       "param": "main_volts",
       "label": "Bus voltage maximum",
       "unit": "V",
@@ -196,6 +220,8 @@
   ],
 
   "egt_spread": {
+    "high_flow_limit_id": "egt_split_high_flow",
+    "low_flow_limit_id": "egt_split_low_flow",
     "note": "EGT split limits are conditional on fuel flow — two separate thresholds per OM Chapter 2.1",
     "high_flow_threshold_lph": 3.0,
     "high_flow_spread_limit_f": 392.0,
@@ -207,6 +233,8 @@
   },
 
   "overboost": {
+    "id": "overboost",
+    "close_call_margin_s": 60,
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
     "time_limit_s": 300,

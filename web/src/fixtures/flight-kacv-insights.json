@@ -158,61 +158,70 @@
     {
       "topic_id": "limit_exceedances",
       "analysis": {
-        "text": "8 OM hard-limit exceedance(s) this flight:"
+        "text": "5 OM limits exceeded this flight (13 events):"
       },
       "insights": [
         {
-          "id": "47a733beea09898f",
+          "id": "0863a67c64bad625",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [WARNING] Fuel pressure minimum: -0.4 psi below min 42.0 psi at 20:06:16 for 104s"
+            "text": "\u26a0 [WARNING] Fuel pressure minimum: 2 events, worst -0.6 psi (min 42.0 psi), 3 min 10 s past the limit."
           },
           "evidence": [
             {
               "kind": "series_window",
-              "channels": [],
+              "channels": [
+                "fuel_press_psi"
+              ],
               "start_s": 0,
-              "end_s": 156.0
-            }
-          ],
-          "confidence": {
-            "level": "VERY_LOW",
-            "n": 0
-          }
-        },
-        {
-          "id": "904ddc643a8868f1",
-          "topic_id": "limit_exceedances",
-          "rule_id": "limit_exceedances.threshold",
-          "trigger": "threshold",
-          "severity": "limit",
-          "message": {
-            "text": "\u26a0 [WARNING] Fuel pressure minimum: 2.4 psi below min 42.0 psi at 20:08:05 for 14s"
-          },
-          "evidence": [
+              "end_s": 184.5
+            },
             {
               "kind": "series_window",
-              "channels": [],
-              "start_s": 94.0,
-              "end_s": 138.0
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 16095.5,
+              "end_s": 16229.5
             }
           ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
-          }
+          },
+          "limit_id": "fuel_press_min",
+          "events": [
+            {
+              "event_id": "fuel_press_min@2026-04-23T20:06:16",
+              "start_utc": "2026-04-23T20:06:16",
+              "elapsed_s": 0.0,
+              "duration_s": 123.0,
+              "observed_value": -0.4,
+              "excess": 42.4,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_min@2026-04-24T00:35:05",
+              "start_utc": "2026-04-24T00:35:05",
+              "elapsed_s": 16129.0,
+              "duration_s": 67.0,
+              "observed_value": -0.6,
+              "excess": 42.6,
+              "suppressed_by": null
+            }
+          ]
         },
         {
-          "id": "d5130955377298af",
+          "id": "7fcca3d43ba9a5b2",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Idle RPM minimum: 1730.0 rpm below min 1800.0 rpm at 20:09:56 for 40s"
+            "text": "\u26a0 [CAUTION] Idle RPM minimum: 1 event, worst 1730.0 rpm (min 1800.0 rpm), 40 s past the limit."
           },
           "evidence": [
             {
@@ -227,16 +236,28 @@
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
-          }
+          },
+          "limit_id": "rpm_idle_min",
+          "events": [
+            {
+              "event_id": "rpm_idle_min@2026-04-23T20:09:56",
+              "start_utc": "2026-04-23T20:09:56",
+              "elapsed_s": 220.0,
+              "duration_s": 40.0,
+              "observed_value": 1730.0,
+              "excess": 70.0,
+              "suppressed_by": null
+            }
+          ]
         },
         {
-          "id": "9917c7d173488496",
+          "id": "a84c904cb60f0850",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Max continuous RPM: 5780.0 rpm above max 5500.0 rpm at 20:30:50 for 5s"
+            "text": "\u26a0 [CAUTION] Max continuous RPM: 2 events, worst 5820.0 rpm (max 5500.0 rpm), 1 min 11 s past the limit."
           },
           "evidence": [
             {
@@ -244,49 +265,9 @@
               "channels": [
                 "rpm"
               ],
-              "start_s": 1459.0,
-              "end_s": 1494.0
-            }
-          ],
-          "confidence": {
-            "level": "VERY_LOW",
-            "n": 0
-          }
-        },
-        {
-          "id": "14132874c4bfb963",
-          "topic_id": "limit_exceedances",
-          "rule_id": "limit_exceedances.threshold",
-          "trigger": "threshold",
-          "severity": "limit",
-          "message": {
-            "text": "\u26a0 [CAUTION] Max continuous RPM: 5810.0 rpm above max 5500.0 rpm at 20:30:56 for 61s"
-          },
-          "evidence": [
-            {
-              "kind": "series_window",
-              "channels": [
-                "rpm"
-              ],
-              "start_s": 1449.5,
-              "end_s": 1571.5
-            }
-          ],
-          "confidence": {
-            "level": "VERY_LOW",
-            "n": 0
-          }
-        },
-        {
-          "id": "2c8548325823de7e",
-          "topic_id": "limit_exceedances",
-          "rule_id": "limit_exceedances.threshold",
-          "trigger": "threshold",
-          "severity": "limit",
-          "message": {
-            "text": "\u26a0 [CAUTION] Max continuous RPM: 5820.0 rpm above max 5500.0 rpm at 22:30:57 for 4s"
-          },
-          "evidence": [
+              "start_s": 1440.5,
+              "end_s": 1574.5
+            },
             {
               "kind": "series_window",
               "channels": [
@@ -299,43 +280,182 @@
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
-          }
+          },
+          "limit_id": "rpm_continuous_max",
+          "events": [
+            {
+              "event_id": "rpm_continuous_max@2026-04-23T20:30:50",
+              "start_utc": "2026-04-23T20:30:50",
+              "elapsed_s": 1474.0,
+              "duration_s": 67.0,
+              "observed_value": 5810.0,
+              "excess": 310.0,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "rpm_continuous_max@2026-04-23T22:30:57",
+              "start_utc": "2026-04-23T22:30:57",
+              "elapsed_s": 8681.0,
+              "duration_s": 4.0,
+              "observed_value": 5820.0,
+              "excess": 320.0,
+              "suppressed_by": null
+            }
+          ]
         },
         {
-          "id": "478d0c5f3964bc6c",
+          "id": "6dd22c45f7e27855",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [WARNING] Fuel pressure minimum: -0.6 psi below min 42.0 psi at 00:35:05 for 67s"
+            "text": "\u26a0 [CAUTION] Fuel pressure maximum: 7 events, worst 50.4 psi (max 46.0 psi), 3 h 3 min past the limit."
           },
           "evidence": [
             {
               "kind": "series_window",
-              "channels": [],
-              "start_s": 16095.5,
-              "end_s": 16229.5
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 3272.0,
+              "end_s": 3368.0
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 3835.5,
+              "end_s": 3901.5
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 4932.5,
+              "end_s": 5266.5
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 4668.0,
+              "end_s": 6880.0
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 6326.5,
+              "end_s": 6600.5
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 6472.5,
+              "end_s": 6874.5
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 2150.5,
+              "end_s": 20788.5
             }
           ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
-          }
+          },
+          "limit_id": "fuel_press_max",
+          "events": [
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:01:12",
+              "start_utc": "2026-04-23T21:01:12",
+              "elapsed_s": 3296.0,
+              "duration_s": 48.0,
+              "observed_value": 47.5,
+              "excess": 1.5,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:10:28",
+              "start_utc": "2026-04-23T21:10:28",
+              "elapsed_s": 3852.0,
+              "duration_s": 33.0,
+              "observed_value": 46.1,
+              "excess": 0.1,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:29:52",
+              "start_utc": "2026-04-23T21:29:52",
+              "elapsed_s": 5016.0,
+              "duration_s": 167.0,
+              "observed_value": 47.1,
+              "excess": 1.1,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:33:17",
+              "start_utc": "2026-04-23T21:33:17",
+              "elapsed_s": 5221.0,
+              "duration_s": 1106.0,
+              "observed_value": 46.1,
+              "excess": 0.1,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:52:51",
+              "start_utc": "2026-04-23T21:52:51",
+              "elapsed_s": 6395.0,
+              "duration_s": 137.0,
+              "observed_value": 46.1,
+              "excess": 0.1,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:55:49",
+              "start_utc": "2026-04-23T21:55:49",
+              "elapsed_s": 6573.0,
+              "duration_s": 201.0,
+              "observed_value": 46.1,
+              "excess": 0.1,
+              "suppressed_by": null
+            },
+            {
+              "event_id": "fuel_press_max@2026-04-23T21:59:46",
+              "start_utc": "2026-04-23T21:59:46",
+              "elapsed_s": 6810.0,
+              "duration_s": 9319.0,
+              "observed_value": 50.4,
+              "excess": 4.4,
+              "suppressed_by": null
+            }
+          ]
         },
         {
-          "id": "3eac93a6e4244662",
+          "id": "1ee371b61ce79d34",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Bus voltage minimum: 0.0 V below min 11.5 V at 00:35:10 for 62s"
+            "text": "\u26a0 [CAUTION] Bus voltage minimum: 1 event, worst 0.0 V (min 11.5 V), 1 min 2 s past the limit."
           },
           "evidence": [
             {
               "kind": "series_window",
-              "channels": [],
+              "channels": [
+                "main_volts"
+              ],
               "start_s": 16103.0,
               "end_s": 16227.0
             }
@@ -343,7 +463,19 @@
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
-          }
+          },
+          "limit_id": "volts_min",
+          "events": [
+            {
+              "event_id": "volts_min@2026-04-24T00:35:10",
+              "start_utc": "2026-04-24T00:35:10",
+              "elapsed_s": 16134.0,
+              "duration_s": 62.0,
+              "observed_value": 0.0,
+              "excess": 11.5,
+              "suppressed_by": null
+            }
+          ]
         }
       ],
       "metric_ids": []

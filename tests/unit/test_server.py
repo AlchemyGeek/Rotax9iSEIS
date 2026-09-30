@@ -296,7 +296,8 @@ def test_reorder_user_presets_rejects_mismatched_set(registry_server):
 def test_get_default_rules(server):
     d = rpc(server, "get_default_rules", {})
     assert d["ok"]
-    assert d["result"]["rules"]["overboost_time"]["triggers"][0]["limit"] == 300
+    # Spec 09 §10.2: the threshold follows the profile's overboost limit
+    assert d["result"]["rules"]["overboost_time"]["triggers"][0]["limit_ref"] == "overboost"
 
 
 def test_unknown_op_returns_envelope_error(server):
@@ -769,20 +770,20 @@ def test_get_save_reset_workspace_rules(registry_server):
 
     shipped = got["result"]["shipped_rules"]
     edited = json.loads(json.dumps(shipped))
-    edited["rules"]["overboost_time"]["triggers"][0]["limit"] = 200
+    edited["rules"]["overboost_time"]["triggers"][0]["severity"] = "watch"
 
     saved = rpc(registry_server, "save_workspace_rules", {"rules": edited})
     assert saved["ok"], saved
-    assert saved["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["limit"] == 200
+    assert saved["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "watch"
 
     refetched = rpc(registry_server, "get_workspace_rules", {})
-    assert refetched["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["limit"] == 200
+    assert refetched["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "watch"
     # shipped_rules is untouched by the edit — always "what's shipped"
-    assert refetched["result"]["shipped_rules"]["rules"]["overboost_time"]["triggers"][0]["limit"] == 300
+    assert refetched["result"]["shipped_rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "limit"
 
     reset = rpc(registry_server, "reset_workspace_rules", {})
     assert reset["ok"], reset
-    assert reset["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["limit"] == 300
+    assert reset["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "limit"
 
 
 def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_server):
@@ -791,7 +792,7 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
     get_workspace_rules echoes back."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 
-    log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
+    log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",255")
     b64 = base64.b64encode(log).decode()
     imported = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
     flight_id = imported["result"]["results"][0]["flight_id"]
@@ -805,13 +806,20 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
     oil_insights_before = [
         i for t in before["result"]["insight_set"]["topics"] if t["topic_id"] == "oil_temp_peak" for i in t["insights"]
     ]
-    assert oil_insights_before == []  # 180F is well under the 248F OM limit
+    # 255F is past the 916iS's 248F oil_temp_max, so the topic threshold
+    # (Spec 09 §10.2: it follows that limit's exceedance events) fires.
+    assert [i["trigger"] for i in oil_insights_before] == ["threshold"]
+    assert oil_insights_before[0]["severity"] == "limit"
+    before_row = next(r for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]
+                      if r["flight_id"] == flight_id)
+    assert before_row["worst_severity"] == "limit"
 
     shipped = rpc(registry_server, "get_default_rules", {})["result"]
     edited = json.loads(json.dumps(shipped))
-    for trig in edited["rules"]["oil_temp_peak"]["triggers"]:
-        if trig["type"] == "threshold":
-            trig["limit"] = 100  # far below the synthetic flight's 180F peak
+    for topic_id in ("oil_temp_peak", "limit_exceedances"):
+        for trig in edited["rules"][topic_id]["triggers"]:
+            if trig["type"] == "threshold":
+                trig["severity"] = "watch"
     rpc(registry_server, "save_workspace_rules", {"rules": edited})
 
     after = rpc(registry_server, "get_flight", {"flight_id": flight_id})
@@ -820,10 +828,11 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
     ]
     assert len(oil_insights_after) == 1
     assert oil_insights_after[0]["trigger"] == "threshold"
+    assert oil_insights_after[0]["severity"] == "watch"
 
     status_list = rpc(registry_server, "list_flights_with_status", {})
     row = next(r for r in status_list["result"]["rows"] if r["flight_id"] == flight_id)
-    assert row["worst_severity"] == "limit"
+    assert row["worst_severity"] == "watch"
 
 
 def _import_oil_temp_flight(base_url, day: int, oil_temp_f: int) -> str:

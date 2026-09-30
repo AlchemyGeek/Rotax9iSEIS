@@ -45,6 +45,27 @@ export interface ExceedanceEvent {
   duration_s: number;
   time_limit_s: number | null;
   note?: string;
+  // Spec 09 §11.1 — absent on analyses written before engine 0.17.
+  limit_id?: string | null;
+  event_id?: string;
+  excess?: number | null;
+}
+
+// Spec 09: one entry of the engine profile's limit catalogue, carried on
+// FlightAnalysis.limits.
+export interface LimitDef {
+  id: string;
+  param: string;
+  label: string;
+  unit: string;
+  limit_type: "MIN" | "MAX";
+  limit_value: number;
+  severity: string;
+  time_limit_s?: number | null;
+  report_in_exceedances?: boolean;
+  stratify_by?: string | null;
+  filter_policy?: Record<string, unknown>;
+  close_call_margin_s?: number;
 }
 
 export interface Provenance {
@@ -76,6 +97,7 @@ export interface FlightAnalysis {
   quality: Diagnostic[];
   provenance: Provenance;
   available_channels: string[];
+  limits?: LimitDef[];
 }
 
 export type Evidence =
@@ -104,6 +126,21 @@ export interface Insight {
   evidence: Evidence[];
   confidence: { level: string; n: number };
   note?: string;
+  // Spec 09 §10.1/§11.3 — limit_exceedances insights: one per limit per
+  // flight, carrying its events (evidence[i] is events[i]'s window).
+  limit_id?: string;
+  filter?: { filter_id: string; outcome: "suppressed" | "breach" };
+  events?: InsightEvent[];
+}
+
+export interface InsightEvent {
+  event_id: string;
+  start_utc?: string;
+  elapsed_s: number | null;
+  duration_s: number;
+  observed_value: number;
+  excess: number | null;
+  suppressed_by: "magnitude" | "duration" | null;
 }
 
 export interface TopicResult {
@@ -131,7 +168,10 @@ export interface InsightSet {
 export interface RuleTrigger {
   type: "threshold" | "baseline_deviation" | "trend";
   severity?: InsightSeverity;
+  // Legacy (rules < 1.3): a bare number. Rules 1.3 (Spec 09 §10.2) name
+  // the profile limit instead, so the threshold always follows the OM.
   limit?: number;
+  limit_ref?: string;
   unit?: string;
   condition?: string;
   tolerance_hpa?: number;

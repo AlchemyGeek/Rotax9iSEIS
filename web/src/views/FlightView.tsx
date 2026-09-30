@@ -396,6 +396,9 @@ export function FlightView() {
     }
   }
 
+  const limitFor = (insight: Insight) =>
+    insight.limit_id ? flightAnalysis.limits?.find((l) => l.id === insight.limit_id) : undefined;
+
   const flatInsights = useMemo(() => {
     const items: { insight: Insight; topicId: string }[] = [];
     for (const topic of insightSet.topics) {
@@ -451,8 +454,10 @@ export function FlightView() {
     setVisibleWindow([newStart, newEnd]);
   }
 
-  function handleEvidenceClick(insight: Insight) {
-    for (const ev of insight.evidence) {
+  // evidenceIndex: a limit card's event row (Spec 09 §12.1) zooms to that
+  // event's own window rather than the insight's first evidence.
+  function handleEvidenceClick(insight: Insight, evidenceIndex = 0) {
+    for (const ev of insight.evidence.slice(evidenceIndex)) {
       if (ev.kind === "series_window") {
         setZoomWindow([ev.start_s, ev.end_s]);
         setVisibleWindow([ev.start_s, ev.end_s]);
@@ -582,6 +587,9 @@ export function FlightView() {
                     insight={insight}
                     topicId={topicId}
                     onClick={() => handleEvidenceClick(insight)}
+                    onEventClick={(i) => handleEvidenceClick(insight, i)}
+                    unit={limitFor(insight)?.unit}
+                    limitType={limitFor(insight)?.limit_type}
                     note={existing?.note}
                     notesEnabled={!usingFixture}
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}

@@ -269,7 +269,7 @@ def cyl_deviation(cyls: list[dict]) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool) -> dict:
+def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optional[float] = None) -> dict:
     if ob_max is None:
         return {"analysis": "Overboost data not available (no RPM channel).", "insights": []}
     analysis = (
@@ -279,7 +279,7 @@ def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool) -> dict:
     insights = []
     if ob_exceeded:
         insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s."})
-    elif ob_max >= 240:
+    elif ob_max >= (close_call_s if close_call_s is not None else ob_limit - 60):
         insights.append({"trigger": "threshold", "text": f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
                          f"Pull back to climb power promptly after takeoff."})
     return {"analysis": analysis, "insights": insights}
@@ -330,19 +330,41 @@ def takeoff_map(obs_map, obs_pa, obs_oat, map_model: dict) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def oil_temp_peak(oil_max, b: dict, rule_triggers: list) -> dict:
+def _om_limit_text(om_limit: Optional[dict]) -> str:
+    return f"{om_limit['limit_value']:.0f}°F" if om_limit else "248°F"
+
+
+def _threshold_fired(value, rule: dict, om_limit: Optional[dict], limit_events: Optional[list]) -> tuple[bool, float]:
+    """
+    A topic threshold trigger (Spec 09 §10.2). With the referenced profile
+    limit resolved (`om_limit`), it fires exactly when the flight has at
+    least one unsuppressed exceedance event for that limit — the limit's
+    own phase and duration rules apply, and a filter that hides the
+    event hides this too. Without it (a caller that doesn't pass one, or
+    a flight analysed before Spec 09), the legacy numeric comparison.
+    """
+    if om_limit is not None and limit_events is not None:
+        return bool(limit_events), om_limit["limit_value"]
+    limit = rule.get("limit", 248)
+    return (value is not None and value > limit), limit
+
+
+def oil_temp_peak(oil_max, b: dict, rule_triggers: list, om_limit: Optional[dict] = None,
+                  limit_events: Optional[list] = None) -> dict:
     if oil_max is None or b.get("mean") is None:
         return {"analysis": "Oil temperature data not available.", "insights": []}
     note = confidence_note(b)
     analysis = (
         f"Peak {oil_max:.0f}°F. "
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note}). OM limit: 248°F."
+        f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold" and oil_max > rule.get("limit", 248):
-            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
+        if rule["type"] == "threshold":
+            fired, limit_value = _threshold_fired(oil_max, rule, om_limit, limit_events)
+            if fired:
+                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
         elif rule["type"] == "baseline_deviation":
             triggered, text, comparison = baseline_triggered(oil_max, b, rule)
             if triggered:
@@ -350,19 +372,22 @@ def oil_temp_peak(oil_max, b: dict, rule_triggers: list) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list) -> dict:
+def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list, om_limit: Optional[dict] = None,
+                  limit_events: Optional[list] = None) -> dict:
     if coolant_max is None or b.get("mean") is None:
         return {"analysis": "Coolant temperature data not available.", "insights": []}
     note = confidence_note(b)
     analysis = (
         f"Peak {coolant_max:.0f}°F. "
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note}). OM limit: 248°F."
+        f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold" and coolant_max > rule.get("limit", 248):
-            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
+        if rule["type"] == "threshold":
+            fired, limit_value = _threshold_fired(coolant_max, rule, om_limit, limit_events)
+            if fired:
+                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
         elif rule["type"] == "baseline_deviation":
             triggered, text, comparison = baseline_triggered(coolant_max, b, rule)
             if triggered:
@@ -485,6 +510,46 @@ def climb_thermal_rate(oil_rise, b: dict, rule_triggers: list) -> dict:
             triggered, text, comparison = baseline_triggered(oil_rise, b, rule)
             if triggered:
                 insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
+    return {"analysis": analysis, "insights": insights}
+
+
+def _fmt_duration(seconds: float) -> str:
+    s = int(round(seconds))
+    if s < 60:
+        return f"{s} s"
+    if s < 3600:
+        return f"{s // 60} min {s % 60} s" if s % 60 else f"{s // 60} min"
+    return f"{s // 3600} h {(s % 3600) // 60} min"
+
+
+def limit_exceedance_groups(groups: list[dict]) -> dict:
+    """
+    Spec 09 §10.1: one insight per limit per flight. `groups` holds one
+    {"limit": {label, unit, limit_type, limit_value, severity}, "events":
+    [serialized exceedance, ...]} per limit with events, in display
+    order. Returns {"analysis", "insights"}; each insight carries its
+    group index under "group" so the caller can attach limit_id, events
+    and evidence.
+    """
+    if not groups:
+        return {"analysis": "No OM hard-limit exceedances this flight.", "insights": []}
+    insights = []
+    total = 0
+    for i, g in enumerate(groups):
+        lim, events = g["limit"], g["events"]
+        total += len(events)
+        worst = max(events, key=lambda e: e.get("excess") if e.get("excess") is not None else
+                    (e["observed_value"] if lim["limit_type"] == "MAX" else -e["observed_value"]))
+        time_above = sum(e["duration_s"] for e in events)
+        unit = lim.get("unit", "")
+        side = "min" if lim["limit_type"] == "MIN" else "max"
+        count = f"{len(events)} event{'s' if len(events) != 1 else ''}"
+        text = (f"⚠ [{lim['severity']}] {lim['label']}: {count}, worst {worst['observed_value']:.1f} {unit} "
+                f"({side} {lim['limit_value']:.1f} {unit}), {_fmt_duration(time_above)} past the limit.")
+        insights.append({"trigger": "threshold", "text": text, "group": i})
+    n_limits = len(groups)
+    analysis = (f"{n_limits} OM limit{'s' if n_limits != 1 else ''} exceeded this flight "
+                f"({total} event{'s' if total != 1 else ''}):")
     return {"analysis": analysis, "insights": insights}
 
 

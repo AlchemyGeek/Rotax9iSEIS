@@ -22,7 +22,7 @@ from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from . import workspace as _workspace
 from .contract import content_hash
-from .limits import _resolve_engine_name, load_engine_config
+from .limits import _resolve_engine_name, limit_catalog, load_engine_config
 from .loader import deduplicate_flights, find_duplicate_flights, flight_fingerprint
 from .loader import flight_id as _compute_flight_id
 from .loader import load_directory, load_log
@@ -543,7 +543,8 @@ def cmd_include(args) -> int:
 
 def cmd_rules_check(args) -> int:
     rules = json.loads(Path(args.file).read_text())
-    diagnostics = validate_rules(rules)
+    engine_cfg = load_engine_config(getattr(args, "engine", None))
+    diagnostics = validate_rules(rules, limit_ids={lim["id"] for lim in limit_catalog(engine_cfg)})
     if args.json:
         _print_json(diagnostics)
     else:

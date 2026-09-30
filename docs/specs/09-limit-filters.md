@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.3 — draft, not implemented
+**Status:** v0.4 — Phase 1 implemented (engine 0.17.0); Phases 2–5 in progress (§16)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -13,6 +13,7 @@
 | 0.1 | Initial spec from the design discussion of 2026-09-29. |
 | 0.2 | Filters are built on the baseline machinery instead of a parallel statistics stack. Per-limit monitor metrics are registered as ordinary baseline metrics for every limit. A filter's reference is a **frozen baseline**: a fixed set of flights, evaluated with the existing baseline functions, honouring excluded flights and OAT/DA stratification. `drift_z` is removed in favour of the metric's `outlier_z_threshold`. The filter editor gains a "what would this hide?" preview reusing the rule playground's diff. New §2: plain-language comparison of baselines and filters. |
 | 0.3 | Q8 resolved: `baseline_deviation` moves to stratified comparison as well (Spec 01 v0.13, R8). Filters and baseline insights now share one rule for choosing comparable flights: same band if it has `n_min` points, otherwise all flights. §7.1 and §8.2 reference that rule instead of restating it. |
+| 0.4 | Phase 1 implemented. Q3 and Q6 resolved from the log-set report (§6.2, §15). KACV counts corrected: the "77 events" of §1 predate the current checker; before merging it finds 38 on that log. `FlightAnalysis.limits` added (§11.1). Runs split where phase filtering leaves a time gap (§6.2). New §16: phased implementation plan and status. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -24,7 +25,7 @@ Limit insights compare every flight against the engine profile's OM limits. On a
 
 The KACV log (`log_20260423_200615_KACV.csv`) shows the problem at full scale:
 
-- **Fuel pressure maximum (46.0 psi, CAUTION):** 77 events, 3 h 26 min above the limit in a 4 h 27 min window. Peaks are mostly 46.1–46.4 psi, sometimes 47–48.2 psi, and once 50.4 psi for 33 min.
+- **Fuel pressure maximum (46.0 psi, CAUTION):** 77 events, 3 h 26 min above the limit in a 4 h 27 min window. (Counted before the current `min_duration_by_phase` rules; the engine 0.16 checker finds 38 events on this log.) Peaks are mostly 46.1–46.4 psi, sometimes 47–48.2 psi, and once 50.4 psi for 33 min.
 - **Fragmentation:** most gaps between those 77 events are 3–30 s. The reading dips to 46.0 psi for a second and the checker starts a new event. Each event becomes its own insight.
 - **Duplication:** an oil or coolant temperature exceedance fires twice, once in `limit_exceedances` (from the engine profile) and once in `oil_temp_peak` / `coolant_temp_peak` (from a hard-coded `"limit": 248` in `insight_rules.json`).
 
@@ -147,7 +148,13 @@ New profile-level field:
 
 An event ends only when the reading has stayed within the limit for at least this many seconds. Shorter dips are absorbed into the event. The gap is measured in **time** (`datetime`), not rows, because phase filtering (`lim.phases`) makes rows non-contiguous. Merging happens **before** the existing `time_limit_s`, `min_duration_s` and `min_duration_by_phase` checks, so those apply to the merged event. Value is a placeholder to be tuned on the full log set (§14).
 
-On KACV, fuel pressure max goes from 77 events to 58 at a 5 s gap, 13 at 30 s, and 4 at 120 s.
+On KACV, fuel pressure max goes from 38 events to 33 at a 5 s gap, 7 at 30 s, and 3 at 120 s.
+
+**Chosen value (Phase 1, from `notebooks/05_limit_events_report.py` on the N117ZS log set, 107 logs):** 30 s. Across the log set fuel pressure max drops from 573 events to 158 at 30 s (138 at 60 s); 82% of its within-limit gaps between raw runs are ≤ 30 s, and the curve flattens past 30 s. No limit gains a time-limit (5-minute rule) event from merging.
+
+**Per-limit override** `exceedance_merge_gap_s` on a limit entry replaces the profile value for that limit (Q3). `rpm_idle_min` ships with 0: its `min_duration_s: 30` exists to ignore brief governor dips, and merging joins those dips into events that then pass the 30 s rule (54 → 100 events at a 30 s gap, 10–18 flights with idle events that had none).
+
+**Runs split at time gaps.** Phase filtering drops rows, so two exceeding stretches either side of an excluded phase were adjacent in the filtered frame and read as one run. A run now breaks wherever consecutive rows are more than 1.5× the median sample period apart; merging then decides, in time, whether to re-join them. This also applied before Spec 09 and is fixed regardless of the gap.
 
 ### 6.3 Filter policy
 
@@ -345,6 +352,8 @@ The overboost topic applies the filter band to `ob_max` and shifts the close cal
 
 `FlightAnalysis.metrics` gains the §5 columns. `analysis_key` changes, because event detection and metrics change.
 
+`FlightAnalysis.limits` (added in Phase 1): the engine profile's limit catalogue this flight was checked against, one entry per limit side: `{id, param, label, unit, limit_type, limit_value, severity, time_limit_s, report_in_exceedances, stratify_by, filter_policy?, close_call_margin_s?}`. It lets `evaluate_insights` resolve a `limit_ref` and a filter's limit without taking the engine profile as a new argument, and it is covered by `analysis_key` through the profile hash. Empty for analyses written before engine 0.17; those fall back to the legacy numeric thresholds until re-analysed.
+
 ### 11.2 Operations
 
 | Operation | Change |
@@ -483,9 +492,28 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 |---|---|---|
 | Q1 | Should `oil_press_min` (>3500 rpm) be non-filterable? It is the most direct sign of lubrication failure. | Yes, `filterable: false`, pending your decision. |
 | Q2 | Where do the WARNING caps come from? | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. |
-| Q3 | One global merge gap, or per limit? | Start global; add a per-limit override only if the log-set report (§14.2) shows one value doesn't fit. |
+| Q3 | One global merge gap, or per limit? | **Resolved (Phase 1).** Global 30 s, with a per-limit override; `rpm_idle_min` uses 0 s (§6.2). |
 | Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | Out of scope here; filtered independently for now. |
 | Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |
-| Q6 | Existing annotations attached to per-event `limit_exceedances` insights will be orphaned by the new insight IDs. Migrate them? | One-time migration: re-attach each note to the new per-limit insight for the same flight and limit. |
+| Q6 | Existing annotations attached to per-event `limit_exceedances` insights will be orphaned by the new insight IDs. Migrate them? | **Resolved (Phase 1).** On re-analysis, each note on an old per-event insight moves to the new per-limit insight for the same flight and limit; several notes on one limit are joined (`workspace.migrate_limit_annotations`). |
 | Q7 | Does fuel pressure vary with OAT enough to need stratification? | Decide from the §14.2 report. |
 | Q8 | ~~Filters compare within the flight's band, but `baseline_deviation` compares against all flights. Align them?~~ | **Resolved (option B).** `baseline_deviation` moves to stratified leave-one-out comparison with an unstratified fallback below `n_min`: Spec 01 v0.13, R8; Spec 03 v0.11 §5.3 for the Trends outlier rings. Implemented as its own change, not part of Spec 09, but Spec 09's frozen-baseline comparison calls the same helper. |
+
+## 16. Implementation plan and status
+
+Built in phases, each shippable on its own.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Limit ids (§6.1), merge gap (§6.2), overboost `close_call_margin_s` (§6.4), one insight per limit without filters (§10.1), topic thresholds via `limit_ref` (§10.2), exceedance fields and `FlightAnalysis.limits` (§11.1), log-set report, note migration (Q6) | Done, engine 0.17.0 |
+| 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | |
+| 3 | Filters: `filter_policy` (§6.3), absolute/percent/duration semantics and validation (§7), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1) | |
+| 4 | Change monitor (§8), z mode (§7.1), `evaluate_filter_health`, Notes page filter cards, nav badge and Flights banner (§10.4, §12.2–12.3) | |
+| 5 | Copy filters between workspaces (§9) | |
+
+**Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
+older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgrade_limit_refs`),
+and the rule playground shows these triggers as "follows OM limit". A `limit_ref` that doesn't
+resolve is an error in `validate_rules(rules, limit_ids)` and, at evaluation time, a
+`RULES_LIMIT_REF_UNRESOLVED` header warning with the threshold insight left out.
+

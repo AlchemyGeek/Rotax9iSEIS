@@ -11,6 +11,36 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.17.0 — September 30, 2026
+
+**Limit exceedances, one card per limit (Spec 09 Phase 1).** Fixes the fragmentation and
+duplication that made the limits topic easy to skim past. Filters come in a later phase.
+
+- **Stable limit ids:** every limit in all four engine profiles has an `id` (e.g.
+  `fuel_press_max`), plus `egt_split_high_flow`, `egt_split_low_flow` and `overboost` for the
+  computed limits. A profile with a missing or duplicate id no longer loads.
+- **Event merging:** a reading that dips back within a limit for less than
+  `exceedance_merge_gap_s` (30 s) no longer ends the event; duration rules apply to the merged
+  event. Chosen from the N117ZS log set (`notebooks/05_limit_events_report.py`): fuel pressure
+  maximum drops from 573 to 158 events. `rpm_idle_min` keeps a 0 s gap (per-limit override),
+  since merging would join brief governor dips into long events.
+- **Fixed:** a phase-filtered limit no longer joins exceedances either side of an excluded
+  phase into one event.
+- **One insight per limit per flight:** `limit_exceedances` shows a count, the worst reading
+  and the total time past the limit; the card expands to its events, each zooming the chart.
+  Insight ids no longer depend on the message text, so notes stay attached. Notes on the old
+  per-event insights move to the new per-limit insight when the flight is re-analysed.
+- **Topic thresholds follow the engine profile:** `oil_temp_peak`, `coolant_temp_peak` and
+  `overboost_time` reference a limit (`limit_ref`) instead of a hard-coded 248°F / 300 s, and
+  fire only when the flight has an event for that limit. Fixes the 915iS (266°F oil limit).
+  Rules go to v1.3; a workspace's older rule copy is read as `limit_ref`. The overboost
+  close call now comes from the profile (`close_call_margin_s`, 60 s).
+- **Contract:** exceedances gain `limit_id`, `event_id`, `excess`; `FlightAnalysis.limits`
+  carries the profile's limit catalogue; limit insights carry `limit_id` and `events`.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
 ## 0.14.0 — September 26, 2026
 
 **Cylinder balance (Spec 08).** The toolkit no longer assumes cylinder 4 is the hottest. It

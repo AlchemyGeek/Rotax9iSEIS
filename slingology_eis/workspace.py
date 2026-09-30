@@ -725,8 +725,34 @@ def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
 def load_workspace_rules(ws_dir: Path, shipped_rules: dict) -> dict:
     f = ws_dir / "rules" / "active.json"
     if f.exists():
-        return json.loads(f.read_text())
+        return upgrade_limit_refs(json.loads(f.read_text()))
     return shipped_rules
+
+
+# Spec 09 §10.2 (rules v1.3): threshold triggers name a profile limit
+# instead of carrying its number. A workspace copy saved before then
+# still says e.g. `"limit": 248` on oil_temp_peak — which was always
+# oil_temp_max, and wrong for a 915iS (266°F).
+_LEGACY_THRESHOLD_LIMIT_REFS = {
+    "oil_temp_peak": "oil_temp_max",
+    "coolant_temp_peak": "coolant_temp_max",
+    "overboost_time": "overboost",
+}
+
+
+def upgrade_limit_refs(rules: dict) -> dict:
+    """Rewrite legacy numeric threshold triggers to `limit_ref`, in memory
+    (the file itself is left as the pilot saved it until next saved)."""
+    for topic_id, ref in _LEGACY_THRESHOLD_LIMIT_REFS.items():
+        topic = (rules.get("rules") or {}).get(topic_id)
+        if not isinstance(topic, dict):
+            continue
+        for trig in topic.get("triggers") or []:
+            if isinstance(trig, dict) and trig.get("type") == "threshold" and "limit_ref" not in trig and "limit" in trig:
+                trig.pop("limit")
+                trig.pop("unit", None)
+                trig["limit_ref"] = ref
+    return rules
 
 
 def save_workspace_rules(ws_dir: Path, rules: dict) -> None:
@@ -1025,6 +1051,7 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
             # reanalyzable in place; leave the stored one as-is.
             continue
         save_flight_analysis(ws_dir, fresh)
+        migrate_limit_annotations(ws_dir, fa, fresh)
         result.reanalyzed_flight_ids.append(fid)
 
     # Update manifest + registry.
@@ -1189,3 +1216,67 @@ def delete_annotation(ws_dir: Path, annotation_id: str) -> bool:
 
 def annotations_for_flight(ws_dir: Path, flight_id: str) -> list[dict]:
     return [a for a in load_annotations(ws_dir)["annotations"] if a["flight_id"] == flight_id]
+
+
+def migrate_limit_annotations(ws_dir: Path, old: FlightAnalysis, fresh: FlightAnalysis) -> int:
+    """
+    Spec 09 Q6: before Spec 09, `limit_exceedances` had one insight per
+    event, identified by a hash of its message text; now there is one per
+    limit per flight, identified by limit (operations._limit_insight_id).
+    On re-analysis, re-attach each note on an old per-event insight to
+    the new per-limit insight for the same flight and limit. Several
+    notes landing on one insight are joined into one, oldest first.
+    Returns the number of notes moved. A no-op for an `old` analysis that
+    already has limit ids.
+    """
+    from .contract import content_hash
+    from .operations import _format_exceedance_text, _limit_insight_id
+
+    if not old.exceedances or any(e.get("limit_id") for e in old.exceedances) or not fresh.limits:
+        return 0
+
+    def _match_limit_id(e: dict) -> Optional[str]:
+        candidates = [lim for lim in fresh.limits
+                      if lim["param"] == e["param"] and lim["limit_type"] == e["limit_type"]
+                      and abs(lim["limit_value"] - e["limit_value"]) < 1e-9]
+        if len(candidates) > 1:
+            candidates = [lim for lim in candidates if lim["label"] == e["label"]] or candidates[:1]
+        return candidates[0]["id"] if candidates else None
+
+    new_id_by_old_id = {}
+    for e in old.exceedances:
+        text = f"⚠ {_format_exceedance_text(e)}"
+        old_id = content_hash({"flight_id": old.flight_id, "topic_id": "limit_exceedances",
+                               "trigger": "threshold", "text": text})[:16]
+        lid = _match_limit_id(e)
+        if lid:
+            new_id_by_old_id[old_id] = _limit_insight_id(fresh.flight_id, lid, "exceedance")
+
+    store = load_annotations(ws_dir)
+    moved = 0
+    kept: list[dict] = []
+    by_new_id: dict[str, dict] = {
+        a["ref"]["insight_id"]: a for a in store["annotations"]
+        if a["flight_id"] == old.flight_id and a.get("ref", {}).get("kind") == "insight"
+    }
+    for a in sorted(store["annotations"], key=lambda a: a.get("created_at", "")):
+        ref = a.get("ref", {})
+        new_id = new_id_by_old_id.get(ref.get("insight_id")) if (
+            a["flight_id"] == old.flight_id and ref.get("kind") == "insight") else None
+        if new_id is None:
+            kept.append(a)
+            continue
+        moved += 1
+        target = by_new_id.get(new_id)
+        if target is None:
+            a["ref"] = {"kind": "insight", "insight_id": new_id}
+            a["updated_at"] = _now()
+            by_new_id[new_id] = a
+            kept.append(a)
+        else:
+            target["note"] = f"{target['note']}\n\n{a['note']}"
+            target["updated_at"] = _now()
+    if moved:
+        store["annotations"] = sorted(kept, key=lambda a: a.get("created_at", ""))
+        _write_json(ws_dir / "annotations.json", store)
+    return moved
