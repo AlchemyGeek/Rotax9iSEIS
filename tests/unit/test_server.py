@@ -527,6 +527,39 @@ def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):
     assert any(r["filename"] == ground_session.name for r in with_status["result"]["rows"])
 
 
+def test_list_exclusions_enrich_adds_date_duration_and_airborne(registry_server, tmp_path):
+    """
+    enrich=true re-locates and re-parses the source file for extra
+    context the Skipped panel shows (date/duration/airborne minutes) —
+    absent by default, since that's real per-file I/O not worth paying
+    for on every routine refresh().
+    """
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    import shutil
+    from ..conftest import LOGS_DIR
+    ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+    if not ground_session.exists():
+        pytest.skip("ground-session fixture log not present locally")
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(ground_session, folder / ground_session.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+    rpc(registry_server, "scan_workspace", {})
+
+    cheap = rpc(registry_server, "list_exclusions", {})
+    assert cheap["ok"], cheap
+    assert "date" not in cheap["result"]["entries"][0]
+
+    enriched = rpc(registry_server, "list_exclusions", {"enrich": True})
+    assert enriched["ok"], enriched
+    entry = enriched["result"]["entries"][0]
+    assert entry["date"] == "2026-08-25"
+    assert entry["duration_min"] == 3
+    assert entry["airborne_min"] == 0
+    assert entry["aircraft_ident"] == "N117ZS"
+
+
 def test_include_excluded_log_unknown_filename(registry_server):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     d = rpc(registry_server, "include_excluded_log", {"filename": "never-seen.csv"})

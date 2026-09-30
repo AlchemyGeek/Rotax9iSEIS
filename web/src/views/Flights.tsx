@@ -279,17 +279,38 @@ export function Flights() {
     }
   }
 
+  // Re-locates and re-parses each skipped log's own source file for
+  // date/duration/airborne minutes — real per-file I/O, so it's fetched
+  // only when the Skipped panel is actually open, not on every routine
+  // refresh() (which still fetches the cheap, unenriched list for the
+  // chip's count).
+  const fetchSkippedDetails = useCallback(async () => {
+    try {
+      const result = await client.listExclusions(true);
+      setExclusions(result.entries);
+    } catch {
+      // leave whatever refresh() already put there — still correct, just unenriched
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showSkipped) fetchSkippedDetails();
+  }, [showSkipped, fetchSkippedDetails]);
+
   // Brings a skipped log back — for a folder-scanned file this creates
   // the flight in the same round trip (the RPC op runs a scan right
   // after the override); a browser-uploaded one has no bytes saved
   // anywhere to re-analyze from, so the override just clears the way
-  // for re-uploading the same file.
+  // for re-uploading the same file. Only ever called from within the
+  // Skipped panel, so re-fetching the enriched list after is always
+  // relevant, not just the cheap one refresh() already gets.
   async function handleIncludeExcludedLog(filename: string) {
     setIncludingFilename(filename);
     setIncludeError(null);
     try {
       await client.includeExcludedLog(filename, "included from the Flights tab");
       await refresh();
+      await fetchSkippedDetails();
     } catch {
       setIncludeError(`Couldn't include ${filename} — the server may be unreachable. Try again.`);
     } finally {
@@ -990,6 +1011,9 @@ export function Flights() {
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
                   <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Reason</th>
+                  <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Date</th>
+                  <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Duration</th>
+                  <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Airborne</th>
                   <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Source</th>
                   <th style={{ width: 90 }} />
                 </tr>
@@ -1009,6 +1033,15 @@ export function Flights() {
                         <span className="mono" style={{ fontSize: 12 }}>{e.filename}</span>
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 3 }}>{e.reason}</div>
+                    </td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>
+                      {e.date ?? "—"}
+                    </td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>
+                      {e.duration_min != null ? `${e.duration_min}m` : "—"}
+                    </td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>
+                      {e.airborne_min != null ? `${e.airborne_min}m` : "—"}
                     </td>
                     <td style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)" }}>
                       {e.source === "auto" ? "auto-detected" : "excluded by you"}

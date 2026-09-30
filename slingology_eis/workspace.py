@@ -777,6 +777,28 @@ def _relative_path(abspath: Path, folder: Path) -> str:
     return str(abspath.relative_to(folder))
 
 
+def find_log_file_by_name(manifest: WorkspaceManifest, filename: str) -> Optional[Path]:
+    """
+    Best-effort: search every reachable log_folders entry for a file
+    with this exact name. exclusions.json only ever records a filename
+    (Spec: Workspace Flight Exclusions), never a path, so this is how a
+    skipped log's own data (date, duration, etc.) gets found again for
+    display — e.g. the Flights tab's Skipped list. None if the file
+    isn't in any currently-reachable watched folder (including the
+    always-true case of a browser-uploaded exclusion, which was never
+    in a folder at all — its bytes were never saved anywhere).
+    """
+    target = filename.lower()
+    for lf in manifest.log_folders:
+        folder = Path(lf.path).expanduser()
+        if not folder.is_dir():
+            continue
+        for abspath in _find_csv_files(folder):
+            if abspath.name.lower() == target:
+                return abspath
+    return None
+
+
 def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[bytes, str]]:
     """Best-effort re-read of a known flight's own source bytes — the
     workspace's own persisted copy for an uploaded flight, or the

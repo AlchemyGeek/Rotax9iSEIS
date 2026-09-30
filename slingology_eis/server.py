@@ -59,7 +59,7 @@ from .operations import (
     evaluate_insights,
     update_fleet,
 )
-from .phases import detect_phases
+from .phases import AIRBORNE_PHASES, detect_phases, phase_summary
 from .rules import validate_rules
 
 _DEFAULT_RULES_PATH = _REPO_ROOT / "insight_rules.json"
@@ -623,6 +623,40 @@ def op_include_flight(params: dict, ctx: dict) -> Any:
     return ws.include_flight(ctx["workspace_dir"], params["flight_id"]).to_dict()
 
 
+def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"]) -> dict:
+    """
+    Best-effort extra context for one exclusions.json entry, for display
+    (date/duration/airborne minutes/aircraft) — none of this is stored
+    in exclusions.json itself (just filename/category/reason), so it
+    means re-locating and re-parsing the source file. None of the extra
+    fields are added if the file can't be found (unreachable folder, or
+    a browser-uploaded exclusion, which was never in a folder at all —
+    its bytes were never saved anywhere) or fails to parse.
+    """
+    if manifest is None:
+        return entry
+    path = ws.find_log_file_by_name(manifest, entry["filename"])
+    if path is None:
+        return entry
+    try:
+        df, info = load_log_bytes(path.read_bytes(), entry["filename"])
+        df = detect_phases(df, verbose=False)
+        start, end = df["datetime"].iloc[0], df["datetime"].iloc[-1]
+        airborne_s = sum(
+            seg["duration_s"] for seg in phase_summary(df).to_dict("records")
+            if seg["phase"] in AIRBORNE_PHASES
+        )
+        return {
+            **entry,
+            "date": start.strftime("%Y-%m-%d"),
+            "duration_min": round((end - start).total_seconds() / 60),
+            "airborne_min": round(airborne_s / 60),
+            "aircraft_ident": info.aircraft_ident,
+        }
+    except Exception:
+        return entry
+
+
 def op_list_exclusions(params: dict, ctx: dict) -> Any:
     """
     The Flights tab's "Skipped" list (Spec: Workspace Flight Exclusions
@@ -632,10 +666,26 @@ def op_list_exclusions(params: dict, ctx: dict) -> Any:
     op_list_flights_with_status's excluded_reason/in_baselines, which is
     for flights that DID get analyzed and are just held out of baselines
     (FleetSelection, a different mechanism).
+
+    params.enrich (default False): also re-locate and re-parse each
+    entry's source file for date/duration/airborne-minutes/aircraft —
+    real I/O per file, not something to pay for on every routine
+    refresh(), so the caller opts in only when actually showing the
+    list (not just its count for a chip badge).
     """
     workspace_dir = ctx["workspace_dir"]
     exclusions = _exclusions.load_exclusions(workspace_dir)
     entries = [e for e in exclusions.get("entries", []) if not e.get("user_override")]
+
+    if params.get("enrich"):
+        manifest = None
+        if ctx.get("active_workspace_id"):
+            try:
+                manifest = ws.load_manifest(workspace_dir)
+            except (FileNotFoundError, OSError):
+                manifest = None
+        entries = [_enrich_exclusion_entry(e, manifest) for e in entries]
+
     return {"entries": entries, "summary": _exclusions.exclusion_summary(exclusions)}
 
 

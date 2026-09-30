@@ -498,6 +498,13 @@ export interface ExclusionEntry {
   excluded_at: string;
   user_override: boolean;
   override_reason?: string;
+  // Only present when listExclusions() was called with enrich=true — the
+  // source file was re-located and re-parsed for this (not stored in
+  // exclusions.json itself), so it's opt-in, not on every refresh().
+  date?: string;
+  duration_min?: number;
+  airborne_min?: number;
+  aircraft_ident?: string;
 }
 
 export interface ExclusionsResult {

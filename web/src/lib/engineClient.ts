@@ -99,7 +99,7 @@ export interface EngineClient {
 
   // Spec: Workspace Flight Exclusions — files that never became a
   // flight_id (ground session / short flight / corrupt log / user).
-  listExclusions(): Promise<ExclusionsResult>;
+  listExclusions(enrich?: boolean): Promise<ExclusionsResult>;
   includeExcludedLog(filename: string, reason?: string): Promise<{ filename: string; included: boolean; scan_result: ScanResult | null }>;
 
   // Spec 02 v0.5 workspace management
@@ -285,8 +285,8 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ removed_flight_ids: string[]; scan_result: ScanResult | null }>("remove_flights", { flight_ids: flightIds });
   }
 
-  listExclusions() {
-    return this.rpc<ExclusionsResult>("list_exclusions", {});
+  listExclusions(enrich?: boolean) {
+    return this.rpc<ExclusionsResult>("list_exclusions", { enrich: !!enrich });
   }
 
   includeExcludedLog(filename: string, reason?: string) {
