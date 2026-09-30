@@ -405,7 +405,18 @@ export function Baselines() {
                         </div>
                       </>
                     )}
-                    {trig.type === "threshold" && trig.limit === undefined && (
+                    {trig.type === "threshold" && trig.limit_ref !== undefined && (
+                      <>
+                        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Limit</label>
+                        <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                          follows OM limit <span style={{ color: "var(--text-secondary)" }}>{trig.limit_ref}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                          from the engine profile — to accept a known exceedance, filter the limit instead
+                        </div>
+                      </>
+                    )}
+                    {trig.type === "threshold" && trig.limit === undefined && trig.limit_ref === undefined && (
                       <>
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Condition</label>
                         <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>

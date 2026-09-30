@@ -567,9 +567,18 @@ class TestScanWithRealLogs:
         # no active.json yet — resolves to the shipped copy passed in
         assert ws.load_workspace_rules(ws_dir, shipped) == shipped
 
-        edited = {"version": "1.1", "rules": {"overboost_time": {"triggers": [{"type": "threshold", "limit": 200}]}}}
+        edited = {"version": "1.3", "rules": {"overboost_time": {"triggers": [
+            {"type": "threshold", "limit_ref": "overboost", "severity": "watch"}]}}}
         ws.save_workspace_rules(ws_dir, edited)
         assert ws.load_workspace_rules(ws_dir, shipped) == edited
+
+        # Spec 09 §10.2: a copy saved before rules v1.3 carries the limit's
+        # number; it's read back as a reference to the profile limit.
+        legacy = {"version": "1.1", "rules": {"overboost_time": {"triggers": [
+            {"type": "threshold", "limit": 300, "unit": "s", "severity": "limit"}]}}}
+        ws.save_workspace_rules(ws_dir, legacy)
+        assert ws.load_workspace_rules(ws_dir, shipped)["rules"]["overboost_time"]["triggers"] == [
+            {"type": "threshold", "severity": "limit", "limit_ref": "overboost"}]
 
         ws.reset_workspace_rules(ws_dir)
         assert ws.load_workspace_rules(ws_dir, shipped) == shipped

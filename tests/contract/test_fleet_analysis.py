@@ -125,3 +125,24 @@ def test_update_fleet_by_band_outliers_use_that_bands_own_baseline(real_fleet_an
             assert actual_ids == expected_ids, f"{metric_id}/{band_name}: outlier set mismatch"
             checked += 1
     assert checked > 0  # sanity: we actually compared some band
+
+
+@requires_flight_logs
+def test_every_limit_metric_is_baselined(real_flight_analyses, real_fleet_analysis):
+    """Spec 09 §14 acceptance 3: update_fleet baselines every limit's §5
+    metrics with the same functions as existing metrics, stratified where
+    the limit says so."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    from slingology_eis.baselines import limit_baseline_metric_defs
+    defs = limit_baseline_metric_defs(real_flight_analyses[0].limits)
+    assert defs
+    for key, col, band in defs:
+        has_values = any(fa.metrics.get(col, {}).get("value") is not None for fa in real_flight_analyses)
+        if not has_values:
+            continue
+        m = real_fleet_analysis.metrics[key]
+        assert m["baseline"]["n"] == len(m["points"])
+        assert {"direction", "n"} <= set(m["trend"])
+        if band and any(p.get("band") for p in m["points"]):
+            assert m["by_band"]["band_kind"] == band

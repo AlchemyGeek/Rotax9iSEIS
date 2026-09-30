@@ -46,7 +46,7 @@ from .channels import CHANNEL_REGISTRY, MAX_CHART_SLOTS, SLOT_GROUPS
 from .cli import _REPO_ROOT, _write_workspace, resolve_logs_dir, resolve_workspace_dir
 from .presets import validate_chart_preset
 from .contract import content_hash
-from .limits import _resolve_engine_name, load_engine_config, resolve_min_flight_duration_min
+from .limits import _resolve_engine_name, limit_catalog, load_engine_config, resolve_min_flight_duration_min
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
 from .operations import (
@@ -390,7 +390,8 @@ def op_analyze_ecu_workspace(params: dict, ctx: dict) -> Any:
 
 
 def op_validate_rules(params: dict, ctx: dict) -> Any:
-    return validate_rules(params["rules"])
+    engine_cfg, _ = _current_engine(ctx)
+    return validate_rules(params["rules"], limit_ids={lim["id"] for lim in limit_catalog(engine_cfg)})
 
 
 def _source_filename(workspace_dir: Path, flight_id: str) -> Optional[str]:
