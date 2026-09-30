@@ -74,7 +74,8 @@ def test_catalog_carries_overboost_close_call_and_stratification():
     assert cat["overboost"]["close_call_margin_s"] == 60
     assert cat["oil_temp_max"]["stratify_by"] == "oat_band"
     assert cat["map_max"]["stratify_by"] == "da_band"
-    assert cat["fuel_press_max"]["stratify_by"] is None
+    assert cat["fuel_press_max"]["stratify_by"] == "oat_band"  # explicit in the profile (Q7)
+    assert cat["fuel_press_min"]["stratify_by"] is None
 
 
 # ── Merging (§6.2) ────────────────────────────────────────────────────────────
@@ -346,3 +347,107 @@ def test_notes_on_per_event_insights_move_to_the_per_limit_insight(tmp_path):
     assert len(ws.load_annotations(ws_dir)["annotations"]) == 3
     # idempotent: an analysis that already has limit ids is left alone
     assert ws.migrate_limit_annotations(ws_dir, fresh, fresh) == 0
+
+
+# ── Per-limit metrics (§5, Phase 2) ──────────────────────────────────────────
+
+from slingology_eis.baselines import limit_baseline_metric_defs  # noqa: E402
+from slingology_eis.limits import engine_running_s, per_limit_metrics  # noqa: E402
+
+_CAT_916 = limit_catalog(load_engine_config("916iS"))
+
+
+def _metrics_for(excs, running_s=1000.0, channels=("fuel_press_psi", "main_volts", "rpm"), ob=None):
+    return per_limit_metrics(excs, _CAT_916, running_s, set(channels), overboost_max_block_s=ob)
+
+
+def test_peak_excess_and_time_above_share():
+    m = _metrics_for([
+        _exc("fuel_press_max", "fuel_press_psi", "Fuel pressure maximum", 100, 40, 46.4, 46.0),
+        _exc("fuel_press_max", "fuel_press_psi", "Fuel pressure maximum", 900, 60, 47.5, 46.0),
+    ])
+    assert m["lim_fuel_press_max_peak_excess"]["value"] == pytest.approx(1.5)
+    assert m["lim_fuel_press_max_time_above_pct"]["value"] == pytest.approx(10.0)
+    assert m["lim_fuel_press_max_peak_excess"]["unit"] == "psi"
+
+
+def test_no_event_means_missing_peak_and_zero_share():
+    m = _metrics_for([])
+    assert m["lim_fuel_press_max_peak_excess"]["value"] is None
+    assert m["lim_fuel_press_max_peak_excess"]["missing"] == "NOT_APPLICABLE"
+    assert m["lim_fuel_press_max_time_above_pct"]["value"] == 0.0
+
+
+def test_channel_missing_and_unknown_running_time():
+    m = _metrics_for([], channels=("rpm",))
+    assert m["lim_fuel_press_max_time_above_pct"]["missing"] == "CHANNEL_MISSING"
+    m = _metrics_for([], running_s=None)
+    assert m["lim_fuel_press_max_time_above_pct"]["missing"] == "INSUFFICIENT_DATA"
+
+
+def test_overboost_gets_block_metric_only():
+    m = _metrics_for([], ob=250)
+    assert m["lim_overboost_block_s"]["value"] == 250
+    assert not any(k.startswith("lim_overboost_") and k != "lim_overboost_block_s" for k in m)
+
+
+def test_limits_never_checked_get_no_metrics():
+    m = _metrics_for([])
+    assert not any("oil_temp_optimal_low" in k for k in m)  # report_in_exceedances: false
+
+
+def test_engine_running_time_excludes_pre_start_and_shutdown():
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=100, freq="1s"),
+        "phase": ["PRE_START"] * 10 + ["TAXI"] * 30 + ["CRUISE"] * 50 + ["SHUTDOWN"] * 10,
+    })
+    assert engine_running_s(df) == 80
+
+
+def test_limit_metric_defs_are_generated_from_the_catalog():
+    defs = {key: (col, band) for key, col, band in limit_baseline_metric_defs(_CAT_916)}
+    assert defs["limit_fuel_press_max_peak_excess"] == ("lim_fuel_press_max_peak_excess", "oat_band")
+    assert defs["limit_oil_temp_max_time_above_pct"] == ("lim_oil_temp_max_time_above_pct", "oat_band")
+    assert defs["limit_volts_min_time_above_pct"] == ("lim_volts_min_time_above_pct", None)
+    assert defs["limit_overboost_block_s"] == ("lim_overboost_block_s", "da_band")
+
+
+def _fleet_flight(i, peak, pct, band):
+    metrics = {
+        "lim_fuel_press_max_peak_excess": {"id": "lim_fuel_press_max_peak_excess", "value": peak},
+        "lim_fuel_press_max_time_above_pct": {"id": "lim_fuel_press_max_time_above_pct", "value": pct},
+        "oat_band": {"id": "oat_band", "value": band},
+    }
+    for k in ("takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"):
+        metrics[k] = {"id": k, "value": None}
+    return FlightAnalysis(
+        flight_id=f"f{i:02d}", analysis_key=f"k{i}", source_keys=[f"s{i}"],
+        header={"date": f"2026-01-{i + 1:02d}", "start_utc": "x", "engine_hours_start": 10.0 + i},
+        metrics=metrics, provenance={}, limits=_CAT_916,
+    )
+
+
+def test_update_fleet_baselines_per_limit_metrics_like_any_other():
+    fas = [_fleet_flight(i, 0.3 + 0.01 * i if i % 3 else None, 20.0 + i, "cold" if i < 6 else "mild")
+           for i in range(20)]
+    fleet = update_fleet(fas)
+    peak = fleet.metrics["limit_fuel_press_max_peak_excess"]
+    pct = fleet.metrics["limit_fuel_press_max_time_above_pct"]
+    # flights with no event (None) aren't points of peak_excess; every flight is a point of the share
+    assert len(peak["points"]) == sum(1 for i in range(20) if i % 3)
+    assert len(pct["points"]) == 20
+    assert pct["trend"]["direction"] == "increasing"
+    assert set(pct["by_band"]["bands"]) == {"cold", "mild"}
+    assert pct["by_band"]["band_kind"] == "oat_band"
+    # no BASELINE_LOW_N noise for metrics without insight rules
+    assert not any(q["refs"].get("metric_id", "").startswith("limit_") for q in fleet.quality)
+
+
+def test_per_limit_outliers_use_the_metric_threshold():
+    fas = [_fleet_flight(i, None, 20.0, "mild") for i in range(15)] + [_fleet_flight(15, None, 60.0, "mild")]
+    base = update_fleet(fas)
+    assert [o["flight_id"] for o in base.metrics["limit_fuel_press_max_time_above_pct"]["outliers"]] == ["f15"]
+    loose = update_fleet(fas, baseline_config={
+        "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
+        "outlier_z_threshold_overrides": {"limit_fuel_press_max_time_above_pct": 10.0}})
+    assert loose.metrics["limit_fuel_press_max_time_above_pct"]["outliers"] == []

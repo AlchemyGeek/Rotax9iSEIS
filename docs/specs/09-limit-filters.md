@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.4 — Phase 1 implemented (engine 0.17.0); Phases 2–5 in progress (§16)
+**Status:** v0.5 — Phases 1–2 implemented (engine 0.18.0); Phases 3–5 in progress (§16)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -14,6 +14,7 @@
 | 0.2 | Filters are built on the baseline machinery instead of a parallel statistics stack. Per-limit monitor metrics are registered as ordinary baseline metrics for every limit. A filter's reference is a **frozen baseline**: a fixed set of flights, evaluated with the existing baseline functions, honouring excluded flights and OAT/DA stratification. `drift_z` is removed in favour of the metric's `outlier_z_threshold`. The filter editor gains a "what would this hide?" preview reusing the rule playground's diff. New §2: plain-language comparison of baselines and filters. |
 | 0.3 | Q8 resolved: `baseline_deviation` moves to stratified comparison as well (Spec 01 v0.13, R8). Filters and baseline insights now share one rule for choosing comparable flights: same band if it has `n_min` points, otherwise all flights. §7.1 and §8.2 reference that rule instead of restating it. |
 | 0.4 | Phase 1 implemented. Q3 and Q6 resolved from the log-set report (§6.2, §15). KACV counts corrected: the "77 events" of §1 predate the current checker; before merging it finds 38 on that log. `FlightAnalysis.limits` added (§11.1). Runs split where phase filtering leaves a time gap (§6.2). New §16: phased implementation plan and status. |
+| 0.5 | Phase 2 implemented. Q7 resolved: `fuel_press_max` is OAT-stratified (§6.5). Engine-running time and the per-limit metric naming pinned down (§5). |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -103,7 +104,10 @@ Every limit in the workspace's engine profile gets two per-flight metrics, filte
 
 For `overboost`, `peak_excess` is replaced by `limit_overboost_block_s`, the longest continuous block (`ob_max`), and `time_above_pct` is not produced.
 
-- Computed in `analyze_flight` from `FlightAnalysis.exceedances` after merging (§6.2). Engine-running time uses phase detection (engine start to shutdown), so the metric doesn't depend on flight length.
+- Computed in `analyze_flight` from `FlightAnalysis.exceedances` after merging (§6.2). Engine-running time uses phase detection (engine start to shutdown), so the metric doesn't depend on flight length. Implemented as the span of rows not labelled `PRE_START` or `SHUTDOWN` (`limits.engine_running_s`).
+- Limits never checked for events (`report_in_exceedances: false`, e.g. `oil_temp_optimal_low`) get no metrics. `peak_excess` is missing with reason `NOT_APPLICABLE` on a flight without events, and both are `CHANNEL_MISSING` when the log lacks the limit's channel.
+- The overboost metric is `lim_overboost_block_s` on the flight and `limit_overboost_block_s` in the fleet.
+- `BASELINE_LOW_N` fleet diagnostics are not emitted for these metrics; the filter monitor reports its own (`FILTER_REFERENCE_LOW_N`).
 - Registered in the metric registry and added to `BASELINE_METRIC_DEFS`, generated from the engine profile rather than hand-listed. Their stratification band comes from the limit's `stratify_by` (§6.5).
 - `update_fleet` baselines them exactly like every other metric: points, trend over engine hours, outliers at `resolve_outlier_z_threshold(metric_id)`, and stratified baselines.
 - They have no insight rules (§3 non-goals) and are hidden from the Trends view until the follow-up (§15).
@@ -199,6 +203,8 @@ New optional per-limit field `stratify_by: "oat_band" | "da_band" | null`, used 
 | Everything else (fuel pressure, oil pressure, RPM, volts) | none |
 
 Whether fuel pressure depends on OAT (fuel temperature) is an open question (Q7); the log-set report in §14.2 should show whether any unstratified limit metric clearly varies by band.
+
+**From the log-set report (Phase 2, 53 flights):** `fuel_press_max` peak excess varies with OAT band (eta² 0.18; cold +4.1 psi, mild +3.3 psi), so the 916iS and 915iS profiles set `stratify_by: "oat_band"` on it; its time-above share does not (eta² 0.07). The large density-altitude effects on the `time_above_pct` of `fuel_press_min` and `rpm_continuous_max` (eta² 0.40) follow flight profile (short low-DA flights with more takeoffs and pattern work), not weather, so those stay unstratified. The other stratified limits (temperatures, EGT, MAP, overboost) have too few events on this aircraft to test.
 
 ## 7. Filter semantics
 
@@ -496,7 +502,7 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 | Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | Out of scope here; filtered independently for now. |
 | Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |
 | Q6 | Existing annotations attached to per-event `limit_exceedances` insights will be orphaned by the new insight IDs. Migrate them? | **Resolved (Phase 1).** On re-analysis, each note on an old per-event insight moves to the new per-limit insight for the same flight and limit; several notes on one limit are joined (`workspace.migrate_limit_annotations`). |
-| Q7 | Does fuel pressure vary with OAT enough to need stratification? | Decide from the §14.2 report. |
+| Q7 | Does fuel pressure vary with OAT enough to need stratification? | **Resolved (Phase 2).** Peak excess does, time above doesn't; `fuel_press_max` is OAT-stratified (§6.5). |
 | Q8 | ~~Filters compare within the flight's band, but `baseline_deviation` compares against all flights. Align them?~~ | **Resolved (option B).** `baseline_deviation` moves to stratified leave-one-out comparison with an unstratified fallback below `n_min`: Spec 01 v0.13, R8; Spec 03 v0.11 §5.3 for the Trends outlier rings. Implemented as its own change, not part of Spec 09, but Spec 09's frozen-baseline comparison calls the same helper. |
 
 ## 16. Implementation plan and status
@@ -506,7 +512,7 @@ Built in phases, each shippable on its own.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Limit ids (§6.1), merge gap (§6.2), overboost `close_call_margin_s` (§6.4), one insight per limit without filters (§10.1), topic thresholds via `limit_ref` (§10.2), exceedance fields and `FlightAnalysis.limits` (§11.1), log-set report, note migration (Q6) | Done, engine 0.17.0 |
-| 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | |
+| 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | Done, engine 0.18.0 |
 | 3 | Filters: `filter_policy` (§6.3), absolute/percent/duration semantics and validation (§7), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1) | |
 | 4 | Change monitor (§8), z mode (§7.1), `evaluate_filter_health`, Notes page filter cards, nav badge and Flights banner (§10.4, §12.2–12.3) | |
 | 5 | Copy filters between workspaces (§9) | |

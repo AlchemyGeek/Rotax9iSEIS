@@ -24,7 +24,7 @@ from . import __version__
 from .cas import analyze_inflight_pattern, extract_engine_ecu_runs, parse_cas
 from .contract import CONTRACT_VERSION, Diagnostic, Provenance, content_hash, engine_profile_ref
 from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
-from .limits import check_exceedances, limit_catalog
+from .limits import check_exceedances, engine_running_s, limit_catalog, per_limit_metrics
 from .loader import flight_fingerprint, flight_id as _flight_id, load_log_bytes, source_key as _source_key
 from .phases import detect_phases, phase_segments
 from .channels import CHANNEL_REGISTRY
@@ -226,6 +226,12 @@ def analyze_flight(
         metrics[metric_id] = mv
 
     exceedances = [_serialize_exceedance(e, t0) for e in check_exceedances(df, engine_config)]
+    limits = limit_catalog(engine_config)
+    # Spec 09 §5: per-limit metrics, baselined like any other (update_fleet).
+    metrics.update(per_limit_metrics(
+        exceedances, limits, engine_running_s(df), channels_present,
+        overboost_max_block_s=metrics.get("overboost_max_block_s", {}).get("value"),
+    ))
     cas_events = [_serialize_cas_event(e, t0) for e in parse_cas(df)]
     ecu_runs = [_serialize_ecu_run(r, t0) for r in extract_engine_ecu_runs(df, engine_config=engine_config)]
 
@@ -293,7 +299,7 @@ def analyze_flight(
         quality=[d.to_dict() for d in quality],
         provenance=provenance.to_dict(),
         available_channels=available_channels,
-        limits=limit_catalog(engine_config),
+        limits=limits,
     )
 
 
@@ -583,7 +589,7 @@ def update_fleet(
     (Spec 08 §3), the prior used until an aircraft's own hottest cylinder
     is learned; without it there is no prior.
     """
-    from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model
+    from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model, limit_baseline_metric_defs
     from .fleet import baseline, baseline_stratified, outliers, trend, trend_stratified
 
     excluded = excluded or []
@@ -607,7 +613,11 @@ def update_fleet(
 
     metrics_out: dict[str, dict] = {}
     quality: list[Diagnostic] = []
-    for key, col, band_col in BASELINE_METRIC_DEFS:
+    # Spec 09 §5: the per-limit metrics' defs are generated from the limit
+    # catalogue the flights were analysed against, not hand-listed.
+    metric_defs = BASELINE_METRIC_DEFS + limit_baseline_metric_defs(
+        [lim for fa in flight_analyses for lim in fa.limits])
+    for key, col, band_col in metric_defs:
         if col not in df.columns:
             continue
         b = baseline(df, col)
@@ -654,7 +664,9 @@ def update_fleet(
                 }
         metrics_out[key] = entry
 
-        if 0 < b.n < MIN_FLIGHTS_FOR_CONFIDENCE:
+        # Per-limit metrics have no insight rules (Spec 09 §3); the filter
+        # monitor reports its own low-n condition (FILTER_REFERENCE_LOW_N).
+        if 0 < b.n < MIN_FLIGHTS_FOR_CONFIDENCE and not key.startswith("limit_"):
             quality.append(Diagnostic(
                 code="BASELINE_LOW_N", severity="info", scope="fleet",
                 message=f"{key}: baseline n={b.n}, below {MIN_FLIGHTS_FOR_CONFIDENCE} for a stable baseline.",

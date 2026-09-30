@@ -44,6 +44,26 @@ BASELINE_METRIC_DEFS = [
 ]
 
 
+
+def limit_baseline_metric_defs(catalog: list[dict]) -> list[tuple[str, str, Optional[str]]]:
+    """
+    Spec 09 §5: (fleet key, flight metric column, band column) for every
+    limit's per-flight metrics, generated from a limit catalogue
+    (limits.limit_catalog, or FlightAnalysis.limits) — one entry per id,
+    in catalogue order. The band is the limit's `stratify_by` (§6.5).
+    """
+    from .limits import limit_metric_ids
+
+    defs, seen = [], set()
+    for entry in catalog:
+        if entry["id"] in seen:
+            continue
+        seen.add(entry["id"])
+        for flight_id, fleet_key, _ in limit_metric_ids(entry):
+            defs.append((fleet_key, flight_id, entry.get("stratify_by")))
+    return defs
+
+
 def _baseline_dict(b) -> dict:
     if b.mean is None:
         return {"n": b.n, "confidence": b.confidence}

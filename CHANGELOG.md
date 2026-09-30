@@ -11,6 +11,27 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.18.0 — September 30, 2026
+
+**Per-limit baseline metrics (Spec 09 Phase 2).** Groundwork for limit filters: each limit's
+behaviour is now tracked per flight and baselined like every other metric.
+
+- **New per-flight metrics** for every limit checked for exceedances:
+  `lim_<limit_id>_peak_excess` (largest excess of any event; missing when the flight had none)
+  and `lim_<limit_id>_time_above_pct` (time past the limit as a share of engine-running time,
+  PRE_START and SHUTDOWN excluded). Overboost gets `lim_overboost_block_s` instead.
+- **Fleet:** `update_fleet` baselines them as `limit_<limit_id>_…`, with trend, outliers at the
+  metric's own `outlier_z_threshold`, and weather bands from the limit's new `stratify_by`
+  (temperatures and EGT split by OAT, MAP and overboost by density altitude, others none).
+  Their definitions are generated from the engine profile, not hand-listed. No insight rules
+  use them and the Trends view doesn't list them yet.
+- **Fuel pressure maximum is OAT-stratified** (916iS, 915iS): its peak excess varies with OAT
+  on the N117ZS log set (cold +4.1 psi vs mild +3.3 psi); `notebooks/05_limit_events_report.py`
+  now prints each limit metric's variation by band.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
 ## 0.17.0 — September 30, 2026
 
 **Limit exceedances, one card per limit (Spec 09 Phase 1).** Fixes the fragmentation and

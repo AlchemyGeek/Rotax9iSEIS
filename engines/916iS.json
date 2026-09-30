@@ -188,6 +188,8 @@
       "unit": "psi",
       "max_val": 46.0,
       "severity": "CAUTION",
+      "_stratify_by_note": "Spec 09 Q7: peak excess varies with OAT on the N117ZS log set (eta² 0.18, cold +4.1 vs mild +3.3 psi); time above does not.",
+      "stratify_by": "oat_band",
       "min_duration_by_phase": {
         "TAXI": null,
         "TAKEOFF": null,

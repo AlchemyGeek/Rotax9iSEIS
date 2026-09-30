@@ -619,3 +619,97 @@ def limits_report(
         for e in events:
             lines.append(f"   {e}")
     return "\n".join(lines)
+
+
+# ── Per-limit metrics (Spec 09 §5) ───────────────────────────────────────────
+
+def limit_metric_ids(entry: dict) -> list[tuple[str, str, str]]:
+    """
+    (flight metric id, fleet metric key, unit) for each per-flight metric
+    one catalogue entry gets. Overboost's limit is itself a time, so it
+    gets the longest continuous block instead of peak excess and no
+    time-above share. A limit that is never checked for events
+    (`report_in_exceedances: false`) gets none.
+    """
+    lid = entry["id"]
+    if entry.get("param") == "overboost_max_block_s":
+        return [(f"lim_{lid}_block_s", f"limit_{lid}_block_s", "s")]
+    if not entry.get("report_in_exceedances", True):
+        return []
+    return [
+        (f"lim_{lid}_peak_excess", f"limit_{lid}_peak_excess", entry.get("unit", "")),
+        (f"lim_{lid}_time_above_pct", f"limit_{lid}_time_above_pct", "%"),
+    ]
+
+
+def per_limit_metrics(
+    exceedances: list[dict],
+    catalog: list[dict],
+    running_s: Optional[float],
+    channels_present: set,
+    overboost_max_block_s: Optional[float] = None,
+) -> dict[str, dict]:
+    """
+    Spec 09 §5: two per-flight metrics for every limit, filtered or not —
+    `lim_<id>_peak_excess` (largest excess of any merged event; missing
+    when the flight had none) and `lim_<id>_time_above_pct` (total event
+    duration over engine-running time, %; 0 with no events). Returns
+    MetricValue dicts keyed by flight metric id, the same shape as
+    FlightAnalysis.metrics. `exceedances` are serialized events (with
+    limit_id and excess); `running_s` is engine-running time from phase
+    detection, so the share doesn't depend on how long the log ran.
+    """
+    by_limit: dict[str, list[dict]] = {}
+    for e in exceedances:
+        if e.get("limit_id"):
+            by_limit.setdefault(e["limit_id"], []).append(e)
+
+    out: dict[str, dict] = {}
+    for entry in catalog:
+        ids = limit_metric_ids(entry)
+        if not ids:
+            continue
+        if entry.get("param") == "overboost_max_block_s":
+            mid, _, unit = ids[0]
+            mv = {"id": mid, "value": overboost_max_block_s, "unit": unit}
+            if overboost_max_block_s is None:
+                mv["missing"] = "CHANNEL_MISSING" if "rpm" not in channels_present else "INSUFFICIENT_DATA"
+            out[mid] = mv
+            continue
+        (peak_id, _, peak_unit), (pct_id, _, pct_unit) = ids
+        events = by_limit.get(entry["id"], [])
+        if entry["param"] not in channels_present:
+            out[peak_id] = {"id": peak_id, "value": None, "unit": peak_unit, "missing": "CHANNEL_MISSING"}
+            out[pct_id] = {"id": pct_id, "value": None, "unit": pct_unit, "missing": "CHANNEL_MISSING"}
+            continue
+        excesses = [e["excess"] for e in events if e.get("excess") is not None]
+        peak = {"id": peak_id, "value": round(max(excesses), 4) if excesses else None, "unit": peak_unit}
+        if not excesses:
+            peak["missing"] = "NOT_APPLICABLE"  # no event this flight
+        out[peak_id] = peak
+        if running_s:
+            pct = 100.0 * sum(e["duration_s"] for e in events) / running_s
+            out[pct_id] = {"id": pct_id, "value": round(min(pct, 100.0), 4), "unit": pct_unit}
+        else:
+            out[pct_id] = {"id": pct_id, "value": None, "unit": pct_unit, "missing": "INSUFFICIENT_DATA"}
+    return out
+
+
+_NOT_RUNNING_PHASES = {"PRE_START", "SHUTDOWN"}
+
+
+def engine_running_s(df: pd.DataFrame) -> Optional[float]:
+    """Engine start to shutdown, in seconds, from phase detection: the span
+    of rows not labelled PRE_START or SHUTDOWN. Without a phase column,
+    the span of rows with RPM above zero. None if neither finds any."""
+    if "datetime" not in df.columns or df.empty:
+        return None
+    if "phase" in df.columns:
+        running = df[~df["phase"].isin(_NOT_RUNNING_PHASES)]
+    elif "rpm" in df.columns:
+        running = df[df["rpm"].fillna(0) > 0]
+    else:
+        return None
+    if running.empty:
+        return None
+    return (running["datetime"].iloc[-1] - running["datetime"].iloc[0]).total_seconds() + 1

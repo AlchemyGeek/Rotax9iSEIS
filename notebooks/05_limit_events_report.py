@@ -13,7 +13,10 @@ Prints, for every limit with events:
   3. the distribution of within-limit gaps between raw runs,
   4. limit/flight pairs that only have events once runs are merged
      (merging can turn short, discarded runs into one event that passes
-     a limit's min-duration or time-limit rule).
+     a limit's min-duration or time-limit rule),
+  5. how each limit's per-flight metrics (§5) vary by OAT and density-
+     altitude band — eta² (share of variance explained by the band) —
+     to check the `stratify_by` defaults (§6.5).
 
 Usage
 -----
@@ -36,10 +39,12 @@ from slingology_eis.limits import (  # noqa: E402
     check_exceedances,
     engine_limits_from_config,
     find_runs,
+    limit_catalog,
     load_engine_config,
     split_runs_at_time_gaps,
 )
 from slingology_eis.loader import load_directory  # noqa: E402
+from slingology_eis.operations import analyze_flight  # noqa: E402
 from slingology_eis.phases import detect_phases  # noqa: E402
 
 GAPS_S = [0, 5, 10, 30, 60, 120]
@@ -64,8 +69,16 @@ def main() -> None:
     raw_gaps = defaultdict(list)
     overrides = {lim.id: lim.merge_gap_s for lim in engine_limits_from_config(cfg) if lim.merge_gap_s is not None}
 
+    band_rows = []  # (metric id, oat_band, da_band, value) per flight
+    logs_dir = Path(args.logs)
     for df, info in flights:
         name = df["_source_file"].iloc[0]
+        fa = analyze_flight((logs_dir / name).read_bytes(), name, cfg, cfg.get("_metadata", {}).get("engine", ""))
+        oat = fa.metrics.get("oat_band", {}).get("value")
+        da = fa.metrics.get("da_band", {}).get("value")
+        for mid, mv in fa.metrics.items():
+            if mid.startswith("lim_") and mv.get("value") is not None:
+                band_rows.append((mid, oat, da, mv["value"]))
         df = detect_phases(df, verbose=False)
         for g in GAPS_S:
             # The sweep applies each gap to every limit, ignoring per-limit
@@ -118,6 +131,36 @@ def main() -> None:
         new = sorted((f, i) for f, c in per_flight[g].items() for i in c if per_flight[0][f][i] == 0)
         by_limit = Counter(i for _, i in new)
         print(f"  gap {g:>3} s: " + (", ".join(f"{i} x{n}" for i, n in sorted(by_limit.items())) or "none"))
+
+    print("\n5. Per-limit metrics by weather band: eta² (0.14+ = large effect), n, band means")
+    stratify = {lim["id"]: lim.get("stratify_by") for lim in limit_catalog(cfg)}
+    by_metric = defaultdict(list)
+    for mid, oat, da, v in band_rows:
+        by_metric[mid].append((oat, da, v))
+    for mid in sorted(by_metric):
+        rows = by_metric[mid]
+        vals = np.array([r[2] for r in rows], dtype=float)
+        if len(vals) < 10 or np.allclose(vals, vals[0]):
+            continue
+        lid = mid[len("lim_"):]
+        for suffix in ("_peak_excess", "_time_above_pct", "_block_s"):
+            lid = lid.removesuffix(suffix)
+        parts = []
+        for k, kind in ((0, "oat"), (1, "da")):
+            groups = defaultdict(list)
+            for r in rows:
+                if r[k] is not None:
+                    groups[r[k]].append(r[2])
+            if len(groups) < 2:
+                continue
+            allv = np.concatenate([np.array(g, dtype=float) for g in groups.values()])
+            ss_tot = float(((allv - allv.mean()) ** 2).sum())
+            ss_b = sum(len(g) * (np.mean(g) - allv.mean()) ** 2 for g in groups.values())
+            eta2 = ss_b / ss_tot if ss_tot else 0.0
+            means = ", ".join(f"{b}:{np.mean(g):.2f}(n={len(g)})" for b, g in sorted(groups.items()))
+            flag = " *" if eta2 >= 0.14 else ""
+            parts.append(f"{kind} eta²={eta2:.2f}{flag} [{means}]")
+        print(f"  {mid:40} n={len(vals):3}  stratify_by={stratify.get(lid)}\n      " + "\n      ".join(parts))
 
 
 if __name__ == "__main__":

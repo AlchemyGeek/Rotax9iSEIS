@@ -22,5 +22,5 @@ serialize   : NaN-safe JSON serialization for contract result objects
 cli         : The `slingology-eis` command-line adapter
 """
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 __author__  = "Slingology EIS Research"
