@@ -1302,3 +1302,96 @@ def migrate_limit_annotations(ws_dir: Path, old: FlightAnalysis, fresh: FlightAn
         store["annotations"] = sorted(kept, key=lambda a: a.get("created_at", ""))
         _write_json(ws_dir / "annotations.json", store)
     return moved
+
+
+# ── Limit filters (Spec 09 §9) ──────────────────────────────────────────────
+# filters.json, next to annotations.json: the pilot's filters on OM limits.
+# Validation is the engine's (filters.validate_filter); this layer stores
+# what it's given and keeps each filter's history.
+
+_FILTERS_VERSION = "1"
+_FILTER_CONDITION_KEYS = ("magnitude", "duration")
+_FILTER_EDITABLE_KEYS = ("magnitude", "duration", "note")
+
+
+def load_filters(ws_dir: Path) -> dict:
+    f = ws_dir / "filters.json"
+    if not f.exists():
+        return {"version": _FILTERS_VERSION, "filters": []}
+    return json.loads(f.read_text())
+
+
+def _save_filter_store(ws_dir: Path, store: dict) -> None:
+    _write_json(ws_dir / "filters.json", store)
+
+
+def get_filter(ws_dir: Path, filter_id: str) -> Optional[dict]:
+    return next((f for f in load_filters(ws_dir)["filters"] if f["id"] == filter_id), None)
+
+
+def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[str]] = None,
+                engine_hours: Optional[float] = None) -> dict:
+    """
+    Create (no `id` in `fields`) or edit a filter. `fields` carries
+    limit_id, magnitude and/or duration, note and optionally created_from.
+    `reference_flight_ids` is the reference the caller chose (§8.1): given
+    on create, and on an edit that changes the band or duration, which
+    resets the reference. A condition absent from `fields` is removed.
+    Returns the saved filter.
+    """
+    store = load_filters(ws_dir)
+    now = _now()
+    existing = next((f for f in store["filters"] if f["id"] == fields.get("id")), None) if fields.get("id") else None
+    if existing is None:
+        flt = {
+            "id": _new_id("flt"),
+            "limit_id": fields["limit_id"],
+            **{k: fields[k] for k in _FILTER_CONDITION_KEYS if fields.get(k)},
+            "note": fields.get("note") or "",
+            "reference": {"flight_ids": list(reference_flight_ids or []), "set_at": now},
+            "created_at": now,
+            "history": [],
+        }
+        if fields.get("created_from"):
+            flt["created_from"] = fields["created_from"]
+        if engine_hours is not None:
+            flt["created_engine_hours"] = engine_hours
+        flt["history"].append({"at": now, "action": "created",
+                               "after": {k: flt[k] for k in _FILTER_EDITABLE_KEYS if k in flt}})
+        store["filters"].append(flt)
+        _save_filter_store(ws_dir, store)
+        return flt
+
+    before = {k: existing[k] for k in _FILTER_EDITABLE_KEYS if k in existing}
+    for k in _FILTER_CONDITION_KEYS:
+        if fields.get(k):
+            existing[k] = fields[k]
+        else:
+            existing.pop(k, None)
+    existing["note"] = fields.get("note") or ""
+    after = {k: existing[k] for k in _FILTER_EDITABLE_KEYS if k in existing}
+    if before == after:
+        return existing
+    existing["updated_at"] = now
+    if reference_flight_ids is not None:
+        existing["reference"] = {"flight_ids": list(reference_flight_ids), "set_at": now}
+    existing["history"].append({"at": now, "action": "edited", "before": before, "after": after})
+    _save_filter_store(ws_dir, store)
+    return existing
+
+
+def filter_conditions_changed(old: dict, fields: dict) -> bool:
+    """Did an edit change the band or the duration (which resets the
+    reference, §8.1), as opposed to only the note?"""
+    return any((old.get(k) or None) != (fields.get(k) or None) for k in _FILTER_CONDITION_KEYS)
+
+
+def delete_filter(ws_dir: Path, filter_id: str) -> bool:
+    """Removing a filter deletes the record; its history goes with it (§9)."""
+    store = load_filters(ws_dir)
+    before = len(store["filters"])
+    store["filters"] = [f for f in store["filters"] if f["id"] != filter_id]
+    if len(store["filters"]) == before:
+        return False
+    _save_filter_store(ws_dir, store)
+    return True

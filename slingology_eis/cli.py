@@ -392,7 +392,10 @@ def cmd_report(args) -> int:
     fa = analyze_flight(log_path.read_bytes(), log_path.name, engine_cfg, engine_name)
     fleet = _load_or_build_fleet(logs_dir, workspace_dir, engine_cfg, engine_name, args.quiet)
     rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
-    iset = evaluate_insights(fa, fleet, rules)
+    # Spec 09: the same limit filters the web UI saved for this workspace.
+    filters_file = workspace_dir / "filters.json"
+    filters = json.loads(filters_file.read_text()).get("filters", []) if filters_file.exists() else []
+    iset = evaluate_insights(fa, fleet, rules, filters=filters)
     if args.json:
         fa_dict = anonymize(fa.to_dict()) if args.anonymize else fa.to_dict()
         _print_json({"flight_analysis": fa_dict, "insight_set": iset.to_dict()})

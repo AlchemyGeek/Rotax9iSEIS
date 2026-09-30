@@ -56,6 +56,8 @@
       "unit": "psi",
       "min_val": 29.0,
       "severity": "WARNING",
+      "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
+      "filter_policy": { "filterable": false },
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {

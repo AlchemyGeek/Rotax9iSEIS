@@ -30,6 +30,7 @@ from .phases import detect_phases, phase_segments
 from .channels import CHANNEL_REGISTRY
 from .registry import METRIC_REGISTRY, missing_reason
 from . import topics
+from . import filters as _filters
 
 # Airborne time (RPM > 3000 & IAS > 30kt — the same proxy loader.py's
 # ground-session filter uses) beyond which a flight with no TAKEOFF_ROLL/
@@ -948,6 +949,7 @@ def _emit_hot_cylinder(fa, fleet, r_data, emit) -> None:
 def evaluate_insights(
     flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict,
     annotations: Optional[list[dict]] = None,
+    filters: Optional[list[dict]] = None,
 ) -> "InsightSet":
     """
     Spec 01 §7 `evaluate_insights` / §8.5. Wraps topics.py's 13 topic
@@ -974,6 +976,15 @@ def evaluate_insights(
     smoothed over either. `limit_exceedances` insights are the exception
     (Spec 09 §10.1): one per limit per flight, id'd by limit, not text.
 
+    `filters` (Spec 09 §7, §10): the workspace's limit filters
+    (filters.json entries). Each is validated here, not only by the UI —
+    an invalid one is ignored with a diagnostic, the limit reporting
+    unfiltered. A filtered limit's events split into a quiet "filtered"
+    insight and a "breach" insight at the rule's severity; topic threshold
+    insights for that limit fire only on breaching events. baseline_
+    deviation and trend insights are never filtered. InsightSet.
+    filters_hash identifies the filters applied.
+
     `cylinder_rank` (Spec 08 §6) compares this flight's hottest cylinder
     with the aircraft's usual one, from FleetAnalysis.cylinder_balance;
     `egt_cyl_deviation` baselines each cylinder's balance separately.
@@ -993,12 +1004,35 @@ def evaluate_insights(
 
     topics_out: list[dict] = []
     limit_diagnostics: list[dict] = []
+    filters_hash = content_hash(sorted(filters or [], key=lambda f: str(f.get("id"))))
 
     # Spec 09: limits resolve through the catalogue the flight was checked
     # against. Empty for a pre-Spec-09 analysis — topics then fall back to
     # the legacy numeric thresholds until the flight is re-analysed.
     limits_by_id = {lim["id"]: lim for lim in flight_analysis.limits}
     events_by_limit = _events_by_limit(flight_analysis.exceedances)
+
+    # Spec 09 §7: classify each filtered limit's events. `unsuppressed`
+    # (breaches, or every event on an unfiltered limit) is what topic
+    # thresholds react to (§10.2).
+    valid_filters, filter_diagnostics = _filters.active_filters(filters or [], limits_by_id, fleet_analysis)
+    limit_diagnostics.extend(filter_diagnostics)
+    suppressed_by: dict[str, Optional[str]] = {}   # event_id -> "magnitude" | "duration" | None
+    frozen_by_limit: dict[str, dict] = {}
+    for lid, flt in valid_filters.items():
+        lim = limits_by_id[lid]
+        z_ref = None
+        if (flt.get("magnitude") or {}).get("mode") == "z":
+            frozen = _filters.frozen_baseline(fleet_analysis, _filters._magnitude_metric(lim),
+                                              (flt.get("reference") or {}).get("flight_ids", []))
+            frozen_by_limit[lid] = frozen
+            z_ref, _ = _filters.comparison_set(frozen, _filters.flight_band(flight_analysis, lim))
+        for e in events_by_limit.get(lid, []):
+            suppressed_by[e["event_id"]] = _filters.classify_event(e, flt, lim, z_ref)
+    unsuppressed_by_limit = {
+        lid: [e for e in evs if suppressed_by.get(e.get("event_id")) is None]
+        for lid, evs in events_by_limit.items()
+    }
 
     def _resolve_threshold_limit(topic_id: str, triggers: list[dict]) -> tuple[Optional[dict], Optional[list], list[dict]]:
         """(om_limit, unsuppressed events, triggers) for a topic whose
@@ -1017,7 +1051,7 @@ def evaluate_insights(
                 refs={"topic_id": topic_id, "limit_ref": ref},
             ).to_dict())
             return None, None, [tr for tr in triggers if tr is not trig]
-        return om_limit, events_by_limit.get(ref, []), triggers
+        return om_limit, unsuppressed_by_limit.get(ref, []), triggers
 
     def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int):
         confidence = _confidence(fleet_n)
@@ -1032,6 +1066,7 @@ def evaluate_insights(
             message = {"text": ins["text"]}
             if ins.get("comparison"):
                 message["values"] = {"comparison": ins["comparison"]}
+            extra = {"filter": ins["filter"]} if ins.get("filter") else {}
             insight = {
                 "id": insight_id,
                 "topic_id": topic_id,
@@ -1041,6 +1076,7 @@ def evaluate_insights(
                 "message": message,
                 "evidence": ins.get("evidence") or [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
                 "confidence": confidence,
+                **extra,
             }
             if insight_id in notes_by_insight_id:
                 insight["note"] = notes_by_insight_id[insight_id]
@@ -1138,7 +1174,23 @@ def evaluate_insights(
     ob_total = fm.get("overboost_total_s", {}).get("value")
     ob_max = fm.get("overboost_max_block_s", {}).get("value")
     ob_exceeded = (ob_max is not None and ob_max > ob_limit)
-    raw = topics.overboost(ob_total, ob_max, ob_limit, ob_exceeded, close_call_s=ob_close_call)
+    # Spec 09 §6.4/§10.3: a filter band b moves the effective limit to
+    # limit + b and the close call with it.
+    ob_filter = valid_filters.get(ob_om["id"]) if ob_om is not None else None
+    ob_filter_limit, ob_filter_text = None, ""
+    if ob_filter is not None:
+        ob_band = _filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
+        ob_filter_limit = ob_limit + ob_band
+        ob_close_call = ob_filter_limit - ob_om.get("close_call_margin_s", 60)
+        ob_filter_text = _filters.band_text(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"]))
+    raw = topics.overboost(ob_total, ob_max, ob_limit, ob_exceeded, close_call_s=ob_close_call,
+                           filter_limit=ob_filter_limit, filter_text=ob_filter_text)
+    for ins in raw["insights"]:
+        outcome = ins.pop("filter_outcome", None)
+        if outcome:
+            ins["filter"] = {"filter_id": ob_filter["id"], "outcome": outcome}
+            if outcome == "suppressed":
+                ins["severity"] = "watch"  # overboost is treated as WARNING (§6.4)
     _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
 
     map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
@@ -1197,26 +1249,58 @@ def evaluate_insights(
             "id": lid, "label": first["label"], "unit": first["unit"], "limit_type": first["limit_type"],
             "limit_value": first["limit_value"], "severity": first["severity"],
         }
-        groups.append({"limit_id": lid, "limit": lim, "events": evs})
+        flt = valid_filters.get(lid)
+        if flt is None:
+            groups.append({"limit_id": lid, "limit": lim, "events": evs, "kind": "exceedance"})
+            continue
+        text = _filters.band_text(flt, lim, frozen_by_limit.get(lid))
+        breaches = [e for e in evs if suppressed_by.get(e["event_id"]) is None]
+        tolerated = [e for e in evs if suppressed_by.get(e["event_id"]) is not None]
+        if breaches:
+            groups.append({"limit_id": lid, "limit": lim, "events": breaches, "kind": "breach",
+                           "filter": flt, "filter_text": text})
+        if tolerated:
+            groups.append({"limit_id": lid, "limit": lim, "events": tolerated, "kind": "filtered",
+                           "filter": flt, "filter_text": text})
     raw = topics.limit_exceedance_groups(groups)
     limit_insights = []
+    noted_limits: set[str] = set()
     for ins in raw["insights"]:
         g = groups[ins.pop("group")]
-        iid = _limit_insight_id(flight_id, g["limit_id"], "exceedance")
+        kind = g["kind"]
+        iid = _limit_insight_id(flight_id, g["limit_id"], kind)
+        if kind == "filtered":
+            # Quiet: info for a CAUTION limit, watch for a WARNING one (§10.1).
+            severity = "watch" if g["limit"].get("severity") == "WARNING" else "info"
+        else:
+            severity = _severity_for(rules, "limit_exceedances", ins["trigger"])
         limit_insight = {
             "id": iid,
             "topic_id": "limit_exceedances",
             "rule_id": "limit_exceedances.threshold",
             "trigger": ins["trigger"],
-            "severity": _severity_for(rules, "limit_exceedances", ins["trigger"]),
+            "severity": severity,
             "message": {"text": ins["text"]},
             "evidence": [_event_window(e) for e in g["events"]],
             "confidence": _confidence(0),
             "limit_id": g["limit_id"],
-            "events": [_event_summary(e) for e in g["events"]],
+            "events": [_event_summary(e, suppressed_by.get(e["event_id"])) for e in g["events"]],
         }
-        if iid in notes_by_insight_id:
-            limit_insight["note"] = notes_by_insight_id[iid]
+        if kind != "exceedance":
+            limit_insight["filter"] = {"filter_id": g["filter"]["id"],
+                                       "outcome": "breach" if kind == "breach" else "suppressed"}
+        # A note saved on this limit before it was filtered (or while it had
+        # no breach) is keyed to another kind's id; show it on the limit's
+        # first insight rather than lose it from view.
+        note = notes_by_insight_id.get(iid)
+        if note is None and g["limit_id"] not in noted_limits:
+            note = next((notes_by_insight_id[k] for k in (
+                _limit_insight_id(flight_id, g["limit_id"], other)
+                for other in ("exceedance", "breach", "filtered") if other != kind)
+                if k in notes_by_insight_id), None)
+        if note is not None:
+            limit_insight["note"] = note
+            noted_limits.add(g["limit_id"])
         limit_insights.append(limit_insight)
     topics_out.append({
         "topic_id": "limit_exceedances",
@@ -1256,6 +1340,7 @@ def evaluate_insights(
         topics=topics_out,
         header_warnings=header_warnings_dicts,
         provenance=provenance,
+        filters_hash=filters_hash,
     )
 
 
@@ -1268,6 +1353,9 @@ class InsightSet:
     topics: list[dict] = field(default_factory=list)
     header_warnings: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    # Spec 09 §11.2: identifies the filters applied; a host caching insight
+    # sets keys on it alongside analysis_key/fleet_key/rules_hash.
+    filters_hash: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -1275,6 +1363,7 @@ class InsightSet:
             "analysis_key": self.analysis_key,
             "fleet_key": self.fleet_key,
             "rules_hash": self.rules_hash,
+            "filters_hash": self.filters_hash,
             "topics": self.topics,
             "header_warnings": self.header_warnings,
             "provenance": self.provenance,

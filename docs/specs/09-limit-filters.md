@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.5 — Phases 1–2 implemented (engine 0.18.0); Phases 3–5 in progress (§16)
+**Status:** v0.6 — Phases 1–3 implemented (engine 0.19.0); Phases 4–5 in progress (§16)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -15,6 +15,7 @@
 | 0.3 | Q8 resolved: `baseline_deviation` moves to stratified comparison as well (Spec 01 v0.13, R8). Filters and baseline insights now share one rule for choosing comparable flights: same band if it has `n_min` points, otherwise all flights. §7.1 and §8.2 reference that rule instead of restating it. |
 | 0.4 | Phase 1 implemented. Q3 and Q6 resolved from the log-set report (§6.2, §15). KACV counts corrected: the "77 events" of §1 predate the current checker; before merging it finds 38 on that log. `FlightAnalysis.limits` added (§11.1). Runs split where phase filtering leaves a time gap (§6.2). New §16: phased implementation plan and status. |
 | 0.5 | Phase 2 implemented. Q7 resolved: `fuel_press_max` is OAT-stratified (§6.5). Engine-running time and the per-limit metric naming pinned down (§5). |
+| 0.6 | Phase 3 implemented, including z mode and the frozen baseline (moved up from Phase 4, since z needs them). Q1 and Q2 adopted as proposed, with 916iS placeholder caps listed in §6.3. Where the computed limits' policies live (§6.3); notes follow a limit across filtered/breach insights (§10.1). |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -184,6 +185,19 @@ The WARNING default is fail-safe: a WARNING limit becomes filterable only once i
 
 `filterable: false` makes a limit non-filterable regardless of severity. Proposed default for `oil_press_min`: non-filterable (Q1).
 
+**As implemented (Phase 3).** `oil_press_min` carries `"filter_policy": {"filterable": false}` in all four profiles. The computed limits' policies live in their own sections: `egt_spread.high_flow_filter_policy` / `low_flow_filter_policy`, and `overboost.filter_policy` (band cap in seconds; no duration cap). The 916iS placeholder caps, each marked `PLACEHOLDER` in the profile, chosen conservatively (about sensor-accuracy scale) pending real values (Q2):
+
+| Limit | `max_band_abs` | `max_duration_s` |
+|---|---|---|
+| `rpm_takeoff_max` | 50 rpm | 10 s |
+| `oil_temp_takeoff_min`, `oil_temp_max`, `coolant_temp_max` | 5 °F | 10 s |
+| `egt1_max` … `egt4_max`, `egt_split_high_flow`, `egt_split_low_flow` | 20 °F | 10 s |
+| `map_max` | 0.5 inHg | 5 s |
+| `fuel_press_min` | 1.0 psi | 10 s |
+| `overboost` | 30 s | — |
+
+The 912iS, 914iS and 915iS profiles declare no caps, so their WARNING limits are not filterable yet (fail-safe default).
+
 ### 6.4 Overboost
 
 `overboost` gains `close_call_margin_s: 60`, replacing the hard-coded 240 s in `topics.overboost()`. The overboost limit is a time (300 s maximum continuous block), so:
@@ -319,6 +333,8 @@ At least one of `magnitude` or `duration` must be present. Removing a filter del
 | Filter, some events breach | One breach insight at the rule's severity ("beyond your filter"), listing only the breaching events. Plus one `filtered` insight for the suppressed rest, if any. |
 
 Insight IDs become `content_hash({flight_id, topic_id, limit_id, kind})`, where `kind` is `exceedance | filtered | breach`. That makes them stable across wording changes, which also fixes the note-orphaning edge noted in `evaluate_insights` for this topic.
+
+Because `kind` is part of the id, adding a filter (or a flight gaining its first breach) changes which id a limit's insight has. A note keyed to one kind of a limit's insight is therefore also shown on that limit's first insight when its own kind has none, rather than disappearing from view (Phase 3).
 
 ### 10.2 Topic threshold insights follow the limit
 
@@ -496,8 +512,8 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 
 | # | Question | Proposed answer |
 |---|---|---|
-| Q1 | Should `oil_press_min` (>3500 rpm) be non-filterable? It is the most direct sign of lubrication failure. | Yes, `filterable: false`, pending your decision. |
-| Q2 | Where do the WARNING caps come from? | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. |
+| Q1 | Should `oil_press_min` (>3500 rpm) be non-filterable? It is the most direct sign of lubrication failure. | **Adopted as proposed (Phase 3):** `filterable: false` in all profiles. Reversible in the profile. |
+| Q2 | Where do the WARNING caps come from? | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. **Phase 3:** 916iS ships the placeholder caps in §6.3, marked `PLACEHOLDER`; still to be replaced with sourced values. |
 | Q3 | One global merge gap, or per limit? | **Resolved (Phase 1).** Global 30 s, with a per-limit override; `rpm_idle_min` uses 0 s (§6.2). |
 | Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | Out of scope here; filtered independently for now. |
 | Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |
@@ -513,8 +529,8 @@ Built in phases, each shippable on its own.
 |---|---|---|
 | 1 | Limit ids (§6.1), merge gap (§6.2), overboost `close_call_margin_s` (§6.4), one insight per limit without filters (§10.1), topic thresholds via `limit_ref` (§10.2), exceedance fields and `FlightAnalysis.limits` (§11.1), log-set report, note migration (Q6) | Done, engine 0.17.0 |
 | 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | Done, engine 0.18.0 |
-| 3 | Filters: `filter_policy` (§6.3), absolute/percent/duration semantics and validation (§7), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1) | |
-| 4 | Change monitor (§8), z mode (§7.1), `evaluate_filter_health`, Notes page filter cards, nav badge and Flights banner (§10.4, §12.2–12.3) | |
+| 3 | Filters: `filter_policy` (§6.3), magnitude (absolute, percent, z) and duration semantics and validation (§7), frozen baseline and reference selection (§8.1), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1), basic Notes list | Done, engine 0.19.0 |
+| 4 | Change monitor (§8.2), `evaluate_filter_health`, review and re-baseline, Notes page filter cards with charts, nav badge and Flights banner (§10.4, §12.2–12.3), per-limit z overrides in the rule playground (§12.4) | |
 | 5 | Copy filters between workspaces (§9) | |
 
 **Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
@@ -522,4 +538,12 @@ older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgra
 and the rule playground shows these triggers as "follows OM limit". A `limit_ref` that doesn't
 resolve is an error in `validate_rules(rules, limit_ids)` and, at evaluation time, a
 `RULES_LIMIT_REF_UNRESOLVED` header warning with the threshold insight left out.
+
+**Phase 3 notes.** Server ops: `list_filters` (each filter with its limit, policy, whether it
+currently applies and a band summary), `propose_filter`, `preview_filter`, `save_filter`
+(validates first and refuses an invalid filter with `INVALID_FILTER`; a second filter on the
+same limit is `ALREADY_EXISTS` — edit the existing one), `delete_filter`. A new filter, and an
+edit to its band or duration, takes the `REFERENCE_N` most recent flights with the limit's
+channel as its reference; a note-only edit keeps it. `created_engine_hours` is stored for the
+review interval (Phase 4). The CLI `report` command reads the workspace's `filters.json`.
 

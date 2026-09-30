@@ -71,6 +71,7 @@ export function InsightCard({
   onEventClick,
   unit,
   limitType,
+  filterAction,
   note,
   onSaveNote,
   onDeleteNote,
@@ -82,6 +83,8 @@ export function InsightCard({
   onEventClick?: (index: number) => void;
   unit?: string;
   limitType?: "MIN" | "MAX";
+  // Spec 09 §12.1: "Filter this limit…" / "Edit filter…" on limit cards.
+  filterAction?: { label: string; onClick: () => void };
   note?: string;
   onSaveNote?: (text: string) => void;
   onDeleteNote?: () => void;
@@ -125,7 +128,23 @@ export function InsightCard({
         {topicId.replace(/_/g, " ")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
-      {clickable && <div style={{ fontSize: 11, marginTop: 6 }}>View evidence →</div>}
+      {(clickable || filterAction) && (
+        <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
+          {clickable && <span>View evidence →</span>}
+          {filterAction && (
+            <span
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                filterAction.onClick();
+              }}
+              style={{ color: "var(--text-tertiary)", cursor: "pointer", textDecoration: "underline dotted" }}
+            >
+              {filterAction.label}
+            </span>
+          )}
+        </div>
+      )}
       {events.length > 1 && (
         <div onClick={toggleEvents} style={{ fontSize: 11, marginTop: 6, color: "var(--text-tertiary)", cursor: "pointer" }}>
           {eventsOpen ? "▾ Hide events" : `▸ Show ${events.length} events`}

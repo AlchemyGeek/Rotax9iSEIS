@@ -11,8 +11,13 @@ import type {
   EcuAnalysis,
   ExclusionsResult,
   FleetAnalysis,
+  FilterListEntry,
+  FilterPreview,
+  FilterProposal,
   FleetSelectionResult,
   FlightAnalysis,
+  LimitFilter,
+  LimitFilterDraft,
   FlightTableRow,
   InsightSet,
   RuleSet,
@@ -78,6 +83,13 @@ export interface EngineClient {
   listAnnotations(flightId?: string): Promise<{ annotations: Annotation[] }>;
   saveAnnotation(args: { id?: string; flightId: string; ref: AnnotationRef; note: string }): Promise<Annotation>;
   deleteAnnotation(id: string): Promise<{ deleted: boolean }>;
+
+  // Spec 09 limit filters (§11.5).
+  listFilters(): Promise<{ filters: FilterListEntry[] }>;
+  proposeFilter(limitId: string): Promise<FilterProposal>;
+  previewFilter(filter: LimitFilterDraft): Promise<FilterPreview>;
+  saveFilter(filter: LimitFilterDraft): Promise<LimitFilter>;
+  deleteFilter(id: string): Promise<{ deleted: boolean }>;
 
   // Spec 07 §4/§6 — the channel registry (single source of truth, D4) and
   // chart presets (shipped + user, D1). saveUserPreset with an id edits
@@ -241,6 +253,26 @@ export class LocalServerClient implements EngineClient {
 
   deleteAnnotation(id: string) {
     return this.rpc<{ deleted: boolean }>("delete_annotation", { id });
+  }
+
+  listFilters() {
+    return this.rpc<{ filters: FilterListEntry[] }>("list_filters", {});
+  }
+
+  proposeFilter(limitId: string) {
+    return this.rpc<FilterProposal>("propose_filter", { limit_id: limitId });
+  }
+
+  previewFilter(filter: LimitFilterDraft) {
+    return this.rpc<FilterPreview>("preview_filter", { filter });
+  }
+
+  saveFilter(filter: LimitFilterDraft) {
+    return this.rpc<LimitFilter>("save_filter", { filter });
+  }
+
+  deleteFilter(id: string) {
+    return this.rpc<{ deleted: boolean }>("delete_filter", { id });
   }
 
   getChannelRegistry() {

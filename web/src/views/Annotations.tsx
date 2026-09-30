@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
+import { LimitFiltersSection } from "../components/LimitFiltersSection";
 import { annotationStore as fixtureAnnotations } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import type { Annotation } from "../types/contract";
@@ -145,6 +146,8 @@ export function Annotations() {
             {annotations.length} notes across {flightCount} flights
           </span>
         </div>
+
+        {!usingFixture && <LimitFiltersSection />}
 
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <input

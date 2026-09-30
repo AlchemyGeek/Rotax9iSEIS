@@ -1197,3 +1197,53 @@ def test_get_flight_attaches_note_to_matching_insight(server):
     # an insight nobody annotated stays note-less
     others = [i for i in all_insights_again if i["id"] != target["id"]]
     assert all("note" not in i for i in others)
+
+
+def test_limit_filter_round_trip(registry_server):
+    """Spec 09 Phase 3: propose, preview, save (validated), apply, delete."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    log = _flying_log_bytes(extra_header=",Fuel Press (PSI)",
+                            row_extra_fn=lambda i: ",47.0" if i > _FLYING_PREAMBLE_LEN + 300 else ",44.0")
+    b64 = base64.b64encode(log).decode()
+    imported = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
+    flight_id = imported["result"]["results"][0]["flight_id"]
+
+    def limit_insights():
+        r = rpc(registry_server, "get_flight", {"flight_id": flight_id})["result"]["insight_set"]
+        return [i for t in r["topics"] if t["topic_id"] == "limit_exceedances" for i in t["insights"]
+                if i["limit_id"] == "fuel_press_max"]
+
+    before = limit_insights()
+    assert len(before) == 1 and "filter" not in before[0]
+
+    proposal = rpc(registry_server, "propose_filter", {"limit_id": "fuel_press_max"})
+    assert proposal["ok"], proposal
+    p = proposal["result"]
+    assert p["policy"]["filterable"] and p["existing"] is None
+    assert p["suggested"]["magnitude"] == {"mode": "absolute", "value": 1.0}
+
+    draft = {"limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "sender reads high"}
+    preview = rpc(registry_server, "preview_filter", {"filter": draft})
+    assert preview["ok"], preview
+    assert preview["result"]["events_hidden"] >= 1 and preview["result"]["flights_with_breach"] == 0
+
+    saved = rpc(registry_server, "save_filter", {"filter": draft})
+    assert saved["ok"], saved
+    fid = saved["result"]["id"]
+    assert saved["result"]["reference"]["flight_ids"] == [flight_id]
+
+    after = limit_insights()
+    assert [i["filter"]["outcome"] for i in after] == ["suppressed"] and after[0]["severity"] == "info"
+
+    listed = rpc(registry_server, "list_filters", {})["result"]["filters"]
+    assert [(f["filter"]["id"], f["valid"], f["summary"]) for f in listed] == [(fid, True, "up to +1.5 psi")]
+
+    dup = rpc(registry_server, "save_filter", {"filter": draft})
+    assert dup["ok"] is False and dup["error"]["code"] == "ALREADY_EXISTS"
+
+    bad = rpc(registry_server, "save_filter", {"filter": {"limit_id": "oil_temp_max",
+                                                          "magnitude": {"mode": "absolute", "value": 3}}})
+    assert bad["ok"] is False and bad["error"]["code"] == "INVALID_FILTER" and "note" in bad["error"]["message"]
+
+    assert rpc(registry_server, "delete_filter", {"id": fid})["result"]["deleted"] is True
+    assert "filter" not in limit_insights()[0]
