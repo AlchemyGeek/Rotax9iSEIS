@@ -486,6 +486,31 @@ export interface ScanResult {
   auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
 }
 
+// Spec: Workspace Flight Exclusions — a file that never became a
+// flight_id at all (ground_session/short_flight/corrupt_log, auto; or
+// user_defined). Distinct from FlightTableRow.excluded_reason, which is
+// for a flight that WAS analyzed and is just held out of baselines.
+export interface ExclusionEntry {
+  filename: string;
+  source: "auto" | "user";
+  reason: string;
+  category: "ground_session" | "short_flight" | "corrupt_log" | "user_defined";
+  excluded_at: string;
+  user_override: boolean;
+  override_reason?: string;
+}
+
+export interface ExclusionsResult {
+  entries: ExclusionEntry[];
+  summary: {
+    ground_session: number;
+    short_flight: number;
+    corrupt_log: number;
+    user_defined: number;
+    overridden: number;
+  };
+}
+
 export interface ActiveWorkspace {
   active: boolean;
   workspace_dir?: string; // present when active === false (legacy/no-registry-workspace mode)

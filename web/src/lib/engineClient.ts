@@ -9,6 +9,7 @@ import type {
   ChartPresetsResult,
   Diagnostic,
   EcuAnalysis,
+  ExclusionsResult,
   FleetAnalysis,
   FleetSelectionResult,
   FlightAnalysis,
@@ -95,6 +96,11 @@ export interface EngineClient {
   removeMissingFlight(flightId: string): Promise<{ removed: boolean }>;
   removeFlight(flightId: string): Promise<{ removed: boolean; scan_result: ScanResult | null }>;
   removeFlights(flightIds: string[]): Promise<{ removed_flight_ids: string[]; scan_result: ScanResult | null }>;
+
+  // Spec: Workspace Flight Exclusions — files that never became a
+  // flight_id (ground session / short flight / corrupt log / user).
+  listExclusions(): Promise<ExclusionsResult>;
+  includeExcludedLog(filename: string, reason?: string): Promise<{ filename: string; included: boolean; scan_result: ScanResult | null }>;
 
   // Spec 02 v0.5 workspace management
   listWorkspaces(): Promise<WorkspaceRegistryEntry[]>;
@@ -277,6 +283,16 @@ export class LocalServerClient implements EngineClient {
 
   removeFlights(flightIds: string[]) {
     return this.rpc<{ removed_flight_ids: string[]; scan_result: ScanResult | null }>("remove_flights", { flight_ids: flightIds });
+  }
+
+  listExclusions() {
+    return this.rpc<ExclusionsResult>("list_exclusions", {});
+  }
+
+  includeExcludedLog(filename: string, reason?: string) {
+    return this.rpc<{ filename: string; included: boolean; scan_result: ScanResult | null }>(
+      "include_excluded_log", { filename, reason }
+    );
   }
 
   listWorkspaces() {

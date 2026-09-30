@@ -4,7 +4,7 @@ import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
-import type { FlightRowStatus, FlightTableRow, InsightSeverity, WorkspaceManifest } from "../types/contract";
+import type { ExclusionEntry, FlightRowStatus, FlightTableRow, InsightSeverity, WorkspaceManifest } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -52,6 +52,23 @@ const STATUS_COLOR: Record<FlightRowStatus, string> = {
   folder_unreachable: "var(--severity-warning)",
   ground_session: "var(--text-tertiary)",
   unreadable: "var(--severity-limit)",
+};
+
+// Skipped logs (Spec: Workspace Flight Exclusions) — a file that never
+// became a flight_id, tagged with why. Deliberately separate from
+// STATUS_LABEL/STATUS_COLOR above (FlightRowStatus), which describes a
+// real, analyzed flight's state, not "this was never one."
+const EXCLUSION_CATEGORY_LABEL: Record<ExclusionEntry["category"], string> = {
+  ground_session: "Ground session",
+  short_flight: "Short flight",
+  corrupt_log: "Corrupt log",
+  user_defined: "User excluded",
+};
+const EXCLUSION_CATEGORY_COLOR: Record<ExclusionEntry["category"], string> = {
+  ground_session: "var(--text-tertiary)",
+  short_flight: "var(--text-tertiary)",
+  corrupt_log: "var(--severity-warning)",
+  user_defined: "var(--text-secondary)",
 };
 
 type GroupBy = "date" | "folder";
@@ -125,20 +142,32 @@ export function Flights() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Skipped logs (Spec: Workspace Flight Exclusions) — files that never
+  // became a flight_id at all (ground session / short flight / corrupt
+  // log / user-excluded). A separate list from `rows` above, which is
+  // exclusively real, analyzed flights.
+  const [exclusions, setExclusions] = useState<ExclusionEntry[]>([]);
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [includingFilename, setIncludingFilename] = useState<string | null>(null);
+  const [includeError, setIncludeError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [active, statusList] = await Promise.all([client.getActiveWorkspace(), client.listFlightsWithStatus()]);
+      const [active, statusList, exclusionsResult] = await Promise.all([
+        client.getActiveWorkspace(), client.listFlightsWithStatus(), client.listExclusions(),
+      ]);
       setRows(statusList.rows);
       setManifest(active.active && active.manifest ? active.manifest : LEGACY_MANIFEST);
       setIsRegistryActive(active.active);
       setUsingFixture(false);
+      setExclusions(exclusionsResult.entries);
     } catch {
       setRows(fixtureFlights.rows);
       setManifest(fixtureManifest);
       setIsRegistryActive(false);
       setUsingFixture(true);
+      setExclusions([]);
     }
   }, []);
 
@@ -247,6 +276,24 @@ export function Flights() {
     } catch {
       setDeleteError("Delete failed — the server may be unreachable. Try again.");
       setDeleteBusy(false);
+    }
+  }
+
+  // Brings a skipped log back — for a folder-scanned file this creates
+  // the flight in the same round trip (the RPC op runs a scan right
+  // after the override); a browser-uploaded one has no bytes saved
+  // anywhere to re-analyze from, so the override just clears the way
+  // for re-uploading the same file.
+  async function handleIncludeExcludedLog(filename: string) {
+    setIncludingFilename(filename);
+    setIncludeError(null);
+    try {
+      await client.includeExcludedLog(filename, "included from the Flights tab");
+      await refresh();
+    } catch {
+      setIncludeError(`Couldn't include ${filename} — the server may be unreachable. Try again.`);
+    } finally {
+      setIncludingFilename(null);
     }
   }
 
@@ -373,14 +420,35 @@ export function Flights() {
     return counts;
   }, [rows]);
   const excludedCount = rows.filter((r) => r.excluded_reason).length;
+  // Computed from the live `exclusions` list, not a separately-fetched
+  // summary — a category count here must always agree with what's
+  // actually in the list below it, including right after an Include
+  // action removes one entry.
+  const skippedBreakdown = useMemo(() => {
+    const counts = new Map<ExclusionEntry["category"], number>();
+    for (const e of exclusions) counts.set(e.category, (counts.get(e.category) ?? 0) + 1);
+    return counts;
+  }, [exclusions]);
 
   function toggleStatusFilter(s: FlightRowStatus | "excluded") {
+    setShowSkipped(false);
     const next = statusFilter === s ? null : s;
     setStatusFilter(next);
     const nextParams = new URLSearchParams(params);
     if (next) nextParams.set("filter", next);
     else nextParams.delete("filter");
     setParams(nextParams, { replace: true });
+  }
+
+  // Skipped logs are a different list entirely (no flight_id), not a
+  // filter over `rows` — mutually exclusive with statusFilter so the
+  // page always shows exactly one table at a time.
+  function toggleShowSkipped() {
+    setStatusFilter(null);
+    const nextParams = new URLSearchParams(params);
+    nextParams.delete("filter");
+    setParams(nextParams, { replace: true });
+    setShowSkipped((v) => !v);
   }
 
   return (
@@ -663,7 +731,26 @@ export function Flights() {
               Excluded ({excludedCount})
             </button>
           )}
+          {exclusions.length > 0 && (
+            <button
+              onClick={toggleShowSkipped}
+              title="logs that were never analyzed as flights — ground sessions, short flights, corrupt logs"
+              style={{
+                padding: "5px 12px",
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+                border: showSkipped ? "1px solid var(--text-tertiary)" : "1px solid var(--border)",
+                background: showSkipped ? "var(--panel-control)" : "transparent",
+                color: "var(--text-tertiary)",
+              }}
+            >
+              Skipped ({exclusions.length})
+            </button>
+          )}
           <div style={{ flexGrow: 1 }} />
+          {!showSkipped && (
           <div style={{ display: "flex", gap: 4 }}>
             {(["date", "folder"] as GroupBy[]).map((g) => (
               <button
@@ -683,6 +770,7 @@ export function Flights() {
               </button>
             ))}
           </div>
+          )}
         </div>
 
         {selectedIds.size > 0 && (
@@ -718,7 +806,7 @@ export function Flights() {
           </div>
         )}
 
-        {(statusFilter || idsFilter) && (
+        {!showSkipped && (statusFilter || idsFilter) && (
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
             Showing {filtered.length} of {rows.length} flights
             {idsFilter && " — filtered to a specific set (linked from another view)"}
@@ -735,6 +823,7 @@ export function Flights() {
         )}
 
         {/* Table, grouped */}
+        {!showSkipped && (
         <div style={{ background: "var(--panel)", borderRadius: 12, padding: "6px 14px" }}>
           {groups.map(([groupName, groupRows]) => (
             <div key={groupName}>
@@ -871,6 +960,78 @@ export function Flights() {
             <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No flights match this filter.</div>
           )}
         </div>
+        )}
+
+        {/* Skipped logs (Spec: Workspace Flight Exclusions) — never became
+            a flight_id; a distinct list from the table above, not a filter
+            over it. */}
+        {showSkipped && (
+          <div style={{ background: "var(--panel)", borderRadius: 12, padding: "6px 14px" }}>
+            {exclusions.length > 0 && (
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", padding: "10px 10px 4px" }}>
+                {([
+                  ["ground_session", "ground session"],
+                  ["short_flight", "short flight"],
+                  ["corrupt_log", "corrupt log"],
+                  ["user_defined", "user-excluded"],
+                ] as const)
+                  .filter(([cat]) => (skippedBreakdown.get(cat) ?? 0) > 0)
+                  .map(([cat, label]) => {
+                    const n = skippedBreakdown.get(cat) ?? 0;
+                    return `${n} ${label}${n === 1 ? "" : "s"}`;
+                  })
+                  .join(" · ")}
+              </div>
+            )}
+            {includeError && (
+              <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--severity-warning)" }}>{includeError}</div>
+            )}
+            <table>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Reason</th>
+                  <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>Source</th>
+                  <th style={{ width: 90 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {exclusions.map((e) => (
+                  <tr key={e.filename} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "8px 10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                          border: `1px solid ${EXCLUSION_CATEGORY_COLOR[e.category]}`, color: EXCLUSION_CATEGORY_COLOR[e.category],
+                          flexShrink: 0,
+                        }}>
+                          {EXCLUSION_CATEGORY_LABEL[e.category]}
+                        </span>
+                        <span className="mono" style={{ fontSize: 12 }}>{e.filename}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 3 }}>{e.reason}</div>
+                    </td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)" }}>
+                      {e.source === "auto" ? "auto-detected" : "excluded by you"}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                      <button
+                        onClick={() => handleIncludeExcludedLog(e.filename)}
+                        disabled={includingFilename === e.filename}
+                        title="bring this log back as a real flight"
+                        style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11, cursor: includingFilename === e.filename ? "default" : "pointer" }}
+                      >
+                        {includingFilename === e.filename ? "Including…" : "Include"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {exclusions.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Nothing skipped.</div>
+            )}
+          </div>
+        )}
       </div>
     </NavShell>
   );

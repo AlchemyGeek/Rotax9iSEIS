@@ -481,6 +481,59 @@ def test_app_and_workspace_settings_round_trip(registry_server):
     assert got["result"]["anonymize_by_default"] is True
 
 
+def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):
+    """
+    The Flights tab's "Skipped" list (Spec: Workspace Flight Exclusions):
+    list_exclusions surfaces a ground-session entry that never became a
+    flight_id, and include_excluded_log brings it back — in the same
+    round trip for a folder-scanned file, since the log is still sitting
+    in a reachable watched folder.
+    """
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    import shutil
+    from ..conftest import LOGS_DIR
+    ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+    if not ground_session.exists():
+        pytest.skip("ground-session fixture log not present locally")
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(ground_session, folder / ground_session.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+    scanned = rpc(registry_server, "scan_workspace", {})
+    assert scanned["ok"], scanned
+    assert scanned["result"]["new_flight_ids"] == []
+    assert len(scanned["result"]["auto_excluded"]) == 1
+
+    listed = rpc(registry_server, "list_exclusions", {})
+    assert listed["ok"], listed
+    assert len(listed["result"]["entries"]) == 1
+    entry = listed["result"]["entries"][0]
+    assert entry["filename"] == ground_session.name
+    assert entry["category"] == "ground_session"
+    assert entry["reason"]
+    assert listed["result"]["summary"]["ground_session"] == 1
+
+    included = rpc(registry_server, "include_excluded_log",
+                    {"filename": ground_session.name, "reason": "intentional ground run-up test"})
+    assert included["ok"], included
+    assert included["result"]["included"] is True
+    assert included["result"]["scan_result"]["new_flight_ids"] != []
+
+    listed_after = rpc(registry_server, "list_exclusions", {})
+    assert listed_after["result"]["entries"] == []
+
+    with_status = rpc(registry_server, "list_flights_with_status", {})
+    assert any(r["filename"] == ground_session.name for r in with_status["result"]["rows"])
+
+
+def test_include_excluded_log_unknown_filename(registry_server):
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    d = rpc(registry_server, "include_excluded_log", {"filename": "never-seen.csv"})
+    assert d["ok"] is False
+    assert d["error"]["code"] == "NOT_FOUND"
+
+
 def test_add_log_folder_and_scan_finds_real_flight(registry_server, tmp_path):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 

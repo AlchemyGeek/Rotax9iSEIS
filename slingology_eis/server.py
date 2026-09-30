@@ -623,6 +623,48 @@ def op_include_flight(params: dict, ctx: dict) -> Any:
     return ws.include_flight(ctx["workspace_dir"], params["flight_id"]).to_dict()
 
 
+def op_list_exclusions(params: dict, ctx: dict) -> Any:
+    """
+    The Flights tab's "Skipped" list (Spec: Workspace Flight Exclusions
+    §"Flights tab UI (future)") — every ground_session/short_flight/
+    corrupt_log/user_defined entry currently in effect (not overridden),
+    for a file that never became a flight_id at all. Distinct from
+    op_list_flights_with_status's excluded_reason/in_baselines, which is
+    for flights that DID get analyzed and are just held out of baselines
+    (FleetSelection, a different mechanism).
+    """
+    workspace_dir = ctx["workspace_dir"]
+    exclusions = _exclusions.load_exclusions(workspace_dir)
+    entries = [e for e in exclusions.get("entries", []) if not e.get("user_override")]
+    return {"entries": entries, "summary": _exclusions.exclusion_summary(exclusions)}
+
+
+def op_include_excluded_log(params: dict, ctx: dict) -> Any:
+    """
+    Bring an auto/user-excluded log back — the exclusions.json
+    counterpart to op_include_flight (which un-excludes an already-
+    analyzed flight from baselines instead). This flips an exclusion
+    that currently prevents the file from ever becoming a flight_id, and
+    immediately runs a scan so a folder-scanned file's flight appears in
+    the same round trip. A browser-uploaded file that was excluded has
+    no bytes saved anywhere to scan for (only import_files persists
+    those, and only for files it actually keeps) — for that case the
+    override just clears the way for a re-upload of the same file to
+    succeed next time.
+    """
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    filename = params["filename"]
+    try:
+        _exclusions.set_user_override(workspace_dir, filename, True, params.get("reason", ""))
+    except ValueError as e:
+        raise RpcError("NOT_FOUND", str(e))
+    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"])
+    if scan_result.new_flight_ids:
+        ws.rebuild_fleet(workspace_dir)
+    return {"filename": filename, "included": True, "scan_result": scan_result.to_dict()}
+
+
 def op_list_annotations(params: dict, ctx: dict) -> Any:
     """All annotations in the active workspace, or just one flight's
     (Spec 03 §5.6 browse view vs. a single Flight view/ECU card's own
@@ -932,6 +974,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_flights_with_status": op_list_flights_with_status,
     "exclude_flight": op_exclude_flight,
     "include_flight": op_include_flight,
+    "list_exclusions": op_list_exclusions,
+    "include_excluded_log": op_include_excluded_log,
     "list_annotations": op_list_annotations,
     "save_annotation": op_save_annotation,
     "delete_annotation": op_delete_annotation,
