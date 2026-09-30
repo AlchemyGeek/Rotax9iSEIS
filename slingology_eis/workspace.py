@@ -1380,6 +1380,8 @@ def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[
         }
         if fields.get("created_from"):
             flt["created_from"] = fields["created_from"]
+        if fields.get("copied_from"):
+            flt["copied_from"] = fields["copied_from"]
         if engine_hours is not None:
             flt["created_engine_hours"] = engine_hours
         flt["history"].append({"at": now, "action": "created",
@@ -1421,3 +1423,36 @@ def delete_filter(ws_dir: Path, filter_id: str) -> bool:
         return False
     _save_filter_store(ws_dir, store)
     return True
+
+
+def review_filter(ws_dir: Path, filter_id: str, engine_hours: Optional[float]) -> Optional[dict]:
+    """§8.2 "Mark reviewed": records when (time and engine hours). Clears
+    Breached and Review due; Drifting clears only when its condition
+    stops holding or the filter is re-baselined."""
+    store = load_filters(ws_dir)
+    flt = next((f for f in store["filters"] if f["id"] == filter_id), None)
+    if flt is None:
+        return None
+    now = _now()
+    flt["reviewed_at"] = now
+    flt["reviewed_engine_hours"] = engine_hours
+    flt["history"].append({"at": now, "action": "reviewed", "after": {"reviewed_engine_hours": engine_hours}})
+    _save_filter_store(ws_dir, store)
+    return flt
+
+
+def rebaseline_filter(ws_dir: Path, filter_id: str, reference_flight_ids: list[str]) -> Optional[dict]:
+    """§8.1 re-baseline: a fresh reference of the most recent flights,
+    accepting the aircraft's current behaviour as the new normal."""
+    store = load_filters(ws_dir)
+    flt = next((f for f in store["filters"] if f["id"] == filter_id), None)
+    if flt is None:
+        return None
+    now = _now()
+    before = len(flt.get("reference", {}).get("flight_ids", []))
+    flt["reference"] = {"flight_ids": list(reference_flight_ids), "set_at": now}
+    flt["history"].append({"at": now, "action": "rebaselined",
+                           "before": {"reference_flights": before},
+                           "after": {"reference_flights": len(reference_flight_ids)}})
+    _save_filter_store(ws_dir, store)
+    return flt

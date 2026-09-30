@@ -4,7 +4,7 @@ import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { fleetAnalysis as fixtureFleet, insightRules as fixtureRules } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
-import type { BaselineConfig, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
+import type { BaselineConfig, FilterListEntry, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -88,6 +88,17 @@ export function Baselines() {
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState("overboost_time");
+  const [filterList, setFilterList] = useState<FilterListEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    client
+      .listFilters()
+      .then((r) => !cancelled && setFilterList(r.filters))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [whatIf, setWhatIf] = useState<WhatIfResult | null>(null);
   const [diffing, setDiffing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -244,6 +255,7 @@ export function Baselines() {
   }
 
   const topicIds = Object.keys(draftRules.rules);
+  const filterEntries = filterList;
   const topic = draftRules.rules[selectedTopic];
   const shippedTopic = shippedRules.rules[selectedTopic];
   const hasBaselineDeviation = topic?.triggers.some((t) => t.type === "baseline_deviation") ?? false;
@@ -313,6 +325,48 @@ export function Baselines() {
             </div>
           );
         })}
+
+        {filterEntries.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "14px 8px 8px" }}>
+              LIMIT FILTER DRIFT
+            </div>
+            {/* Spec 09 §12.4: the per-limit metrics' outlier_z_threshold is
+                also the filter monitor's drift threshold — one number, the
+                same override mechanism as every other metric. */}
+            <div style={{ padding: "8px 10px", background: "var(--panel)", borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+              {filterEntries.flatMap(({ filter, limit }) => {
+                const kinds = filter.limit_id === "overboost" ? [["block_s", "longest block"]] : [["peak_excess", "peak excess"], ["time_above_pct", "time past limit"]];
+                return kinds.map(([kind, label]) => {
+                  const key = `limit_${filter.limit_id}_${kind}`;
+                  const own = draftBaselineConfig.outlier_z_threshold_overrides?.[key];
+                  return (
+                    <div key={key} style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 3 }}>
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {limit?.label ?? filter.limit_id}: {label}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={own !== undefined}
+                          onChange={(e) => updateOverride(key, e.target.checked ? draftBaselineConfig.outlier_z_threshold : null)}
+                        />
+                        {own !== undefined ? (
+                          numberInput(own, (v) => updateOverride(key, v), { step: 0.1, min: 0 })
+                        ) : (
+                          <span style={{ color: "var(--text-tertiary)" }}>z {draftBaselineConfig.outlier_z_threshold} (global)</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                });
+              })}
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                Drifting when the last 2 flights sit above this many std devs from the filter's reference.
+              </div>
+            </div>
+          </>
+        )}
 
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "14px 8px 8px" }}>
           FLEET SELECTION {usingFixture && <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(sample)</span>}

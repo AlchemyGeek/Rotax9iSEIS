@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InsightCard } from "../components/InsightCard";
 import { FilterEditor } from "../components/FilterEditor";
+import { notifyFiltersChanged } from "../lib/filterAttention";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { ChannelTimeline } from "../components/ChannelTimeline";
 import { ChannelPicker } from "../components/ChannelPicker";
@@ -627,6 +628,7 @@ export function FlightView() {
                       createdFrom={{ flight_id: flightAnalysis.flight_id, insight_id: insight.id }}
                       onSaved={() => {
                         setFilterEditorFor(null);
+                        notifyFiltersChanged();
                         void reloadInsights();
                       }}
                       onCancel={() => setFilterEditorFor(null)}

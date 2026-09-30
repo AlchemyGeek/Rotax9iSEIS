@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { getEngineClient } from "../lib/engineClient";
 import { appSettings as fixtureAppSettings, workspaceRegistry as fixtureWorkspaceRegistry } from "../lib/fixtures";
 import type { WorkspaceRegistryEntry } from "../types/contract";
+import { useFilterAttention } from "../lib/filterAttention";
 
 const client = getEngineClient();
 
@@ -254,6 +255,7 @@ function WorkspaceSwitcher() {
 }
 
 export function NavShell({ right, children }: { right?: ReactNode; children: ReactNode }) {
+  const filterAttention = useFilterAttention();
   return (
     <div
       style={{
@@ -294,6 +296,14 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
             </NavLink>
             <NavLink to="/annotations" style={NAV_LINK_STYLE}>
               Notes
+              {filterAttention > 0 && (
+                <span
+                  title={`${filterAttention} limit filter${filterAttention === 1 ? "" : "s"} breached or drifting`}
+                  style={{ marginLeft: 6, minWidth: 16, height: 16, borderRadius: 8, padding: "0 4px", background: "var(--severity-warning)", color: "var(--bg)", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  {filterAttention}
+                </span>
+              )}
             </NavLink>
           </nav>
         </div>

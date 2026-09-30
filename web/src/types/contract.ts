@@ -609,6 +609,7 @@ export interface LimitFilter {
   duration?: { max_event_s: number };
   note: string;
   created_from?: { flight_id: string; insight_id: string };
+  copied_from?: { workspace_id: string; filter_id: string };
   reference: { flight_ids: string[]; set_at: string };
   created_at: string;
   created_engine_hours?: number;
@@ -684,4 +685,47 @@ export interface FilterListEntry {
   valid: boolean;
   diagnostics: Diagnostic[];
   summary: string;
+}
+
+export type FilterStatus = "breached" | "drifting" | "review_due" | "quiet" | "collecting" | "stable";
+
+// Spec 09 §11.3 FilterHealth. `peak_excess` (block_s for overboost) and
+// `time_above_pct` are the §5 per-limit metrics for each included flight.
+export interface FilterHealth {
+  filter_id: string;
+  limit_id: string;
+  valid: boolean;
+  status: FilterStatus;
+  reasons: string[];
+  diagnostics: Diagnostic[];
+  summary?: string;
+  resolved_band?: { value: number | null; unit: string } | null;
+  reference?: { flight_ids: string[]; collecting: boolean };
+  frozen_baseline?: {
+    peak_excess?: BaselineStats & { by_band?: Record<string, BaselineStats> };
+    block_s?: BaselineStats & { by_band?: Record<string, BaselineStats> };
+    time_above_pct?: BaselineStats & { by_band?: Record<string, BaselineStats> };
+    share_with_events: number | null;
+  };
+  series: {
+    flight_id: string;
+    date: string | null;
+    engine_hours: number | null;
+    band?: string | null;
+    in_reference: boolean;
+    monitored: boolean;
+    peak_excess?: number | null;
+    block_s?: number | null;
+    time_above_pct?: number | null;
+    events: number;
+    suppressed: number;
+    breaches: number;
+  }[];
+  last_breach?: { flight_id: string; event_id: string | null };
+  hours_since_review: number | null;
+}
+
+export interface CopyFiltersResult {
+  copied: { filter: LimitFilter; valid: boolean; diagnostics: Diagnostic[] }[];
+  skipped: { limit_id: string; reason: string }[];
 }

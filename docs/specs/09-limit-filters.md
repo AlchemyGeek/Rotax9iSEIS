@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.6 — Phases 1–3 implemented (engine 0.19.0); Phases 4–5 in progress (§16)
+**Status:** v0.8 — implemented (engine 0.19.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -16,6 +16,8 @@
 | 0.4 | Phase 1 implemented. Q3 and Q6 resolved from the log-set report (§6.2, §15). KACV counts corrected: the "77 events" of §1 predate the current checker; before merging it finds 38 on that log. `FlightAnalysis.limits` added (§11.1). Runs split where phase filtering leaves a time gap (§6.2). New §16: phased implementation plan and status. |
 | 0.5 | Phase 2 implemented. Q7 resolved: `fuel_press_max` is OAT-stratified (§6.5). Engine-running time and the per-limit metric naming pinned down (§5). |
 | 0.6 | Phase 3 implemented, including z mode and the frozen baseline (moved up from Phase 4, since z needs them). Q1 and Q2 adopted as proposed, with 916iS placeholder caps listed in §6.3. Where the computed limits' policies live (§6.3); notes follow a limit across filtered/breach insights (§10.1). |
+| 0.7 | Phase 4 implemented. A std floor for `time_above_pct` added to §13; the effective reference, invalid filters and the Drifting windows pinned down (§8, §16). |
+| 0.8 | Phase 5 implemented: copy filters between same-model workspaces (§9). |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -477,6 +479,7 @@ All values are initial placeholders, to be tuned on the full log set.
 | `n_min` for z reference and band comparison | 10 | shared with `baseline_deviation` |
 | Drift z | the metric's `outlier_z_threshold` (default 2.0) | `BaselineConfig`, shared |
 | z `std` floor | 5% of the limit value, min 0.1 engine units | engine |
+| `time_above_pct` drift `std` floor | 1 percentage point (added in Phase 4) | engine |
 | `reference_n` | 20 flights | engine |
 | `reference_min_n` | 5 flights | engine |
 | `frequency_window` | 10 monitored flights | engine |
@@ -530,8 +533,8 @@ Built in phases, each shippable on its own.
 | 1 | Limit ids (§6.1), merge gap (§6.2), overboost `close_call_margin_s` (§6.4), one insight per limit without filters (§10.1), topic thresholds via `limit_ref` (§10.2), exceedance fields and `FlightAnalysis.limits` (§11.1), log-set report, note migration (Q6) | Done, engine 0.17.0 |
 | 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | Done, engine 0.18.0 |
 | 3 | Filters: `filter_policy` (§6.3), magnitude (absolute, percent, z) and duration semantics and validation (§7), frozen baseline and reference selection (§8.1), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1), basic Notes list | Done, engine 0.19.0 |
-| 4 | Change monitor (§8.2), `evaluate_filter_health`, review and re-baseline, Notes page filter cards with charts, nav badge and Flights banner (§10.4, §12.2–12.3), per-limit z overrides in the rule playground (§12.4) | |
-| 5 | Copy filters between workspaces (§9) | |
+| 4 | Change monitor (§8.2), `evaluate_filter_health`, review and re-baseline, Notes page filter cards with charts, nav badge and Flights banner (§10.4, §12.2–12.3), per-limit z overrides in the rule playground (§12.4) | Done, engine 0.19.0 |
+| 5 | Copy filters between workspaces (§9) | Done, engine 0.19.0 |
 
 **Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
 older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgrade_limit_refs`),
@@ -546,4 +549,43 @@ same limit is `ALREADY_EXISTS` — edit the existing one), `delete_filter`. A ne
 edit to its band or duration, takes the `REFERENCE_N` most recent flights with the limit's
 channel as its reference; a note-only edit keeps it. `created_engine_hours` is stored for the
 review interval (Phase 4). The CLI `report` command reads the workspace's `filters.json`.
+
+**Phase 4 notes.**
+
+- *Drift floor for `time_above_pct`.* §13 gave a std floor only for z-mode peak excess. A limit
+  rarely exceeded in its reference has a `time_above_pct` std near zero, so any event would read
+  as Drifting; the drift test floors that std at 1 percentage point. Peak excess uses the z-mode
+  floor (5% of the limit value), and overboost's block time a floor of 1 s.
+- *Effective reference* is computed, not stored: the stored reference flights still included,
+  extended forward chronologically until `reference_min_n`. Monitored flights are those after the
+  last reference flight in that order.
+- *Drifting windows.* The two-flight persistence needs at least 2 monitored flights; the
+  frequency test needs a full `frequency_window` (10) of monitored flights, and Quiet a full
+  `quiet_window`. The frequency test compares the share of monitored flights with events against
+  the share of reference flights with events (for overboost, blocks past the limit).
+- *Breached* counts breaches on monitored flights whose start is after `reviewed_engine_hours`
+  (all monitored flights if never reviewed). `created_engine_hours` / `reviewed_engine_hours`
+  are the workspace's latest engine hours when the filter was saved / reviewed.
+- *An invalid filter* is still monitored for drift, review and quiet, but never reported as
+  Breached (it hides nothing); its first reason says it is not applied and why.
+- *Operations and ops.* `evaluate_filter_health` returns, per filter, the §11.3 fields plus
+  `summary`, `reference` (effective ids, collecting) and `series[].monitored`. Server ops
+  `filter_health` (with `attention_count`, the Breached + Drifting count behind the Notes badge
+  and Flights banner), `review_filter`, `rebaseline_filter`.
+- *Acceptance 12* runs as `tests/contract/test_fleet_analysis.py::test_filter_monitor_replay_fuel_pressure`
+  on the N117ZS logs: filter at flight 20, +4.0 psi — Stable until 50 h have passed, then
+  Review due, Drifting once (10 of 10 monitored flights with events vs 70% of the reference),
+  never Breached.
+
+**Phase 5 notes.** Server op `copy_filters(source_workspace_id)` into the active workspace:
+refused with `ENGINE_MISMATCH` across engine models (and `BAD_PARAMS` from a workspace into
+itself). Each copy keeps the source's magnitude, duration and note, gets a new id, a fresh
+`REFERENCE_N` reference from the target's flights and `copied_from: {workspace_id, filter_id}`.
+A limit the target already filters is skipped and reported rather than overwritten. A copy that
+doesn't validate in the target (e.g. a z filter whose new reference has too few flights with
+events) is still copied, reported as not valid, and shows as *not applied* on the Notes page.
+
+**Still open.** Q5 (a Trends-view group for the per-limit metrics) is a follow-up. The private
+characterization goldens (§14.4, "updated deliberately") must be regenerated and their diff
+reviewed wherever they are kept, since limit insights and exceedances changed shape.
 

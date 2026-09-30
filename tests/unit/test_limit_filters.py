@@ -357,3 +357,129 @@ def test_filter_store_create_edit_delete(tmp_path):
 
     assert ws.delete_filter(tmp_path, f["id"]) and ws.load_filters(tmp_path)["filters"] == []
     assert not ws.delete_filter(tmp_path, f["id"])
+
+
+# ── Change monitor (§8, Phase 4) ──────────────────────────────────────────────
+
+from slingology_eis.filters import effective_reference, evaluate_filter_health  # noqa: E402
+from slingology_eis.operations import FlightAnalysis  # noqa: E402
+
+
+def _monitor_fixture(rows):
+    """rows: one (peak_excess | None, time_above_pct, band | None) per flight,
+    oldest first, 1 engine hour apart. Returns (fas, fleet)."""
+    fas, peak_pts, pct_pts = [], [], []
+    for i, (peak, pct, band) in enumerate(rows):
+        fid = f"m{i:03d}"
+        excs = [] if peak is None else [_exc("fuel_press_max", "fuel_press_psi", "Fuel pressure maximum",
+                                             100, 60, 46.0 + peak, 46.0)]
+        metrics = {"oat_band": {"id": "oat_band", "value": band}}
+        fas.append(FlightAnalysis(flight_id=fid, analysis_key=fid, source_keys=[fid],
+                                  header={"date": f"2026-01-01", "start_utc": "x",
+                                          "engine_hours_start": 100.0 + i, "engine_hours_end": 100.9 + i},
+                                  metrics=metrics, exceedances=excs, provenance={}, limits=list(CAT.values())))
+        base = {"flight_id": fid, "date": "2026-01-01", "x": 100.0 + i, **({"band": band} if band else {})}
+        if peak is not None:
+            peak_pts.append({**base, "value": peak})
+        pct_pts.append({**base, "value": pct})
+    fleet = FleetAnalysis(fleet_key="fk", flight_ids=[fa.flight_id for fa in fas],
+                          metrics={"limit_fuel_press_max_peak_excess": {"points": peak_pts},
+                                   "limit_fuel_press_max_time_above_pct": {"points": pct_pts}},
+                          provenance={"baseline_config": {"outlier_z_threshold": 2.0}})
+    return fas, fleet
+
+
+def _health(rows, n_ref, **flt_kw):
+    fas, fleet = _monitor_fixture(rows)
+    flt_kw.setdefault("created_engine_hours", 100.0 + n_ref)
+    flt = _filter("fuel_press_max", flt_kw.pop("magnitude", {"mode": "absolute", "value": 3.0}),
+                  reference=[f"m{i:03d}" for i in range(n_ref)], **flt_kw)
+    return evaluate_filter_health(fas, fleet, [flt], CFG)[0]
+
+
+_TYPICAL = [(1.0 + 0.1 * (i % 3), 20.0 + (i % 3), None) for i in range(12)]
+
+
+def test_monitor_stable():
+    h = _health(_TYPICAL + [(1.1, 21.0, None)] * 3, 12)
+    assert h["status"] == "stable" and h["reasons"] == []
+    assert sum(s["monitored"] for s in h["series"]) == 3
+    assert h["frozen_baseline"]["peak_excess"]["n"] == 12
+
+
+def test_monitor_breached_then_reviewed():
+    rows = _TYPICAL + [(1.1, 21.0, None), (4.0, 21.0, None), (1.1, 21.0, None)]
+    h = _health(rows, 12)
+    assert h["status"] == "breached" and h["last_breach"]["flight_id"] == "m013"
+    reviewed = _health(rows, 12, reviewed_engine_hours=114.5)
+    assert reviewed["status"] == "stable"
+
+
+def test_monitor_drift_needs_two_consecutive_flights():
+    # the 2.3 psi floor (5% of 46) dominates the tiny reference std: z = (x - 1.1) / 2.3
+    one = _health(_TYPICAL + [(1.1, 21.0, None), (2.9, 21.0, None)], 12)
+    two = _health(_TYPICAL + [(2.9, 21.0, None), (2.9, 21.0, None)], 12)
+    assert one["status"] == "stable"
+    assert two["status"] == "stable"      # z = 0.8: within the floor
+    drift = _health(_TYPICAL + [(1.0, 60.0, None), (1.0, 60.0, None)], 12)
+    assert drift["status"] == "drifting" and "time past the limit" in drift["reasons"][0]
+    single = _health(_TYPICAL + [(1.0, 21.0, None), (1.0, 60.0, None)], 12)
+    assert single["status"] == "stable"
+
+
+def test_monitor_drift_threshold_is_the_metrics_outlier_z():
+    """Acceptance 11: the per-limit metric's outlier_z_threshold override
+    decides drift too. Reference time above: 21 ± 0.85 %, floored to 1."""
+    fas, fleet = _monitor_fixture(_TYPICAL + [(1.0, 24.0, None), (1.0, 24.0, None)])   # z = 3
+    flt = _filter("fuel_press_max", {"mode": "absolute", "value": 3.0},
+                  reference=[f"m{i:03d}" for i in range(12)], created_engine_hours=112.0)
+    assert evaluate_filter_health(fas, fleet, [flt], CFG)[0]["status"] == "drifting"
+    fleet.provenance["baseline_config"]["outlier_z_threshold_overrides"] = {"limit_fuel_press_max_time_above_pct": 4.0}
+    assert evaluate_filter_health(fas, fleet, [flt], CFG)[0]["status"] == "stable"
+
+
+def test_monitor_frequency_drift():
+    # reference: events on 3 of 12 flights; monitored: on 8 of the last 10
+    ref = [(1.0 if i % 4 == 0 else None, 1.0 if i % 4 == 0 else 0.0, None) for i in range(12)]
+    mon = [(1.0 if i < 8 else None, 1.0 if i < 8 else 0.0, None) for i in range(10)]
+    h = _health(ref + mon, 12)
+    assert h["status"] == "drifting" and any("of the last 10 flights" in r for r in h["reasons"])
+
+
+def test_monitor_review_due():
+    h = _health(_TYPICAL + [(1.1, 21.0, None)] * 3, 12, created_engine_hours=50.0)
+    assert h["status"] == "review_due" and h["hours_since_review"] > 50
+
+
+def test_monitor_quiet():
+    h = _health(_TYPICAL + [(None, 0.0, None)] * 10, 12)
+    assert h["status"] == "quiet"
+
+
+def test_monitor_collecting_extends_the_reference_forward():
+    rows = _TYPICAL[:3] + [(1.1, 21.0, None)] * 1
+    h = _health(rows, 2)
+    assert h["status"] == "collecting" and len(h["reference"]["flight_ids"]) == 4
+    fas, _ = _monitor_fixture(_TYPICAL)
+    ids, collecting = effective_reference({"reference": {"flight_ids": ["m000", "m001"]}},
+                                          [{"flight_id": fa.flight_id} for fa in fas])
+    assert ids == ["m000", "m001", "m002", "m003", "m004"] and not collecting
+
+
+def test_monitor_priority_breach_over_drift():
+    h = _health(_TYPICAL + [(4.0, 60.0, None), (4.0, 60.0, None)], 12)
+    assert h["status"] == "breached" and any("time past the limit" in r for r in h["reasons"])
+
+
+def test_monitor_stratified_comparison_uses_the_flights_band():
+    """A filter whose reference spans a cold majority and 10 warm flights:
+    warm monitored flights sit within the warm band's reference, so no
+    drift — though against all reference flights they'd be 2+ std up."""
+    ref = [(1.0, 5.0 + 0.2 * (i % 3), "cold") for i in range(40)] + \
+          [(1.0, 30.0 + 0.2 * (i % 3), "warm") for i in range(10)]
+    warm = [(1.0, 31.0, "warm"), (1.0, 31.0, "warm")]
+    h = _health(ref + warm, 50)
+    assert h["status"] == "stable"
+    # the same values with no band information would read as drift
+    unbanded = _health([(p, v, None) for p, v, _ in ref + warm], 50)
+    assert unbanded["status"] == "drifting"
