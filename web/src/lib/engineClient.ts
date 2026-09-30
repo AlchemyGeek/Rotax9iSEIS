@@ -7,6 +7,7 @@ import type {
   ChannelRegistry,
   ChartPreset,
   ChartPresetsResult,
+  CopyFiltersResult,
   Diagnostic,
   EcuAnalysis,
   ExclusionsResult,
@@ -94,6 +95,7 @@ export interface EngineClient {
   filterHealth(): Promise<{ health: FilterHealth[]; attention_count: number }>;
   reviewFilter(id: string): Promise<LimitFilter>;
   rebaselineFilter(id: string): Promise<LimitFilter>;
+  copyFilters(sourceWorkspaceId: string): Promise<CopyFiltersResult>;
 
   // Spec 07 §4/§6 — the channel registry (single source of truth, D4) and
   // chart presets (shipped + user, D1). saveUserPreset with an id edits
@@ -289,6 +291,10 @@ export class LocalServerClient implements EngineClient {
 
   rebaselineFilter(id: string) {
     return this.rpc<LimitFilter>("rebaseline_filter", { id });
+  }
+
+  copyFilters(sourceWorkspaceId: string) {
+    return this.rpc<CopyFiltersResult>("copy_filters", { source_workspace_id: sourceWorkspaceId });
   }
 
   getChannelRegistry() {

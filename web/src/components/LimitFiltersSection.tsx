@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../lib/engineClient";
-import type { FilterHealth, FilterListEntry, FilterStatus, LimitFilter } from "../types/contract";
+import type { FilterHealth, FilterListEntry, FilterStatus, LimitFilter, WorkspaceRegistryEntry } from "../types/contract";
 import { FilterEditor } from "./FilterEditor";
 import { FilterHealthCharts } from "./FilterHealthCharts";
 import { notifyFiltersChanged } from "../lib/filterAttention";
@@ -67,6 +67,77 @@ function FiltersExplainer() {
   );
 }
 
+// Spec 09 §9: copy another workspace's filters here — offered only for
+// workspaces with the same engine model; the server enforces it too.
+function CopyFilters({ onCopied }: { onCopied: () => void }) {
+  const [sources, setSources] = useState<WorkspaceRegistryEntry[] | null>(null);
+  const [selected, setSelected] = useState("");
+  const [result, setResult] = useState<string | null>(null);
+
+  async function open() {
+    try {
+      const [active, all] = await Promise.all([client.getActiveWorkspace(), client.listWorkspaces()]);
+      const model = active.manifest?.engine_model;
+      const activeId = active.manifest?.id;
+      const same = all.filter((w) => w.engine_model === model && w.id !== activeId);
+      setSources(same);
+      setSelected(same[0]?.id ?? "");
+    } catch {
+      setSources([]);
+    }
+  }
+
+  async function copy() {
+    try {
+      const r = await client.copyFilters(selected);
+      const invalid = r.copied.filter((c) => !c.valid).length;
+      setResult(
+        `Copied ${r.copied.length} filter${r.copied.length === 1 ? "" : "s"}` +
+          (invalid ? ` (${invalid} not applied here — see below)` : "") +
+          (r.skipped.length ? `; skipped ${r.skipped.map((s) => `${s.limit_id} (${s.reason})`).join(", ")}` : "") +
+          ".",
+      );
+      onCopied();
+    } catch (e) {
+      setResult(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (sources === null) {
+    return (
+      <span onClick={open} style={{ fontSize: 12, color: "var(--text-secondary)", cursor: "pointer", marginLeft: "auto" }}>
+        Copy filters from…
+      </span>
+    );
+  }
+  return (
+    <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+      {sources.length === 0 ? (
+        <span style={{ color: "var(--text-tertiary)" }}>No other workspace with this engine model.</span>
+      ) : (
+        <>
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text-primary)", fontSize: 12 }}
+          >
+            {sources.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+          <span onClick={copy} style={{ color: "var(--accent)", cursor: "pointer" }}>Copy</span>
+        </>
+      )}
+      <span onClick={() => { setSources(null); setResult(null); }} style={{ color: "var(--text-tertiary)", cursor: "pointer" }}>
+        Close
+      </span>
+      {result && <span style={{ color: "var(--text-secondary)" }}>{result}</span>}
+    </span>
+  );
+}
+
 // Spec 09 §12.2: the Notes page's "Limit filters" section.
 export function LimitFiltersSection() {
   const navigate = useNavigate();
@@ -126,6 +197,7 @@ export function LimitFiltersSection() {
         <span onClick={() => setExplain((v) => !v)} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>
           How filters differ from baselines {explain ? "▾" : "▸"}
         </span>
+        <CopyFilters onCopied={() => void refresh()} />
       </div>
       {explain && <FiltersExplainer />}
       {entries.length === 0 && (

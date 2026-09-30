@@ -1276,3 +1276,38 @@ def test_filter_health_review_and_rebaseline(registry_server):
     assert rebased["ok"] and rebased["result"]["history"][-1]["action"] == "rebaselined"
     assert len(rebased["result"]["reference"]["flight_ids"]) == 3
     assert rpc(registry_server, "review_filter", {"id": "nope"})["error"]["code"] == "NOT_FOUND"
+
+
+def test_copy_filters_between_workspaces(registry_server):
+    """Spec 09 §14 acceptance 16: refused across engine models; a same-model
+    copy gets a new id and a fresh reference from the target's flights."""
+    source = rpc(registry_server, "create_workspace", {"name": "Source", "engine_model": "916iS"})["result"]
+    log = _flying_log_bytes(extra_header=",Fuel Press (PSI)",
+                            row_extra_fn=lambda i: ",47.0" if i > _FLYING_PREAMBLE_LEN + 300 else ",44.0")
+    rpc(registry_server, "import_files", {"files": [{"content_base64": base64.b64encode(log).decode(),
+                                                     "filename": "log_20260101_120000_TEST.csv"}]})
+    src_filter = rpc(registry_server, "save_filter", {"filter": {
+        "limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "sender"}})["result"]
+
+    other = rpc(registry_server, "create_workspace", {"name": "Other engine", "engine_model": "912iS"})["result"]
+    refused = rpc(registry_server, "copy_filters", {"source_workspace_id": source["id"]})
+    assert refused["ok"] is False and refused["error"]["code"] == "ENGINE_MISMATCH"
+    assert rpc(registry_server, "list_filters", {})["result"]["filters"] == []
+
+    target = rpc(registry_server, "create_workspace", {"name": "Target", "engine_model": "916iS"})["result"]
+    log2 = _flying_log_bytes(date="2026-02-01", extra_header=",Fuel Press (PSI)",
+                             row_extra_fn=lambda i: ",47.0" if i > _FLYING_PREAMBLE_LEN + 300 else ",44.0")
+    imp = rpc(registry_server, "import_files", {"files": [{"content_base64": base64.b64encode(log2).decode(),
+                                                           "filename": "log_20260201_120000_TEST.csv"}]})
+    target_flight = imp["result"]["results"][0]["flight_id"]
+    res = rpc(registry_server, "copy_filters", {"source_workspace_id": source["id"]})
+    assert res["ok"], res
+    [c] = res["result"]["copied"]
+    assert c["valid"] and c["filter"]["id"] != src_filter["id"]
+    assert c["filter"]["magnitude"] == {"mode": "absolute", "value": 1.5} and c["filter"]["note"] == "sender"
+    assert c["filter"]["reference"]["flight_ids"] == [target_flight]
+    assert c["filter"]["copied_from"] == {"workspace_id": source["id"], "filter_id": src_filter["id"]}
+
+    again = rpc(registry_server, "copy_filters", {"source_workspace_id": source["id"]})["result"]
+    assert again["copied"] == [] and again["skipped"][0]["limit_id"] == "fuel_press_max"
+    assert other["id"] != target["id"]

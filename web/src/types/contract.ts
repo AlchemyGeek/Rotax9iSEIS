@@ -598,6 +598,7 @@ export interface LimitFilter {
   duration?: { max_event_s: number };
   note: string;
   created_from?: { flight_id: string; insight_id: string };
+  copied_from?: { workspace_id: string; filter_id: string };
   reference: { flight_ids: string[]; set_at: string };
   created_at: string;
   created_engine_hours?: number;
@@ -711,4 +712,9 @@ export interface FilterHealth {
   }[];
   last_breach?: { flight_id: string; event_id: string | null };
   hours_since_review: number | null;
+}
+
+export interface CopyFiltersResult {
+  copied: { filter: LimitFilter; valid: boolean; diagnostics: Diagnostic[] }[];
+  skipped: { limit_id: string; reason: string }[];
 }

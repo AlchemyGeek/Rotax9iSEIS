@@ -1354,6 +1354,8 @@ def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[
         }
         if fields.get("created_from"):
             flt["created_from"] = fields["created_from"]
+        if fields.get("copied_from"):
+            flt["copied_from"] = fields["copied_from"]
         if engine_hours is not None:
             flt["created_engine_hours"] = engine_hours
         flt["history"].append({"at": now, "action": "created",

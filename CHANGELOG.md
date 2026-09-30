@@ -13,7 +13,7 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ## 0.19.0 — September 30, 2026
 
-**Limit filters and change monitoring (Spec 09 Phases 3–4).** Silence a known, consistent
+**Limit filters and change monitoring (Spec 09 Phases 3–5).** Silence a known, consistent
 exceedance without losing it, and still be told when that behaviour changes.
 
 - **Filter this limit…** on any limit card in the Flight view opens an inline editor,
@@ -46,6 +46,9 @@ exceedance without losing it, and still be told when that behaviour changes.
   flights shaded, breaching flights red), last breach, hours since review, and **Edit**,
   **Re-baseline**, **Mark reviewed**, **History**, **Remove**. Plus a short explanation of how
   filters differ from baselines.
+- **Copy filters from…** another workspace with the same engine model (Notes page). Copies
+  get a fresh reference from this workspace's own flights; limits already filtered here are
+  skipped. A different engine model is refused.
 - **Attention:** the Notes nav item shows a badge, and the Flights page a one-line banner,
   when a filter is Breached or Drifting.
 - **Rule playground:** a *Limit filter drift* group sets the per-limit metrics'
@@ -55,7 +58,8 @@ exceedance without losing it, and still be told when that behaviour changes.
 - **Contract:** `evaluate_insights(…, filters=)`; `InsightSet.filters_hash`; new operations
   `validate_limit_filter`, `propose_limit_filter`, `preview_limit_filter`,
   `evaluate_filter_health`; server ops `list_filters`, `propose_filter`, `preview_filter`,
-  `save_filter`, `delete_filter`, `filter_health`, `review_filter`, `rebaseline_filter`.
+  `save_filter`, `delete_filter`, `filter_health`, `review_filter`, `rebaseline_filter`,
+  `copy_filters`.
 - Existing workspaces re-analyse their flights on the next scan (engine version change), so
   each flight carries the new filter policies.
 

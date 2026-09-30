@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.7 — Phases 1–4 implemented (engine 0.19.0); Phase 5 in progress (§16)
+**Status:** v0.8 — implemented (engine 0.19.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -17,6 +17,7 @@
 | 0.5 | Phase 2 implemented. Q7 resolved: `fuel_press_max` is OAT-stratified (§6.5). Engine-running time and the per-limit metric naming pinned down (§5). |
 | 0.6 | Phase 3 implemented, including z mode and the frozen baseline (moved up from Phase 4, since z needs them). Q1 and Q2 adopted as proposed, with 916iS placeholder caps listed in §6.3. Where the computed limits' policies live (§6.3); notes follow a limit across filtered/breach insights (§10.1). |
 | 0.7 | Phase 4 implemented. A std floor for `time_above_pct` added to §13; the effective reference, invalid filters and the Drifting windows pinned down (§8, §16). |
+| 0.8 | Phase 5 implemented: copy filters between same-model workspaces (§9). |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -533,7 +534,7 @@ Built in phases, each shippable on its own.
 | 2 | Per-limit baseline metrics (§5) and `stratify_by` (§6.5) | Done, engine 0.18.0 |
 | 3 | Filters: `filter_policy` (§6.3), magnitude (absolute, percent, z) and duration semantics and validation (§7), frozen baseline and reference selection (§8.1), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1), basic Notes list | Done, engine 0.19.0 |
 | 4 | Change monitor (§8.2), `evaluate_filter_health`, review and re-baseline, Notes page filter cards with charts, nav badge and Flights banner (§10.4, §12.2–12.3), per-limit z overrides in the rule playground (§12.4) | Done, engine 0.19.0 |
-| 5 | Copy filters between workspaces (§9) | |
+| 5 | Copy filters between workspaces (§9) | Done, engine 0.19.0 |
 
 **Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
 older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgrade_limit_refs`),
@@ -575,4 +576,16 @@ review interval (Phase 4). The CLI `report` command reads the workspace's `filte
   on the N117ZS logs: filter at flight 20, +4.0 psi — Stable until 50 h have passed, then
   Review due, Drifting once (10 of 10 monitored flights with events vs 70% of the reference),
   never Breached.
+
+**Phase 5 notes.** Server op `copy_filters(source_workspace_id)` into the active workspace:
+refused with `ENGINE_MISMATCH` across engine models (and `BAD_PARAMS` from a workspace into
+itself). Each copy keeps the source's magnitude, duration and note, gets a new id, a fresh
+`REFERENCE_N` reference from the target's flights and `copied_from: {workspace_id, filter_id}`.
+A limit the target already filters is skipped and reported rather than overwritten. A copy that
+doesn't validate in the target (e.g. a z filter whose new reference has too few flights with
+events) is still copied, reported as not valid, and shows as *not applied* on the Notes page.
+
+**Still open.** Q5 (a Trends-view group for the per-limit metrics) is a follow-up. The private
+characterization goldens (§14.4, "updated deliberately") must be regenerated and their diff
+reviewed wherever they are kept, since limit insights and exceedances changed shape.
 

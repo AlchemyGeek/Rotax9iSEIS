@@ -887,6 +887,58 @@ def op_rebaseline_filter(params: dict, ctx: dict) -> Any:
     return ws.rebaseline_filter(workspace_dir, params["id"], ref)
 
 
+def op_copy_filters(params: dict, ctx: dict) -> Any:
+    """
+    §9 "Copy filters from…": copy another workspace's filters into the
+    active one — only between workspaces with the same engine model.
+    Copies get new ids and a fresh reference from this workspace's own
+    flights; a limit this workspace already filters is skipped, not
+    overwritten. A copy that doesn't validate here (e.g. a z filter
+    without enough reference flights with events) is still copied, and
+    reported, so the pilot can fix or remove it. Nothing is automatic.
+    """
+    _require_active(ctx)
+    source_id = params["source_workspace_id"]
+    registry = ws.load_registry(ctx["registry_path"])
+    source = next((e for e in registry.workspaces if e.id == source_id), None)
+    if source is None:
+        raise RpcError("NOT_FOUND", f"no workspace {source_id}")
+    if source_id == ctx["active_workspace_id"]:
+        raise RpcError("BAD_PARAMS", "can't copy filters from a workspace into itself")
+    workspace_dir = ctx["workspace_dir"]
+    target_model = ws.load_manifest(workspace_dir).engine_model
+    source_dir = ctx["workspaces_root"] / source_id
+    source_model = ws.load_manifest(source_dir).engine_model
+    if source_model != target_model:
+        raise RpcError("ENGINE_MISMATCH",
+                       f"{source.name} is a {source_model} workspace; this one is {target_model} — "
+                       f"filters are only copied between workspaces with the same engine model")
+
+    engine_cfg = load_engine_config(target_model)
+    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
+    fleet = _get_or_build_fleet(workspace_dir)
+    hours = _latest_engine_hours(_load_workspace_flights(workspace_dir))
+    already = {f["limit_id"] for f in _workspace_filters(ctx)}
+    copied, skipped = [], []
+    for f in ws.load_filters(source_dir)["filters"]:
+        lid = f.get("limit_id")
+        if lid in already:
+            skipped.append({"limit_id": lid, "reason": "this workspace already filters this limit"})
+            continue
+        lim = limits.get(lid)
+        if lim is None:
+            skipped.append({"limit_id": lid, "reason": "no such limit in this engine profile"})
+            continue
+        fields = {k: f[k] for k in ("limit_id", "magnitude", "duration", "note") if f.get(k) is not None}
+        fields["copied_from"] = {"workspace_id": source_id, "filter_id": f.get("id")}
+        saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=_filters.select_reference(fleet, lim),
+                               engine_hours=hours)
+        already.add(lid)
+        diags = _filters.validate_filter(saved, limits, fleet)
+        copied.append({"filter": saved, "valid": not diags, "diagnostics": diags})
+    return {"copied": copied, "skipped": skipped}
+
+
 def op_list_annotations(params: dict, ctx: dict) -> Any:
     """All annotations in the active workspace, or just one flight's
     (Spec 03 §5.6 browse view vs. a single Flight view/ECU card's own
@@ -1209,6 +1261,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "filter_health": op_filter_health,
     "review_filter": op_review_filter,
     "rebaseline_filter": op_rebaseline_filter,
+    "copy_filters": op_copy_filters,
     "save_annotation": op_save_annotation,
     "delete_annotation": op_delete_annotation,
     "remove_missing_flight": op_remove_missing_flight,
