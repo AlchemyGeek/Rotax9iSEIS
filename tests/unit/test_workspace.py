@@ -244,6 +244,32 @@ class TestScanWithRealLogs:
         assert result2.now_missing_flight_ids == []
         assert len(ws.list_flight_ids(ws_dir)) == 1
 
+    def test_scan_reports_progress_through_reading_and_analyzing_phases(self, tmp_path):
+        """
+        on_progress (server.py's op_scan_workspace polling support) sees
+        a "reading" update for every new file, then an "analyzing" one
+        for every parsed file — both with a real, stable total known
+        before that phase starts, not just a running current with no
+        total to measure it against.
+        """
+        registry_path, root, ws_dir = self._new_workspace(tmp_path)
+        folder = tmp_path / "logs"
+        folder.mkdir()
+        shutil.copy(_LOG_A, folder / _LOG_A.name)
+        shutil.copy(_LOG_B, folder / _LOG_B.name)
+        ws.add_log_folder(ws_dir, str(folder), registry_path)
+
+        updates: list[dict] = []
+        ws.scan_workspace(ws_dir, registry_path, on_progress=updates.append)
+
+        reading = [u for u in updates if u["phase"] == "reading"]
+        analyzing = [u for u in updates if u["phase"] == "analyzing"]
+        assert [u["current"] for u in reading] == [1, 2]
+        assert all(u["total"] == 2 for u in reading)
+        assert {u["filename"] for u in reading} == {_LOG_A.name, _LOG_B.name}
+        assert [u["current"] for u in analyzing] == [1, 2]
+        assert all(u["total"] == 2 for u in analyzing)
+
     def test_scan_excludes_ground_session_and_keeps_a_real_flight(self, tmp_path):
         """
         Spec: Ground Session Detection + Workspace Flight Exclusions,

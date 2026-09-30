@@ -38,7 +38,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import __version__
 from . import exclusions as _exclusions
@@ -846,10 +846,21 @@ def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[byte
     return None
 
 
-def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True) -> ScanResult:
+def scan_workspace(
+    ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True,
+    on_progress: Optional[Callable[[dict], None]] = None,
+) -> ScanResult:
     """
     The core Spec 02 operation: reconcile `flights/` against what
     `manifest.log_folders` currently contains.
+
+    on_progress, if given, is called with {"phase", "current", "total",
+    "filename"} at each step of the three costly per-file loops below
+    (reading, analyzing, reanalyzing) — an initial sync of a large folder
+    can genuinely take minutes (every new file gets parsed AND fully
+    analyzed), and the caller (server.py's op_scan_workspace) uses this
+    to let a polling client show real "processing log X of N" progress
+    instead of one opaque multi-minute spinner.
 
     Two distinct failure paths, not one generic "can't find it" (§5.5):
     a folder that doesn't exist right now is one `unreachable_folders`
@@ -956,7 +967,9 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
     # flights/<id>", which the per-file loop below does naturally by
     # appending a second `imports[]` entry instead of re-analyzing.
     parsed = []  # (df, info, content, filename, skey)
-    for content, filename, skey in new_batch:
+    for i, (content, filename, skey) in enumerate(new_batch):
+        if on_progress:
+            on_progress({"phase": "reading", "current": i + 1, "total": len(new_batch), "filename": filename})
         try:
             df, info = load_log_bytes(content, filename)
         except Exception:
@@ -981,7 +994,9 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
                         fid = _compute_flight_id(flight_fingerprint(df, info))
                         result.excluded.append({"flight_id": fid, "reason": f"duplicate export ({filename})"})
 
-    for df, info, content, filename, skey in parsed:
+    for i, (df, info, content, filename, skey) in enumerate(parsed):
+        if on_progress:
+            on_progress({"phase": "analyzing", "current": i + 1, "total": len(parsed), "filename": filename})
         if skey in dup_groups_excluded:
             continue
 
@@ -1053,6 +1068,12 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
     # case but nothing ever actually triggered it. Scoped to flights this
     # scan can still reach a source for; skips ones just created above
     # (already current) and ones already missing (nothing to re-read).
+    #
+    # Collected as one list first (cheap — just a provenance-string check
+    # per known flight, not the actual re-analysis) so on_progress can
+    # report a real total instead of counting down from "however many
+    # flights this workspace has," most of which won't need it at all.
+    stale: list[tuple[str, FlightSources, FlightAnalysis, bytes, str]] = []
     for fid, src in all_sources.items():
         if fid in result.new_flight_ids or src.missing:
             continue
@@ -1063,6 +1084,11 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
         if found is None:
             continue
         content, filename = found
+        stale.append((fid, src, fa, content, filename))
+
+    for i, (fid, src, fa, content, filename) in enumerate(stale):
+        if on_progress:
+            on_progress({"phase": "reanalyzing", "current": i + 1, "total": len(stale), "filename": filename})
         try:
             fresh = analyze_flight(content, filename, engine_cfg, manifest.engine_model)
         except Exception:

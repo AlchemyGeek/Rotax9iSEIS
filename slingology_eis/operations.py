@@ -807,6 +807,16 @@ def exceedance_limit_id(e: dict) -> str:
     return e.get("limit_id") or f"legacy:{e['param']}:{e['limit_type']}:{e['label']}"
 
 
+def _event_id(e: dict) -> str:
+    """An exceedance's event_id — or, for an analysis written before Spec
+    09 (no event_id), the same stand-in _event_summary below already
+    falls back to on the way out. Used as a dict key wherever an event
+    needs to be looked up by identity (suppressed_by), so every reader
+    has to agree on this, not just the one write site that already
+    tolerated a missing key with .get()."""
+    return e.get("event_id") or f"{exceedance_limit_id(e)}@{e['start_utc']}"
+
+
 def _events_by_limit(exceedances: list[dict]) -> dict[str, list[dict]]:
     """Exceedances grouped by limit, groups in order of each limit's first
     event (exceedances are already sorted by start time)."""
@@ -835,7 +845,7 @@ def _event_window(exc: dict) -> dict:
 
 def _event_summary(exc: dict, suppressed_by: Optional[str] = None) -> dict:
     return {
-        "event_id": exc.get("event_id") or f"{exceedance_limit_id(exc)}@{exc['start_utc']}",
+        "event_id": _event_id(exc),
         "start_utc": exc["start_utc"],
         "elapsed_s": exc["elapsed_s"],
         "duration_s": exc["duration_s"],
@@ -1028,9 +1038,9 @@ def evaluate_insights(
             frozen_by_limit[lid] = frozen
             z_ref, _ = _filters.comparison_set(frozen, _filters.flight_band(flight_analysis, lim))
         for e in events_by_limit.get(lid, []):
-            suppressed_by[e["event_id"]] = _filters.classify_event(e, flt, lim, z_ref)
+            suppressed_by[_event_id(e)] = _filters.classify_event(e, flt, lim, z_ref)
     unsuppressed_by_limit = {
-        lid: [e for e in evs if suppressed_by.get(e.get("event_id")) is None]
+        lid: [e for e in evs if suppressed_by.get(_event_id(e)) is None]
         for lid, evs in events_by_limit.items()
     }
 
@@ -1254,8 +1264,8 @@ def evaluate_insights(
             groups.append({"limit_id": lid, "limit": lim, "events": evs, "kind": "exceedance"})
             continue
         text = _filters.band_text(flt, lim, frozen_by_limit.get(lid))
-        breaches = [e for e in evs if suppressed_by.get(e["event_id"]) is None]
-        tolerated = [e for e in evs if suppressed_by.get(e["event_id"]) is not None]
+        breaches = [e for e in evs if suppressed_by.get(_event_id(e)) is None]
+        tolerated = [e for e in evs if suppressed_by.get(_event_id(e)) is not None]
         if breaches:
             groups.append({"limit_id": lid, "limit": lim, "events": breaches, "kind": "breach",
                            "filter": flt, "filter_text": text})
@@ -1284,7 +1294,7 @@ def evaluate_insights(
             "evidence": [_event_window(e) for e in g["events"]],
             "confidence": _confidence(0),
             "limit_id": g["limit_id"],
-            "events": [_event_summary(e, suppressed_by.get(e["event_id"])) for e in g["events"]],
+            "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
         }
         if kind != "exceedance":
             limit_insight["filter"] = {"filter_id": g["filter"]["id"],

@@ -21,6 +21,7 @@ import type {
   FlightTableRow,
   InsightSet,
   RuleSet,
+  ScanProgress,
   ScanResult,
   WhatIfResult,
   WorkspaceManifest,
@@ -124,6 +125,7 @@ export interface EngineClient {
   getActiveWorkspace(): Promise<ActiveWorkspace>;
   addLogFolder(path: string): Promise<WorkspaceManifest>;
   scanWorkspace(): Promise<ScanResult>;
+  getScanProgress(): Promise<ScanProgress>;
   getAppSettings(): Promise<AppSettings>;
   saveAppSettings(settings: AppSettings): Promise<AppSettings>;
   getWorkspaceSettings(): Promise<WorkspaceSettings>;
@@ -363,6 +365,10 @@ export class LocalServerClient implements EngineClient {
 
   scanWorkspace() {
     return this.rpc<ScanResult>("scan_workspace", {});
+  }
+
+  getScanProgress() {
+    return this.rpc<ScanProgress>("get_scan_progress", {});
   }
 
   getAppSettings() {

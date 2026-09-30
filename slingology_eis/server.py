@@ -1007,13 +1007,33 @@ def op_scan_workspace(params: dict, ctx: dict) -> Any:
     flight whose stored analysis predates the running engine — one
     action covers both jobs (Spec 03 §5.1's Rescan), so the fleet only
     needs rebuilding here, once, when reanalysis actually changed a
-    flight's metrics."""
+    flight's metrics.
+
+    Runs synchronously (unchanged contract — the caller still just gets
+    the final ScanResult back) but publishes progress into
+    ctx["scan_progress"] as it goes, so a client that also polls
+    op_get_scan_progress from a second request while this one is still
+    in flight can show real "processing log X of N" instead of one
+    opaque multi-minute spinner on a large initial sync.
+    """
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
-    result = ws.scan_workspace(workspace_dir, ctx["registry_path"])
+
+    def on_progress(update: dict) -> None:
+        ctx["scan_progress"] = {"active": True, **update}
+
+    ctx["scan_progress"] = {"active": True, "phase": "starting"}
+    try:
+        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress)
+    finally:
+        ctx["scan_progress"] = {"active": False}
     if result.reanalyzed_flight_ids:
         ws.rebuild_fleet(workspace_dir)
     return result.to_dict()
+
+
+def op_get_scan_progress(params: dict, ctx: dict) -> Any:
+    return ctx.get("scan_progress", {"active": False})
 
 
 def op_reclassify_flights(params: dict, ctx: dict) -> Any:
@@ -1186,6 +1206,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_active_workspace": op_get_active_workspace,
     "add_log_folder": op_add_log_folder,
     "scan_workspace": op_scan_workspace,
+    "get_scan_progress": op_get_scan_progress,
     "reclassify_flights": op_reclassify_flights,
     "get_app_settings": op_get_app_settings,
     "save_app_settings": op_save_app_settings,
@@ -1315,6 +1336,12 @@ def build_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: in
         "logs_dir": resolved_logs, "workspace_dir": resolved_workspace, "quiet": quiet,
         "registry_path": registry_path, "workspaces_root": workspaces_root,
         "active_workspace_id": active_workspace_id,
+        # Mutated in place by op_scan_workspace's on_progress callback and
+        # read back by op_get_scan_progress — ctx is one shared dict for
+        # this server process's lifetime (built once here, closed over by
+        # every request handler), so a poll running on another thread
+        # sees updates from the scan thread with no extra plumbing.
+        "scan_progress": {"active": False},
     }
 
     ui_dist = _REPO_ROOT / "web" / "dist"

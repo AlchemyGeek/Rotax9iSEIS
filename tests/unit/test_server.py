@@ -615,6 +615,40 @@ def test_preview_excluded_log_unknown_filename(registry_server):
     assert d["error"]["code"] == "NOT_FOUND"
 
 
+def test_get_scan_progress_is_inactive_before_and_after_a_scan(registry_server, tmp_path):
+    """
+    The Sync button's progress poll (op_get_scan_progress) — a synchronous
+    scan_workspace call still publishes into ctx["scan_progress"] as it
+    runs (verified at the workspace-layer callback level in
+    test_workspace.py), but by the time the scan_workspace RPC itself has
+    returned, the poll must read back "not active" again — a client that
+    polls once right after the main call resolves shouldn't see a stale
+    "still scanning" state.
+    """
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    idle = rpc(registry_server, "get_scan_progress", {})
+    assert idle["ok"], idle
+    assert idle["result"]["active"] is False
+
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    import shutil
+    from ..conftest import LOGS_DIR
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
+    if not src.exists():
+        pytest.skip("real flight logs not available in this environment")
+    shutil.copy(src, folder / src.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+
+    scanned = rpc(registry_server, "scan_workspace", {})
+    assert scanned["ok"], scanned
+
+    after = rpc(registry_server, "get_scan_progress", {})
+    assert after["ok"], after
+    assert after["result"]["active"] is False
+
+
 def test_add_log_folder_and_scan_finds_real_flight(registry_server, tmp_path):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 

@@ -11,7 +11,7 @@ import { assignChannelColors } from "../lib/channels";
 import { colors as themeColors } from "../theme/colors";
 import type {
   ChannelRegistryEntry, ExclusionEntry, FlightAnalysis, FlightRowStatus, FlightTableRow,
-  InsightSeverity, SeriesFixture, WorkspaceManifest,
+  InsightSeverity, ScanProgress, SeriesFixture, WorkspaceManifest,
 } from "../types/contract";
 
 const client = getEngineClient();
@@ -85,6 +85,23 @@ const EXCLUSION_CATEGORY_COLOR: Record<ExclusionEntry["category"], string> = {
 // right," filtered to whatever the log actually has.
 const PREVIEW_CHANNEL_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
 
+// Sync's progress poll (op_get_scan_progress) — turns "Syncing…" into
+// "Analyzing 42/210" on a large initial sync, which is otherwise one
+// opaque multi-minute wait with no indication anything is happening.
+const SCAN_PHASE_LABEL: Record<NonNullable<ScanProgress["phase"]>, string> = {
+  starting: "Starting",
+  reading: "Reading",
+  analyzing: "Analyzing",
+  reanalyzing: "Re-analyzing",
+};
+
+function scanProgressText(p: ScanProgress | null): string {
+  if (!p || !p.active || !p.phase) return "Syncing…";
+  const label = SCAN_PHASE_LABEL[p.phase];
+  if (p.current == null || p.total == null) return `${label}…`;
+  return `${label} ${p.current}/${p.total}`;
+}
+
 type GroupBy = "date" | "folder";
 
 function formatDuration(min: number): string {
@@ -143,6 +160,7 @@ export function Flights() {
   const [dragOver, setDragOver] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [excludingId, setExcludingId] = useState<string | null>(null);
@@ -263,6 +281,16 @@ export function Flights() {
   // rather than leaving reanalysis to a separate, easy-to-forget step.
   async function handleSync() {
     setRescanning(true);
+    setScanProgress({ active: true, phase: "starting" });
+    // scan_workspace is one synchronous RPC call that can genuinely take
+    // minutes on a large initial sync (every new file gets parsed AND
+    // fully analyzed) — poll a second, cheap RPC concurrently to show
+    // real "processing log X of N" instead of leaving the pilot staring
+    // at an opaque "Syncing…" the whole time. Stopped in finally so a
+    // failed/aborted scan doesn't leave the poll running forever.
+    const pollId = window.setInterval(() => {
+      client.getScanProgress().then(setScanProgress).catch(() => {});
+    }, 400);
     try {
       const result = await client.scanWorkspace();
       await refresh();
@@ -278,6 +306,8 @@ export function Flights() {
     } catch {
       // no active workspace, or server unreachable — nothing to do beyond leaving state as-is
     } finally {
+      window.clearInterval(pollId);
+      setScanProgress(null);
       setRescanning(false);
     }
   }
@@ -605,7 +635,7 @@ export function Flights() {
               title={!isRegistryActive ? "no active workspace with log folders to sync — create/switch to one first" : "finds new/missing/moved files and re-analyzes any flight whose result predates the current engine"}
               style={{ padding: "7px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: isRegistryActive ? "var(--text-primary)" : "var(--text-tertiary)", fontSize: 12, cursor: rescanning || !isRegistryActive ? "default" : "pointer", flexShrink: 0 }}
             >
-              {rescanning ? "Syncing…" : "Sync"}
+              {rescanning ? scanProgressText(scanProgress) : "Sync"}
             </button>
             <button
               onClick={() => { setDeletingWorkspace(true); setDeleteConfirmText(""); setDeleteError(null); }}
@@ -617,6 +647,16 @@ export function Flights() {
             </button>
           </div>
         </div>
+
+        {rescanning && (
+          <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
+            {scanProgressText(scanProgress)}
+            {scanProgress?.filename && <span className="mono" style={{ color: "var(--text-tertiary)" }}> — {scanProgress.filename}</span>}
+            {(scanProgress?.total ?? 0) > 20 && (
+              <span style={{ color: "var(--text-tertiary)" }}> · a first sync of a large folder can take a few minutes</span>
+            )}
+          </div>
+        )}
 
         {syncMessage && (
           <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" }}>

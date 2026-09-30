@@ -526,6 +526,17 @@ export interface ScanResult {
   auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
 }
 
+// Polled by the Sync button while a scan_workspace call is in flight
+// (op_get_scan_progress) — a large initial sync can take minutes, so
+// this is what turns "Syncing…" into "Analyzing 42 of 210 — <filename>".
+export interface ScanProgress {
+  active: boolean;
+  phase?: "starting" | "reading" | "analyzing" | "reanalyzing";
+  current?: number;
+  total?: number;
+  filename?: string;
+}
+
 // Spec: Workspace Flight Exclusions — a file that never became a
 // flight_id at all (ground_session/short_flight/corrupt_log, auto; or
 // user_defined). Distinct from FlightTableRow.excluded_reason, which is
