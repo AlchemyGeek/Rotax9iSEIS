@@ -101,6 +101,8 @@ export interface EngineClient {
   // flight_id (ground session / short flight / corrupt log / user).
   listExclusions(enrich?: boolean): Promise<ExclusionsResult>;
   includeExcludedLog(filename: string, reason?: string): Promise<{ filename: string; included: boolean; scan_result: ScanResult | null }>;
+  previewExcludedLog(filename: string): Promise<{ flight_analysis: FlightAnalysis; source_filename: string }>;
+  getExcludedLogSeries(filename: string, channels: string[]): Promise<SeriesResult>;
 
   // Spec 02 v0.5 workspace management
   listWorkspaces(): Promise<WorkspaceRegistryEntry[]>;
@@ -293,6 +295,14 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ filename: string; included: boolean; scan_result: ScanResult | null }>(
       "include_excluded_log", { filename, reason }
     );
+  }
+
+  previewExcludedLog(filename: string) {
+    return this.rpc<{ flight_analysis: FlightAnalysis; source_filename: string }>("preview_excluded_log", { filename });
+  }
+
+  getExcludedLogSeries(filename: string, channels: string[]) {
+    return this.rpc<SeriesResult>("get_excluded_log_series", { filename, channels });
   }
 
   listWorkspaces() {

@@ -568,6 +568,53 @@ def test_include_excluded_log_unknown_filename(registry_server):
     assert d["error"]["code"] == "NOT_FOUND"
 
 
+def test_preview_excluded_log_reads_without_persisting(registry_server, tmp_path):
+    """
+    Clicking a Skipped row (Spec: Workspace Flight Exclusions) runs the
+    same analyze_flight()/downsample a real flight gets, sourced from the
+    watched-folder file on disk instead of a workspace flight_id — but
+    unlike include_excluded_log, it must persist nothing: no flight_id,
+    no exclusions.json change.
+    """
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    import shutil
+    from ..conftest import LOGS_DIR
+    ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+    if not ground_session.exists():
+        pytest.skip("ground-session fixture log not present locally")
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(ground_session, folder / ground_session.name)
+    rpc(registry_server, "add_log_folder", {"path": str(folder)})
+    rpc(registry_server, "scan_workspace", {})
+
+    previewed = rpc(registry_server, "preview_excluded_log", {"filename": ground_session.name})
+    assert previewed["ok"], previewed
+    fa = previewed["result"]["flight_analysis"]
+    assert fa["flight_id"]
+    assert fa["header"]["date"] == "2026-08-25"
+    assert previewed["result"]["source_filename"] == ground_session.name
+
+    series = rpc(registry_server, "get_excluded_log_series",
+                 {"filename": ground_session.name, "channels": ["rpm"]})
+    assert series["ok"], series
+    assert len(series["result"]["rpm"]) > 0
+
+    with_status = rpc(registry_server, "list_flights_with_status", {})
+    assert not any(r["filename"] == ground_session.name for r in with_status["result"]["rows"])
+    listed = rpc(registry_server, "list_exclusions", {})
+    assert len(listed["result"]["entries"]) == 1
+    assert listed["result"]["entries"][0]["user_override"] is False
+
+
+def test_preview_excluded_log_unknown_filename(registry_server):
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    d = rpc(registry_server, "preview_excluded_log", {"filename": "never-seen.csv"})
+    assert d["ok"] is False
+    assert d["error"]["code"] == "NOT_FOUND"
+
+
 def test_add_log_folder_and_scan_finds_real_flight(registry_server, tmp_path):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 

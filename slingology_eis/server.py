@@ -716,6 +716,43 @@ def op_include_excluded_log(params: dict, ctx: dict) -> Any:
     return {"filename": filename, "included": True, "scan_result": scan_result.to_dict()}
 
 
+def _find_excluded_log_path(ctx: dict, filename: str) -> Path:
+    _require_active(ctx)
+    try:
+        manifest = ws.load_manifest(ctx["workspace_dir"])
+    except (FileNotFoundError, OSError):
+        raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
+    path = ws.find_log_file_by_name(manifest, filename)
+    if path is None:
+        raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
+    return path
+
+
+def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
+    """
+    Read-only preview of a skipped log's own data (Spec: Workspace Flight
+    Exclusions) — runs analyze_flight() on it exactly like a real flight
+    would, but persists nothing (no flights/<id> created, no
+    exclusions.json change). The Skipped panel's "see the flight data"
+    action, so a pilot can check whether a ground_session/short_flight/
+    corrupt_log call was actually correct before deciding whether to
+    Include it — without first having to bring it into the workspace to
+    look.
+    """
+    path = _find_excluded_log_path(ctx, params["filename"])
+    engine_cfg, engine_name = _current_engine(ctx)
+    fa = analyze_flight(path.read_bytes(), params["filename"], engine_cfg, engine_name)
+    return {"flight_analysis": fa.to_dict(), "source_filename": params["filename"]}
+
+
+def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
+    channels = params.get("channels")
+    if not channels:
+        raise RpcError("BAD_PARAMS", "channels is required")
+    path = _find_excluded_log_path(ctx, params["filename"])
+    return _downsample_series(path.read_bytes(), params["filename"], _expand_channels(channels))
+
+
 def op_list_annotations(params: dict, ctx: dict) -> Any:
     """All annotations in the active workspace, or just one flight's
     (Spec 03 §5.6 browse view vs. a single Flight view/ECU card's own
@@ -1027,6 +1064,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "include_flight": op_include_flight,
     "list_exclusions": op_list_exclusions,
     "include_excluded_log": op_include_excluded_log,
+    "preview_excluded_log": op_preview_excluded_log,
+    "get_excluded_log_series": op_get_excluded_log_series,
     "list_annotations": op_list_annotations,
     "save_annotation": op_save_annotation,
     "delete_annotation": op_delete_annotation,
