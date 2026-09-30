@@ -39,13 +39,14 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pandas as pd
 
+from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from . import workspace as ws
 from .channels import CHANNEL_REGISTRY, MAX_CHART_SLOTS, SLOT_GROUPS
 from .cli import _REPO_ROOT, _write_workspace, resolve_logs_dir, resolve_workspace_dir
 from .presets import validate_chart_preset
 from .contract import content_hash
-from .limits import _resolve_engine_name, load_engine_config
+from .limits import _resolve_engine_name, load_engine_config, resolve_min_flight_duration_min
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
 from .operations import (
@@ -58,13 +59,8 @@ from .operations import (
     evaluate_insights,
     update_fleet,
 )
+from .phases import detect_phases
 from .rules import validate_rules
-
-# Mirrors loader.load_directory's default ground-session threshold — kept
-# here rather than imported since it's a single-file check, not a batch
-# scan; drift risk is worth the duplication until this is worth factoring
-# into loader.py itself.
-_GROUND_SESSION_MIN_AIRBORNE_MIN = 3.0
 
 _DEFAULT_RULES_PATH = _REPO_ROOT / "insight_rules.json"
 _CHART_PRESETS_PATH = _REPO_ROOT / "chart_presets.json"
@@ -136,17 +132,31 @@ def _require_active(ctx: dict) -> None:
 
 
 def _classify_ingest(content: bytes, filename: str, workspace_dir: Path) -> dict:
+    """
+    Classify one uploaded file before it becomes a flight (Spec 01 §7
+    import_and_update, browser drag-and-drop path). Ground session /
+    short flight / corrupt log auto-exclusions are recorded to
+    exclusions.json here too, via the same shared classifier
+    scan_workspace() (folder-scan) and load_directory() (CLI) use — this
+    used to be a hand-rolled RPM/IAS heuristic that could silently
+    disagree with the other two ingestion paths on what counts as a
+    flight (Spec: Ground Session Detection + Workspace Flight
+    Exclusions).
+    """
     df, info = load_log_bytes(content, filename)
-    rpm = df["rpm"].fillna(0) if "rpm" in df.columns else pd.Series(0, index=df.index)
-    ias = df["ias_kt"].fillna(0) if "ias_kt" in df.columns else pd.Series(0, index=df.index)
-    airborne_rows = int(((rpm > 3000) & (ias > 30)).sum())
-    airborne_min = round(airborne_rows / 60.0, 1)
-    if airborne_min < _GROUND_SESSION_MIN_AIRBORNE_MIN:
-        return {"classification": "ground_session", "filename": filename, "airborne_min": airborne_min}
+    df = detect_phases(df, verbose=False)
+    min_flight_duration_min = resolve_min_flight_duration_min()
+    category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)
+    if category is not None:
+        _exclusions.add_auto_exclusion(workspace_dir, filename, category, reason)
+        if _exclusions.is_excluded(filename, _exclusions.load_exclusions(workspace_dir)):
+            return {"classification": category, "filename": filename, "reason": reason}
+        # else: this exact filename was already overridden -> falls through, becomes a flight below.
+
     fid = _compute_flight_id(flight_fingerprint(df, info))
     if (workspace_dir / "flights" / fid / "analysis.json").exists():
-        return {"classification": "duplicate", "filename": filename, "airborne_min": airborne_min, "flight_id": fid}
-    return {"classification": "new", "filename": filename, "airborne_min": airborne_min, "flight_id": fid}
+        return {"classification": "duplicate", "filename": filename, "flight_id": fid}
+    return {"classification": "new", "filename": filename, "flight_id": fid}
 
 
 def _load_workspace_flights(workspace_dir: Path) -> list[FlightAnalysis]:
@@ -774,6 +784,22 @@ def op_scan_workspace(params: dict, ctx: dict) -> Any:
     return result.to_dict()
 
 
+def op_reclassify_flights(params: dict, ctx: dict) -> Any:
+    """
+    One-time migration action for a workspace scanned before
+    scan_workspace() gained ground-session/short-flight/corrupt-log
+    filtering (workspace.reclassify_existing_flights's docstring has the
+    full rationale) — not part of the regular Sync flow, a separate,
+    explicitly-triggered op.
+    """
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    reclassified = ws.reclassify_existing_flights(workspace_dir)
+    if reclassified:
+        ws.rebuild_fleet(workspace_dir)
+    return {"reclassified": reclassified}
+
+
 def op_get_app_settings(params: dict, ctx: dict) -> Any:
     return ws.load_app_settings(ctx["registry_path"]).to_dict()
 
@@ -919,6 +945,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_active_workspace": op_get_active_workspace,
     "add_log_folder": op_add_log_folder,
     "scan_workspace": op_scan_workspace,
+    "reclassify_flights": op_reclassify_flights,
     "get_app_settings": op_get_app_settings,
     "save_app_settings": op_save_app_settings,
     "get_chart_presets": op_get_chart_presets,

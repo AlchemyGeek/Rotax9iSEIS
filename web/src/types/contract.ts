@@ -479,6 +479,11 @@ export interface ScanResult {
   unreachable_folders: string[];
   excluded: { flight_id: string; reason: string }[];
   reanalyzed_flight_ids: string[];
+  // Ground session / short flight / corrupt log, newly recorded to
+  // exclusions.json this scan (Spec: Ground Session Detection +
+  // Workspace Flight Exclusions) — keyed by filename, never became a
+  // flight_id at all, unlike `excluded` above (duplicate exports).
+  auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
 }
 
 export interface ActiveWorkspace {

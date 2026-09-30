@@ -73,6 +73,62 @@ _ROWS = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{2000+i},180\n" for i in 
 _SYNTHETIC_LOG = (_META + _HEADER + _ROWS).encode("utf-8")
 
 
+# ── A synthetic log that actually flies (Spec: Ground Session Detection) ────
+# A minimal high-RPM-from-row-0 CSV with no altitude data can never clear
+# detect_phases()'s airborne-phase requirement, which import_files/
+# ingest_log/scan_workspace's ground-session/short-flight/corrupt-log
+# auto-exclusion is built on: RPM already above 3000 from row 0 means
+# ENGINE_START -> WARMUP's gate (r>1500 and r<3000) never opens, and even
+# with a proper ground ramp-up, TAKEOFF_ROLL -> CLIMB needs real climbing
+# altitude/vertical-speed data, which these fixtures never had. This
+# builds a real ground -> taxi -> takeoff roll -> climb -> cruise
+# progression instead, so a fixture "flight" here is actually one.
+_FLYING_PREAMBLE_LEN = 56  # rows before the flight reaches CLIMB
+
+
+def _flying_rows(n_cruise: int = 700, field_elev_ft: float = 100.0) -> list[tuple[float, float, float, float]]:
+    """(rpm, ias_kt, baro_alt_ft, vs_fpm) per row."""
+    rows: list[tuple[float, float, float, float]] = []
+    rows += [(0, 0, field_elev_ft, 0)] * 5                                     # PRE_START
+    rows += [(2000, 5, field_elev_ft, 0)] * 10                                 # -> ENGINE_START -> WARMUP
+    rows += [(2000, 10, field_elev_ft, 0)] * 10                                # -> TAXI
+    rows += [(5000, 40, field_elev_ft, 0)]                                     # -> TAKEOFF_ROLL
+    rows += [(5400, 60 + i, field_elev_ft + i * 30, 800) for i in range(30)]   # -> CLIMB
+    alt = rows[-1][2]
+    rows += [(5000, 110, alt + i * 2, 100) for i in range(n_cruise)]           # cruise tail
+    assert len(rows) - n_cruise == _FLYING_PREAMBLE_LEN
+    return rows
+
+
+def _flying_log_bytes(date: str = "2026-01-01", extra_header: str = "",
+                       row_extra_fn=None, n_cruise: int = 700, meta: str = _META) -> bytes:
+    """
+    Build G3X CSV bytes for a synthetic flight that clears the
+    airborne-phase gate. extra_header is additional column header text
+    (e.g. ",Oil Temp (deg F)") appended after "...Vertical Speed
+    (ft/min)"; row_extra_fn(i), if given, returns the matching
+    comma-prefixed extra column values for absolute row i (use
+    _FLYING_PREAMBLE_LEN to know where the ground/taxi/takeoff-roll
+    portion ends and CLIMB begins, for tests that care when in the
+    flight something happens, e.g. a CAS alert mid-cruise).
+    """
+    # Fuel Flow is required once a flight genuinely reaches CRUISE:
+    # loader.log_summary()'s cruise_fuel_flow_gph line indexes
+    # cruise["fuel_flow_gph"] unconditionally on column presence (only
+    # guarded on len(cruise) > 0) — every synthetic fixture in this file
+    # used to get stuck before CRUISE, so that KeyError never surfaced
+    # until now. Not a test-fixture concern to fix around further than
+    # just supplying the column.
+    header = ("Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),"
+              "Baro Altitude (ft),Vertical Speed (ft/min),Fuel Flow (gal/hour)" + extra_header + "\n")
+    lines = []
+    for i, (rpm, ias, alt, vs) in enumerate(_flying_rows(n_cruise=n_cruise)):
+        time = f"12:{i // 60:02d}:{i % 60:02d}"
+        extra = row_extra_fn(i) if row_extra_fn else ""
+        lines.append(f"{date},{time},{rpm},{ias},{alt},{vs},6.5{extra}\n")
+    return (meta + header + "".join(lines)).encode("utf-8")
+
+
 def test_list_engines(server):
     d = rpc(server, "list_engines", {})
     assert d["ok"]
@@ -106,9 +162,10 @@ def test_get_channel_registry(server):
 
 
 def test_get_flight_series_expands_slot_group(server):
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),EGT1 (deg F),EGT2 (deg F),EGT3 (deg F),EGT4 (deg F)\n"
-    rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,1500,1510,1520,1530\n" for i in range(240))
-    flight_log = (_META + flight_header + rows).encode("utf-8")
+    flight_log = _flying_log_bytes(
+        extra_header=",EGT1 (deg F),EGT2 (deg F),EGT3 (deg F),EGT4 (deg F)",
+        row_extra_fn=lambda i: ",1500,1510,1520,1530",
+    )
     b64 = base64.b64encode(flight_log).decode()
     imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
     assert imp["ok"], imp
@@ -269,11 +326,7 @@ def test_ingest_ground_session_detection(server):
 
 
 def test_import_files_then_list_and_get_flight(server):
-    # Force it to be classified "new": rpm > 3000 and ias_kt > 30 for the
-    # whole file, to clear the ground-session airborne-minutes gate.
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+    flight_log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
     b64 = base64.b64encode(flight_log).decode()
 
     imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
@@ -435,7 +488,7 @@ def test_add_log_folder_and_scan_finds_real_flight(registry_server, tmp_path):
     folder.mkdir()
     import shutil
     from ..conftest import LOGS_DIR
-    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
     if not src.exists():
         pytest.skip("real flight logs not available in this environment")
     shutil.copy(src, folder / src.name)
@@ -489,7 +542,7 @@ def test_get_flight_series_works_for_folder_scanned_flight(registry_server, tmp_
 
     import shutil
     from ..conftest import LOGS_DIR
-    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
     if not src.exists():
         pytest.skip("real flight logs not available in this environment")
     folder = tmp_path / "logs"
@@ -506,11 +559,6 @@ def test_get_flight_series_works_for_folder_scanned_flight(registry_server, tmp_
     ][0] / "flights" / flight_id
     assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] == []
 
-    # rpm is entirely NaN in this particular 8-row fixture (a GPS-only
-    # snippet with no engine columns populated) — with Spec 07 §11.2's
-    # per-channel NaN-excluded envelope, an all-NaN channel now correctly
-    # downsamples to zero points, so ias_kt (which does have real values
-    # here) is what actually exercises the fallback read.
     series = rpc(registry_server, "get_flight_series", {"flight_id": flight_id, "channels": ["ias_kt"]})
     assert series["ok"], series
     assert "ias_kt" in series["result"]
@@ -527,7 +575,7 @@ def test_get_flight_shows_real_filename_for_folder_scanned_flight(registry_serve
 
     import shutil
     from ..conftest import LOGS_DIR
-    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
     if not src.exists():
         pytest.skip("real flight logs not available in this environment")
     folder = tmp_path / "logs"
@@ -553,7 +601,7 @@ def test_scan_workspace_reanalyzes_stale_flights_and_rebuilds_fleet(registry_ser
 
     import shutil
     from ..conftest import LOGS_DIR
-    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
     if not src.exists():
         pytest.skip("real flight logs not available in this environment")
     folder = tmp_path / "logs"
@@ -593,7 +641,7 @@ def test_remove_flight_from_watched_folder_reappears_after_rescan(registry_serve
 
     import shutil
     from ..conftest import LOGS_DIR
-    src = LOGS_DIR / "log_20260408_101333_KTOA.csv"
+    src = LOGS_DIR / "log_20260417_112526_KTOA.csv"
     if not src.exists():
         pytest.skip("real flight logs not available in this environment")
     folder = tmp_path / "logs"
@@ -616,9 +664,7 @@ def test_remove_flight_from_watched_folder_reappears_after_rescan(registry_serve
 def test_remove_flight_uploaded_only_stays_gone(registry_server):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+    flight_log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
     b64 = base64.b64encode(flight_log).decode()
 
     imported = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
@@ -637,11 +683,9 @@ def test_remove_flights_bulk(registry_server):
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 
     def _upload(n: int) -> str:
-        header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
         # Distinct dates (not just RPM values) so the two logs fingerprint
         # to different flight_ids rather than colliding as "duplicate".
-        rows = "".join(f"2026-01-0{n},12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-        log = (_META + header + rows).encode("utf-8")
+        log = _flying_log_bytes(date=f"2026-01-0{n}", extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
         b64 = base64.b64encode(log).decode()
         imp = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": f"log_2026010{n}_120000_TEST.csv"}]})
         assert imp["ok"], imp
@@ -694,9 +738,7 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
     get_workspace_rules echoes back."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
 
-    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-    log = (_META + header + rows).encode("utf-8")
+    log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
     b64 = base64.b64encode(log).decode()
     imported = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
     flight_id = imported["result"]["results"][0]["flight_id"]
@@ -734,9 +776,7 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
 def _import_oil_temp_flight(base_url, day: int, oil_temp_f: int) -> str:
     """day: 1-28, gives each flight a distinct fingerprint-relevant date."""
     date = f"2026-01-{day:02d}"
-    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    rows = "".join(f"{date},12:{i//60:02d}:{i%60:02d},{4000+i},95,{oil_temp_f}\n" for i in range(240))
-    log = (_META + header + rows).encode("utf-8")
+    log = _flying_log_bytes(date=date, extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: f",{oil_temp_f}")
     b64 = base64.b64encode(log).decode()
     imp = rpc(base_url, "import_files", {"files": [{"content_base64": b64, "filename": f"log_202601{day:02d}_120000_TEST.csv"}]})
     assert imp["ok"], imp
@@ -821,12 +861,15 @@ def test_analyze_ecu_workspace_reflects_imported_flights(registry_server):
     assert empty["result"]["flight_ids"] == []
     assert empty["result"]["runs"] == []
 
-    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Press (PSI),CAS Alert\n"
-    rows = "".join(
-        f"2026-01-01,12:{i//60:02d}:{i%60:02d},4000,90,2.0,{'ENGINE ECU / OIL PRESS' if 5 <= i < 25 else ''}\n"
-        for i in range(240)
+    # Alert window placed within the cruise tail (past _FLYING_PREAMBLE_LEN)
+    # — ENGINE ECU classification as IN_FLIGHT needs a genuinely airborne
+    # phase, so it can't sit in the ground/taxi/takeoff-roll preamble.
+    # RPM there is a constant 5000 (see _flying_rows' cruise tail).
+    alert_start, alert_end = _FLYING_PREAMBLE_LEN + 5, _FLYING_PREAMBLE_LEN + 25
+    log = _flying_log_bytes(
+        extra_header=",Oil Press (PSI),CAS Alert",
+        row_extra_fn=lambda i: f",2.0,{'ENGINE ECU / OIL PRESS' if alert_start <= i < alert_end else ''}",
     )
-    log = (_META + header + rows).encode("utf-8")
     b64 = base64.b64encode(log).decode()
     imp = rpc(registry_server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
     assert imp["ok"], imp
@@ -841,13 +884,11 @@ def test_analyze_ecu_workspace_reflects_imported_flights(registry_server):
     assert run["classification"] == "IN_FLIGHT"
     assert run["co_alerts"] == ["OIL PRESS"]
     assert run["context"]["mean_oil_press_psi"] == 2.0
-    assert run["context"]["mean_rpm"] == 4000.0
+    assert run["context"]["mean_rpm"] == 5000.0
 
 
 def test_import_files_writes_flight_sources_for_status_list(server):
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+    flight_log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
     b64 = base64.b64encode(flight_log).decode()
 
     imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
@@ -931,9 +972,7 @@ def test_downsample_alignment_is_independent_of_what_else_was_requested(server):
 
 
 def _import_one_flight(base_url):
-    flight_header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Temp (deg F)\n"
-    high_rpm_rows = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{4000+i},95,180\n" for i in range(240))
-    flight_log = (_META + flight_header + high_rpm_rows).encode("utf-8")
+    flight_log = _flying_log_bytes(extra_header=",Oil Temp (deg F)", row_extra_fn=lambda i: ",180")
     b64 = base64.b64encode(flight_log).decode()
     imp = rpc(base_url, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
     assert imp["ok"], imp
@@ -984,12 +1023,11 @@ def test_get_flight_attaches_note_to_matching_insight(server):
     # baseline-comparison insight (nothing to compare against yet) — an
     # ECU alert guarantees a real `engine_ecu_inflight` insight to attach
     # the note to, same log shape as test_analyze_ecu_workspace_reflects_imported_flights.
-    header = "Date (yyyy-mm-dd),Time (hh:mm:ss),RPM,Indicated Airspeed (kt),Oil Press (PSI),CAS Alert\n"
-    rows = "".join(
-        f"2026-01-01,12:{i//60:02d}:{i%60:02d},4000,90,2.0,{'ENGINE ECU / OIL PRESS' if 5 <= i < 25 else ''}\n"
-        for i in range(240)
+    alert_start, alert_end = _FLYING_PREAMBLE_LEN + 5, _FLYING_PREAMBLE_LEN + 25
+    log = _flying_log_bytes(
+        extra_header=",Oil Press (PSI),CAS Alert",
+        row_extra_fn=lambda i: f",2.0,{'ENGINE ECU / OIL PRESS' if alert_start <= i < alert_end else ''}",
     )
-    log = (_META + header + rows).encode("utf-8")
     b64 = base64.b64encode(log).decode()
     imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_ECU.csv"}]})
     assert imp["ok"], imp

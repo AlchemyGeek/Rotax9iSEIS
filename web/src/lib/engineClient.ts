@@ -34,10 +34,10 @@ export interface UploadFile {
 }
 
 export interface IngestResult {
-  classification: "new" | "duplicate" | "ground_session";
+  classification: "new" | "duplicate" | "ground_session" | "short_flight" | "corrupt_log";
   filename: string;
-  airborne_min: number;
-  flight_id?: string;
+  reason?: string; // present for ground_session/short_flight/corrupt_log
+  flight_id?: string; // present for new/duplicate
 }
 
 export interface ImportResult {

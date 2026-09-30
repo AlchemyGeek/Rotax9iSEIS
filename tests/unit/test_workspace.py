@@ -17,10 +17,14 @@ import pytest
 from slingology_eis import workspace as ws
 from ..conftest import LOGS_DIR, requires_flight_logs
 
-# Two small real logs, same aircraft (KTOA tail), used across the
-# real-log tests below.
-_LOG_A = LOGS_DIR / "log_20260408_101333_KTOA.csv"
-_LOG_B = LOGS_DIR / "log_20260408_103004_KTOA.csv"
+# Two real logs, same aircraft (KTOA tail), used across the real-log
+# tests below — genuine flights (each reaches an airborne phase), not
+# ground sessions, since scan_workspace() now auto-excludes those (Spec:
+# Ground Session Detection + Workspace Flight Exclusions) and these
+# fixtures need to actually become flight_ids for the scan-mechanics
+# tests (rematch, missing, moved-file, etc.) to mean anything.
+_LOG_A = LOGS_DIR / "log_20260417_112526_KTOA.csv"
+_LOG_B = LOGS_DIR / "log_20260408_141810_KTOA.csv"
 
 
 # ── Registry ──────────────────────────────────────────────────────────────
@@ -238,6 +242,129 @@ class TestScanWithRealLogs:
         result2 = ws.scan_workspace(ws_dir, registry_path)
         assert result2.new_flight_ids == []
         assert result2.now_missing_flight_ids == []
+        assert len(ws.list_flight_ids(ws_dir)) == 1
+
+    def test_scan_excludes_ground_session_and_keeps_a_real_flight(self, tmp_path):
+        """
+        Spec: Ground Session Detection + Workspace Flight Exclusions,
+        applied to scan_workspace() (the web UI's folder-scan path) —
+        previously this had no filtering at all, unlike load_directory()
+        (CLI/notebook path), so a workspace built via "+ Add folder"
+        picked up every ground session as a real flight.
+        """
+        registry_path, root, ws_dir = self._new_workspace(tmp_path)
+        folder = tmp_path / "logs"
+        folder.mkdir()
+        shutil.copy(_LOG_A, folder / _LOG_A.name)
+        ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+        if not ground_session.exists():
+            pytest.skip("ground-session fixture log not present locally")
+        shutil.copy(ground_session, folder / ground_session.name)
+
+        ws.add_log_folder(ws_dir, str(folder), registry_path)
+        result = ws.scan_workspace(ws_dir, registry_path)
+
+        assert len(result.new_flight_ids) == 1
+        assert len(result.auto_excluded) == 1
+        assert result.auto_excluded[0]["filename"] == ground_session.name
+        assert result.auto_excluded[0]["category"] == "ground_session"
+        assert len(ws.list_flight_ids(ws_dir)) == 1  # the ground session never got a flights/<id>
+
+        exclusions = ws._exclusions.load_exclusions(ws_dir)
+        assert len(exclusions["entries"]) == 1
+        assert exclusions["entries"][0]["filename"] == ground_session.name
+        assert exclusions["entries"][0]["source"] == "auto"
+
+    def test_rescan_does_not_duplicate_auto_exclusion_entries(self, tmp_path):
+        registry_path, root, ws_dir = self._new_workspace(tmp_path)
+        folder = tmp_path / "logs"
+        folder.mkdir()
+        ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+        if not ground_session.exists():
+            pytest.skip("ground-session fixture log not present locally")
+        shutil.copy(ground_session, folder / ground_session.name)
+        ws.add_log_folder(ws_dir, str(folder), registry_path)
+
+        first = ws.scan_workspace(ws_dir, registry_path)
+        second = ws.scan_workspace(ws_dir, registry_path)
+
+        assert len(first.auto_excluded) == 1
+        # Re-discovered every scan (never becomes "known" — no flight_id
+        # to match against), but idempotent: still just one entry, not a
+        # growing pile.
+        assert len(second.auto_excluded) == 1
+        exclusions = ws._exclusions.load_exclusions(ws_dir)
+        assert len(exclusions["entries"]) == 1
+
+    def test_scan_respects_an_existing_user_override_on_a_ground_session(self, tmp_path):
+        registry_path, root, ws_dir = self._new_workspace(tmp_path)
+        folder = tmp_path / "logs"
+        folder.mkdir()
+        ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+        if not ground_session.exists():
+            pytest.skip("ground-session fixture log not present locally")
+        shutil.copy(ground_session, folder / ground_session.name)
+        ws.add_log_folder(ws_dir, str(folder), registry_path)
+
+        first = ws.scan_workspace(ws_dir, registry_path)
+        assert first.new_flight_ids == []
+
+        ws._exclusions.set_user_override(ws_dir, ground_session.name, True, "intentional ground run-up test")
+        second = ws.scan_workspace(ws_dir, registry_path)
+
+        assert len(second.new_flight_ids) == 1
+        assert second.auto_excluded == []
+        assert len(ws.list_flight_ids(ws_dir)) == 1
+
+    def test_reclassify_existing_flights_removes_a_previously_ingested_ground_session(self, tmp_path):
+        """
+        Simulates a workspace scanned before scan_workspace() gained
+        ground-session filtering: a ground session already sitting in
+        flights/ as if it were a real flight, ingested by directly
+        constructing its FlightAnalysis/FlightSources rather than going
+        through (the now-filtering) scan_workspace. reclassify_existing_
+        flights() must remove it, record the exclusion, and leave the
+        genuine flight alone.
+        """
+        registry_path, root, ws_dir = self._new_workspace(tmp_path)
+        ground_session = LOGS_DIR / "log_20260825_194740_KAWO.csv"
+        if not ground_session.exists():
+            pytest.skip("ground-session fixture log not present locally")
+        folder = tmp_path / "logs"
+        folder.mkdir()
+        shutil.copy(_LOG_A, folder / _LOG_A.name)
+        shutil.copy(ground_session, folder / ground_session.name)
+        ws.add_log_folder(ws_dir, str(folder), registry_path)
+
+        engine_cfg = ws.load_engine_config("916iS")
+        for src in (_LOG_A, ground_session):
+            content = src.read_bytes()
+            fa = ws.analyze_flight(content, src.name, engine_cfg, "916iS")
+            ws.save_flight_analysis(ws_dir, fa)
+            ws.save_sources(ws_dir, ws.FlightSources(
+                flight_id=fa.flight_id,
+                imports=[ws.ImportRecord(source_key=ws._source_key(content), log_folder_path=str(folder),
+                                          relative_path=src.name, filename=src.name,
+                                          imported_at=ws._now(), via="sd_card")],
+            ))
+        assert len(ws.list_flight_ids(ws_dir)) == 2
+
+        reclassified = ws.reclassify_existing_flights(ws_dir)
+
+        assert len(reclassified) == 1
+        assert reclassified[0]["filename"] == ground_session.name
+        assert reclassified[0]["category"] == "ground_session"
+        assert len(ws.list_flight_ids(ws_dir)) == 1
+
+        exclusions = ws._exclusions.load_exclusions(ws_dir)
+        assert any(e["filename"] == ground_session.name for e in exclusions["entries"])
+
+        # Idempotent — nothing left to reclassify a second time.
+        assert ws.reclassify_existing_flights(ws_dir) == []
+
+        # A genuine rescan right after doesn't silently bring it back.
+        rescanned = ws.scan_workspace(ws_dir, registry_path)
+        assert rescanned.new_flight_ids == []
         assert len(ws.list_flight_ids(ws_dir)) == 1
 
     def test_rescan_reanalyzes_flights_stale_relative_to_running_engine(self, tmp_path):

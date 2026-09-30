@@ -27,7 +27,7 @@ import numpy as np
 
 from . import exclusions as _exclusions
 from .limits import resolve_min_flight_duration_min
-from .phases import AIRBORNE_PHASES, detect_phases, phase_summary
+from .phases import detect_phases
 
 
 # ── Column renaming: G3X names → short aliases ───────────────────────────────
@@ -460,34 +460,9 @@ def load_directory(
             df = detect_phases(df, verbose=False)
 
             if skip_ground_sessions:
-                category = reason = None
-                # Three independent rules, checked in priority order
-                # (ground_session > short_flight > corrupt_log) — each is
-                # gated on category still being unset, not chained with
-                # elif on the *outer* workspace_dir/config conditions,
-                # which are true for more than one rule at once and would
-                # silently skip later rules whenever an earlier one's
-                # outer condition matched but its inner check didn't fire.
-                if not any(p in AIRBORNE_PHASES for p in df["phase"].unique()):
-                    category = "ground_session"
-                    reason = "no airborne phase detected"
-
-                if category is None and workspace_dir is not None and min_flight_duration_min > 0:
-                    airborne_min = sum(
-                        seg["duration_s"] for seg in phase_summary(df).to_dict("records")
-                        if seg["phase"] in AIRBORNE_PHASES
-                    ) / 60.0
-                    if airborne_min < min_flight_duration_min:
-                        category = "short_flight"
-                        reason = (f"below minimum flight duration "
-                                  f"({airborne_min:.0f} min < {min_flight_duration_min} min)")
-
-                if category is None and workspace_dir is not None:
-                    gap = df["datetime"].diff().max()
-                    if pd.notna(gap) and gap > pd.Timedelta(minutes=5):
-                        category = "corrupt_log"
-                        reason = (f"time gap of {gap.total_seconds() / 60:.0f} min within "
-                                  f"a single session — possible avionics restart or SD card error")
+                category, reason = _exclusions.classify_for_auto_exclusion(
+                    df, min_flight_duration_min, check_short_flight_and_gap=workspace_dir is not None,
+                )
 
                 if category is not None and workspace_dir is not None:
                     _exclusions.add_auto_exclusion(workspace_dir, filename, category, reason)

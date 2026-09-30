@@ -27,6 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
+from .phases import AIRBORNE_PHASES, phase_summary
+
 _EXCLUSIONS_FILENAME = "exclusions.json"
 _SCHEMA_VERSION = 1
 
@@ -163,3 +167,49 @@ def exclusion_summary(exclusions: dict) -> dict:
             overridden += 1
     counts["overridden"] = overridden
     return counts
+
+
+def classify_for_auto_exclusion(
+    df: pd.DataFrame, min_flight_duration_min: int, check_short_flight_and_gap: bool = True,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Apply the three auto-exclusion rules, in priority order (ground_session
+    > short_flight > corrupt_log), to an already phase-annotated DataFrame
+    (`detect_phases()` must already have run — this doesn't run it itself,
+    so a caller that already has phases from an earlier step doesn't pay
+    for it twice). Returns (category, reason), or (None, None) if the
+    flight should be kept.
+
+    check_short_flight_and_gap=False skips straight to the ground_session
+    check only — for a caller with no config.json / no persistence to
+    resolve min_flight_duration_min against (load_directory()'s
+    workspace_dir=None case).
+
+    The single source of truth for what counts as "not really a flight",
+    shared by loader.py's load_directory() (CLI/notebook path) and
+    workspace.py's scan_workspace() (web UI folder-scan path) — the two
+    ingestion paths silently disagreeing on this (scan_workspace had no
+    such check at all until this was added) is exactly the kind of bug a
+    second hand-written copy of this logic invites.
+    """
+    if not any(p in AIRBORNE_PHASES for p in df["phase"].unique()):
+        return "ground_session", "no airborne phase detected"
+
+    if not check_short_flight_and_gap:
+        return None, None
+
+    if min_flight_duration_min > 0:
+        airborne_min = sum(
+            seg["duration_s"] for seg in phase_summary(df).to_dict("records")
+            if seg["phase"] in AIRBORNE_PHASES
+        ) / 60.0
+        if airborne_min < min_flight_duration_min:
+            return "short_flight", (f"below minimum flight duration "
+                                     f"({airborne_min:.0f} min < {min_flight_duration_min} min)")
+
+    gap = df["datetime"].diff().max()
+    if pd.notna(gap) and gap > pd.Timedelta(minutes=5):
+        return "corrupt_log", (f"time gap of {gap.total_seconds() / 60:.0f} min within "
+                                f"a single session — possible avionics restart or SD card error")
+
+    return None, None

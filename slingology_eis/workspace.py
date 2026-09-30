@@ -41,8 +41,9 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
+from . import exclusions as _exclusions
 from . import serialize as _json_serialize
-from .limits import load_engine_config
+from .limits import load_engine_config, resolve_min_flight_duration_min
 from .loader import (
     find_duplicate_flights,
     flight_fingerprint,
@@ -50,6 +51,7 @@ from .loader import (
     load_log_bytes,
     source_key as _source_key,
 )
+from .phases import detect_phases
 from .operations import FlightAnalysis, FleetAnalysis, analyze_flight, update_fleet
 
 SCHEMA_VERSION = "02-v0.5"
@@ -377,6 +379,11 @@ class ScanResult:
     unreachable_folders: list[str] = field(default_factory=list)
     excluded: list[dict] = field(default_factory=list)  # duplicate exports dropped this scan (Spec 01 §6.2)
     reanalyzed_flight_ids: list[str] = field(default_factory=list)  # stale engine_version, re-run for real
+    # Ground session / short flight / corrupt log, newly recorded to
+    # exclusions.json this scan (Spec: Ground Session Detection +
+    # Workspace Flight Exclusions) — never became a flight_id at all, so
+    # keyed by filename, not flight_id like the fields above.
+    auto_excluded: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -387,6 +394,7 @@ class ScanResult:
             "unreachable_folders": self.unreachable_folders,
             "excluded": self.excluded,
             "reanalyzed_flight_ids": self.reanalyzed_flight_ids,
+            "auto_excluded": self.auto_excluded,
         }
 
 
@@ -809,9 +817,18 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
     real registry); pass it explicitly in tests/tools pointed at an
     isolated registry so the flight/folder counts synced back to it land
     in the right file.
+
+    A newly-found file that's a ground session, short flight, or corrupt
+    log (Spec: Ground Session Detection + Workspace Flight Exclusions)
+    never becomes a flight_id at all — it's recorded to exclusions.json
+    and left out entirely, the same as loader.py's load_directory()
+    (CLI/notebook path) already does. Before this, a workspace built by
+    folder-scan (the web UI's path) had no such filtering at all.
     """
     manifest = load_manifest(ws_dir)
     engine_cfg = load_engine_config(manifest.engine_model)  # locked, always this (§5.6) — never per-log
+    exclusions_data = _exclusions.load_exclusions(ws_dir)
+    min_flight_duration_min = resolve_min_flight_duration_min()
 
     result = ScanResult()
     found_by_key: dict[str, tuple[str, str, str, Path]] = {}  # source_key -> (folder_path, rel, filename, abspath)
@@ -919,6 +936,22 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
     for df, info, content, filename, skey in parsed:
         if skey in dup_groups_excluded:
             continue
+
+        df = detect_phases(df, verbose=False)
+        category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)
+        if category is not None:
+            _exclusions.add_auto_exclusion(ws_dir, filename, category, reason)
+            # add_auto_exclusion() is a no-op if an entry already exists
+            # — including one a user already overrode (user_override:
+            # true). Re-check the current on-disk state, not the copy
+            # loaded at the top of this scan, so an override takes
+            # effect immediately, not just on the *next* scan (same
+            # reasoning as load_directory()'s equivalent check).
+            if _exclusions.is_excluded(filename, _exclusions.load_exclusions(ws_dir)):
+                result.auto_excluded.append({"filename": filename, "category": category, "reason": reason})
+                continue
+            # else: overridden — falls through and becomes a flight below.
+
         fid = _compute_flight_id(flight_fingerprint(df, info))
         folder_path, rel, filename = new_batch_meta[skey]
         via = _SOURCE_FORMAT_TO_VIA.get(info.source_format, "unknown")
@@ -1012,6 +1045,67 @@ def scan_workspace(ws_dir: Path, registry_path: Optional[Path] = None, quiet: bo
         )
 
     return result
+
+
+def reclassify_existing_flights(ws_dir: Path) -> list[dict]:
+    """
+    One-time migration helper, not run automatically by scan_workspace():
+    re-applies classify_for_auto_exclusion() to every flight already in
+    the workspace, for a workspace whose flights/ was built before that
+    classifier existed in scan_workspace() at all (every folder-scanned
+    workspace up to that fix ingested ground sessions, short flights,
+    and files with a corrupt internal time gap as real flights, with no
+    filtering whatsoever).
+
+    A flight that now classifies as excludable is removed exactly like
+    remove_flight() removes any other flight, and a fresh exclusions.json
+    entry is written *before* the removal — so a rescan right after
+    (whose "known fingerprints" check no longer finds this flight_id,
+    since its flights/<id> is gone) re-discovers the same source file,
+    re-classifies it the same way, and finds it already excluded rather
+    than silently re-ingesting it. Returns one dict per flight removed:
+    {"flight_id", "filename", "category", "reason"}.
+
+    Not wired into scan_workspace()'s regular per-scan loop deliberately
+    — every future scan only classifies genuinely NEW files, matching
+    load_directory()'s "classified once, not re-litigated every run"
+    model. Re-checking every already-known flight on every routine Sync
+    would be a real, unbounded, unnecessary cost.
+    """
+    min_flight_duration_min = resolve_min_flight_duration_min()
+    reclassified: list[dict] = []
+
+    for fid in list_flight_ids(ws_dir):
+        src = load_sources(ws_dir, fid)
+        if src is None:
+            continue
+        found = read_source_bytes(ws_dir, src)
+        if found is None:
+            continue  # source unreachable right now — leave it alone, not a false positive
+        content, filename = found
+        try:
+            df, info = load_log_bytes(content, filename)
+        except Exception:
+            continue
+        df = detect_phases(df, verbose=False)
+        category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)
+        if category is None:
+            continue
+
+        _exclusions.add_auto_exclusion(ws_dir, filename, category, reason)
+        if not _exclusions.is_excluded(filename, _exclusions.load_exclusions(ws_dir)):
+            continue  # this exact filename was already overridden — leave it as a flight
+
+        remove_flight(ws_dir, fid)
+        reclassified.append({"flight_id": fid, "filename": filename, "category": category, "reason": reason})
+
+    if reclassified:
+        manifest = load_manifest(ws_dir)
+        manifest.flight_count = len(list_flight_ids(ws_dir))
+        manifest.updated_at = _now()
+        save_manifest(ws_dir, manifest)
+
+    return reclassified
 
 
 def engine_version_diagnostic(manifest: WorkspaceManifest) -> Optional[dict]:

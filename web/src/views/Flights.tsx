@@ -29,7 +29,9 @@ const PROGRESS_LABEL: Record<ImportProgressItem["status"], string> = {
 const CLASSIFICATION_LABEL: Record<IngestResult["classification"], string> = {
   new: "new flight",
   duplicate: "already in this workspace",
-  ground_session: "ground session (<3 min airborne)",
+  ground_session: "ground session — no airborne phase",
+  short_flight: "short flight",
+  corrupt_log: "corrupt log",
 };
 
 // Spec 03 §5.1's status values, matching Spec 02 §5.5/§5.6 exactly rather
@@ -196,7 +198,12 @@ export function Flights() {
   };
   const newCount = importResults.filter((r) => r.classification === "new").length;
   const duplicateResults = importResults.filter((r) => r.classification === "duplicate");
-  const groundSessionResults = importResults.filter((r) => r.classification === "ground_session");
+  // Ground session / short flight / corrupt log — auto-excluded and
+  // recorded to exclusions.json, never became a flight (Spec: Ground
+  // Session Detection + Workspace Flight Exclusions).
+  const autoExcludedResults = importResults.filter((r) =>
+    r.classification === "ground_session" || r.classification === "short_flight" || r.classification === "corrupt_log"
+  );
 
   // "Sync" (was "Rescan") — finds new/missing/moved files AND re-runs
   // analysis for any already-known flight whose stored result predates
@@ -214,6 +221,7 @@ export function Flights() {
       if (result.now_missing_flight_ids.length) parts.push(`${result.now_missing_flight_ids.length} newly missing`);
       if (result.rematched_flight_ids.length) parts.push(`${result.rematched_flight_ids.length} moved/renamed`);
       if (result.unreachable_folders.length) parts.push(`${result.unreachable_folders.length} folder${result.unreachable_folders.length === 1 ? "" : "s"} unreachable`);
+      if (result.auto_excluded.length) parts.push(`${result.auto_excluded.length} excluded (ground session/short flight/corrupt log)`);
       setSyncMessage(parts.length ? parts.join(" · ") : "No changes.");
     } catch {
       // no active workspace, or server unreachable — nothing to do beyond leaving state as-is
@@ -601,16 +609,16 @@ export function Flights() {
             </a>
           </div>
         )}
-        {!importing && (duplicateResults.length > 0 || groundSessionResults.length > 0) && (
+        {!importing && (duplicateResults.length > 0 || autoExcludedResults.length > 0) && (
           <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
             {duplicateResults.length > 0 && (
               <span title={duplicateResults.map((r) => r.filename).join(", ")}>
                 {duplicateResults.length} file{duplicateResults.length === 1 ? "" : "s"} skipped — already in this workspace
               </span>
             )}
-            {groundSessionResults.length > 0 && (
-              <span title={groundSessionResults.map((r) => `${r.filename} (${r.airborne_min}m airborne)`).join(", ")}>
-                {groundSessionResults.length} file{groundSessionResults.length === 1 ? "" : "s"} skipped — under 3 min airborne (ground session, not a flight)
+            {autoExcludedResults.length > 0 && (
+              <span title={autoExcludedResults.map((r) => `${r.filename}: ${r.reason}`).join("; ")}>
+                {autoExcludedResults.length} file{autoExcludedResults.length === 1 ? "" : "s"} skipped — not a flight (ground session, short flight, or corrupt log; recorded in exclusions)
               </span>
             )}
           </div>
