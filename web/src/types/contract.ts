@@ -84,13 +84,23 @@ export type Evidence =
   | { kind: "series_window"; channels: string[]; start_s: number; end_s: number }
   | { kind: "exceedance" | "ecu_run"; ref: string };
 
+// comparison (Spec 01 §8.4 v0.13, R8): only baseline_deviation insights
+// carry one — which leave-one-out baseline the flight was actually
+// compared against, its own weather band or the whole fleet (fallback
+// below n_min). The insight text already names it; this is for a future
+// consumer that wants it structured rather than parsed out of the text.
+export interface InsightMessage {
+  text: string;
+  values?: { comparison?: { scope: "band" | "all"; band?: string | null; n: number } };
+}
+
 export interface Insight {
   id: string;
   topic_id: string;
   rule_id: string;
   trigger: "threshold" | "baseline_deviation" | "trend";
   severity: InsightSeverity;
-  message: { text: string };
+  message: InsightMessage;
   evidence: Evidence[];
   confidence: { level: string; n: number };
   note?: string;
@@ -183,9 +193,13 @@ export interface FleetMetricBand {
 
 // A per-band entry under by_band.bands — the same baseline shape, plus
 // its own trend (gated by the same n_min as the unstratified one, Spec
-// 03 §5.3 v0.10), absent when that band didn't clear trend()'s own n>0.
+// 03 §5.3 v0.10), absent when that band didn't clear trend()'s own n>0,
+// and its own outliers (against that band's own all-flights baseline,
+// same threshold — Spec 01 R8/Spec 03 §5.3 v0.11) so the stratified
+// view's rings agree with baseline_deviation's within-band comparison.
 export interface FleetBandStats extends FleetMetricBand {
   trend?: FleetMetricTrend;
+  outliers: { flight_id: string; z_score: number }[];
 }
 
 export interface FleetMetric {

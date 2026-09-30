@@ -91,3 +91,37 @@ def test_update_fleet_reproduces_golden_takeoff_map_model(real_fleet_analysis):
     assert abs(mine["r_squared"] - golden_map["r_squared"]) < 1e-3
     for coef_name, golden_val in golden_map["coefficients"].items():
         assert abs(mine["coefficients"][coef_name] - golden_val) < 1e-3
+
+
+@requires_flight_logs
+def test_update_fleet_by_band_outliers_use_that_bands_own_baseline(real_fleet_analysis):
+    """
+    R8 (Spec 01 §8.4 v0.13): each by_band.bands[*].outliers entry is
+    computed against that band's own all-flights mean/std, at the same
+    z-threshold as the unstratified outliers — not the fleet-wide
+    baseline. Recomputed independently here from the band's own points
+    and stats, both already present in the response.
+    """
+    if real_fleet_analysis is None:
+        pytest.skip("no local flight logs")
+
+    d = real_fleet_analysis.to_dict()
+    stratified = {k: v for k, v in d["metrics"].items() if v.get("by_band")}
+    if not stratified:
+        pytest.skip("no stratified metric in this fleet")
+
+    checked = 0
+    for metric_id, metric in stratified.items():
+        for band_name, band in metric["by_band"]["bands"].items():
+            assert "outliers" in band
+            if band["mean"] is None or not band.get("std"):
+                continue
+            band_points = [p for p in metric["points"] if p.get("band") == band_name]
+            expected_ids = {
+                p["flight_id"] for p in band_points
+                if abs((p["value"] - band["mean"]) / band["std"]) >= 2.0
+            }
+            actual_ids = {o["flight_id"] for o in band["outliers"]}
+            assert actual_ids == expected_ids, f"{metric_id}/{band_name}: outlier set mismatch"
+            checked += 1
+    assert checked > 0  # sanity: we actually compared some band

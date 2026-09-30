@@ -113,7 +113,15 @@ export function Trends() {
 
   const option = useMemo<EChartsOption | null>(() => {
     if (!metric) return null;
-    const outlierIds = new Set(metric.outliers.map((o) => o.flight_id));
+    // Spec 01 R8 / Spec 03 §5.3 v0.11: with stratification on, rings come
+    // from each band's own outliers (against that band's own baseline),
+    // not the all-flights ones — baseline_deviation now compares a flight
+    // within its band too, so this is the view that actually agrees with
+    // the insights for a stratified metric.
+    const outlierSource = showStratified && metric.by_band
+      ? Object.values(metric.by_band.bands).flatMap((stats) => stats.outliers ?? [])
+      : metric.outliers;
+    const outlierIds = new Set(outlierSource.map((o) => o.flight_id));
     const band = metric.baseline;
     const points = metric.points.map((p) => [p.x, p.value, p.flight_id, p.date]);
 

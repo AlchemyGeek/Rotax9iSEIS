@@ -31,16 +31,32 @@ def z_score(value: float, mean: float, std: float) -> float:
     return (value - mean) / std
 
 
-def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str]:
-    """Check a baseline_deviation trigger. Returns (triggered, insight_text)."""
+def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str, dict]:
+    """
+    Check a baseline_deviation trigger. Returns (triggered, insight_text,
+    comparison). `comparison` (Spec 01 R8, §8.4 v0.13) names what the
+    flight was actually compared against — {"scope": "band"|"all",
+    "band": str|None, "n": int} — taken from b["comparison"] when present
+    (operations.py's _topic_baseline sets it for every stratified or
+    unstratified metric) or synthesized as an "all" comparison for a
+    caller that built `b` some other way. The insight text always names
+    the comparison too, not just the values field — a fallback from band
+    to all-flights should be visible to the pilot reading it, not just
+    to a client that happens to read `message.values`.
+    """
+    comparison = b.get("comparison") or {"scope": "all", "band": None, "n": b.get("n", 0)}
     if value is None or b.get("mean") is None or b.get("std") is None:
-        return False, ""
+        return False, "", comparison
     z = z_score(value, b["mean"], b["std"])
     threshold = rule.get("z_score_threshold", 2.0)
     if abs(z) >= threshold:
         direction = "above" if z > 0 else "below"
-        return True, f"{'⚠' if z > 0 else '↓'} {abs(z):.1f} std devs {direction} your personal average."
-    return False, ""
+        if comparison.get("scope") == "band" and comparison.get("band"):
+            scope_text = f"your other {comparison['band']} flights, n={comparison['n']}"
+        else:
+            scope_text = f"all your flights, n={comparison.get('n', 0)}"
+        return True, f"{'⚠' if z > 0 else '↓'} {abs(z):.1f} std devs {direction} {scope_text}.", comparison
+    return False, "", comparison
 
 
 def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
@@ -100,9 +116,9 @@ def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, e
     if enabled:
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(spread, b, rule)
+                triggered, text, comparison = baseline_triggered(spread, b, rule)
                 if triggered:
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
@@ -122,9 +138,9 @@ def egt4_elevation(elev, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(elev, b, rule)
+            triggered, text, comparison = baseline_triggered(elev, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -241,10 +257,10 @@ def cyl_deviation(cyls: list[dict]) -> dict:
     for c in present:
         for rule in c["triggers"]:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(c["value"], c["b"], rule)
+                triggered, text, comparison = baseline_triggered(c["value"], c["b"], rule)
                 if triggered:
                     insights.append({"trigger": "baseline_deviation", "cyl": c["cyl"],
-                                     "text": f"Cyl {c['cyl']}: {text}"})
+                                     "text": f"Cyl {c['cyl']}: {text}", "comparison": comparison})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(c["b"], rule)
                 if triggered:
@@ -328,9 +344,9 @@ def oil_temp_peak(oil_max, b: dict, rule_triggers: list) -> dict:
         if rule["type"] == "threshold" and oil_max > rule.get("limit", 248):
             insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
         elif rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oil_max, b, rule)
+            triggered, text, comparison = baseline_triggered(oil_max, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -348,9 +364,9 @@ def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list) -> dict:
         if rule["type"] == "threshold" and coolant_max > rule.get("limit", 248):
             insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
         elif rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(coolant_max, b, rule)
+            triggered, text, comparison = baseline_triggered(coolant_max, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -366,9 +382,9 @@ def oil_coolant_ratio(oc_ratio, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oc_ratio, b, rule)
+            triggered, text, comparison = baseline_triggered(oc_ratio, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -383,9 +399,9 @@ def cruise_efficiency(nmpg, b: dict, rule_triggers: list) -> dict:
         insights = []
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(nmpg, b, rule)
+                triggered, text, comparison = baseline_triggered(nmpg, b, rule)
                 if triggered:
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
@@ -415,14 +431,14 @@ def cruise_fuel_flow(fuel_flow, b: dict, rule_triggers: list,
         insights = []
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(fuel_flow, b, rule)
+                triggered, text, comparison = baseline_triggered(fuel_flow, b, rule)
                 if triggered:
                     if da_high:
                         text = (text + " Note: this flight's cruise DA was "
                                        "significantly higher than your typical cruise — "
                                        "altitude and power setting affect fuel flow. "
                                        "A power/altitude model is needed for a fully valid comparison.")
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
         return {"analysis": analysis, "insights": insights}
     if b.get("mean") is None:
         return {"analysis": "Still building your cruise fuel flow baseline.", "insights": []}
@@ -466,9 +482,9 @@ def climb_thermal_rate(oil_rise, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oil_rise, b, rule)
+            triggered, text, comparison = baseline_triggered(oil_rise, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 

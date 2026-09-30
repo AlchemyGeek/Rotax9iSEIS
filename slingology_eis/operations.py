@@ -625,6 +625,16 @@ def update_fleet(
                         name: {
                             **_fleet_baseline_dict(sb),
                             **({"trend": _fleet_trend_dict(trend_by_band[name])} if name in trend_by_band else {}),
+                            # Per-band outliers (R8, Spec 01 §8.4 v0.13) —
+                            # against that band's own all-flights baseline,
+                            # same threshold as the unstratified outliers
+                            # above, so the Trends view's rings agree with
+                            # the stratified baseline region when
+                            # stratification is on (Spec 03 §5.3 v0.11).
+                            "outliers": [
+                                {"flight_id": o.source_file, "z_score": o.z_score}
+                                for o in outliers(df[df[band_col] == name], col, z_threshold=z_threshold)
+                            ],
                         }
                         for name, sb in stratified.items()
                     },
@@ -709,19 +719,37 @@ def _leave_one_out_baseline(points: list[dict], flight_id: str) -> dict:
     return {"mean": round(mean, 4), "std": round(std, 4), "n": n}
 
 
-def _topic_baseline(fleet_metric: Optional[dict], flight_id: str) -> dict:
+def _topic_baseline(fleet_metric: Optional[dict], flight_id: str, n_min: int = 10) -> dict:
     """
-    The {mean, std, n, trend} shape topics.py's baseline_triggered/
-    trend_triggered expect: leave-one-out for the baseline (R2), but the
-    all-flights trend unchanged — a trend over engine hours naturally
+    The {mean, std, n, trend, comparison} shape topics.py's
+    baseline_triggered/trend_triggered expect: leave-one-out for the
+    baseline (R2), taken within the flight's own weather band when the
+    metric is stratified and that band has at least n_min OTHER flights
+    (R8, Spec 01 §8.4 v0.13) — falling back to the unstratified
+    leave-one-out baseline otherwise. `comparison` records which was
+    used: {"scope": "band"|"all", "band": str|None, "n": int}. The trend
+    is always unstratified — a trend is over engine hours across all
+    flights regardless of weather, never split by band, and naturally
     includes the flight being evaluated as its newest point.
     """
     if not fleet_metric:
         return {}
-    loo = _leave_one_out_baseline(fleet_metric.get("points", []), flight_id)
+    points = fleet_metric.get("points", [])
     trend = fleet_metric.get("trend", {})
+
+    own_band = next((p.get("band") for p in points if p["flight_id"] == flight_id), None)
+    loo = _leave_one_out_baseline(points, flight_id)
+    comparison = {"scope": "all", "band": None, "n": loo["n"]}
+    if own_band is not None:
+        band_points = [p for p in points if p.get("band") == own_band]
+        band_loo = _leave_one_out_baseline(band_points, flight_id)
+        if band_loo["n"] >= n_min:
+            loo = band_loo
+            comparison = {"scope": "band", "band": own_band, "n": band_loo["n"]}
+
     return {
         "mean": loo["mean"], "std": loo["std"], "n": loo["n"],
+        "comparison": comparison,
         "trend": {
             "direction": trend.get("direction"),
             "r_squared": trend.get("r_squared"),
@@ -762,7 +790,7 @@ def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) ->
         if fleet_metric is None and value is None:
             continue
         metric_ids.append(key)
-        b = _topic_baseline(fleet_metric, fa.flight_id)
+        b = _topic_baseline(fleet_metric, fa.flight_id, bd_n_min)
         fleet_n = max(fleet_n, b.get("n", 0))
         cyl_low_n = 0 < b.get("n", 0) < bd_n_min
         low_n = low_n or cyl_low_n
@@ -884,13 +912,19 @@ def evaluate_insights(
             severity = ins.get("severity") or _severity_for(rules, topic_id, ins["trigger"])
             insight_id = content_hash({"flight_id": flight_id, "topic_id": topic_id,
                                         "trigger": ins["trigger"], "text": ins["text"]})[:16]
+            # comparison (R8, Spec 01 §8.4 v0.13): only baseline_deviation
+            # insights carry one — topics.py's baseline_triggered() is the
+            # only thing that sets it on the raw insight dict.
+            message = {"text": ins["text"]}
+            if ins.get("comparison"):
+                message["values"] = {"comparison": ins["comparison"]}
             insight = {
                 "id": insight_id,
                 "topic_id": topic_id,
                 "rule_id": f"{topic_id}.{ins['trigger']}",
                 "trigger": ins["trigger"],
                 "severity": severity,
-                "message": {"text": ins["text"]},
+                "message": message,
                 "evidence": ins.get("evidence") or [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
                 "confidence": confidence,
             }
@@ -913,14 +947,16 @@ def evaluate_insights(
             continue
         value = fm.get(flight_metric_id, {}).get("value")
         fleet_metric = fleet_analysis.metrics.get(fleet_key)
-        b = _topic_baseline(fleet_metric, flight_id)
         all_triggers = r_data.get(topic_id, {}).get("triggers", [])
-        fleet_n = b.get("n", 0)
-
         # BASELINE_LOW_N (R2): below n_min, no baseline_deviation insight
         # may fire — drop those triggers before calling the topic function
         # (not after: the insight would already exist in its output).
+        # Resolved before _topic_baseline() now (R8, Spec 01 §8.4 v0.13):
+        # the same n_min also gates whether a stratified metric compares
+        # within-band or falls back to all-flights.
         bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
+        b = _topic_baseline(fleet_metric, flight_id, bd_n_min)
+        fleet_n = b.get("n", 0)
         low_n = 0 < fleet_n < bd_n_min
         resolved_z = resolve_outlier_z_threshold(baseline_config, fleet_key)
         triggers = [

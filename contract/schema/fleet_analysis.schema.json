@@ -69,7 +69,15 @@
         "min": { "type": ["number", "null"] },
         "max": { "type": ["number", "null"] },
         "confidence": { "$ref": "#/$defs/confidence" },
-        "trend": { "$ref": "#/$defs/trend" }
+        "trend": { "$ref": "#/$defs/trend" },
+        "outliers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "z_score"],
+            "properties": { "flight_id": { "type": "string" }, "z_score": { "type": "number" } }
+          }
+        }
       }
     },
     "metricFleet": {

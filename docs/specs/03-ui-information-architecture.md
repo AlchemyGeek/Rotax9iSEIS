@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.10 — for review (no code written)
+**Status:** Draft v0.11 — for review (no code written)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.3; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -20,6 +20,7 @@
 | 0.8 | New principle 6 (§3): casual and researcher personas share one active configuration per workspace and diverge only in which surfaces they visit — casual stays on Flights/Flight view/Trends/ECU with no visible tuning; researcher tuning lives in Baselines & Models (§5.5, now also naming `outlier_z_threshold` as something the rule playground edits, per Spec 01 §8.4 v0.8); hard separation between the two, when needed, is an experiment workspace, not a mode switch. Also states how a future Research/Explore mode should fit this split once it's designed. |
 | 0.9 | §5.4 renamed "ECU investigation" → **Engine ECU CAS Events**, and its "what counts as an event" definition made explicit (an `IN_FLIGHT`-classified occurrence, not any ENGINE ECU alert). A real bug this surfaced, now fixed: Flight view had a `warning`-severity insight built from *ground-context* ECU presence on a flight with zero real in-flight events — corrected per Spec 01 §8.5 v0.9's firing-condition fix. A second real Flight view (the actual flight behind one of the fleet's genuine in-flight events) was built to demonstrate the correctly-scoped case, since the mockup this event's card previously linked to couldn't show it — every event card should link to its own real flight, not a generic stand-in. |
 | 0.10 | §5.3: the "Stratify by" toggle finally has a real behavior spec — it never had one beyond a name. Hidden entirely for a non-stratifiable metric, off by default for the 7 that are (per Spec 01 §8.4 v0.10's real `band_kind_by_metric` values), and honest about lower per-band confidence rather than hiding or upgrading it. |
+| 0.11 | §5.3: with stratification on, outlier rings come from the per-band outliers (Spec 01 v0.13, R8), so a ringed point and a "watch" insight always use the same comparison. `baseline_deviation` now compares within the flight's band, so the stratified view is the one that matches the insights for stratified metrics. |
 **Baseline reviewed:** repo `main` at commit `1740d1b`
 
 ---
@@ -164,7 +165,7 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout:
   - **On:** redraws as one band per value `band_kind_by_metric` actually produced for this metric's flights (not a fixed 4 — a metric might only have 3 of the 4 bands represented), each with its own baseline region and its own `confidence` label — which will typically read lower than the unstratified fleet confidence (Spec 01 §8.4's honest trade-off), and that's shown as-is, not upgraded or hidden. A band with `n < 3` still renders, labeled `VERY_LOW`, not suppressed — consistent with never hiding data over a confidence threshold, only labeling it (same principle as `BASELINE_LOW_N`, Spec 01 §8.4).
   - Each point's own band (from `points[].band`) determines which region it's drawn in; switching the toggle re-groups the same points, it doesn't re-fetch anything.
 - Trend line (slope, direction, R², confidence) drawn only when `n` clears the same `n_min` gate as insight triggers (Spec 01 §8.4) — a trend line drawn on 4 points would misrepresent confidence the engine itself doesn't claim. When stratified, this becomes one trend line per band, same gate applied per band's own `n`.
-- Outliers (`FleetMetric.outliers`) visually flagged on the scatter, distinct from points that merely sit outside the baseline band without crossing the z-score threshold.
+- Outliers visually flagged on the scatter, distinct from points that merely sit outside the baseline band without crossing the z-score threshold. With stratification **off**, rings come from `FleetMetric.outliers`; with it **on**, from each band's `by_band.bands[b].outliers` (Spec 01 R8). Because `baseline_deviation` compares a flight within its own band (falling back to all flights when the band is too small), the stratified view is the one that matches the insights for stratified metrics; the insight text says which comparison was used.
 - **Model view** (takeoff MAP, and any future `Model`): a small dedicated panel — predicted vs. actual scatter, coefficients shown as plain text ("MAP drops ~X inHg per 1,000 ft density altitude"), and the `note` field when `n < 5` ("still collecting data").
 
 ### 5.4 Engine ECU CAS Events

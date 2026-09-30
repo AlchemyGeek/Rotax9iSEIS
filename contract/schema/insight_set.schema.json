@@ -57,7 +57,23 @@
         "message": {
           "type": "object",
           "required": ["text"],
-          "properties": { "text": { "type": "string" } }
+          "properties": {
+            "text": { "type": "string" },
+            "values": {
+              "type": "object",
+              "properties": {
+                "comparison": {
+                  "type": "object",
+                  "required": ["scope", "n"],
+                  "properties": {
+                    "scope": { "type": "string", "enum": ["band", "all"] },
+                    "band": { "type": ["string", "null"] },
+                    "n": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
         },
         "evidence": {
           "type": "array",

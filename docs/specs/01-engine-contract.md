@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.12 — for review (no code written)
+**Status:** Draft v0.13 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -22,6 +22,7 @@
 | 0.10 | §8.4: documented, not designed — `by_band`/`band_kind_by_metric` were typed with no real content; checked the actual repo and `baseline_stratified`/`trend_stratified` already exist, are already wired into `update_fleet`, and are backed by real physical reasoning ("the research paper §9") that was never written into this spec. Added the real `DA_BANDS`/`OAT_BANDS` boundaries, the real per-metric assignment (5 metrics → `oat_band`, 2 → `da_band`, the rest `null`), and the confidence-per-band trade-off, all pulled from the shipped code rather than invented. |
 | 0.11 | §8.4: `outlier_z_threshold` confirmed wired and unified (one resolver, both consumers) during implementation. One thing clarified rather than fixed: `outliers[]` (all-flights baseline) and the `baseline_deviation` insight (leave-one-out, R2) can legitimately disagree in count per metric — always by the same amount R2's own damping evidence predicts. Only the threshold was ever meant to be shared; the two baseline statistics were always meant to differ. Written down explicitly so it isn't mistaken for unfinished unification later. |
 | 0.12 | Spec 08 (cylinder balance) lands: §8.2 EGT registry gains `egt1..4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order` (the first list-valued metric — `MetricValue.value` may now be an integer array); `egt4_elevation_f` stays one minor version as a deprecated alias of `egt4_deviation_f`. §8.4 `FleetAnalysis` gains optional `cylinder_balance` and the four `egtN_deviation` fleet metrics (`oat_band`). §8.5 `cylinder_rank` is wired (it was the one unimplemented topic) and `egt_cyl_deviation` is new; `egt4_elevation` ships disabled. `update_fleet` takes an optional engine config for the profile's `expected_hot_cylinder` prior. |
+| 0.13 | §8.4: new **R8** — `baseline_deviation` compares a flight against the leave-one-out baseline **of its own weather band** for stratified metrics, falling back to the unstratified leave-one-out baseline when the flight has no band or its band has fewer than `n_min` other flights. Removes the seasonal false positives the unstratified comparison produced and makes insights agree with the stratified Trends view. `by_band.bands[*]` gains per-band `outliers`; insight `values` record which comparison was used. Acceptance criterion 8 (§12) is superseded: its counts are regenerated on the full log set. Decided in the Spec 09 discussion (Q8); Spec 09's filter monitor uses the same comparison rule. |
 
 ---
 
@@ -67,6 +68,7 @@ The UI can only be as good as the structured output behind it. Today the engine'
 | R5 | `flight_id` stays fingerprint-based; overlap matches surface as `INGEST_DUPLICATE_OF` and the host keeps an alias list. Provisional until checked against the full log set. | Q1 |
 | R6 | The CLI is retained as a thin client and becomes a single `slingology-eis` command with subcommands (§7.1). | new |
 | R7 | Stage 0 golden outputs are captured as a **known-defect baseline** (finding 9); the detector fix is a separate reviewed change (§11). | new |
+| R8 | For stratified metrics, baseline comparisons use the leave-one-out baseline of the flight's own band, with an unstratified fallback below `n_min` (§8.4). | Spec 09 Q8 |
 
 ## 3. Findings from the code review that shape the contract
 
@@ -303,7 +305,9 @@ interface Trend    { n: number; slope: number|null; r_squared: number|null;
                      direction: "increasing"|"decreasing"|"flat"|"insufficient_data";
                      x: "engine_hours"; confidence: Baseline["confidence"] }
 interface MetricFleet { metric_id: string; baseline: Baseline; trend: Trend;
-                        by_band?: { band_kind: "oat_band"|"da_band"; bands: Record<string, Baseline> };
+                        by_band?: { band_kind: "oat_band"|"da_band";
+                                    bands: Record<string, Baseline & { trend?: Trend;
+                                                                       outliers: { flight_id: string; z_score: number }[] }> };  // per-band outliers: R8
                         points: { flight_id: string; date: string; x: number|null; value: number; band?: string }[];
                         outliers: { flight_id: string; z_score: number }[] }   // computed against the ALL-FLIGHTS baseline (`baseline` above), not leave-one-out — see note below
 interface Model    { id: "takeoff_map"; kind: "linear_regression"; features: string[];
@@ -350,6 +354,24 @@ Every metric not listed defaults to `null` (no stratification) unless a future t
 - `FleetAnalysis` keeps the all-flights baseline for display (trend charts, baseline bands) and the per-flight `points` array.
 - `evaluate_insights` compares each flight against a **leave-one-out** baseline derived from `points` (mean and standard deviation excluding that flight).
 - `baseline_deviation` triggers require a minimum sample size, `n_min` (proposed default 10, matching the existing trend triggers; tunable per rule through the rule playground). Below it, the analysis line is shown with a `BASELINE_LOW_N` note and no insight fires.
+- For stratified metrics, the leave-one-out baseline is taken **within the flight's own band** (R8, below).
+
+**Stratified comparison (R8).** Until v0.13, stratification was display-only: the Trends view could split a metric by band, but `baseline_deviation` always compared a flight against every other flight regardless of weather. For thermal metrics that produced seasonal noise. A hot-day oil temperature peak stood out against a fleet that included winter flights and fired a "watch" insight every summer, while a winter flight running warm for winter could hide inside the all-season spread. It also made the chart and the insights disagree: a point sitting well inside its own band on the stratified Trends view could still carry a "higher than usual" insight.
+
+The rule, applied per metric by `evaluate_insights`:
+
+1. If `band_kind_by_metric[metric]` is `null`, compare against the unstratified leave-one-out baseline (unchanged behaviour).
+2. Otherwise, if the flight has a band (`points[].band` present) and at least `n_min` **other** flights share that band, compare against the leave-one-out baseline of that band.
+3. Otherwise, fall back to the unstratified leave-one-out baseline.
+4. If that is also below `n_min`, no insight fires and the analysis line carries `BASELINE_LOW_N`, as before.
+
+The same `outlier_z_threshold` applies whichever baseline is used; only the comparison set changes. Trend triggers are unaffected: a trend is always over engine hours across all flights.
+
+The insight's `message.values` gain `comparison: { scope: "band" | "all"; band?: string; n: number }`, and the text names it ("higher than your other warm-day flights, n=14" or "higher than all your flights, n=23"), so a pilot can always see what the flight was compared with. A fallback is not a diagnostic; it is just visible in `comparison`.
+
+For the display side to agree, `update_fleet` computes `outliers` per band as well (`by_band.bands[b].outliers`, against that band's all-flights baseline, same threshold). The Trends view rings per-band outliers when stratification is on and the fleet-wide `outliers` when it is off (Spec 03 §5.3). The existing all-flights versus leave-one-out difference (above) carries over unchanged within each band.
+
+Consequences, accepted deliberately: per-band samples are smaller, so a new aircraft spends longer in fallback before band comparisons start (the `confidence` trade-off already described for stratified baselines), and existing insights change for stratified metrics, including Spec 08's `egt1..4_deviation`, which are `oat_band`. Spec 09's filter monitor uses this same rule for its frozen baselines, so filters and baseline insights share one definition of "comparable flights".
 
 ```ts
 interface BaselineConfig {
@@ -468,7 +490,7 @@ The phase-detector fix (finding 9) is **not** part of these stages. It lands as 
 5. Every result validates against the generated JSON Schemas; serialization contains no bare `NaN`.
 6. No core function reads the filesystem, environment, or wall clock (enforced by a test that runs the core with file access blocked).
 7. Adding a hypothetical topic requires no edits outside its own module, its rule entries, and (optionally) a view hint.
-8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (using the default `outlier_z_threshold` of 2.0, no per-metric overrides set, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2.
+8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (using the default `outlier_z_threshold` of 2.0, no per-metric overrides set, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2. **Superseded by R8 (v0.13)** for the stratified metrics: the counts are regenerated on the full log set with stratified comparison, reported per metric as band comparisons, fallbacks, and insights added/removed versus the unstratified rule. Climb oil rise (unstratified) must be unchanged.
 9. Scripts 01–04 produce output identical to the Stage 0 goldens after Stages 1–3; every §7 workflow is reachable via a `slingology-eis` subcommand whose `--json` output validates against the schemas.
 
 **Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the four genuine `IN_FLIGHT` runs) needs the raw log set, either shared in the project or run locally to produce golden outputs.

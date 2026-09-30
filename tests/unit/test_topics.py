@@ -16,28 +16,54 @@ def test_z_score_basic():
 
 
 def test_baseline_triggered_above_threshold():
-    triggered, text = topics.baseline_triggered(20, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(20, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert triggered
     assert "above" in text and "⚠" in text
+    # No "comparison" on b -> synthesized as an all-flights comparison (R8).
+    assert comparison == {"scope": "all", "band": None, "n": 0}
+    assert "all your flights, n=0" in text
 
 
 def test_baseline_triggered_below_threshold_direction():
-    triggered, text = topics.baseline_triggered(0, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(0, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert triggered
     assert "below" in text and "↓" in text
+    assert comparison["scope"] == "all"
 
 
 def test_baseline_triggered_not_triggered():
-    triggered, text = topics.baseline_triggered(11, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(11, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert not triggered
     assert text == ""
+    assert comparison == {"scope": "all", "band": None, "n": 0}
 
 
 def test_baseline_triggered_missing_data():
-    triggered, text = topics.baseline_triggered(None, {"mean": 10, "std": 5}, {})
+    triggered, text, comparison = topics.baseline_triggered(None, {"mean": 10, "std": 5}, {})
     assert not triggered
-    triggered, text = topics.baseline_triggered(20, {"mean": None}, {})
+    triggered, text, comparison = topics.baseline_triggered(20, {"mean": None}, {})
     assert not triggered
+
+
+def test_baseline_triggered_uses_band_comparison_when_present():
+    # R8 (Spec 01 §8.4 v0.13): a stratified metric's b dict carries its
+    # own comparison (set by operations.py's _topic_baseline); the text
+    # names the band and its n, not "all your flights".
+    b = {"mean": 10, "std": 5, "comparison": {"scope": "band", "band": "warm", "n": 14}}
+    triggered, text, comparison = topics.baseline_triggered(20, b, {"z_score_threshold": 2.0})
+    assert triggered
+    assert comparison == {"scope": "band", "band": "warm", "n": 14}
+    assert "your other warm flights, n=14" in text
+    assert "all your flights" not in text
+
+
+def test_baseline_triggered_falls_back_to_all_comparison_text():
+    # Explicit "all" comparison (band too small this call) reads the same
+    # as no comparison at all -> unstratified wording.
+    b = {"mean": 10, "std": 5, "comparison": {"scope": "all", "band": None, "n": 23}}
+    triggered, text, comparison = topics.baseline_triggered(20, b, {"z_score_threshold": 2.0})
+    assert triggered
+    assert "all your flights, n=23" in text
 
 
 def test_trend_triggered_matches_direction():
