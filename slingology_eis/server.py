@@ -855,6 +855,38 @@ def op_delete_filter(params: dict, ctx: dict) -> Any:
     return {"deleted": ws.delete_filter(ctx["workspace_dir"], params["id"])}
 
 
+def op_filter_health(params: dict, ctx: dict) -> Any:
+    """§8 / §11.2 evaluate_filter_health for every filter in the workspace,
+    plus the count the Notes badge and Flights banner show (§10.4)."""
+    engine_cfg, _ = _current_engine(ctx)
+    fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    health = _filters.evaluate_filter_health(_load_workspace_flights(ctx["workspace_dir"]), fleet,
+                                             _workspace_filters(ctx), engine_cfg)
+    return {"health": health,
+            "attention_count": sum(1 for h in health if h["status"] in ("breached", "drifting"))}
+
+
+def op_review_filter(params: dict, ctx: dict) -> Any:
+    hours = _latest_engine_hours(_load_workspace_flights(ctx["workspace_dir"]))
+    flt = ws.review_filter(ctx["workspace_dir"], params["id"], hours)
+    if flt is None:
+        raise RpcError("NOT_FOUND", f"no filter {params['id']}")
+    return flt
+
+
+def op_rebaseline_filter(params: dict, ctx: dict) -> Any:
+    workspace_dir = ctx["workspace_dir"]
+    flt = ws.get_filter(workspace_dir, params["id"])
+    if flt is None:
+        raise RpcError("NOT_FOUND", f"no filter {params['id']}")
+    engine_cfg, _ = _current_engine(ctx)
+    lim = next((l for l in limit_catalog(engine_cfg) if l["id"] == flt["limit_id"]), None)
+    if lim is None:
+        raise RpcError("NOT_FOUND", f"no limit {flt['limit_id']} in this engine profile")
+    ref = _filters.select_reference(_get_or_build_fleet(workspace_dir), lim)
+    return ws.rebaseline_filter(workspace_dir, params["id"], ref)
+
+
 def op_list_annotations(params: dict, ctx: dict) -> Any:
     """All annotations in the active workspace, or just one flight's
     (Spec 03 §5.6 browse view vs. a single Flight view/ECU card's own
@@ -1174,6 +1206,9 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "preview_filter": op_preview_filter,
     "save_filter": op_save_filter,
     "delete_filter": op_delete_filter,
+    "filter_health": op_filter_health,
+    "review_filter": op_review_filter,
+    "rebaseline_filter": op_rebaseline_filter,
     "save_annotation": op_save_annotation,
     "delete_annotation": op_delete_annotation,
     "remove_missing_flight": op_remove_missing_flight,

@@ -442,3 +442,215 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
         "flights_with_breach": sum(1 for f in flights if f["breaches"]),
         "flights": flights,
     }
+
+
+# ── Change monitor (§8) ─────────────────────────────────────────────────────
+
+FREQUENCY_WINDOW = 10         # monitored flights for the event-frequency test
+FREQUENCY_DELTA = 0.30        # rise in share of flights with events that counts as drift
+QUIET_WINDOW = 10             # monitored flights without events -> Quiet
+DRIFT_PERSISTENCE = 2         # consecutive monitored flights (Spec 08 cylinder_rank pattern)
+# Not in §13: a floor for time_above_pct's reference std. A limit rarely
+# exceeded in its reference has a near-zero std there, and any event at
+# all would otherwise read as drift. In percentage points.
+TIME_ABOVE_STD_FLOOR = 1.0
+
+STATUS_ORDER = ("breached", "drifting", "review_due", "quiet", "collecting", "stable")
+
+
+def _point_index(fleet, key: str) -> dict[str, dict]:
+    return {p["flight_id"]: p for p in (fleet.metrics.get(key) or {}).get("points", [])}
+
+
+def effective_reference(filter_: dict, chronology: list[dict], min_n: int = REFERENCE_MIN_N) -> tuple[list[str], bool]:
+    """
+    §8.1: the stored reference flights still included, extended forward
+    over the next included flights until it reaches min_n. Returns
+    (flight ids, collecting) — collecting while even that falls short.
+    `chronology` is every included flight with the limit's channel,
+    oldest first ({"flight_id", ...}).
+    """
+    stored = set((filter_.get("reference") or {}).get("flight_ids", []))
+    order = [p["flight_id"] for p in chronology]
+    ref = [fid for fid in order if fid in stored]
+    if len(ref) < min_n:
+        last = max((order.index(fid) for fid in ref), default=-1)
+        for fid in order[last + 1:]:
+            if len(ref) >= min_n:
+                break
+            ref.append(fid)
+    return ref, len(ref) < min_n
+
+
+def _z(value: Optional[float], stats: dict, floor: float) -> Optional[float]:
+    if value is None or stats.get("mean") is None:
+        return None
+    return (value - stats["mean"]) / max(stats.get("std") or 0.0, floor)
+
+
+def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], engine_config: Optional[dict] = None) -> list[dict]:
+    """
+    §11.2 `evaluate_filter_health`: one FilterHealth (§11.3) per filter.
+    Stateless: frozen and live baselines come from `fleet` (its points
+    already omit excluded flights, and its provenance carries the
+    baseline_config, so the drift threshold is the metric's own
+    outlier_z_threshold — §8.2's "one threshold"); breaches come from the
+    flights' events. `engine_config` resolves limits; without it, the
+    flights' own limit catalogue is used.
+    """
+    from .operations import _chronological, resolve_outlier_z_threshold
+
+    if engine_config is not None:
+        limits = _catalog_by_id(engine_config)
+    else:
+        limits = {lim["id"]: lim for fa in flight_analyses[:1] for lim in fa.limits}
+    baseline_config = fleet.provenance.get("baseline_config") or {}
+    included = set(fleet.flight_ids)
+    fas = {fa.flight_id: fa for fa in flight_analyses if fa.flight_id in included}
+    latest_hours = max((h for fa in fas.values()
+                        for h in [fa.header.get("engine_hours_end") or fa.header.get("engine_hours_start")]
+                        if h is not None), default=None)
+    valid, _ = active_filters(filters, limits, fleet)
+
+    out = []
+    for f in filters:
+        lid = f.get("limit_id")
+        limit = limits.get(lid)
+        diags = validate_filter(f, limits, fleet) if limit else validate_filter(f, limits)
+        is_valid = limit is not None and valid.get(lid) is f
+        health = {"filter_id": f.get("id"), "limit_id": lid, "valid": is_valid, "status": "stable",
+                  "reasons": [], "diagnostics": diags, "series": [], "hours_since_review": None}
+        if limit is None:
+            health["reasons"].append("The limit no longer exists in this engine profile.")
+            out.append(health)
+            continue
+
+        ob = is_overboost(limit)
+        mag_key = _magnitude_metric(limit)
+        pct_key = None if ob else limit_metric_key(limit, "time_above_pct")
+        mag_pts = _point_index(fleet, mag_key)
+        pct_pts = _point_index(fleet, pct_key) if pct_key else {}
+        # Every included flight with the limit's channel, oldest first.
+        chronology = _chronological(list((pct_pts or mag_pts).values()))
+        ref_ids, collecting = effective_reference(f, chronology)
+        ref_set = set(ref_ids)
+
+        frozen_mag = frozen_baseline(fleet, mag_key, ref_ids)
+        frozen_pct = frozen_baseline(fleet, pct_key, ref_ids) if pct_key else None
+        ref_pct_values = [pct_pts[fid]["value"] for fid in ref_ids if fid in pct_pts]
+        if ob:
+            ref_block = [mag_pts[fid]["value"] for fid in ref_ids if fid in mag_pts]
+            share_ref = (sum(1 for v in ref_block if v > limit["limit_value"]) / len(ref_block)) if ref_block else None
+        else:
+            share_ref = (sum(1 for v in ref_pct_values if v > 0) / len(ref_pct_values)) if ref_pct_values else None
+        health["frozen_baseline"] = {
+            ("block_s" if ob else "peak_excess"): {k: v for k, v in frozen_mag.items()},
+            **({"time_above_pct": frozen_pct} if frozen_pct else {}),
+            "share_with_events": share_ref,
+        }
+        health["reference"] = {"flight_ids": ref_ids, "collecting": collecting}
+        health["resolved_band"] = ({"value": resolved_band(f, limit, frozen_mag), "unit": limit["unit"]}
+                                   if f.get("magnitude") else None)
+        health["summary"] = band_text(f, limit, frozen_mag)
+
+        # Per-flight series, with this filter's classification of each event.
+        last_ref_pos = max((i for i, p in enumerate(chronology) if p["flight_id"] in ref_set), default=-1)
+        series = []
+        for i, p in enumerate(chronology):
+            fid = p["flight_id"]
+            fa = fas.get(fid)
+            band = flight_band(fa, limit) if fa else p.get("band")
+            events = suppressed = breaches = 0
+            if fa is not None:
+                evs = [e for e in fa.exceedances if e.get("limit_id") == lid]
+                if ob:
+                    block = fa.metrics.get("overboost_max_block_s", {}).get("value")
+                    if block is not None and block > limit["limit_value"]:
+                        events = 1
+                        band_s = resolved_band(f, limit, frozen_mag) or 0.0
+                        if is_valid and block <= limit["limit_value"] + band_s:
+                            suppressed = 1
+                        else:
+                            breaches = 1
+                else:
+                    z_ref = comparison_set(frozen_mag, band)[0] if (f.get("magnitude") or {}).get("mode") == "z" else None
+                    for e in evs:
+                        events += 1
+                        if is_valid and classify_event(e, f, limit, z_ref):
+                            suppressed += 1
+                        else:
+                            breaches += 1
+            series.append({
+                "flight_id": fid, "date": p.get("date"), "engine_hours": p.get("x"), "band": band,
+                "in_reference": fid in ref_set, "monitored": i > last_ref_pos,
+                ("block_s" if ob else "peak_excess"): (mag_pts.get(fid) or {}).get("value"),
+                **({"time_above_pct": (pct_pts.get(fid) or {}).get("value")} if pct_key else {}),
+                "events": events, "suppressed": suppressed, "breaches": breaches,
+            })
+        health["series"] = series
+        monitored = [s for s in series if s["monitored"]]
+
+        # Hours since review (or creation).
+        since = f.get("reviewed_engine_hours") or f.get("created_engine_hours")
+        if since is None and ref_ids:
+            since = next((s["engine_hours"] for s in reversed(series) if s["in_reference"]), None)
+        health["hours_since_review"] = (round(latest_hours - since, 1)
+                                        if latest_hours is not None and since is not None else None)
+
+        reasons: dict[str, list[str]] = {k: [] for k in STATUS_ORDER}
+        # Breached: a breach on a monitored flight since the last review.
+        reviewed_h = f.get("reviewed_engine_hours")
+        # An invalid filter hides nothing, so its "breaches" are just events.
+        breach_flights = [s for s in monitored if is_valid and s["breaches"] and
+                          (reviewed_h is None or (s["engine_hours"] or 0) > reviewed_h)]
+        if breach_flights:
+            last = breach_flights[-1]
+            reasons["breached"].append(
+                f"{sum(s['breaches'] for s in breach_flights)} event(s) beyond the filter on "
+                f"{len(breach_flights)} flight(s) since it was {'reviewed' if reviewed_h is not None else 'set'}.")
+            fa = fas.get(last["flight_id"])
+            ev = next((e for e in (fa.exceedances if fa else []) if e.get("limit_id") == lid), None)
+            health["last_breach"] = {"flight_id": last["flight_id"],
+                                     "event_id": ev.get("event_id") if ev else None}
+
+        # Drifting: persistent excursions above the frozen baseline, or events getting more frequent.
+        if not collecting and len(monitored) >= DRIFT_PERSISTENCE:
+            recent = monitored[-DRIFT_PERSISTENCE:]
+            checks = [("block_s" if ob else "peak_excess", frozen_mag, z_std_floor(limit) if not ob else 1.0,
+                       resolve_outlier_z_threshold(baseline_config, mag_key),
+                       "longest block" if ob else "peak excess")]
+            if frozen_pct:
+                checks.append(("time_above_pct", frozen_pct, TIME_ABOVE_STD_FLOOR,
+                               resolve_outlier_z_threshold(baseline_config, pct_key), "time past the limit"))
+            for field, frozen, floor, z_thr, label in checks:
+                zs = [_z(s.get(field), comparison_set(frozen, s["band"])[0], floor) for s in recent]
+                if all(z is not None and z > z_thr for z in zs):
+                    reasons["drifting"].append(
+                        f"{label} above your reference on the last {DRIFT_PERSISTENCE} flights "
+                        f"(z {', '.join(f'{z:.1f}' for z in zs)} > {z_thr:g}).")
+            if share_ref is not None and len(monitored) >= FREQUENCY_WINDOW:
+                window = monitored[-FREQUENCY_WINDOW:]
+                share_now = sum(1 for s in window if s["events"]) / len(window)
+                if share_now - share_ref >= FREQUENCY_DELTA:
+                    reasons["drifting"].append(
+                        f"events on {share_now:.0%} of the last {FREQUENCY_WINDOW} flights, "
+                        f"vs {share_ref:.0%} of the reference flights.")
+
+        policy = resolve_filter_policy(limit)
+        if health["hours_since_review"] is not None and health["hours_since_review"] > policy["review_interval_h"]:
+            reasons["review_due"].append(
+                f"{health['hours_since_review']:g} engine hours since {'review' if reviewed_h is not None else 'it was set'} "
+                f"(review every {policy['review_interval_h']:g} h).")
+        if len(monitored) >= QUIET_WINDOW and not any(s["events"] for s in monitored[-QUIET_WINDOW:]):
+            reasons["quiet"].append(f"no events on the last {QUIET_WINDOW} flights — the filter may no longer be needed.")
+        if collecting:
+            reasons["collecting"].append(
+                f"reference has {len(ref_ids)} of the {REFERENCE_MIN_N} flights it needs.")
+
+        status = next((k for k in STATUS_ORDER if reasons[k]), "stable")
+        health["status"] = status
+        health["reasons"] = [r for k in STATUS_ORDER for r in reasons[k]]
+        if not is_valid:
+            health["reasons"].insert(0, "Not applied: " + " ".join(d["message"] for d in diags))
+        out.append(health)
+    return out

@@ -11,6 +11,7 @@ import type {
   EcuAnalysis,
   ExclusionsResult,
   FleetAnalysis,
+  FilterHealth,
   FilterListEntry,
   FilterPreview,
   FilterProposal,
@@ -90,6 +91,9 @@ export interface EngineClient {
   previewFilter(filter: LimitFilterDraft): Promise<FilterPreview>;
   saveFilter(filter: LimitFilterDraft): Promise<LimitFilter>;
   deleteFilter(id: string): Promise<{ deleted: boolean }>;
+  filterHealth(): Promise<{ health: FilterHealth[]; attention_count: number }>;
+  reviewFilter(id: string): Promise<LimitFilter>;
+  rebaselineFilter(id: string): Promise<LimitFilter>;
 
   // Spec 07 §4/§6 — the channel registry (single source of truth, D4) and
   // chart presets (shipped + user, D1). saveUserPreset with an id edits
@@ -273,6 +277,18 @@ export class LocalServerClient implements EngineClient {
 
   deleteFilter(id: string) {
     return this.rpc<{ deleted: boolean }>("delete_filter", { id });
+  }
+
+  filterHealth() {
+    return this.rpc<{ health: FilterHealth[]; attention_count: number }>("filter_health", {});
+  }
+
+  reviewFilter(id: string) {
+    return this.rpc<LimitFilter>("review_filter", { id });
+  }
+
+  rebaselineFilter(id: string) {
+    return this.rpc<LimitFilter>("rebaseline_filter", { id });
   }
 
   getChannelRegistry() {

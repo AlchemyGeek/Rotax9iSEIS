@@ -13,6 +13,7 @@ import type {
   ChannelRegistryEntry, ExclusionEntry, FlightAnalysis, FlightRowStatus, FlightTableRow,
   InsightSeverity, SeriesFixture, WorkspaceManifest,
 } from "../types/contract";
+import { useFilterAttention } from "../lib/filterAttention";
 
 const client = getEngineClient();
 
@@ -121,6 +122,7 @@ function TrashIcon({ size = 14 }: { size?: number }) {
 // destination changed, not the mechanism.
 export function Flights() {
   const navigate = useNavigate();
+  const filterAttention = useFilterAttention();
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<FlightTableRow[]>(fixtureFlights.rows);
   const [manifest, setManifest] = useState(fixtureManifest);
@@ -539,6 +541,15 @@ export function Flights() {
   return (
     <NavShell>
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {filterAttention > 0 && (
+          // Spec 09 §10.4: one line when a limit filter needs attention.
+          <div
+            onClick={() => navigate("/annotations")}
+            style={{ cursor: "pointer", fontSize: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(245,165,36,0.1)", border: "1px solid rgba(245,165,36,0.3)", color: "var(--severity-warning)" }}
+          >
+            {filterAttention} limit filter{filterAttention === 1 ? " is" : "s are"} breached or drifting — review on the Notes page →
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>
