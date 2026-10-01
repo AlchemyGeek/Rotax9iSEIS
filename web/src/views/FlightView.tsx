@@ -689,13 +689,22 @@ export function FlightView() {
         navigate(`/trends?metric=${ev.metric_id}&flight=${flightAnalysis.flight_id}`);
         return;
       }
-      if (ev.kind === "ecu_run" || ev.kind === "exceedance") {
-        // No in-chart home for these (an ECU run isn't a chart-window
-        // concept, and this chart doesn't show exceedance markers) —
-        // same destination Annotations.tsx's refTarget already sends an
-        // ecu_run annotation to. Previously unhandled: this whole branch
-        // was missing, so clicking "View evidence" on an engine_ecu_inflight
-        // insight silently did nothing.
+      if (ev.kind === "ecu_run") {
+        // No in-chart home for this (an ECU run isn't a chart-window
+        // concept) — off to the ECU page, same destination
+        // Annotations.tsx's refTarget already sends an ecu_run
+        // annotation to. ev.ref is the run's own start_utc (the same
+        // value op_evaluate_insights serializes it from, and the same
+        // field ECU.tsx's runRefKey already keys annotations on) — passed
+        // through so that page can find and highlight this exact run
+        // instead of leaving the pilot to recognize it among several.
+        navigate(`/ecu?flight=${encodeURIComponent(flightAnalysis.flight_id)}&run=${encodeURIComponent(ev.ref)}`);
+        return;
+      }
+      if (ev.kind === "exceedance") {
+        // Never actually produced by the engine today (limit-exceedance
+        // insights use series_window evidence instead) — kept as a safe
+        // fallback rather than silently doing nothing if that changes.
         navigate("/ecu");
         return;
       }

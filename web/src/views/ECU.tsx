@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { NoteSection, NoteToggle } from "../components/NoteEditor";
 import { ecuAnalysis as fixtureEcu } from "../lib/fixtures";
@@ -64,6 +64,7 @@ function InFlightCard({
   onSaveNote,
   onDeleteNote,
   notesEnabled = true,
+  highlighted = false,
 }: {
   run: EcuRun;
   filename: string;
@@ -71,11 +72,22 @@ function InFlightCard({
   onSaveNote?: (text: string) => void;
   onDeleteNote?: () => void;
   notesEnabled?: boolean;
+  // Arrived here via a flight's "View evidence" on this exact run (query
+  // params, not the red border below — that's an unrelated, per-run
+  // content flag, oilPressCorrelated, true or false regardless of how
+  // you got here). A box-shadow ring, not another border, so the two
+  // never visually compete on a run that happens to be both.
+  highlighted?: boolean;
 }) {
   const navigate = useNavigate();
   const flagged = oilPressCorrelated(run);
   const c = run.context;
   const [expanded, setExpanded] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlighted) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlighted]);
 
   function toggleExpanded(e: React.MouseEvent) {
     e.preventDefault();
@@ -85,10 +97,12 @@ function InFlightCard({
 
   return (
     <div
+      ref={cardRef}
       onClick={() => navigate(`/flights/${run.flight_id}`)}
       style={{
         background: "var(--panel)",
         borderRadius: 12,
+        boxShadow: highlighted ? "0 0 0 2px var(--accent)" : undefined,
         padding: "16px 18px",
         marginBottom: 10,
         cursor: "pointer",
@@ -178,6 +192,11 @@ export function ECU() {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(true);
+  // Set by a flight's "View evidence" on an engine_ecu_inflight insight
+  // (FlightView's handleEvidenceClick) — which of the cards below, if
+  // any, to scroll to and ring on load.
+  const [params] = useSearchParams();
+  const highlightKey = params.get("flight") && params.get("run") ? runRefKey(params.get("flight")!, params.get("run")) : null;
 
   async function refreshAnnotations() {
     if (usingFixture) return;
@@ -305,7 +324,8 @@ export function ECU() {
             </span>
           </div>
           {inFlightRuns.map((r, i) => {
-            const existing = annotationByRunKey.get(runRefKey(r.flight_id, r.start_utc));
+            const key = runRefKey(r.flight_id, r.start_utc);
+            const existing = annotationByRunKey.get(key);
             return (
               <InFlightCard
                 key={`${r.flight_id}-${r.start_utc}-${i}`}
@@ -315,6 +335,7 @@ export function ECU() {
                 notesEnabled={!usingFixture}
                 onSaveNote={(text) => handleSaveNote(r, text)}
                 onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
+                highlighted={highlightKey !== null && key === highlightKey}
               />
             );
           })}
