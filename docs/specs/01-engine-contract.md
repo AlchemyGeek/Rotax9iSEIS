@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.13 — for review (no code written)
+**Status:** Draft v0.14 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -23,6 +23,7 @@
 | 0.11 | §8.4: `outlier_z_threshold` confirmed wired and unified (one resolver, both consumers) during implementation. One thing clarified rather than fixed: `outliers[]` (all-flights baseline) and the `baseline_deviation` insight (leave-one-out, R2) can legitimately disagree in count per metric — always by the same amount R2's own damping evidence predicts. Only the threshold was ever meant to be shared; the two baseline statistics were always meant to differ. Written down explicitly so it isn't mistaken for unfinished unification later. |
 | 0.12 | Spec 08 (cylinder balance) lands: §8.2 EGT registry gains `egt1..4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order` (the first list-valued metric — `MetricValue.value` may now be an integer array); `egt4_elevation_f` stays one minor version as a deprecated alias of `egt4_deviation_f`. §8.4 `FleetAnalysis` gains optional `cylinder_balance` and the four `egtN_deviation` fleet metrics (`oat_band`). §8.5 `cylinder_rank` is wired (it was the one unimplemented topic) and `egt_cyl_deviation` is new; `egt4_elevation` ships disabled. `update_fleet` takes an optional engine config for the profile's `expected_hot_cylinder` prior. |
 | 0.13 | §8.4: new **R8** — `baseline_deviation` compares a flight against the leave-one-out baseline **of its own weather band** for stratified metrics, falling back to the unstratified leave-one-out baseline when the flight has no band or its band has fewer than `n_min` other flights. Removes the seasonal false positives the unstratified comparison produced and makes insights agree with the stratified Trends view. `by_band.bands[*]` gains per-band `outliers`; insight `values` record which comparison was used. Acceptance criterion 8 (§12) is superseded: its counts are regenerated on the full log set. Decided in the Spec 09 discussion (Q8); Spec 09's filter monitor uses the same comparison rule. |
+| 0.14 | §6.4: documented, not designed — `fuel_press_psi` is the only signal the logs carry for fuel pump activity; the G3X CSV has no pump-selection or pump-running channel (`FPCM FAULT` is a fault flag, not a state indicator — confirmed against the full fleet's column set, which is identical across logs). Noted as a known gap, with a future pump-state inference model (predicting which pump(s) are running from the pressure signature) tracked as BACKLOG A7. Raised investigating the real fuel-pressure exceedances from BACKLOG G1. |
 
 ---
 
@@ -144,6 +145,8 @@ A log file may contain several avionics power cycles (BACKLOG B2), and ground-on
 ### 6.4 Channel registry
 
 The public API exposes **normalized channel ids only** (snake_case, unit-suffixed where the current code does: `rpm`, `oil_temp_f`, `egt1_f`, `egt_spread_f`, `fuel_flow_gph`, `map_inhg`, `ias_kt`, `vs_fpm`, `da_ft`, …). Raw Garmin column names are not part of the contract. The registry declares, per channel: id, unit, description, source (`raw` | `derived`), and whether it is charted by default. `get_series` accepts only registry ids.
+
+**No direct fuel pump state (v0.14).** `fuel_press_psi` is sensitive to which fuel pump(s) are running — a pump dropping out or a second pump cutting in shows up as a step or dip in the pressure trace — but the G3X log has no channel that reports pump selection or pump-running state directly. `FPCM FAULT` is a fault flag (fires on a pump-system fault), not a status indicator; it does not distinguish "pump 1 running," "pump 2 running," or "both." This is a real gap for root-causing fuel-pressure exceedances (BACKLOG G1), not something the current engine can paper over with another channel. A future capability — inferring pump state from the pressure signature (and any other correlated channels) rather than reading it directly — is tracked as BACKLOG A7, deliberately out of scope here: it would be a model (trained or rule-based, in the same vein as the `map_at_takeoff` empirical model already built from fleet data, §8.5) feeding a derived channel or metric, not a new raw channel the log itself provides.
 
 ## 7. Operations
 

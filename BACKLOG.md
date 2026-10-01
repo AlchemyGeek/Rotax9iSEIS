@@ -79,6 +79,30 @@ Track departure elevation distribution in fleet_metrics to monitor readiness.
 
 ---
 
+### A7. Fuel pump state inference model
+**Type:** Research → possible code
+The G3X log has no channel reporting which fuel pump(s) are running — confirmed across the
+full fleet's column set, identical in every log (`FPCM FAULT` is a fault flag, not a state
+indicator). `fuel_press_psi` is the only available signal, and pump transitions (a pump
+dropping out, a second pump cutting in) plausibly show up as steps/dips in that trace.
+
+Idea: a model (rule-based thresholds on the pressure signature to start; a trained
+classifier later if the rule-based version isn't reliable enough) that infers "pump 1 /
+pump 2 / both / indeterminate" per time window from `fuel_press_psi` (and possibly
+`fuel_flow_gph`, RPM, phase) as supporting signal. Output would feed in as a derived
+channel/metric for analysis, the same way the `map_at_takeoff` empirical model already
+works from fleet data (Spec 01 §6.4, §8.5) — not a claim that the raw log carries this
+information.
+
+**Needs:** example flights with a *known* pump schedule (e.g. a deliberate pump-test
+flight, or pilot-reported pump switching) to correlate against the pressure trace and
+validate any candidate model before trusting its output in reports. Directly relevant to
+G1 (fuel-pressure exceedances root cause, section G) — a pump-state signal could
+distinguish "pump test / normal pump cycling" from "genuine sensor fault or pressure
+problem" in those exceedance events.
+
+---
+
 ## B — Bug Fixes & Signal Quality
 
 ### ~~B3. IN-FLIGHT ENGINE ECU — per-event reporting~~ — COMPLETED in v0.10.0
@@ -216,6 +240,10 @@ sensor/CAN-dropout artifacts) and some sustained near-max readings (possibly gen
 units/reference-frame mismatch — the 916iS config's fuel-pressure minimum note says
 "relative to MAP" while the logged channel may be absolute). Deliberately deferred until
 the tool's analysis capabilities are more complete. Investigate post-v0.11.0.
+
+See also A7 (fuel pump state inference model) — a pump-state signal, even an
+approximate one, would help separate "pump test / pump cycling, expected" readings
+from genuine sensor or pressure problems in this investigation.
 
 ---
 
