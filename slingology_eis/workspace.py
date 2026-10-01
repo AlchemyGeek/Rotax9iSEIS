@@ -380,8 +380,8 @@ class ScanResult:
     excluded: list[dict] = field(default_factory=list)  # duplicate exports dropped this scan (Spec 01 §6.2)
     reanalyzed_flight_ids: list[str] = field(default_factory=list)  # stale engine_version, re-run for real
     # Ground session / short flight / corrupt log, newly recorded to
-    # exclusions.json this scan (Spec: Ground Session Detection +
-    # Workspace Flight Exclusions) — never became a flight_id at all, so
+    # exclusions.json this scan (Spec 02 §5.11) — never became a
+    # flight_id at all, so
     # keyed by filename, not flight_id like the fields above.
     auto_excluded: list[dict] = field(default_factory=list)
 
@@ -807,7 +807,7 @@ def find_log_file_by_name(manifest: WorkspaceManifest, filename: str) -> Optiona
     """
     Best-effort: search every reachable log_folders entry for a file
     with this exact name. exclusions.json only ever records a filename
-    (Spec: Workspace Flight Exclusions), never a path, so this is how a
+    (Spec 02 §6.8), never a path, so this is how a
     skipped log's own data (date, duration, etc.) gets found again for
     display — e.g. the Flights tab's Skipped list. None if the file
     isn't in any currently-reachable watched folder (including the
@@ -878,7 +878,7 @@ def scan_workspace(
     in the right file.
 
     A newly-found file that's a ground session, short flight, or corrupt
-    log (Spec: Ground Session Detection + Workspace Flight Exclusions)
+    log (Spec 02 §5.11.2)
     never becomes a flight_id at all — it's recorded to exclusions.json
     and left out entirely, the same as loader.py's load_directory()
     (CLI/notebook path) already does. Before this, a workspace built by

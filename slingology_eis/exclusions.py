@@ -1,15 +1,18 @@
 """
-exclusions.py — Workspace Flight Exclusions (docs/specs/08-flight-exclusions.md).
+exclusions.py — log admission and flight exclusions
+(docs/specs/02-results-bundle-and-workspace.md §5.11, §6.8).
 
 Replaces silently dropping ground sessions and other unwanted flights at
 load time with an explicit, visible record: every exclusion — automatic
 (ground session, short flight, corrupt log) or user-chosen — is written
 to exclusions.json, one file per workspace, and can be overridden.
 
-Membership (is this file known to the workspace) and baseline
-contribution (does it feed analysis) are separate concepts. This module
-governs only the latter — an excluded flight is still known to the
-workspace, it just doesn't feed baselines/trends/fleet models.
+This module is Tier 1 of Spec 02 §5.11 — admission: whether a log in a
+workspace's folders becomes a flight_id at all. An excluded log never
+does (no flights/<id>, no analysis); it is listed only in the Flights
+tab's Skipped panel. Tier 2 — whether an already-analyzed flight feeds
+baselines — is a separate mechanism, FleetSelection.excluded in
+fleet/selection.json (workspace.py), keyed by flight_id, not filename.
 
 Usage
 -----

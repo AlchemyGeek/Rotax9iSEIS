@@ -204,7 +204,7 @@ def _load_flight_analyses(
     tested (Stage 0), then run analyze_flight() on what survives.
 
     workspace_dir, when given, makes exclusions.json the record of what
-    got filtered and why (Spec: Workspace Flight Exclusions) — omit it
+    got filtered and why (Spec 02 §5.11) — omit it
     (as `_load_or_build_fleet`'s cache-miss path can't avoid doing, since
     it only receives logs_dir there) to fall back to the unpersisted
     ground-session-only behavior.
@@ -448,7 +448,7 @@ def cmd_import(args) -> int:
     return 0
 
 
-# ── flights / exclude / include (Spec: Workspace Flight Exclusions) ─────────
+# ── flights / exclude / include (Spec 02 §5.11) ─────────────────────────────
 
 def cmd_flights(args) -> int:
     logs_dir = resolve_logs_dir(args.logs)
@@ -527,12 +527,11 @@ def cmd_exclude(args) -> int:
 
 def cmd_include(args) -> int:
     workspace_dir = resolve_workspace_dir(args.workspace)
-    # Always an override, never a delete — exclusions.json's own design
-    # principle (§"user_override behaviour": "There is no 'delete from
-    # exclusions.json' operation — the record is permanent") applies the
-    # same way to a user_defined entry as to an auto one; the spec's CLI
-    # section's one-line "removes a user_defined entry" reads as a slip
-    # against that more deliberately-stated invariant, not a second rule.
+    # Always an override, never a delete (Spec 02 §5.11.4): an
+    # exclusions.json entry is permanent, and that applies the same way to
+    # a user_defined entry as to an auto one. The former exclusions spec's
+    # CLI section said `include` "removes a user_defined entry", which
+    # contradicted its own permanence rule; Spec 02 settles it this way.
     try:
         _exclusions.set_user_override(workspace_dir, args.filename, True, args.reason)
     except ValueError as e:

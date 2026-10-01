@@ -100,9 +100,10 @@ _DEFAULT_MIN_FLIGHT_DURATION_MIN = 10
 def resolve_min_flight_duration_min(override: Optional[int] = None) -> int:
     """
     Resolve min_flight_duration_min: argument -> toolkit config.json ->
-    default 10 (Spec: Workspace Flight Exclusions, "config.json addition").
-    No environment variable, unlike engine resolution — this isn't a
-    per-invocation override, it's a workspace-wide auto-exclusion setting.
+    default 10 (Spec 02 §5.11.2). No environment variable, unlike engine
+    resolution — this isn't a per-invocation override, it's an
+    install-wide auto-exclusion setting (Spec 02 Q14 proposes moving it
+    into per-workspace settings).
     """
     if override is not None:
         return override

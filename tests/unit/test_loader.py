@@ -1,8 +1,7 @@
 """
 Unit tests for the Stage 1 bytes-based core loader (Spec 01 §11 Stage 1),
-load_directory()'s ground-session detection (Spec: Ground Session
-Detection), and its exclusions.json integration (Spec: Workspace Flight
-Exclusions).
+load_directory()'s ground-session detection (Spec 02 §5.11.2), and its
+exclusions.json integration (Spec 02 §5.11).
 
 Most tests here use fabricated, synthetic log content only — not real
 flight data — so they run without any private local logs. The
@@ -180,7 +179,7 @@ def test_load_directory_skips_ground_runup_that_briefly_enters_takeoff_roll(tmp_
     assert flights == []
 
 
-# ── Spec: Workspace Flight Exclusions ─────────────────────────────────────
+# ── Spec 02 §5.11 (log admission / exclusions.json) ───────────────────────
 
 def test_load_directory_persists_ground_session_exclusion(tmp_path):
     logs_dir, ws_dir = tmp_path / "logs", tmp_path / "ws"

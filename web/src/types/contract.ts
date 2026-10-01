@@ -526,8 +526,8 @@ export interface ScanResult {
   excluded: { flight_id: string; reason: string }[];
   reanalyzed_flight_ids: string[];
   // Ground session / short flight / corrupt log, newly recorded to
-  // exclusions.json this scan (Spec: Ground Session Detection +
-  // Workspace Flight Exclusions) — keyed by filename, never became a
+  // exclusions.json this scan (Spec 02 §5.11) — keyed by filename,
+  // never became a
   // flight_id at all, unlike `excluded` above (duplicate exports).
   auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
 }
@@ -543,7 +543,7 @@ export interface ScanProgress {
   filename?: string;
 }
 
-// Spec: Workspace Flight Exclusions — a file that never became a
+// Spec 02 §6.8 — a file that never became a
 // flight_id at all (ground_session/short_flight/corrupt_log, auto; or
 // user_defined). Distinct from FlightTableRow.excluded_reason, which is
 // for a flight that WAS analyzed and is just held out of baselines.

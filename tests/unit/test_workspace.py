@@ -19,8 +19,8 @@ from ..conftest import LOGS_DIR, requires_flight_logs
 
 # Two real logs, same aircraft (KTOA tail), used across the real-log
 # tests below — genuine flights (each reaches an airborne phase), not
-# ground sessions, since scan_workspace() now auto-excludes those (Spec:
-# Ground Session Detection + Workspace Flight Exclusions) and these
+# ground sessions, since scan_workspace() now auto-excludes those (Spec
+# 02 §5.11) and these
 # fixtures need to actually become flight_ids for the scan-mechanics
 # tests (rematch, missing, moved-file, etc.) to mean anything.
 _LOG_A = LOGS_DIR / "log_20260417_112526_KTOA.csv"
@@ -272,7 +272,7 @@ class TestScanWithRealLogs:
 
     def test_scan_excludes_ground_session_and_keeps_a_real_flight(self, tmp_path):
         """
-        Spec: Ground Session Detection + Workspace Flight Exclusions,
+        Spec 02 §5.11,
         applied to scan_workspace() (the web UI's folder-scan path) —
         previously this had no filtering at all, unlike load_directory()
         (CLI/notebook path), so a workspace built via "+ Add folder"

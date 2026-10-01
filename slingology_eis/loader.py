@@ -352,7 +352,7 @@ def load_directory(
         counts and degrade trend quality with x-axis points at identical
         engine-hours).
 
-        Ground-session detection (Spec: Ground Session Detection): a file
+        Ground-session detection (Spec 02 §5.11.2): a file
         is excluded if and only if `detect_phases()` finds no row in an
         airborne phase (`phases.AIRBORNE_PHASES` — CLIMB, CRUISE, DESCENT,
         APPROACH, LANDING_ROLL; deliberately not TAKEOFF_ROLL, which is
@@ -371,7 +371,7 @@ def load_directory(
         exclusions.json is neither read nor written.
 
     workspace_dir : Path, optional
-        Spec: Workspace Flight Exclusions. When given (and
+        Spec 02 §5.11. When given (and
         skip_ground_sessions is True), every exclusion decision is looked
         up and recorded in `workspace_dir/exclusions.json` (see
         `exclusions.py`) instead of being silently dropped:
@@ -391,8 +391,8 @@ def load_directory(
         A `user_override: true` entry (set via
         `exclusions.set_user_override`) always keeps its flight in the
         results despite matching one of the rules above. When
-        workspace_dir is None (the default), behaviour is unchanged from
-        the ground-session spec: auto-detect and skip, but don't persist
+        workspace_dir is None (the default), only the ground-session rule
+        applies (Spec 02 §5.11.2): auto-detect and skip, but don't persist
         anything.
 
     Returns a list of (DataFrame, AirframeInfo) tuples, sorted
@@ -441,8 +441,7 @@ def load_directory(
 
             # An existing exclusions.json entry (auto or user) is
             # authoritative — don't re-parse or re-run phase detection to
-            # confirm what's already on record (Spec: Workspace Flight
-            # Exclusions, load_directory() integration).
+            # confirm what's already on record (Spec 02 §5.11.3).
             if (skip_ground_sessions and exclusions_data is not None
                     and _exclusions.is_excluded(filename, exclusions_data)):
                 skipped.append(filename)
@@ -454,8 +453,8 @@ def load_directory(
 
             # ── Phase detection ──────────────────────────────────────────────
             # Runs regardless of skip_ground_sessions so every returned
-            # DataFrame carries a populated 'phase' column (Spec: Ground
-            # Session Detection) — ground-session status is then read
+            # DataFrame carries a populated 'phase' column (Spec 02
+            # §5.11.2) — ground-session status is then read
             # directly off it rather than approximated separately.
             df = detect_phases(df, verbose=False)
 

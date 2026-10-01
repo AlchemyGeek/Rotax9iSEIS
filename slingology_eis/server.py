@@ -141,8 +141,7 @@ def _classify_ingest(content: bytes, filename: str, workspace_dir: Path) -> dict
     scan_workspace() (folder-scan) and load_directory() (CLI) use — this
     used to be a hand-rolled RPM/IAS heuristic that could silently
     disagree with the other two ingestion paths on what counts as a
-    flight (Spec: Ground Session Detection + Workspace Flight
-    Exclusions).
+    flight (Spec 02 §5.11.2).
     """
     df, info = load_log_bytes(content, filename)
     df = detect_phases(df, verbose=False)
@@ -665,8 +664,8 @@ def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifes
 
 def op_list_exclusions(params: dict, ctx: dict) -> Any:
     """
-    The Flights tab's "Skipped" list (Spec: Workspace Flight Exclusions
-    §"Flights tab UI (future)") — every ground_session/short_flight/
+    The Flights tab's "Skipped" list (Spec 02 §5.11.5, Spec 03 §5.1)
+    — every ground_session/short_flight/
     corrupt_log/user_defined entry currently in effect (not overridden),
     for a file that never became a flight_id at all. Distinct from
     op_list_flights_with_status's excluded_reason/in_baselines, which is
@@ -735,8 +734,8 @@ def _find_excluded_log_path(ctx: dict, filename: str) -> Path:
 
 def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
     """
-    Read-only preview of a skipped log's own data (Spec: Workspace Flight
-    Exclusions) — runs analyze_flight() on it exactly like a real flight
+    Read-only preview of a skipped log's own data (Spec 02 §5.11.5)
+    — runs analyze_flight() on it exactly like a real flight
     would, but persists nothing (no flights/<id> created, no
     exclusions.json change). The Skipped panel's "see the flight data"
     action, so a pilot can check whether a ground_session/short_flight/

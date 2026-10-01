@@ -1,5 +1,6 @@
 """
-Unit tests for exclusions.py (docs/specs/08-flight-exclusions.md).
+Unit tests for exclusions.py (docs/specs/02-results-bundle-and-workspace.md
+§5.11, §6.8).
 
 All synthetic — pure JSON/dict logic, no private flight data involved.
 Loader-level integration (load_directory() actually using this module)

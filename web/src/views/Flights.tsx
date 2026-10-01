@@ -156,7 +156,7 @@ export function Flights() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Skipped logs (Spec: Workspace Flight Exclusions) — files that never
+  // Skipped logs (Spec 02 §5.11, Spec 03 §5.1) — files that never
   // became a flight_id at all (ground session / short flight / corrupt
   // log / user-excluded). A separate list from `rows` above, which is
   // exclusively real, analyzed flights.
@@ -242,8 +242,8 @@ export function Flights() {
   const newCount = importResults.filter((r) => r.classification === "new").length;
   const duplicateResults = importResults.filter((r) => r.classification === "duplicate");
   // Ground session / short flight / corrupt log — auto-excluded and
-  // recorded to exclusions.json, never became a flight (Spec: Ground
-  // Session Detection + Workspace Flight Exclusions).
+  // recorded to exclusions.json, never became a flight (Spec 02
+  // §5.11.2).
   const autoExcludedResults = importResults.filter((r) =>
     r.classification === "ground_session" || r.classification === "short_flight" || r.classification === "corrupt_log"
   );
@@ -1041,7 +1041,7 @@ export function Flights() {
         </div>
         )}
 
-        {/* Skipped logs (Spec: Workspace Flight Exclusions) — never became
+        {/* Skipped logs (Spec 02 §5.11, Spec 03 §5.1) — never became
             a flight_id; a distinct list from the table above, not a filter
             over it. */}
         {showSkipped && (

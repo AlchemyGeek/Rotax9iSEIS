@@ -116,7 +116,7 @@ export interface EngineClient {
   removeFlight(flightId: string): Promise<{ removed: boolean; scan_result: ScanResult | null }>;
   removeFlights(flightIds: string[]): Promise<{ removed_flight_ids: string[]; scan_result: ScanResult | null }>;
 
-  // Spec: Workspace Flight Exclusions — files that never became a
+  // Spec 02 §5.11 — files that never became a
   // flight_id (ground session / short flight / corrupt log / user).
   listExclusions(enrich?: boolean): Promise<ExclusionsResult>;
   includeExcludedLog(filename: string, reason?: string): Promise<{ filename: string; included: boolean; scan_result: ScanResult | null }>;

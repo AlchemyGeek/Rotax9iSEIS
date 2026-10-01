@@ -1,6 +1,6 @@
 import type { ExclusionEntry } from "../types/contract";
 
-// Skipped logs (Spec: Workspace Flight Exclusions) — a file that never
+// Skipped logs (Spec 02 §5.11) — a file that never
 // became a flight_id, tagged with why. Deliberately separate from
 // FlightRowStatus's STATUS_LABEL/STATUS_COLOR, which describes a real,
 // analyzed flight's state, not "this was never one." Shared between the

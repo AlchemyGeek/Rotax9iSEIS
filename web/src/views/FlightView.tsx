@@ -65,7 +65,7 @@ function expandSlotsWith(slots: string[], groups: SlotGroupEntry[]): string[] {
 
 export function FlightView() {
   const { flightId, filenameParam } = useParams();
-  // /skipped/:filenameParam (Spec: Workspace Flight Exclusions) — a log
+  // /skipped/:filenameParam (Spec 02 §5.11.5) — a log
   // that never became a flight_id, previewed read-only on this same
   // screen so a pilot can judge an auto-exclusion without first
   // bringing the file into the workspace. encodeURIComponent'd by the

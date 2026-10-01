@@ -73,7 +73,7 @@ _ROWS = "".join(f"2026-01-01,12:{i//60:02d}:{i%60:02d},{2000+i},180\n" for i in 
 _SYNTHETIC_LOG = (_META + _HEADER + _ROWS).encode("utf-8")
 
 
-# ── A synthetic log that actually flies (Spec: Ground Session Detection) ────
+# ── A synthetic log that actually flies (Spec 02 §5.11.2) ─────────────────
 # A minimal high-RPM-from-row-0 CSV with no altitude data can never clear
 # detect_phases()'s airborne-phase requirement, which import_files/
 # ingest_log/scan_workspace's ground-session/short-flight/corrupt-log
@@ -484,7 +484,7 @@ def test_app_and_workspace_settings_round_trip(registry_server):
 
 def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):
     """
-    The Flights tab's "Skipped" list (Spec: Workspace Flight Exclusions):
+    The Flights tab's "Skipped" list (Spec 02 §5.11.5):
     list_exclusions surfaces a ground-session entry that never became a
     flight_id, and include_excluded_log brings it back — in the same
     round trip for a folder-scanned file, since the log is still sitting
@@ -570,7 +570,7 @@ def test_include_excluded_log_unknown_filename(registry_server):
 
 def test_preview_excluded_log_reads_without_persisting(registry_server, tmp_path):
     """
-    Clicking a Skipped row (Spec: Workspace Flight Exclusions) runs the
+    Clicking a Skipped row (Spec 02 §5.11.5) runs the
     same analyze_flight()/downsample a real flight gets, sourced from the
     watched-folder file on disk instead of a workspace flight_id — but
     unlike include_excluded_log, it must persist nothing: no flight_id,

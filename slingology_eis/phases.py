@@ -51,7 +51,7 @@ class Phase(str, Enum):
 
 
 # Phases where the aircraft is off the ground. A file with no row in any of
-# these is a ground session (Spec: Ground Session Detection) — the engine
+# these is a ground session (Spec 02 §5.11.2) — the engine
 # ran, it may have taxied or even run up to full power, but it never flew.
 # Exported so callers outside this module (loader.py's ground-session check)
 # don't hardcode the same phase list a second time.

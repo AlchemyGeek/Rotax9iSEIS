@@ -289,7 +289,7 @@ def test_import_then_fleet_uses_cached_workspace(tmp_path, capsys):
     assert diff["removed"] == []
 
 
-# ── flights / exclude / include (Spec: Workspace Flight Exclusions) ─────────
+# ── flights / exclude / include (Spec 02 §5.11) ─────────────────────────────
 
 def test_flights_lists_ground_session_and_persists_exclusion(synthetic_logs_dir, tmp_path, capsys):
     workspace = tmp_path / "workspace"
