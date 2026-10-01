@@ -482,6 +482,33 @@ def effective_reference(filter_: dict, chronology: list[dict], min_n: int = REFE
     return ref, len(ref) < min_n
 
 
+# Pilot wording for weather bands (fleet.py's OAT_BANDS / DA_BANDS names).
+_OAT_BAND_WORDS = {"cold": "cold days", "mild": "mild days", "warm": "warm days", "hot": "hot days"}
+_DA_BAND_WORDS = {"low": "low density altitude", "moderate": "moderate density altitude",
+                  "high": "high density altitude", "very_high": "very high density altitude"}
+
+
+def comparison_phrase(comparison: dict, kind: Optional[str]) -> str:
+    """What a flight was compared with, for a pilot: "your reference flights
+    on cold days (12 flights)" when it compared within its weather band, else
+    "all your reference flights (20 flights)"."""
+    n = comparison.get("n", 0)
+    if comparison.get("scope") == "band" and comparison.get("band"):
+        band = comparison["band"]
+        words = (_OAT_BAND_WORDS if kind == "oat_band" else _DA_BAND_WORDS).get(band, band.replace("_", " "))
+        where = f"on {words}" if kind == "oat_band" else f"at {words}"
+        return f"your reference flights {where} ({n} flights)"
+    return f"all your reference flights ({n} flights)"
+
+
+def _fmt_value(v: float, digits: int = 1) -> str:
+    return f"{v:.{digits}f}".rstrip("0").rstrip(".") if digits else f"{v:.0f}"
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
 def _z(value: Optional[float], stats: dict, floor: float) -> Optional[float]:
     if value is None or stats.get("mean") is None:
         return None
@@ -606,8 +633,8 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
         if breach_flights:
             last = breach_flights[-1]
             reasons["breached"].append(
-                f"{sum(s['breaches'] for s in breach_flights)} event(s) beyond the filter on "
-                f"{len(breach_flights)} flight(s) since it was {'reviewed' if reviewed_h is not None else 'set'}.")
+                f"{_count(sum(s['breaches'] for s in breach_flights), 'event')} went beyond your filter, on "
+                f"{_count(len(breach_flights), 'flight')} since you {'last reviewed it' if reviewed_h is not None else 'set it'}.")
             fa = fas.get(last["flight_id"])
             ev = next((e for e in (fa.exceedances if fa else []) if e.get("limit_id") == lid), None)
             health["last_breach"] = {"flight_id": last["flight_id"],
@@ -616,36 +643,61 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
         # Drifting: persistent excursions above the frozen baseline, or events getting more frequent.
         if not collecting and len(monitored) >= DRIFT_PERSISTENCE:
             recent = monitored[-DRIFT_PERSISTENCE:]
+            unit = limit.get("unit", "")
+            past = "under" if limit.get("limit_type") == "MIN" else "over"
+            # (field, frozen stats, std floor, z threshold, pilot wording, value format, suffix after the values)
             checks = [("block_s" if ob else "peak_excess", frozen_mag, z_std_floor(limit) if not ob else 1.0,
                        resolve_outlier_z_threshold(baseline_config, mag_key),
-                       "longest block" if ob else "peak excess")]
+                       "the longest overboost block was longer than usual" if ob
+                       else "went further past the limit than usual",
+                       (lambda v: f"{v:.0f} s") if ob else (lambda v: f"{_fmt_value(v)} {unit}"),
+                       "" if ob else f" {past} the limit")]
             if frozen_pct:
                 checks.append(("time_above_pct", frozen_pct, TIME_ABOVE_STD_FLOOR,
-                               resolve_outlier_z_threshold(baseline_config, pct_key), "time past the limit"))
-            for field, frozen, floor, z_thr, label in checks:
-                zs = [_z(s.get(field), comparison_set(frozen, s["band"])[0], floor) for s in recent]
+                               resolve_outlier_z_threshold(baseline_config, pct_key),
+                               "spent more of the flight past the limit than usual",
+                               lambda v: f"{v:.0f}%", " of engine time"))
+            for field, frozen, floor, z_thr, wording, fmt, suffix in checks:
+                comps = [comparison_set(frozen, s["band"]) for s in recent]
+                zs = [_z(s.get(field), stats, floor) for s, (stats, _) in zip(recent, comps)]
                 if all(z is not None and z > z_thr for z in zs):
+                    stats, cmp = comps[-1]
+                    values = " and ".join(fmt(s[field]) for s in recent)
                     reasons["drifting"].append(
-                        f"{label} above your reference on the last {DRIFT_PERSISTENCE} flights "
-                        f"(z {', '.join(f'{z:.1f}' for z in zs)} > {z_thr:g}).")
+                        f"{limit['label']} {wording} on your last {DRIFT_PERSISTENCE} flights: {values}{suffix}, "
+                        f"against a typical {fmt(stats['mean'])} for "
+                        f"{comparison_phrase(cmp, limit.get('stratify_by'))}.")
+                    health.setdefault("drift_details", []).append({
+                        "metric": field, "values": [s[field] for s in recent],
+                        "typical": stats["mean"], "std": stats.get("std"), "std_floor": floor,
+                        "z": [round(z, 2) for z in zs], "z_threshold": z_thr, "comparison": cmp,
+                    })
             if share_ref is not None and len(monitored) >= FREQUENCY_WINDOW:
                 window = monitored[-FREQUENCY_WINDOW:]
-                share_now = sum(1 for s in window if s["events"]) / len(window)
+                with_events = sum(1 for s in window if s["events"])
+                share_now = with_events / len(window)
                 if share_now - share_ref >= FREQUENCY_DELTA:
+                    n_ref = len(ref_pct_values) if not ob else len([fid for fid in ref_ids if fid in mag_pts])
                     reasons["drifting"].append(
-                        f"events on {share_now:.0%} of the last {FREQUENCY_WINDOW} flights, "
-                        f"vs {share_ref:.0%} of the reference flights.")
+                        f"{limit['label']} is exceeded more often: on {with_events} of your last "
+                        f"{FREQUENCY_WINDOW} flights, against {round(share_ref * n_ref)} of {n_ref} "
+                        f"reference flights ({share_ref:.0%}).")
+                    health.setdefault("drift_details", []).append({
+                        "metric": "share_with_events", "values": [share_now], "typical": share_ref,
+                        "threshold_delta": FREQUENCY_DELTA, "window": FREQUENCY_WINDOW,
+                    })
 
         policy = resolve_filter_policy(limit)
         if health["hours_since_review"] is not None and health["hours_since_review"] > policy["review_interval_h"]:
             reasons["review_due"].append(
-                f"{health['hours_since_review']:g} engine hours since {'review' if reviewed_h is not None else 'it was set'} "
-                f"(review every {policy['review_interval_h']:g} h).")
+                f"Time to review this filter: {health['hours_since_review']:g} engine hours since you "
+                f"{'last reviewed it' if reviewed_h is not None else 'set it'} (review every "
+                f"{policy['review_interval_h']:g} h for a {limit.get('severity', 'CAUTION')} limit).")
         if len(monitored) >= QUIET_WINDOW and not any(s["events"] for s in monitored[-QUIET_WINDOW:]):
-            reasons["quiet"].append(f"no events on the last {QUIET_WINDOW} flights — the filter may no longer be needed.")
+            reasons["quiet"].append(f"No exceedances on your last {QUIET_WINDOW} flights — you may no longer need this filter.")
         if collecting:
             reasons["collecting"].append(
-                f"reference has {len(ref_ids)} of the {REFERENCE_MIN_N} flights it needs.")
+                f"Still learning what's normal: {len(ref_ids)} of the {REFERENCE_MIN_N} flights it needs so far.")
 
         status = next((k for k in STATUS_ORDER if reasons[k]), "stable")
         health["status"] = status

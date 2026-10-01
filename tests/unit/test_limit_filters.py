@@ -422,7 +422,11 @@ def test_monitor_drift_needs_two_consecutive_flights():
     assert one["status"] == "stable"
     assert two["status"] == "stable"      # z = 0.8: within the floor
     drift = _health(_TYPICAL + [(1.0, 60.0, None), (1.0, 60.0, None)], 12)
-    assert drift["status"] == "drifting" and "time past the limit" in drift["reasons"][0]
+    assert drift["status"] == "drifting"
+    assert drift["reasons"][0] == ("Fuel pressure maximum spent more of the flight past the limit than usual on your "
+                                   "last 2 flights: 60% and 60% of engine time, against a typical 21% for all your "
+                                   "reference flights (12 flights).")
+    assert drift["drift_details"][0]["comparison"] == {"scope": "all", "band": None, "n": 12}
     single = _health(_TYPICAL + [(1.0, 21.0, None), (1.0, 60.0, None)], 12)
     assert single["status"] == "stable"
 
@@ -443,7 +447,7 @@ def test_monitor_frequency_drift():
     ref = [(1.0 if i % 4 == 0 else None, 1.0 if i % 4 == 0 else 0.0, None) for i in range(12)]
     mon = [(1.0 if i < 8 else None, 1.0 if i < 8 else 0.0, None) for i in range(10)]
     h = _health(ref + mon, 12)
-    assert h["status"] == "drifting" and any("of the last 10 flights" in r for r in h["reasons"])
+    assert h["status"] == "drifting" and any("on 8 of your last 10 flights, against 3 of 12 reference flights (25%)" in r for r in h["reasons"])
 
 
 def test_monitor_review_due():
@@ -468,7 +472,7 @@ def test_monitor_collecting_extends_the_reference_forward():
 
 def test_monitor_priority_breach_over_drift():
     h = _health(_TYPICAL + [(4.0, 60.0, None), (4.0, 60.0, None)], 12)
-    assert h["status"] == "breached" and any("time past the limit" in r for r in h["reasons"])
+    assert h["status"] == "breached" and any("spent more of the flight past the limit" in r for r in h["reasons"])
 
 
 def test_monitor_stratified_comparison_uses_the_flights_band():
@@ -483,3 +487,12 @@ def test_monitor_stratified_comparison_uses_the_flights_band():
     # the same values with no band information would read as drift
     unbanded = _health([(p, v, None) for p, v, _ in ref + warm], 50)
     assert unbanded["status"] == "drifting"
+
+
+def test_drift_reason_names_the_weather_comparison():
+    ref = [(1.0, 5.0 + 0.2 * (i % 3), "cold") for i in range(40)] + \
+          [(1.0, 30.0 + 0.2 * (i % 3), "warm") for i in range(10)]
+    h = _health(ref + [(1.0, 40.0, "warm"), (1.0, 41.0, "warm")], 50)
+    assert h["status"] == "drifting"
+    assert "against a typical 30% for your reference flights on warm days (10 flights)" in h["reasons"][0]
+    assert h["drift_details"][0]["comparison"] == {"scope": "band", "band": "warm", "n": 10}

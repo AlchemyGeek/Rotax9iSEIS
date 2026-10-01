@@ -727,6 +727,20 @@ export interface FilterHealth {
   }[];
   last_breach?: { flight_id: string; event_id: string | null };
   hours_since_review: number | null;
+  // The numbers behind each Drifting reason, for a "details" tooltip; the
+  // reasons themselves are written for pilots.
+  drift_details?: {
+    metric: string;
+    values: number[];
+    typical: number | null;
+    std?: number | null;
+    std_floor?: number;
+    z?: number[];
+    z_threshold?: number;
+    comparison?: { scope: "band" | "all"; band: string | null; n: number };
+    threshold_delta?: number;
+    window?: number;
+  }[];
 }
 
 export interface CopyFiltersResult {
