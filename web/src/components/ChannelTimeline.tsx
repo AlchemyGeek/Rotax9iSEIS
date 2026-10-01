@@ -94,10 +94,19 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
       { xAxis: seg.start_s, itemStyle: { color: phaseColorAlpha(seg.phase, 0.1) } },
       { xAxis: seg.end_s },
     ]);
-    // Evidence-jump highlight paints on top of the phase tint, not under
-    // it — it's calling out one specific narrow window and needs to stay
-    // visually distinct from the phase wash behind it.
-    const highlightArea = highlight ? [{ xAxis: highlight.start_s, itemStyle: { color: "rgba(229,72,77,0.14)" } }, { xAxis: highlight.end_s }] : null;
+    // Evidence-jump highlight — an outline, not a fill. A filled overlay
+    // at any visible opacity sits on the same visual channel as the phase
+    // tint right under it and swamps it completely (confirmed by sampling
+    // actual rendered pixels: a flight's pre-start/engine-start/warmup/
+    // taxi stretch read as one uniform red wash, phase unreadable, even
+    // though the right colors were technically still composited in). A
+    // border marks the same window without ever competing with the tint.
+    const highlightArea = highlight
+      ? [
+          { xAxis: highlight.start_s, itemStyle: { color: "transparent", borderColor: "rgba(229,72,77,0.9)", borderWidth: 1.5 } },
+          { xAxis: highlight.end_s },
+        ]
+      : null;
     const markAreaData = [...phaseTintAreas, ...(highlightArea ? [highlightArea] : [])];
 
     return {
