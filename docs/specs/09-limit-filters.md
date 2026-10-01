@@ -577,6 +577,17 @@ review interval (Phase 4). The CLI `report` command reads the workspace's `filte
   Review due, Drifting once (10 of 10 monitored flights with events vs 70% of the reference),
   never Breached.
 
+**Plain-language monitor (after Phase 5).** Statuses explain themselves without statistics,
+and say what each flight was compared with, so weather grouping (§6.5) is visible without
+being a setting. Drifting reads e.g. "Fuel pressure maximum went further past the limit than
+usual on your last 2 flights: 4.6 and 4.8 psi over the limit, against a typical 3.1 psi for
+your reference flights on cold days (12 flights)" — or "…for all your reference flights" when
+the band has fewer than `n_min`. The z-scores, spread, floor and comparison set move to
+`FilterHealth.drift_details`, shown behind a "How was this decided?" tooltip. The Notes charts
+default to reference / flights since / beyond your filter with a legend; colouring by weather
+band is an opt-in toggle on stratified limits, breaches keeping a red ring. The explainer and
+the filter editor say the same in pilot terms.
+
 **Phase 5 notes.** Server op `copy_filters(source_workspace_id)` into the active workspace:
 refused with `ENGINE_MISMATCH` across engine models (and `BAD_PARAMS` from a workspace into
 itself). Each copy keeps the source's magnitude, duration and note, gets a new id, a fresh

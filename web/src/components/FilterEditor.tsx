@@ -198,10 +198,14 @@ export function FilterEditor({
         <div className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
           OM {limit.limit_type === "MIN" ? "min" : "max"} {limit.limit_value} {unit}
           {flightPeak !== undefined && flightPeak !== null && <> · this flight {sign}{fmt(flightPeak)} {unit}</>}
-          {liveMag.n > 0 && (
-            <> · your aircraft typically {sign}{fmt(liveMag.mean)}, worst {sign}{fmt(liveMag.max)} {unit} ({liveMag.n} flights)</>
-          )}
         </div>
+        {liveMag.n > 0 && (
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
+            {isOverboost
+              ? <>Across all your flights the longest block is typically {fmt(liveMag.mean, 0)} s, at most {fmt(liveMag.max, 0)} s ({liveMag.n} flights).</>
+              : <>On the {liveMag.n} of your flights that went past this limit, it typically went {fmt(liveMag.mean)} {unit} past, at most {fmt(liveMag.max)} {unit}.</>}
+          </div>
+        )}
       </div>
 
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>

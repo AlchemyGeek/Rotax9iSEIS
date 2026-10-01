@@ -25,6 +25,25 @@ function StatusBadge({ status }: { status: FilterStatus }) {
   );
 }
 
+// The statistics behind a Drifting reason, for those who want them.
+function driftDetailText(details: NonNullable<FilterHealth["drift_details"]>): string {
+  return details
+    .map((d) => {
+      if (d.metric === "share_with_events") {
+        return `Event frequency: ${Math.round((d.values[0] ?? 0) * 100)}% of the last ${d.window} flights vs ${Math.round((d.typical ?? 0) * 100)}% of the reference; drifting at +${Math.round((d.threshold_delta ?? 0) * 100)} points or more.`;
+      }
+      const cmp = d.comparison?.scope === "band" ? `reference flights in the "${d.comparison.band}" band` : "all reference flights";
+      const std = Math.max(d.std ?? 0, d.std_floor ?? 0);
+      return (
+        `${d.metric.replace(/_/g, " ")}: compared with ${cmp} (n=${d.comparison?.n}), typical ${d.typical?.toFixed(2)} ± ${std.toFixed(2)}` +
+        `${d.std_floor && (d.std ?? 0) < d.std_floor ? " (minimum spread applied)" : ""}. ` +
+        `Last flights ${d.z?.map((z) => z.toFixed(1)).join(" and ")} std devs above typical; drifting above ${d.z_threshold} ` +
+        `on 2 flights in a row (set per metric in Baselines → Limit filter drift).`
+      );
+    })
+    .join("\n\n");
+}
+
 function History({ history }: { history: LimitFilter["history"] }) {
   return (
     <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -59,9 +78,14 @@ function FiltersExplainer() {
         accept.” You set it, you say why, and exceedances within it collapse into one quiet line. Anything beyond it is still reported at the
         limit's normal severity, marked “beyond your filter”.
       </p>
-      <p style={{ margin: 0 }}>
+      <p style={{ margin: "0 0 6px" }}>
         A filter never switches the baseline off: a flight that is unusually hot for your engine still gets a “watch” insight. And unlike the
         baseline, a filter doesn't keep learning — one that did would slowly accept a problem that is getting worse.
+      </p>
+      <p style={{ margin: 0 }}>
+        For temperature-sensitive limits (such as oil, coolant and EGT temperatures, and fuel pressure), each new flight is
+        compared with your reference flights in similar outside temperature once there are at least 10 of them, so a cold-day
+        reading isn't mistaken for a change. Manifold pressure and overboost are compared by density altitude the same way.
       </p>
     </div>
   );
@@ -235,6 +259,13 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 {h.reasons.map((r, i) => (
                   <li key={i}>{r}</li>
                 ))}
+                {h.drift_details && h.drift_details.length > 0 && (
+                  <li style={{ listStyle: "none", marginLeft: -18 }}>
+                    <span title={driftDetailText(h.drift_details)} style={{ fontSize: 11, color: "var(--text-tertiary)", cursor: "help", textDecoration: "underline dotted" }}>
+                      How was this decided?
+                    </span>
+                  </li>
+                )}
               </ul>
             )}
             <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>Tolerates {summary || "—"}</div>
@@ -245,7 +276,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
               </div>
             )}
             {h && limit && h.series.length > 0 && (
-              <FilterHealthCharts health={h} unit={limit.unit} limitValue={limit.limit_value} stratified={Boolean(limit.stratify_by)} />
+              <FilterHealthCharts health={h} unit={limit.unit} limitValue={limit.limit_value} stratifyKind={limit.stratify_by} />
             )}
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-tertiary)", alignItems: "center", flexWrap: "wrap" }}>
               <span>
