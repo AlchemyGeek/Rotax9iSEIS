@@ -11,6 +11,21 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## Unreleased
+
+**Limit filters: no hidden floors; a plain "not advisable" note instead.**
+
+- **Filter editor:** filtering a limit that was exceeded on fewer than 5 of your last 20 flights
+  is still allowed, but the editor says it isn't advisable and why. Filters are for exceedances
+  that happen regularly, and an occasional one is usually worth looking at each time.
+- **Drifting** compares recent flights with your reference flights as they are, without a
+  minimum spread. If the reference flights never went past the limit, time past it on 2
+  flights in a row reads "…; your reference flights never did." (The z-mode filter band keeps
+  its minimum spread.)
+- `propose_limit_filter` returns `advisory`; `FilterHealth.drift_details` drops `std_floor`,
+  and its `z` is `null` against a zero-spread reference. Analysis results are unchanged, so no
+  re-analysis.
+
 ## 0.21.0 — October 1, 2026
 
 **Phase detection: landing somewhere higher than you took off.** The flight phases measured
