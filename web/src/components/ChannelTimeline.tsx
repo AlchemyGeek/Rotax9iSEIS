@@ -35,17 +35,6 @@ interface Props {
   highlight?: { start_s: number; end_s: number } | null;
   zoomWindow?: [number, number] | null;
   onZoomChange?: (start: number, end: number) => void;
-  // The chart's own background tint (below) is this component's only
-  // other phase-color surface, and it's not a reliable one: the
-  // evidence-jump highlight paints over it at the same opacity-blend
-  // layer, and a short phase's tint can be a couple of pixels wide at
-  // full-flight zoom either way. This strip is a second, independent
-  // phase-color surface synced to whatever's actually in view right now
-  // (not the full flight, like PhaseMinimap above the chart) — solid
-  // color, never touched by the highlight, so "what phase is this" stays
-  // answerable regardless of what else is going on in the chart above it.
-  windowStart?: number;
-  windowEnd?: number;
 }
 
 // One overlaid chart, each channel indexed to 0-100% of its own
@@ -55,7 +44,7 @@ interface Props {
 // y-axis stays honest about being an index rather than a value scale.
 // The active-channel chip row / picker lives one level up (Spec 07 §8) —
 // this component only draws what's already been decided active.
-export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange, windowStart, windowEnd }: Props) {
+export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange }: Props) {
   // Must be memoized, not a plain .filter() — it's a dependency of the
   // option useMemo below, and an unmemoized array is a *new reference on
   // every render*. Dragging to pan fires 'dataZoom' events continuously,
@@ -65,26 +54,6 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
   // the chart's zoom mid-drag — which is exactly the "doesn't
   // consistently move" symptom.
   const active = useMemo(() => activeChannels.filter((id) => series.channels[id]), [activeChannels, series]);
-
-  // Shared by the chart's own dataZoom range, its phase tint, and the
-  // phase strip below it — one definition of "how long is this flight,"
-  // not three that could drift.
-  const fullEnd = useMemo(
-    () =>
-      Math.max(
-        0,
-        ...active.flatMap((id) => {
-          const points = series.channels[id]?.points;
-          return points?.length ? [points[points.length - 1][0] as number] : [];
-        }),
-      ),
-    [active, series],
-  );
-
-  const stripSegments = useMemo(
-    () => clipPhasesToWindow(phases, windowStart ?? 0, windowEnd ?? (fullEnd || 1)),
-    [phases, windowStart, windowEnd, fullEnd],
-  );
 
   const option = useMemo<EChartsOption>(() => {
     const seriesDefs = active.map((id) => {
@@ -105,6 +74,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // here (targeting/timing issues that were hard to pin down), whereas
     // this goes through the same setOption() path that already renders
     // the chart correctly on every other change.
+    const fullEnd = Math.max(0, ...seriesDefs.flatMap(({ data }) => (data.length ? [data[data.length - 1][0] as number] : [])));
     let dzStart = 0;
     let dzEnd = 100;
     if (zoomWindow && fullEnd > 0) {
@@ -200,23 +170,11 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
         markArea: i === 0 ? { silent: true, data: markAreaData } : undefined,
       })),
     } as EChartsOption;
-  }, [active, series, colorFor, phases, highlight, zoomWindow, fullEnd]);
+  }, [active, series, colorFor, phases, highlight, zoomWindow]);
 
   return (
     <div>
       <EChartBase option={option} height={260} onZoom={onZoomChange} />
-      {/* Solid phase strip, synced to whatever's currently in view — see
-          the windowStart/windowEnd comment on Props. Padded to the same
-          32/24px the chart's own grid uses so a segment here lines up
-          with the data directly above it. */}
-      <div style={{ paddingLeft: 32, paddingRight: 24, marginTop: 6 }}>
-        <div style={{ display: "flex", height: 5, borderRadius: 3, overflow: "hidden" }}>
-          {stripSegments.map((seg, i) => (
-            <div key={i} title={phaseLabel(seg.phase)} style={{ width: `${seg.widthPct}%`, background: phaseColor(seg.phase) }} />
-          ))}
-          {stripSegments.length === 0 && <div style={{ width: "100%", background: colors.panelControl }} />}
-        </div>
-      </div>
       <div style={{ fontSize: 11, color: colors.textTertiary, marginTop: 8 }}>
         Each line is indexed to 0–100% of its own flight range so shapes line up — real values with units are at the cursor.
       </div>

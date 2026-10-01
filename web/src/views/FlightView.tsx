@@ -1032,8 +1032,6 @@ export function FlightView() {
                     highlight={highlight}
                     zoomWindow={zoomWindow}
                     onZoomChange={(s, e) => setVisibleWindow([s, e])}
-                    windowStart={visibleWindow[0]}
-                    windowEnd={visibleWindow[1]}
                   />
                 </>
               ) : (
