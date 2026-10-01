@@ -472,6 +472,13 @@ export function FlightView() {
     ensureLoaded(expandSlots(insightSnapshot.activeSlots));
     setInsightSnapshot(null);
     setInsightLabel(undefined);
+    // Same reset "Full flight" does — restoring the channel selection
+    // isn't the same as leaving the insight's view behind; without this
+    // the zoom window and the evidence outline both silently survived
+    // the trip back to Overview.
+    setZoomWindow([0, fullEnd]);
+    setVisibleWindow([0, fullEnd]);
+    setHighlight(null);
   }
 
   // Brings a skipped log back — same override+rescan op the Flights
