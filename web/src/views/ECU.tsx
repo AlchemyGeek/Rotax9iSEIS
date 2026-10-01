@@ -36,6 +36,14 @@ function formatTime(utc: string | null): string {
   return time ? time.replace("Z", "").split(".")[0] : utc;
 }
 
+// context's mean_* fields are plain floating-point averages — rendered
+// raw, "13.2" reads as "13.200000000000001" (binary float rounding, not
+// a real reading). Same one-decimal convention InsightCard already uses
+// for observed_value/excess.
+function fmt1(n: number | null | undefined): string {
+  return n == null ? "—" : n.toFixed(1);
+}
+
 // The B3 fix, made visible: an IN_FLIGHT run's oil pressure reading itself
 // (not a hardcoded flight_id) decides whether OIL PRESS is highlighted as
 // engine-parameter-correlated — RPM > 0 (the engine was actually turning,
@@ -100,17 +108,17 @@ function InFlightCard({
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, marginBottom: 12 }}>
-        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>RPM</div><div className="mono" style={{ fontSize: 12 }}>{c.mean_rpm ?? "—"}</div></div>
+        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>RPM</div><div className="mono" style={{ fontSize: 12 }}>{fmt1(c.mean_rpm)}</div></div>
         <div>
           <div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Oil press</div>
           <div className="mono" style={{ fontSize: 12, color: flagged ? "var(--severity-limit)" : "var(--text-primary)", fontWeight: flagged ? 600 : 400 }}>
-            {c.mean_oil_press_psi ?? "—"} psi
+            {fmt1(c.mean_oil_press_psi)} psi
           </div>
         </div>
-        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Oil temp</div><div className="mono" style={{ fontSize: 12 }}>{c.mean_oil_temp_f ?? "—"}°F</div></div>
-        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Coolant</div><div className="mono" style={{ fontSize: 12 }}>{c.mean_coolant_temp_f ?? "—"}°F</div></div>
-        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Main volts</div><div className="mono" style={{ fontSize: 12 }}>{c.mean_main_volts ?? "—"}V</div></div>
-        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Baro alt</div><div className="mono" style={{ fontSize: 12 }}>{c.mean_baro_alt_ft ?? "—"} ft</div></div>
+        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Oil temp</div><div className="mono" style={{ fontSize: 12 }}>{fmt1(c.mean_oil_temp_f)}°F</div></div>
+        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Coolant</div><div className="mono" style={{ fontSize: 12 }}>{fmt1(c.mean_coolant_temp_f)}°F</div></div>
+        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Main volts</div><div className="mono" style={{ fontSize: 12 }}>{fmt1(c.mean_main_volts)}V</div></div>
+        <div><div style={{ fontSize: 9, color: "var(--text-tertiary)" }}>Baro alt</div><div className="mono" style={{ fontSize: 12 }}>{fmt1(c.mean_baro_alt_ft)} ft</div></div>
       </div>
       {run.co_alerts.length > 0 ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -131,7 +139,7 @@ function InFlightCard({
       )}
       {flagged && (
         <div style={{ fontSize: 11, color: "var(--text-primary)", marginTop: 8 }}>
-          Oil pressure reads {c.mean_oil_press_psi} psi at this event, with the engine turning — the only signal here that lines up with a real engine parameter, not just an avionics indication.
+          Oil pressure reads {fmt1(c.mean_oil_press_psi)} psi at this event, with the engine turning — the only signal here that lines up with a real engine parameter, not just an avionics indication.
         </div>
       )}
       {c.oil_nan_frac != null && c.oil_nan_frac > 0.5 && (
