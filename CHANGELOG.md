@@ -11,6 +11,23 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.20.0 — October 1, 2026
+
+- **WARNING limits can never be filtered.** They are the Operators Manual red lines: a reading
+  past one is either real or a sensor fault to fix, never something to hide. The engine refuses
+  such a filter whatever the profile says, and the Flight view's limit card offers "Why can't I
+  filter this?" instead. The placeholder caps shipped in 0.19.0 are removed. Overboost, treated
+  as WARNING, is locked too. CAUTION limits (e.g. fuel pressure maximum, max continuous RPM, bus
+  voltage) stay filterable.
+- **Fuel pressure minimum no longer fires with the engine stopped.** It is checked only at or
+  above 1,000 rpm (new per-limit `min_rpm`). On the N117ZS logs this removes 102 false WARNING
+  events — one or two on every flight, all readings near 0 psi before start or at shutdown —
+  and no real ones. A phase list couldn't do it: some logs label post-shutdown rows as descent
+  or approach.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
 ## 0.19.0 — September 30, 2026
 
 **Limit filters and change monitoring (Spec 09 Phases 3–5).** Silence a known, consistent

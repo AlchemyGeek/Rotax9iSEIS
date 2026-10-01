@@ -52,7 +52,6 @@
       "max_val": 5800,
       "time_limit_s": 300,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 50, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "5,800 rpm permitted for maximum 5 minutes"
     },
 
@@ -94,7 +93,6 @@
       "unit": "°F",
       "min_val": 122.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 5, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "phases": ["TAKEOFF", "CLIMB", "CRUISE"],
       "note": "Must reach 50°C / 122°F before takeoff. Phase-filtered — pre-flight readings excluded."
     },
@@ -105,7 +103,6 @@
       "unit": "°F",
       "max_val": 248.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 5, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "Maximum 120°C / 248°F normal operation"
     },
     {
@@ -126,7 +123,6 @@
       "unit": "°F",
       "max_val": 248.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 5, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "Maximum 120°C / 248°F at normal operation up to critical altitude"
     },
 
@@ -137,7 +133,6 @@
       "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
@@ -147,7 +142,6 @@
       "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
@@ -157,7 +151,6 @@
       "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
@@ -167,7 +160,6 @@
       "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
 
@@ -178,7 +170,6 @@
       "unit": "inHg",
       "max_val": 53.15,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 0.5, "max_duration_s": 5, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
       "note": "1,800 hPa / 53.15 inHg absolute max"
     },
 
@@ -189,7 +180,8 @@
       "unit": "psi",
       "min_val": 42.0,
       "severity": "WARNING",
-      "filter_policy": { "max_band_abs": 1.0, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm: with the engine stopped the fuel pump is off and the reading falls to 0 psi. Phase labels can't be relied on at the end of a log (the N117ZS logs label post-shutdown rows as DESCENT/APPROACH), so an RPM gate, not a phase list. Removed 102 false WARNING events on 53 flights and no real ones (Spec 09 §16).",
+      "min_rpm": 1000,
       "min_duration_s": 10,
       "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
     },
@@ -236,8 +228,6 @@
   "egt_spread": {
     "high_flow_limit_id": "egt_split_high_flow",
     "low_flow_limit_id": "egt_split_low_flow",
-    "high_flow_filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
-    "low_flow_filter_policy": { "max_band_abs": 20, "max_duration_s": 10, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data." },
     "note": "EGT split limits are conditional on fuel flow — two separate thresholds per OM Chapter 2.1",
     "high_flow_threshold_lph": 3.0,
     "high_flow_spread_limit_f": 392.0,
@@ -251,7 +241,6 @@
   "overboost": {
     "id": "overboost",
     "close_call_margin_s": 60,
-    "filter_policy": { "max_band_abs": 30, "_note": "PLACEHOLDER caps (Spec 09 Q2): not from Rotax or Garmin; conservative starting values to review against sensor accuracy and your own data. Seconds past the 300 s block." },
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
     "time_limit_s": 300,

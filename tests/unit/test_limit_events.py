@@ -451,3 +451,28 @@ def test_per_limit_outliers_use_the_metric_threshold():
         "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
         "outlier_z_threshold_overrides": {"limit_fuel_press_max_time_above_pct": 10.0}})
     assert loose.metrics["limit_fuel_press_max_time_above_pct"]["outliers"] == []
+
+
+# ── RPM gate (fuel pressure minimum) ─────────────────────────────────────────
+
+def test_min_rpm_gate_ignores_readings_with_the_engine_stopped():
+    lim = {"id": "fuel_press_min", "param": "fuel_press_psi", "label": "Fuel pressure minimum", "unit": "psi",
+           "min_val": 42.0, "severity": "WARNING", "min_duration_s": 10, "min_rpm": 1000}
+    n = 120
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        # running 0-59 s (one real 20 s low-pressure event), engine off after
+        "rpm": [5000.0] * 60 + [float("nan")] * 60,
+        "fuel_press_psi": [45.0] * 20 + [40.0] * 20 + [45.0] * 20 + [-0.6] * 60,
+    })
+    events = check_exceedances(df, _cfg(30, [lim]))
+    assert [(e.observed_value, e.duration_s) for e in events] == [(40.0, 20.0)]
+    ungated = {k: v for k, v in lim.items() if k != "min_rpm"}
+    assert len(check_exceedances(df, _cfg(30, [ungated]))) == 1 and \
+        check_exceedances(df, _cfg(30, [ungated]))[0].observed_value == -0.6
+
+
+def test_fuel_pressure_minimum_is_rpm_gated_in_the_profiles():
+    for engine in ("915iS", "916iS"):
+        lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "fuel_press_min")
+        assert lim["min_rpm"] == 1000

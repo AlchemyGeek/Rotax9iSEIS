@@ -68,6 +68,11 @@ class Limit:
     # Per-limit override of the profile's exceedance_merge_gap_s (Spec 09
     # Q3) — None means use the profile value.
     merge_gap_s: Optional[float] = None
+    # Check this limit only while the engine turns at least this fast —
+    # for limits that mean nothing with the engine stopped (fuel pressure
+    # minimum), where phase labels alone can't be trusted at the end of a
+    # log. None = no RPM gate.
+    min_rpm: Optional[float] = None
 
 
 # ── Engine config loader ──────────────────────────────────────────────────────
@@ -210,6 +215,7 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
             filter_policy=entry.get("filter_policy"),
             stratify_by=resolve_stratify_by(entry),
             merge_gap_s=entry.get("exceedance_merge_gap_s"),
+            min_rpm=entry.get("min_rpm"),
         ))
     return limits
 
@@ -282,6 +288,7 @@ def limit_catalog(engine_config: dict) -> list[dict]:
                 "limit_type": limit_type, "limit_value": value, "severity": lim.severity,
                 "time_limit_s": lim.time_limit_s, "report_in_exceedances": lim.report_in_exceedances,
                 "stratify_by": lim.stratify_by,
+                "min_rpm": lim.min_rpm,
             }
             if lim.filter_policy is not None:
                 entry["filter_policy"] = lim.filter_policy
@@ -453,6 +460,10 @@ def check_exceedances(
             working_df = df[df["phase"].isin(lim.phases)]
         else:
             working_df = df
+        # RPM gate — only rows with the engine turning at least min_rpm
+        # (a missing RPM reading counts as not running).
+        if lim.min_rpm is not None and "rpm" in working_df.columns:
+            working_df = working_df[working_df["rpm"].fillna(0) >= lim.min_rpm]
 
         series = working_df[lim.param]
         if series.isna().all():
