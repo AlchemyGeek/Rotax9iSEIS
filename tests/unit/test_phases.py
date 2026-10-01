@@ -164,4 +164,93 @@ def test_real_flights_affected_by_these_bugs_now_reach_cruise(filename):
     result = detect_phases(df, verbose=False)
     counts = result["phase"].value_counts()
     assert counts.get("CRUISE", 0) > 0
-    assert counts.get("TAXI", 0) < len(df) / 2
+    assert counts.get("TAKEOFF_ROLL", 0) > 0 and counts.get("CLIMB", 0) > 0
+    # The bugs left the whole flight as one continuous TAXI segment. (Total
+    # TAXI share isn't the test: log_20260408_141810_KTOA really taxis for
+    # ~28 of its 51 minutes once its taxi-in is labelled TAXI too.)
+    ph = result["phase"]
+    longest_taxi = ph.groupby((ph != ph.shift()).cumsum()).agg(lambda s: len(s) if s.iloc[0] == "TAXI" else 0).max()
+    assert longest_taxi < len(df) / 2
+
+
+# ── Landing away from the departure field's elevation ─────────────────────────
+# The airborne states reach the ground only through AGL tests against the
+# departure field, so a flight that landed somewhere higher used to stay
+# DESCENT/APPROACH through rollout, taxi and shutdown (11 N117ZS logs), and a
+# multi-leg log couldn't detect its next takeoff. Back on the ground is now
+# also "IAS < 30 kt and RPM < 2,000 for 10 s", which resets the field
+# reference to wherever the aircraft is.
+
+def _leg(rows, field_ft, dest_ft, ground_ias=15.0, start=0):
+    """Taxi, takeoff, climb, cruise, descend and land at dest_ft, then taxi."""
+    def add(n, rpm, ias, alt, vs):
+        for _ in range(n):
+            rows.append((rpm, ias, alt, vs))
+    add(60, 1800, ground_ias, field_ft, 0)                     # taxi out
+    add(15, 5600, 45, field_ft, 0)                             # takeoff roll
+    for k in range(300):                                       # climb 800 fpm, 4,000 ft
+        rows.append((5500, 80, field_ft + k * 800 / 60, 800))
+    top = field_ft + 300 * 800 / 60
+    add(300, 5000, 110, top, 0)                                # cruise
+    n_desc = int((top - dest_ft) / (500 / 60))
+    for k in range(n_desc):                                    # descend 500 fpm
+        rows.append((3500, 90, top - k * 500 / 60, -500))
+    add(30, 2200, 60, dest_ft, 0)                              # flare / rollout
+    add(120, 1800, ground_ias, dest_ft, 0)                     # taxi in
+
+
+def _frame_from(rows, pre=30):
+    data = [(0, 0, rows[0][2], 0)] * pre + [(1800, 0, rows[0][2], 0)] * 60 + rows
+    n = len(data)
+    return pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        "rpm": [d[0] for d in data], "ias_kt": [d[1] for d in data],
+        "baro_alt_ft": [d[2] for d in data], "vs_fpm": [d[3] for d in data],
+        "oil_temp_f": [180.0] * n,
+    })
+
+
+def test_landing_at_a_higher_field_returns_to_the_ground():
+    rows = []
+    _leg(rows, field_ft=100, dest_ft=2500)
+    rows += [(0, 0, 2500, 0)] * 30                              # shutdown
+    ph = detect_phases(_frame_from(rows))["phase"].tolist()
+    assert ph[-1] == "SHUTDOWN"
+    assert "TAXI" in ph[-150:]
+    assert "CRUISE" in ph and "DESCENT" in ph
+
+
+def test_multi_leg_log_detects_the_second_takeoff_from_a_higher_field():
+    rows = []
+    _leg(rows, field_ft=100, dest_ft=2500)
+    _leg(rows, field_ft=2500, dest_ft=2500)
+    ph = detect_phases(_frame_from(rows))["phase"].tolist()
+    segments = [p for i, p in enumerate(ph) if i == 0 or ph[i - 1] != p]
+    assert segments.count("TAKEOFF_ROLL") == 2
+    assert segments.count("CLIMB") >= 2
+
+
+def test_engine_out_glide_stays_airborne():
+    rows = []
+    _leg(rows, field_ft=100, dest_ft=100)
+    # replace the end of cruise with a 2-minute engine-out glide at 70 kt
+    i = next(k for k, r in enumerate(rows) if r[1] == 110) + 200
+    for k in range(120):
+        rows[i + k] = (0, 70, rows[i][2] - k * 10, -600)
+    ph = detect_phases(_frame_from(rows))["phase"].tolist()
+    glide = ph[90 + 30 + i: 90 + 30 + i + 120]
+    assert not set(glide) & {"TAXI", "SHUTDOWN", "LANDING_ROLL", "WARMUP"}
+
+
+def test_takeoff_rows_pick_the_first_real_departure():
+    """A runup that briefly reads as TAKEOFF_ROLL and a second departure from
+    another airport are both left out of the takeoff MAP inputs."""
+    from slingology_eis.fleet import takeoff_rows
+
+    phases = (["TAXI"] * 10 + ["TAKEOFF_ROLL"] * 5 + ["TAXI"] * 10 +        # runup: back to taxi
+              ["TAKEOFF_ROLL"] * 5 + ["CLIMB"] * 10 + ["CRUISE"] * 10 +    # departure 1
+              ["TAXI"] * 10 + ["TAKEOFF_ROLL"] * 5 + ["CLIMB"] * 10)       # departure 2
+    df = pd.DataFrame({"phase": phases, "rpm": [5600.0] * len(phases), "seg": range(len(phases))})
+    assert takeoff_rows(df)["seg"].tolist() == list(range(25, 30))
+    no_climb = df.assign(phase=["TAXI"] * 10 + ["TAKEOFF_ROLL"] * 5 + ["TAXI"] * (len(phases) - 15))
+    assert takeoff_rows(no_climb)["seg"].tolist() == list(range(10, 15))   # fallback: all rows

@@ -207,6 +207,25 @@ def build_flight_metrics(
     return metrics_df
 
 
+def takeoff_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Full-power (RPM ≥ 5,500) TAKEOFF_ROLL rows of the first real departure.
+    A multi-leg log has one TAKEOFF_ROLL segment per departure, and pooling
+    them would average different airports' pressure altitude and OAT into a
+    takeoff that never happened. "Real" = the segment is followed by CLIMB;
+    a high-power runup can briefly read as TAKEOFF_ROLL and fall back to
+    TAXI. With no such segment, every full-power TAKEOFF_ROLL row.
+    """
+    rows = df[(df["phase"] == "TAKEOFF_ROLL") & (df["rpm"].fillna(0) >= 5500)]
+    if len(rows):
+        segment = (df["phase"] != df["phase"].shift()).cumsum()
+        next_phase = df.groupby(segment)["phase"].first().shift(-1)
+        departures = [s for s in segment.loc[rows.index].unique() if next_phase.get(s) == "CLIMB"]
+        if departures:
+            rows = rows[segment.loc[rows.index] == departures[0]]
+    return rows
+
+
 def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) -> FlightMetrics:
     """
     Compute one flight's full metrics row. `df` must already have phases
@@ -255,10 +274,7 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
     takeoff_pressure_alt_ft = None
     takeoff_oat_c = None
     if "phase" in df.columns and "rpm" in df.columns and "map_inhg" in df.columns:
-        to_rows = df[
-            (df["phase"] == "TAKEOFF_ROLL") &
-            (df["rpm"].fillna(0) >= 5500)
-            ]
+        to_rows = takeoff_rows(df)
         if len(to_rows) >= 3:
             takeoff_map_inhg = round(float(to_rows["map_inhg"].median()), 2)
             takeoff_pressure_alt_ft = round(float(to_rows["press_alt_ft"].median()), 0) \
