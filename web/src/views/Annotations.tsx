@@ -51,6 +51,13 @@ export function Annotations() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  // Notes and limit filters are both the pilot's own knowledge about this
+  // aircraft — a note is free-text context, a filter is that same kind of
+  // judgment formalized into a rule — so they share this one page and
+  // nav entry, as tabs rather than two unrelated sections stacked on top
+  // of each other (the filters previously pushed notes below the fold).
+  const [activeTab, setActiveTab] = useState<"notes" | "filters">("notes");
+  const [filterCount, setFilterCount] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +146,7 @@ export function Annotations() {
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
         <div>
           <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>
-            Annotations {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
+            Notes {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
             {loading && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}> · loading…</span>}
           </h1>
           <span className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
@@ -147,8 +154,37 @@ export function Annotations() {
           </span>
         </div>
 
-        {!usingFixture && <LimitFiltersSection />}
+        {!usingFixture && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => setActiveTab("notes")}
+              style={{
+                padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                border: activeTab === "notes" ? "1px solid var(--text-secondary)" : "1px solid var(--border)",
+                background: activeTab === "notes" ? "var(--panel-control)" : "transparent",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Notes ({annotations.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("filters")}
+              style={{
+                padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                border: activeTab === "filters" ? "1px solid var(--text-secondary)" : "1px solid var(--border)",
+                background: activeTab === "filters" ? "var(--panel-control)" : "transparent",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Limit filters{filterCount !== null ? ` (${filterCount})` : ""}
+            </button>
+          </div>
+        )}
 
+        {activeTab === "filters" && !usingFixture && <LimitFiltersSection onCount={setFilterCount} />}
+
+        {activeTab === "notes" && (
+        <>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <input
             type="text"
@@ -232,9 +268,11 @@ export function Annotations() {
             );
           })}
           {filtered.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No annotations match this filter.</div>
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>No notes match this filter.</div>
           )}
         </div>
+        </>
+        )}
       </div>
     </NavShell>
   );

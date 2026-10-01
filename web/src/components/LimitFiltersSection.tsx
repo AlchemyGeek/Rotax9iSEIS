@@ -139,7 +139,14 @@ function CopyFilters({ onCopied }: { onCopied: () => void }) {
 }
 
 // Spec 09 §12.2: the Notes page's "Limit filters" section.
-export function LimitFiltersSection() {
+interface Props {
+  // Lets a tab-style host (the Notes page) show "Limit filters (N)" on
+  // its own tab button without duplicating this component's fetch —
+  // called whenever entries actually loads, never while still null.
+  onCount?: (n: number) => void;
+}
+
+export function LimitFiltersSection({ onCount }: Props = {}) {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<FilterListEntry[] | null>(null);
   const [health, setHealth] = useState<Record<string, FilterHealth>>({});
@@ -162,6 +169,10 @@ export function LimitFiltersSection() {
     }
     notifyFiltersChanged();
   }, [load]);
+
+  useEffect(() => {
+    if (entries !== null) onCount?.(entries.length);
+  }, [entries, onCount]);
 
   useEffect(() => {
     let cancelled = false;
