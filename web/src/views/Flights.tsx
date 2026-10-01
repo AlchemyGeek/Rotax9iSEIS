@@ -2,16 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
-import { ChannelTimeline } from "../components/ChannelTimeline";
-import { PhaseCaption } from "../components/PhaseCaption";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
-import { toSeriesFixture } from "../lib/series";
-import { assignChannelColors } from "../lib/channels";
-import { colors as themeColors } from "../theme/colors";
+import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import type {
-  ChannelRegistryEntry, ExclusionEntry, FlightAnalysis, FlightRowStatus, FlightTableRow,
-  InsightSeverity, ScanProgress, SeriesFixture, WorkspaceManifest,
+  ExclusionEntry, FlightRowStatus, FlightTableRow,
+  InsightSeverity, ScanProgress, WorkspaceManifest,
 } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 
@@ -62,29 +58,6 @@ const STATUS_COLOR: Record<FlightRowStatus, string> = {
   ground_session: "var(--text-tertiary)",
   unreadable: "var(--severity-limit)",
 };
-
-// Skipped logs (Spec: Workspace Flight Exclusions) — a file that never
-// became a flight_id, tagged with why. Deliberately separate from
-// STATUS_LABEL/STATUS_COLOR above (FlightRowStatus), which describes a
-// real, analyzed flight's state, not "this was never one."
-const EXCLUSION_CATEGORY_LABEL: Record<ExclusionEntry["category"], string> = {
-  ground_session: "Ground session",
-  short_flight: "Short flight",
-  corrupt_log: "Corrupt log",
-  user_defined: "User excluded",
-};
-const EXCLUSION_CATEGORY_COLOR: Record<ExclusionEntry["category"], string> = {
-  ground_session: "var(--text-tertiary)",
-  short_flight: "var(--text-tertiary)",
-  corrupt_log: "var(--severity-warning)",
-  user_defined: "var(--text-secondary)",
-};
-
-// Skipped-log preview has no chart session/preset machinery to draw a
-// selection from (Spec 07's picker lives on Flight view, not here) — a
-// fixed, small overview set is enough to answer "does this data look
-// right," filtered to whatever the log actually has.
-const PREVIEW_CHANNEL_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
 
 // Sync's progress poll (op_get_scan_progress) — turns "Syncing…" into
 // "Analyzing 42/210" on a large initial sync, which is otherwise one
@@ -184,15 +157,6 @@ export function Flights() {
   const [showSkipped, setShowSkipped] = useState(false);
   const [includingFilename, setIncludingFilename] = useState<string | null>(null);
   const [includeError, setIncludeError] = useState<string | null>(null);
-  // Read-only preview of a skipped log's own data (op_preview_excluded_log
-  // / op_get_excluded_log_series) — persists nothing, so it's plain local
-  // state rather than anything routed through refresh()/exclusions.
-  const [previewFilename, setPreviewFilename] = useState<string | null>(null);
-  const [previewAnalysis, setPreviewAnalysis] = useState<FlightAnalysis | null>(null);
-  const [previewSeries, setPreviewSeries] = useState<SeriesFixture>({ flight_id: "", channels: {} });
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [channelRegistry, setChannelRegistry] = useState<ChannelRegistryEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -351,47 +315,6 @@ export function Flights() {
   useEffect(() => {
     if (showSkipped) fetchSkippedDetails();
   }, [showSkipped, fetchSkippedDetails]);
-
-  // Opens the read-only preview for a skipped log — runs the same
-  // analyze_flight()/downsample used for a real flight (op_preview_
-  // excluded_log / op_get_excluded_log_series), just sourced from the
-  // watched-folder file on disk instead of a workspace flight_id, and
-  // nothing it fetches gets persisted.
-  async function handlePreviewSkippedLog(filename: string) {
-    setPreviewFilename(filename);
-    setPreviewAnalysis(null);
-    setPreviewSeries({ flight_id: filename, channels: {} });
-    setPreviewError(null);
-    setPreviewLoading(true);
-    try {
-      const registry = channelRegistry.length > 0 ? channelRegistry : (await client.getChannelRegistry()).channels;
-      if (channelRegistry.length === 0) setChannelRegistry(registry);
-
-      const { flight_analysis } = await client.previewExcludedLog(filename);
-      setPreviewAnalysis(flight_analysis);
-
-      const ids = PREVIEW_CHANNEL_IDS.filter((id) => flight_analysis.available_channels.includes(id));
-      if (ids.length > 0) {
-        const raw = await client.getExcludedLogSeries(filename, ids);
-        const metaFor = (id: string) => {
-          const c = registry.find((r) => r.id === id);
-          return c ? { label: c.label, unit: c.unit ?? "" } : undefined;
-        };
-        setPreviewSeries(toSeriesFixture(filename, raw, metaFor));
-      }
-    } catch {
-      setPreviewError(`Couldn't load ${filename} — the server may be unreachable, or the file is no longer in a watched folder.`);
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
-  function closePreview() {
-    setPreviewFilename(null);
-    setPreviewAnalysis(null);
-    setPreviewSeries({ flight_id: "", channels: {} });
-    setPreviewError(null);
-  }
 
   // Brings a skipped log back — for a folder-scanned file this creates
   // the flight in the same round trip (the RPC op runs a scan right
@@ -1137,7 +1060,7 @@ export function Flights() {
                 {exclusions.map((e) => (
                   <tr
                     key={e.filename}
-                    onClick={() => handlePreviewSkippedLog(e.filename)}
+                    onClick={() => navigate(`/skipped/${encodeURIComponent(e.filename)}`)}
                     title="view this log's own flight data"
                     style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
                   >
@@ -1186,91 +1109,6 @@ export function Flights() {
           </div>
         )}
       </div>
-
-      {previewFilename && (
-        <SkippedLogPreview
-          filename={previewFilename}
-          analysis={previewAnalysis}
-          series={previewSeries}
-          loading={previewLoading}
-          error={previewError}
-          onClose={closePreview}
-        />
-      )}
     </NavShell>
-  );
-}
-
-// Read-only — no picker, no presets, no chart-session (Spec 07's session
-// context lives above Flight view's router and belongs to real flights
-// only). Just enough to answer "does this skipped log's data look right."
-function SkippedLogPreview({
-  filename, analysis, series, loading, error, onClose,
-}: {
-  filename: string;
-  analysis: FlightAnalysis | null;
-  series: SeriesFixture;
-  loading: boolean;
-  error: string | null;
-  onClose: () => void;
-}) {
-  const activeChannels = useMemo(() => Object.keys(series.channels), [series]);
-  const channelColors = useMemo(() => assignChannelColors(activeChannels, {}), [activeChannels]);
-  const colorFor = useMemo(() => (id: string) => channelColors[id] ?? themeColors.textSecondary, [channelColors]);
-  const phases = analysis?.phases ?? [];
-  const windowEnd = phases.length > 0 ? phases[phases.length - 1].end_s : 0;
-
-  return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 30, background: "rgba(0,0,0,0.5)" }} />
-      <div
-        style={{
-          position: "fixed", top: "5%", left: "50%", transform: "translateX(-50%)", zIndex: 31,
-          width: "min(900px, 92vw)", maxHeight: "90vh", overflowY: "auto",
-          background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12,
-          boxShadow: "0 16px 48px rgba(0,0,0,0.5)", padding: 20,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div>
-            <div className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{filename}</div>
-            <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
-              Preview only — this log stays skipped; nothing here is saved.
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 11, cursor: "pointer" }}
-          >
-            Close
-          </button>
-        </div>
-
-        {loading && (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</div>
-        )}
-        {error && (
-          <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--severity-warning)" }}>{error}</div>
-        )}
-
-        {!loading && !error && analysis && (
-          <>
-            <div style={{ display: "flex", gap: 20, fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-              <span>Date: <span className="mono">{analysis.header.date}</span></span>
-              <span>Aircraft: <span className="mono">{analysis.header.aircraft.ident ?? "unknown"}</span></span>
-              <span>Duration: <span className="mono">{formatDuration(windowEnd / 60)}</span></span>
-            </div>
-            <PhaseCaption phases={phases} windowStart={0} windowEnd={windowEnd} />
-            {activeChannels.length > 0 ? (
-              <ChannelTimeline series={series} activeChannels={activeChannels} colorFor={colorFor} phases={phases} />
-            ) : (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>
-                No overview channels available in this log.
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </>
   );
 }

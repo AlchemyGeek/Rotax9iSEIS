@@ -22,6 +22,7 @@ function App() {
           <Route path="/" element={<Navigate to="/flights" replace />} />
           <Route path="/flights" element={<Flights />} />
           <Route path="/flights/:flightId" element={<FlightView />} />
+          <Route path="/skipped/:filenameParam" element={<FlightView />} />
           <Route path="/trends" element={<Trends />} />
           <Route path="/baselines" element={<Baselines />} />
           <Route path="/ecu" element={<ECU />} />

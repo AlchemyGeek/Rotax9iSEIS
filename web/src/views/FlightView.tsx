@@ -15,9 +15,10 @@ import { getEngineClient } from "../lib/engineClient";
 import { toSeriesFixture } from "../lib/series";
 import { assignChannelColors } from "../lib/channels";
 import { useChartSession } from "../lib/chartSession";
+import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import { colors as themeColors } from "../theme/colors";
 import type {
-  Annotation, ChannelRegistryEntry, ChartPreset, FlightAnalysis,
+  Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
   Insight, InsightSeverity, InsightSet, SeriesFixture, SlotGroupEntry, TopicResult,
 } from "../types/contract";
 
@@ -61,7 +62,15 @@ function expandSlotsWith(slots: string[], groups: SlotGroupEntry[]): string[] {
 }
 
 export function FlightView() {
-  const { flightId } = useParams();
+  const { flightId, filenameParam } = useParams();
+  // /skipped/:filenameParam (Spec: Workspace Flight Exclusions) — a log
+  // that never became a flight_id, previewed read-only on this same
+  // screen so a pilot can judge an auto-exclusion without first
+  // bringing the file into the workspace. encodeURIComponent'd by the
+  // Flights tab's row link since a filename can contain characters a
+  // raw path segment can't.
+  const skippedFilename = filenameParam ? decodeURIComponent(filenameParam) : null;
+  const mode: "flight" | "skipped" = skippedFilename ? "skipped" : "flight";
   const navigate = useNavigate();
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
   const [visibleWindow, setVisibleWindow] = useState<[number, number]>([0, 0]);
@@ -92,6 +101,14 @@ export function FlightView() {
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+
+  // Skipped-log preview only (mode === "skipped") — why it was excluded,
+  // plus Include-button state. No insights/analysis section renders in
+  // this mode, so none of the insight-panel state above is used here.
+  const [skippedInfo, setSkippedInfo] = useState<ExclusionEntry | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [including, setIncluding] = useState(false);
+  const [includeError, setIncludeError] = useState<string | null>(null);
 
   function expandSlots(slots: string[]): string[] {
     return expandSlotsWith(slots, slotGroups);
@@ -129,8 +146,81 @@ export function FlightView() {
     setInsightSnapshot(null);
     setInsightLabel(undefined);
     setSavePresetDraft(null);
+    setLoadError(null);
+    setIncludeError(null);
+
+    // Same Timeline/picker/presets machinery as a real flight — sourced
+    // from the watched-folder file on disk via the preview ops instead
+    // of a workspace flight_id, nothing persisted. No insightSet is
+    // fetched at all (not just left empty) — a skipped log was never
+    // run through evaluate_insights, so there is no "analysis" to show
+    // or quietly render as "nothing fired."
+    async function loadSkipped(filename: string) {
+      setLoading(true);
+      setSkippedInfo(null);
+      setAnnotations([]);
+      setUsingFixture(false);
+      try {
+        const [got, registryResult, presetsResult, appSettings, exclusionsResult] = await Promise.all([
+          client.previewExcludedLog(filename),
+          client.getChannelRegistry(),
+          client.getChartPresets(),
+          client.getAppSettings(),
+          client.listExclusions(),
+        ]);
+        if (cancelled) return;
+        setFlightAnalysis(got.flight_analysis);
+        setFilename(filename);
+        setSkippedInfo(exclusionsResult.entries.find((e) => e.filename === filename) ?? null);
+
+        setChannelRegistry(registryResult.channels);
+        setSlotGroups(registryResult.slot_groups);
+        setMaxSlots(registryResult.max_chart_slots);
+        setPresets(presetsResult.presets);
+
+        let slotsToLoad: string[];
+        if (!chartInitialized) {
+          const lastPresetId = appSettings.flight_chart?.last_preset_id as string | undefined;
+          const initialPreset =
+            presetsResult.presets.find((p) => p.id === lastPresetId) ??
+            presetsResult.presets.find((p) => p.id === "overview") ??
+            presetsResult.presets[0] ?? null;
+          slotsToLoad = initialPreset?.channels ?? [];
+          setActiveSlots(slotsToLoad);
+          setPresetId(initialPreset?.id ?? null);
+          setChartState("preset");
+          setChartInitialized(true);
+        } else {
+          slotsToLoad = carriedState.activeSlots;
+        }
+        setSeriesCache({ flight_id: filename, channels: {} });
+
+        try {
+          const idsToFetch = expandSlotsWith(slotsToLoad, registryResult.slot_groups);
+          const raw = await client.getExcludedLogSeries(filename, idsToFetch);
+          if (!cancelled) {
+            const fixture = toSeriesFixture(filename, raw, (id) => channelMetaFor(id, registryResult.channels));
+            setSeriesCache({ flight_id: filename, channels: fixture.channels });
+            setHasTimeline(true);
+          }
+        } catch {
+          if (!cancelled) setHasTimeline(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadError(`Couldn't load ${filename} — the server may be unreachable, or the file is no longer in a watched folder.`);
+          setHasTimeline(false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
 
     async function load() {
+      if (mode === "skipped") {
+        if (skippedFilename) await loadSkipped(skippedFilename);
+        return;
+      }
       if (!flightId) {
         // No id in the URL: send to a real flight if one exists in this
         // workspace, otherwise fall through to the bundled fixture below.
@@ -264,7 +354,7 @@ export function FlightView() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flightId, navigate]);
+  }, [flightId, skippedFilename, mode, navigate]);
 
   // Slot colors are assigned by identity, not position (Spec 07 §9) — a
   // channel keeps its color for as long as it stays active, so this has
@@ -278,14 +368,21 @@ export function FlightView() {
   const colorFor = useMemo(() => (id: string) => channelColors[id] ?? themeColors.textSecondary, [channelColors]);
 
   function ensureLoaded(ids: string[]) {
-    if (usingFixture || !flightId) return; // fixture series is already fully present in the cache
+    if (usingFixture) return; // fixture series is already fully present in the cache
     const missing = ids.filter((id) => !seriesCache.channels[id]);
     if (missing.length === 0) return;
-    client
-      .getFlightSeries(flightId, missing)
+    const fetchSeries =
+      mode === "skipped" && skippedFilename
+        ? client.getExcludedLogSeries(skippedFilename, missing)
+        : flightId
+          ? client.getFlightSeries(flightId, missing)
+          : null;
+    if (!fetchSeries) return;
+    const seriesId = mode === "skipped" ? (skippedFilename as string) : (flightId as string);
+    fetchSeries
       .then((raw) => {
-        const fixture = toSeriesFixture(flightId, raw, (id) => channelMetaFor(id, channelRegistry));
-        setSeriesCache((prev) => ({ flight_id: flightId, channels: { ...prev.channels, ...fixture.channels } }));
+        const fixture = toSeriesFixture(seriesId, raw, (id) => channelMetaFor(id, channelRegistry));
+        setSeriesCache((prev) => ({ flight_id: seriesId, channels: { ...prev.channels, ...fixture.channels } }));
       })
       .catch(() => {
         // leave the cache as-is — ChannelTimeline already skips channels it has no data for
@@ -365,6 +462,26 @@ export function FlightView() {
     ensureLoaded(expandSlots(insightSnapshot.activeSlots));
     setInsightSnapshot(null);
     setInsightLabel(undefined);
+  }
+
+  // Brings a skipped log back — same override+rescan op the Flights
+  // tab's Skipped panel uses. Lands on the resulting real flight when
+  // the scan created one in this same round trip (the common case for a
+  // folder-scanned file); otherwise there's nothing new to show, so
+  // back to the Flights list.
+  async function handleIncludeSkipped() {
+    if (!skippedFilename) return;
+    setIncluding(true);
+    setIncludeError(null);
+    try {
+      const res = await client.includeExcludedLog(skippedFilename, "included from the flight preview");
+      const newId = res.scan_result?.new_flight_ids[0];
+      navigate(newId ? `/flights/${newId}` : "/flights", { replace: true });
+    } catch {
+      setIncludeError(`Couldn't include ${skippedFilename} — the server may be unreachable. Try again.`);
+    } finally {
+      setIncluding(false);
+    }
   }
 
   async function refreshAnnotations() {
@@ -560,7 +677,11 @@ export function FlightView() {
   return (
     <NavShell
       right={
-        usingFixture ? (
+        mode === "skipped" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Skipped log preview — nothing here is saved</span>
+          </div>
+        ) : usingFixture ? (
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
             <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Sample flight — import your own logs to replace it</span>
           </div>
@@ -573,6 +694,18 @@ export function FlightView() {
       }
     >
       <div style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: 0 }}>
+      {mode === "skipped" && loadError ? (
+        <div style={{ padding: 60, textAlign: "center" }}>
+          <div style={{ fontSize: 14, color: "var(--severity-warning)", marginBottom: 14 }}>{loadError}</div>
+          <button
+            onClick={() => navigate("/flights")}
+            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer" }}
+          >
+            Back to Flights
+          </button>
+        </div>
+      ) : (
+      <>
         {/* Flight header */}
         <div style={{ flexShrink: 0, padding: "18px 24px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 18 }}>
@@ -590,7 +723,53 @@ export function FlightView() {
 
         {/* Body */}
         <div style={{ flexGrow: 1, display: "flex", minHeight: 0 }}>
-          {/* Insight list */}
+          {mode === "skipped" ? (
+            <div style={{ width: 376, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0, padding: "16px 20px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Why this was skipped</div>
+              {skippedInfo ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                      border: `1px solid ${EXCLUSION_CATEGORY_COLOR[skippedInfo.category]}`, color: EXCLUSION_CATEGORY_COLOR[skippedInfo.category],
+                    }}>
+                      {EXCLUSION_CATEGORY_LABEL[skippedInfo.category]}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                      {skippedInfo.source === "auto" ? "auto-detected" : "excluded by you"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>{skippedInfo.reason}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 16 }}>
+                  No longer in exclusions.json — it may already have been included since you opened this link.
+                </div>
+              )}
+
+              {flightAnalysis.quality.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", marginBottom: 6 }}>Quality notes</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {flightAnalysis.quality.map((q, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)" }}>{q.message}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleIncludeSkipped}
+                disabled={including}
+                style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, fontSize: 12, cursor: including ? "default" : "pointer", alignSelf: "flex-start" }}
+              >
+                {including ? "Including…" : "Include as a real flight"}
+              </button>
+              {includeError && (
+                <div style={{ fontSize: 11, color: "var(--severity-warning)", marginTop: 8 }}>{includeError}</div>
+              )}
+            </div>
+          ) : (
           <div style={{ width: 376, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ padding: "16px 20px 10px", flexShrink: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -655,6 +834,7 @@ export function FlightView() {
               )}
             </div>
           </div>
+          )}
 
           {/* Main column */}
           <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
@@ -805,39 +985,43 @@ export function FlightView() {
               />
             </div>
 
-            <div style={{ flexShrink: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Analysis</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                {insightSet.topics.map((t) => {
-                  const topInsight = topTopicInsight(t);
-                  const clickable = Boolean(topInsight && topInsight.evidence.length > 0);
-                  const Wrapper = clickable ? "a" : "div";
-                  return (
-                    <Wrapper
-                      key={t.topic_id}
-                      href={clickable ? "#timeline" : undefined}
-                      onClick={
-                        clickable
-                          ? (e: React.MouseEvent) => {
-                              e.preventDefault();
-                              if (topInsight) handleEvidenceClick(topInsight);
-                            }
-                          : undefined
-                      }
-                      style={{ display: "block", background: "var(--panel)", borderRadius: 10, padding: "13px 15px", cursor: clickable ? "pointer" : "default" }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{t.topic_id.replace(/_/g, " ")}</span>
-                        {topInsight && <SeverityBadge severity={topInsight.severity} size="sm" />}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>{t.analysis.text}</div>
-                    </Wrapper>
-                  );
-                })}
+            {mode === "flight" && (
+              <div style={{ flexShrink: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Analysis</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                  {insightSet.topics.map((t) => {
+                    const topInsight = topTopicInsight(t);
+                    const clickable = Boolean(topInsight && topInsight.evidence.length > 0);
+                    const Wrapper = clickable ? "a" : "div";
+                    return (
+                      <Wrapper
+                        key={t.topic_id}
+                        href={clickable ? "#timeline" : undefined}
+                        onClick={
+                          clickable
+                            ? (e: React.MouseEvent) => {
+                                e.preventDefault();
+                                if (topInsight) handleEvidenceClick(topInsight);
+                              }
+                            : undefined
+                        }
+                        style={{ display: "block", background: "var(--panel)", borderRadius: 10, padding: "13px 15px", cursor: clickable ? "pointer" : "default" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{t.topic_id.replace(/_/g, " ")}</span>
+                          {topInsight && <SeverityBadge severity={topInsight.severity} size="sm" />}
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>{t.analysis.text}</div>
+                      </Wrapper>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
+      </>
+      )}
       </div>
     </NavShell>
   );
