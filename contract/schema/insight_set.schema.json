@@ -96,6 +96,7 @@
         },
         "note": { "type": "string" },
         "limit_id": { "type": "string", "description": "Spec 09 §11.3: set on limit_exceedances insights." },
+        "filterable": { "type": "boolean", "description": "Spec 09 §6.3: whether this insight's limit can be filtered." },
         "filter": {
           "type": "object",
           "required": ["filter_id", "outcome"],

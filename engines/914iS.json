@@ -57,7 +57,7 @@
       "min_val": 29.0,
       "severity": "WARNING",
       "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
-      "filter_policy": { "filterable": false },
+      "filter_policy": { "filterable": false, "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading." },
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {

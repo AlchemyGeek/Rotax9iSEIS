@@ -847,7 +847,7 @@ export function FlightView() {
                     limitType={limitFor(insight)?.limit_type}
                     filterAction={
                       limitId
-                        ? { label: insight.filter ? "Edit filter…" : "Filter this limit…", onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id) }
+                        ? { label: insight.filter ? "Edit filter…" : insight.filterable === false ? "Why can't I filter this?" : "Filter this limit…", onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id) }
                         : undefined
                     }
                     note={existing?.note ?? insight.note}

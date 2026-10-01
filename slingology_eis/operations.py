@@ -1077,6 +1077,8 @@ def evaluate_insights(
             if ins.get("comparison"):
                 message["values"] = {"comparison": ins["comparison"]}
             extra = {"filter": ins["filter"]} if ins.get("filter") else {}
+            if "filterable" in ins:
+                extra["filterable"] = ins["filterable"]
             insight = {
                 "id": insight_id,
                 "topic_id": topic_id,
@@ -1196,6 +1198,8 @@ def evaluate_insights(
     raw = topics.overboost(ob_total, ob_max, ob_limit, ob_exceeded, close_call_s=ob_close_call,
                            filter_limit=ob_filter_limit, filter_text=ob_filter_text)
     for ins in raw["insights"]:
+        if ob_om is not None:
+            ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
         outcome = ins.pop("filter_outcome", None)
         if outcome:
             ins["filter"] = {"filter_id": ob_filter["id"], "outcome": outcome}
@@ -1295,6 +1299,10 @@ def evaluate_insights(
             "confidence": _confidence(0),
             "limit_id": g["limit_id"],
             "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+            # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
+            # can say up front when it can't.
+            "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
+                           if g["limit_id"] in limits_by_id else False),
         }
         if kind != "exceedance":
             limit_insight["filter"] = {"filter_id": g["filter"]["id"],

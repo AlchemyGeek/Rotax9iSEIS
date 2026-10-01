@@ -128,7 +128,10 @@ export function FilterEditor({
     return (
       <div style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "var(--text-secondary)" }}>
         <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--text-primary)" }}>{limit.label} can't be filtered</div>
-        <div>{policy.reason}</div>
+        <div style={{ lineHeight: 1.5 }}>{policy.reason}</div>
+        <div style={{ lineHeight: 1.5, marginTop: 6, color: "var(--text-tertiary)" }}>
+          It will keep appearing on every flight where it happens. You can add a note to the card to record what you know about it.
+        </div>
         <div style={{ marginTop: 8 }}>
           <button style={buttonStyle(false)} onClick={onCancel}>Close</button>
         </div>
