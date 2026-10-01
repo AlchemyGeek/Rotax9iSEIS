@@ -60,11 +60,14 @@ def resolve_filter_policy(limit: dict) -> dict:
 
     filterable, reason = True, None
     if raw.get("filterable") is False:
-        filterable, reason = False, "This limit is not filterable (engine profile)."
+        # The profile says why, in words for the pilot (`reason`).
+        filterable = False
+        reason = raw.get("reason") or "The engine profile marks this limit as one that can't be filtered."
     elif warning and (max_band_abs is None or (duration_allowed and max_duration_s is None)):
         filterable = False
-        reason = ("WARNING limits become filterable only once the engine profile declares "
-                  "their caps (filter_policy.max_band_abs" + (" and max_duration_s)." if duration_allowed else ")."))
+        reason = ("This is a WARNING limit. Filtering one needs safety caps in the engine profile — how far past "
+                  "the limit" + (" and for how long" if duration_allowed else "") + " a filter may ever tolerate — "
+                  "and this engine profile doesn't set them for this limit yet.")
     return {
         "filterable": filterable,
         "reason": reason,

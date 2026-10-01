@@ -496,3 +496,18 @@ def test_drift_reason_names_the_weather_comparison():
     assert h["status"] == "drifting"
     assert "against a typical 30% for your reference flights on warm days (10 flights)" in h["reasons"][0]
     assert h["drift_details"][0]["comparison"] == {"scope": "band", "band": "warm", "n": 10}
+
+
+def test_non_filterable_limits_say_why_in_plain_words():
+    oil = resolve_filter_policy(CAT["oil_press_min"])
+    assert not oil["filterable"] and "lubrication problem" in oil["reason"]
+    uncapped = resolve_filter_policy({k: v for k, v in CAT["oil_temp_max"].items() if k != "filter_policy"})
+    assert "safety caps" in uncapped["reason"] and "max_band_abs" not in uncapped["reason"]
+
+
+def test_limit_insights_say_whether_they_can_be_filtered():
+    fa = _flight([_exc("oil_press_min", "oil_press_psi", "Oil pressure min (>3500 rpm)", 100, 30, 27.0, 29.0,
+                       "MIN", "WARNING"), _fp(500, 40, 47.0)])
+    ins = {i["limit_id"]: i for i in _limit_topic(evaluate_insights(fa, update_fleet([]), RULES))["insights"]}
+    assert ins["oil_press_min"]["filterable"] is False
+    assert ins["fuel_press_max"]["filterable"] is True

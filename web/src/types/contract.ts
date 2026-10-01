@@ -131,6 +131,8 @@ export interface Insight {
   limit_id?: string;
   filter?: { filter_id: string; outcome: "suppressed" | "breach" };
   events?: InsightEvent[];
+  // Spec 09 §6.3: false when this limit can't be filtered (the editor says why).
+  filterable?: boolean;
 }
 
 export interface InsightEvent {
