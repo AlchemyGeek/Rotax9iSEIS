@@ -52,6 +52,21 @@ export function phaseLabel(phase: string): string {
   return phase.toLowerCase().replace(/_/g, " ");
 }
 
+// The phase active at a given elapsed_s — the synced-cursor readout's use
+// (Spec 03 v0.7 §5.2's chart tint already encodes this visually; this is
+// the same fact read back as text). Picks whichever phase most recently
+// started at or before t, not an exact [start_s, end_s) containment
+// check, so a cursor sitting exactly on the flight's last sample (at or
+// past that phase's own end_s, a common rounding case) still resolves to
+// it instead of coming up empty.
+export function phaseAtTime(phases: Phase[], t: number): string | undefined {
+  let found: Phase | undefined;
+  for (const p of phases) {
+    if (p.start_s <= t && (!found || p.start_s > found.start_s)) found = p;
+  }
+  return found?.phase;
+}
+
 // Shared by the phase band (clipped to the current zoom window) and the
 // minimap (always clipped to the full flight) — Spec 03 v0.4 §6.1: "two
 // views of the same phase data at two different scopes... implement from

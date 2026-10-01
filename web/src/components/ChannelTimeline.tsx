@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
 import { EChartBase } from "./EChartBase";
 import type { Phase, SeriesFixture } from "../types/contract";
-import { clipPhasesToWindow, phaseColorAlpha } from "../lib/phases";
+import { clipPhasesToWindow, phaseAtTime, phaseColor, phaseColorAlpha, phaseLabel } from "../lib/phases";
 import { colors, fontMono } from "../theme/colors";
 
 // Each channel is now downsampled independently (Spec 07 §11.2) — active
@@ -117,7 +117,11 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
           const t = Number(list[0].axisValue);
           const mm = String(Math.floor(t / 60)).padStart(2, "0");
           const ss = String(Math.round(t % 60)).padStart(2, "0");
-          const lines = [`<div style="font-family:${fontMono};font-size:10px;color:${colors.textSecondary};margin-bottom:4px;">${mm}:${ss} elapsed</div>`];
+          const phase = phaseAtTime(phases, t);
+          const phaseTag = phase
+            ? ` <span style="color:${phaseColor(phase)};">&#9679;</span> ${phaseLabel(phase)}`
+            : "";
+          const lines = [`<div style="font-family:${fontMono};font-size:10px;color:${colors.textSecondary};margin-bottom:4px;">${mm}:${ss} elapsed${phaseTag}</div>`];
           for (const { unit, color, data } of seriesDefs) {
             const point = nearestPoint(data, t);
             const real = point?.[2];
