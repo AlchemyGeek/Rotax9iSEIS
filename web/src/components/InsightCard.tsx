@@ -90,11 +90,22 @@ export function InsightCard({
   onDeleteNote?: () => void;
   notesEnabled?: boolean;
 }) {
-  const clickable = Boolean(onClick && insight.evidence.length > 0);
-  const Wrapper = clickable ? "a" : "div";
   const [expanded, setExpanded] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const events = insight.events ?? [];
+  // A card with several events has no single "the evidence" to jump to —
+  // insight.evidence[0] is just whichever event happened to sort first,
+  // not necessarily the one worth seeing. Clicking the card used to jump
+  // there anyway under the same "View evidence →" label a single-event
+  // card shows, so it read as broken/arbitrary for anyone who clicked
+  // expecting the same one-destination behavior. Multi-event cards now
+  // expand the list on click instead (same as the "Show N events" line
+  // below) — a specific event row (already correct, unchanged) is the
+  // only way to jump to a particular moment.
+  const multiEvent = events.length > 1;
+  const jumpable = Boolean(onClick && insight.evidence.length > 0 && !multiEvent);
+  const clickable = jumpable || multiEvent;
+  const Wrapper = clickable ? "a" : "div";
 
   function toggleEvents(e: React.MouseEvent) {
     e.preventDefault();
@@ -111,7 +122,13 @@ export function InsightCard({
   return (
     <Wrapper
       href={clickable ? "#timeline" : undefined}
-      onClick={clickable ? (e: React.MouseEvent) => { e.preventDefault(); onClick?.(); } : undefined}
+      onClick={
+        jumpable
+          ? (e: React.MouseEvent) => { e.preventDefault(); onClick?.(); }
+          : multiEvent
+            ? (e: React.MouseEvent) => toggleEvents(e)
+            : undefined
+      }
       style={{
         display: "block",
         background: "var(--panel)",
@@ -128,9 +145,9 @@ export function InsightCard({
         {topicId.replace(/_/g, " ")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
-      {(clickable || filterAction) && (
+      {(jumpable || filterAction) && (
         <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
-          {clickable && <span>View evidence →</span>}
+          {jumpable && <span>View evidence →</span>}
           {filterAction && (
             <span
               onClick={(e) => {
@@ -147,7 +164,7 @@ export function InsightCard({
       )}
       {events.length > 1 && (
         <div onClick={toggleEvents} style={{ fontSize: 11, marginTop: 6, color: "var(--text-tertiary)", cursor: "pointer" }}>
-          {eventsOpen ? "▾ Hide events" : `▸ Show ${events.length} events`}
+          {eventsOpen ? "▾ Hide events" : `▸ Show ${events.length} events — click one to view on the chart →`}
         </div>
       )}
       {events.length > 1 && eventsOpen && <EventRows events={events} unit={unit} limitType={limitType} onEventClick={onEventClick} />}
