@@ -158,62 +158,9 @@
     {
       "topic_id": "limit_exceedances",
       "analysis": {
-        "text": "5 OM limits exceeded this flight (13 events):"
+        "text": "4 OM limits exceeded this flight (11 events):"
       },
       "insights": [
-        {
-          "id": "0863a67c64bad625",
-          "topic_id": "limit_exceedances",
-          "rule_id": "limit_exceedances.threshold",
-          "trigger": "threshold",
-          "severity": "limit",
-          "message": {
-            "text": "\u26a0 [WARNING] Fuel pressure minimum: 2 events, worst -0.6 psi (min 42.0 psi), 3 min 10 s past the limit."
-          },
-          "evidence": [
-            {
-              "kind": "series_window",
-              "channels": [
-                "fuel_press_psi"
-              ],
-              "start_s": 0,
-              "end_s": 184.5
-            },
-            {
-              "kind": "series_window",
-              "channels": [
-                "fuel_press_psi"
-              ],
-              "start_s": 16095.5,
-              "end_s": 16229.5
-            }
-          ],
-          "confidence": {
-            "level": "VERY_LOW",
-            "n": 0
-          },
-          "limit_id": "fuel_press_min",
-          "events": [
-            {
-              "event_id": "fuel_press_min@2026-04-23T20:06:16",
-              "start_utc": "2026-04-23T20:06:16",
-              "elapsed_s": 0.0,
-              "duration_s": 123.0,
-              "observed_value": -0.4,
-              "excess": 42.4,
-              "suppressed_by": null
-            },
-            {
-              "event_id": "fuel_press_min@2026-04-24T00:35:05",
-              "start_utc": "2026-04-24T00:35:05",
-              "elapsed_s": 16129.0,
-              "duration_s": 67.0,
-              "observed_value": -0.6,
-              "excess": 42.6,
-              "suppressed_by": null
-            }
-          ]
-        },
         {
           "id": "7fcca3d43ba9a5b2",
           "topic_id": "limit_exceedances",
@@ -248,7 +195,8 @@
               "excess": 70.0,
               "suppressed_by": null
             }
-          ]
+          ],
+          "filterable": true
         },
         {
           "id": "a84c904cb60f0850",
@@ -301,7 +249,8 @@
               "excess": 320.0,
               "suppressed_by": null
             }
-          ]
+          ],
+          "filterable": true
         },
         {
           "id": "6dd22c45f7e27855",
@@ -439,7 +388,8 @@
               "excess": 4.4,
               "suppressed_by": null
             }
-          ]
+          ],
+          "filterable": true
         },
         {
           "id": "1ee371b61ce79d34",
@@ -475,7 +425,8 @@
               "excess": 11.5,
               "suppressed_by": null
             }
-          ]
+          ],
+          "filterable": true
         }
       ],
       "metric_ids": []

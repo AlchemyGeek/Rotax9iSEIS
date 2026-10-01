@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.8 — implemented (engine 0.19.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
+**Status:** v0.9 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -18,6 +18,7 @@
 | 0.6 | Phase 3 implemented, including z mode and the frozen baseline (moved up from Phase 4, since z needs them). Q1 and Q2 adopted as proposed, with 916iS placeholder caps listed in §6.3. Where the computed limits' policies live (§6.3); notes follow a limit across filtered/breach insights (§10.1). |
 | 0.7 | Phase 4 implemented. A std floor for `time_above_pct` added to §13; the effective reference, invalid filters and the Drifting windows pinned down (§8, §16). |
 | 0.8 | Phase 5 implemented: copy filters between same-model workspaces (§9). |
+| 0.9 | WARNING limits are never filterable; placeholder caps removed (§6.3, Q2). New `min_rpm` gate (§6.6); `fuel_press_min` checked only at ≥ 1,000 rpm. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -187,18 +188,26 @@ The WARNING default is fail-safe: a WARNING limit becomes filterable only once i
 
 `filterable: false` makes a limit non-filterable regardless of severity. Proposed default for `oil_press_min`: non-filterable (Q1).
 
-**As implemented (Phase 3).** `oil_press_min` carries `"filter_policy": {"filterable": false}` in all four profiles. The computed limits' policies live in their own sections: `egt_spread.high_flow_filter_policy` / `low_flow_filter_policy`, and `overboost.filter_policy` (band cap in seconds; no duration cap). The 916iS placeholder caps, each marked `PLACEHOLDER` in the profile, chosen conservatively (about sensor-accuracy scale) pending real values (Q2):
+**Superseded in v0.9: WARNING limits are never filterable.** The caps above were never
+sourced (Rotax and Garmin publish no such numbers) and the N117ZS log set has no legitimate case:
+its only WARNING events, 102 on 53 flights, were all fuel pressure minimum read with the engine
+stopped (§6.6). A WARNING limit is an OM red line — the reading is either real or a sensor fault
+to fix at the source — so the engine refuses a filter on one regardless of `filter_policy`
+(`FILTER_NOT_ALLOWED`, with a plain explanation in the editor), and the placeholder caps were
+removed. Overboost, treated as WARNING (§6.4), is locked with them; its band mechanics remain in
+code for a CAUTION limit that might use them. CAUTION limits keep the table's defaults and may
+declare optional caps and `note_required`. `filterable: false` with a pilot-facing `reason` still
+locks a CAUTION limit; `oil_press_min` keeps its own reason text.
 
-| Limit | `max_band_abs` | `max_duration_s` |
-|---|---|---|
-| `rpm_takeoff_max` | 50 rpm | 10 s |
-| `oil_temp_takeoff_min`, `oil_temp_max`, `coolant_temp_max` | 5 °F | 10 s |
-| `egt1_max` … `egt4_max`, `egt_split_high_flow`, `egt_split_low_flow` | 20 °F | 10 s |
-| `map_max` | 0.5 inHg | 5 s |
-| `fuel_press_min` | 1.0 psi | 10 s |
-| `overboost` | 30 s | — |
+### 6.6 RPM gate
 
-The 912iS, 914iS and 915iS profiles declare no caps, so their WARNING limits are not filterable yet (fail-safe default).
+New optional per-limit field `min_rpm`: the limit is checked only on rows where RPM is at least
+this (a missing RPM reading counts as stopped). It exists for limits that mean nothing with the
+engine stopped, where phase labels can't be trusted: on 10 N117ZS flights, post-shutdown rows
+(RPM gone, airspeed ~15 kt) are labelled DESCENT or APPROACH, so a phase list (e.g.
+CLIMB/CRUISE/DESCENT) would still let 5 false events through. `fuel_press_min` (915iS, 916iS)
+ships with `min_rpm: 1000`, below the 1,800 rpm idle minimum: 102 events on 53 flights → 0, with
+no sub-42 psi stretch of 10 s or more at or above 1,000 rpm in any log.
 
 ### 6.4 Overboost
 
@@ -487,7 +496,8 @@ All values are initial placeholders, to be tuned on the full log set.
 | `quiet_window` | 10 monitored flights | engine |
 | `review_interval_h` | 50 h CAUTION, 25 h WARNING | profile default |
 | `close_call_margin_s` | 60 s | profile `overboost` |
-| WARNING caps (`max_band_abs`, `max_duration_s`) | PLACEHOLDER per limit | profile `filter_policy` |
+| ~~WARNING caps~~ | removed in v0.9: WARNING limits are never filterable | — |
+| `min_rpm` (`fuel_press_min`) | 1,000 rpm | profile |
 | `stratify_by` | per §6.5 | profile |
 
 ## 14. Acceptance
@@ -516,7 +526,7 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 | # | Question | Proposed answer |
 |---|---|---|
 | Q1 | Should `oil_press_min` (>3500 rpm) be non-filterable? It is the most direct sign of lubrication failure. | **Adopted as proposed (Phase 3):** `filterable: false` in all profiles. Reversible in the profile. |
-| Q2 | Where do the WARNING caps come from? | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. **Phase 3:** 916iS ships the placeholder caps in §6.3, marked `PLACEHOLDER`; still to be replaced with sourced values. |
+| Q2 | ~~Where do the WARNING caps come from?~~ **Superseded (v0.9): WARNING limits are never filterable (§6.3).** | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. **Phase 3:** 916iS ships the placeholder caps in §6.3, marked `PLACEHOLDER`; still to be replaced with sourced values. |
 | Q3 | One global merge gap, or per limit? | **Resolved (Phase 1).** Global 30 s, with a per-limit override; `rpm_idle_min` uses 0 s (§6.2). |
 | Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | Out of scope here; filtered independently for now. |
 | Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |

@@ -257,7 +257,7 @@ export function FilterEditor({
 
       <div>
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
-          Why is this fine on your aircraft?{policy.note_required ? " (required for a WARNING limit)" : ""}
+          Why is this fine on your aircraft?{policy.note_required ? " (required for this limit)" : ""}
         </div>
         <textarea
           value={note}

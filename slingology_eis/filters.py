@@ -39,13 +39,19 @@ def is_overboost(limit: dict) -> bool:
 
 # ── Policy (§6.3) ───────────────────────────────────────────────────────────
 
+WARNING_REASON = ("This is a WARNING limit — an Operators Manual red line — so it is always reported and "
+                  "can't be filtered. If a reading looks wrong, have the sensor checked rather than hiding it.")
+
+
 def resolve_filter_policy(limit: dict) -> dict:
     """
-    The effective filter policy for a catalogue entry: the profile's
-    `filter_policy` over the §6.3 severity defaults. WARNING limits are
-    fail-safe: filterable only once the profile declares their caps
-    (`max_band_abs`, and `max_duration_s` unless the limit is overboost,
-    which has no duration condition, §6.4). z is never allowed on WARNING.
+    The effective filter policy for a catalogue entry (§6.3). WARNING
+    limits — the OM red lines, overboost included (§6.4) — are never
+    filterable, whatever the profile says: a red-line exceedance is either
+    real or a sensor fault to fix at the source, never something to hide.
+    A CAUTION limit is filterable unless its profile `filter_policy` says
+    `filterable: false` (with a pilot-facing `reason`), and may declare
+    optional caps (`max_band_abs`, `max_duration_s`).
 
     Returns {filterable, reason, severity, magnitude_modes,
     duration_allowed, max_band_abs, max_duration_s, note_required,
@@ -53,30 +59,25 @@ def resolve_filter_policy(limit: dict) -> dict:
     """
     raw = limit.get("filter_policy") or {}
     severity = limit.get("severity", "CAUTION")
-    warning = severity == "WARNING"
     duration_allowed = not is_overboost(limit)
-    max_band_abs = raw.get("max_band_abs")
-    max_duration_s = raw.get("max_duration_s") if duration_allowed else None
 
     filterable, reason = True, None
-    if raw.get("filterable") is False:
+    if severity == "WARNING":
+        filterable = False
+        reason = raw.get("reason") or WARNING_REASON
+    elif raw.get("filterable") is False:
         # The profile says why, in words for the pilot (`reason`).
         filterable = False
         reason = raw.get("reason") or "The engine profile marks this limit as one that can't be filtered."
-    elif warning and (max_band_abs is None or (duration_allowed and max_duration_s is None)):
-        filterable = False
-        reason = ("This is a WARNING limit. Filtering one needs safety caps in the engine profile — how far past "
-                  "the limit" + (" and for how long" if duration_allowed else "") + " a filter may ever tolerate — "
-                  "and this engine profile doesn't set them for this limit yet.")
     return {
         "filterable": filterable,
         "reason": reason,
         "severity": severity,
-        "magnitude_modes": ["absolute", "percent"] if warning else list(MAGNITUDE_MODES),
+        "magnitude_modes": list(MAGNITUDE_MODES),
         "duration_allowed": duration_allowed,
-        "max_band_abs": max_band_abs if warning else raw.get("max_band_abs"),
-        "max_duration_s": max_duration_s if warning else (raw.get("max_duration_s") if duration_allowed else None),
-        "note_required": warning,
+        "max_band_abs": raw.get("max_band_abs"),
+        "max_duration_s": raw.get("max_duration_s") if duration_allowed else None,
+        "note_required": bool(raw.get("note_required", False)),
         "review_interval_h": raw.get("review_interval_h", DEFAULT_REVIEW_INTERVAL_H.get(severity, 50)),
     }
 

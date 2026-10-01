@@ -1277,7 +1277,7 @@ def test_limit_filter_round_trip(registry_server):
 
     bad = rpc(registry_server, "save_filter", {"filter": {"limit_id": "oil_temp_max",
                                                           "magnitude": {"mode": "absolute", "value": 3}}})
-    assert bad["ok"] is False and bad["error"]["code"] == "INVALID_FILTER" and "note" in bad["error"]["message"]
+    assert bad["ok"] is False and bad["error"]["code"] == "INVALID_FILTER" and "red line" in bad["error"]["message"]
 
     assert rpc(registry_server, "delete_filter", {"id": fid})["result"]["deleted"] is True
     assert "filter" not in limit_insights()[0]

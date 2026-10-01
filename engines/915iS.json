@@ -180,6 +180,8 @@
       "unit": "psi",
       "min_val": 42.0,
       "severity": "WARNING",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm: with the engine stopped the fuel pump is off and the reading falls to 0 psi. Phase labels can't be relied on at the end of a log (the N117ZS logs label post-shutdown rows as DESCENT/APPROACH), so an RPM gate, not a phase list. Removed 102 false WARNING events on 53 flights and no real ones (Spec 09 §16).",
+      "min_rpm": 1000,
       "min_duration_s": 10,
       "note": "2.9 bar / 42 psi minimum at fuel rail. 36 psi allowed for 3 sec after power change per OM."
     },

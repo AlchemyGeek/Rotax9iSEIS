@@ -258,23 +258,6 @@
   },
   "exceedances": [
     {
-      "limit_id": "fuel_press_min",
-      "event_id": "fuel_press_min@2026-04-23T20:06:16",
-      "excess": 42.4,
-      "param": "fuel_press_psi",
-      "label": "Fuel pressure minimum",
-      "unit": "psi",
-      "severity": "WARNING",
-      "limit_type": "MIN",
-      "limit_value": 42.0,
-      "observed_value": -0.4,
-      "start_utc": "2026-04-23T20:06:16",
-      "elapsed_s": 0.0,
-      "duration_s": 123.0,
-      "time_limit_s": null,
-      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
-    },
-    {
       "limit_id": "rpm_idle_min",
       "event_id": "rpm_idle_min@2026-04-23T20:09:56",
       "excess": 70.0,
@@ -443,23 +426,6 @@
       "duration_s": 4.0,
       "time_limit_s": null,
       "note": "5,500 rpm is max continuous; 5,800 rpm allowed for 5 min"
-    },
-    {
-      "limit_id": "fuel_press_min",
-      "event_id": "fuel_press_min@2026-04-24T00:35:05",
-      "excess": 42.6,
-      "param": "fuel_press_psi",
-      "label": "Fuel pressure minimum",
-      "unit": "psi",
-      "severity": "WARNING",
-      "limit_type": "MIN",
-      "limit_value": 42.0,
-      "observed_value": -0.6,
-      "start_utc": "2026-04-24T00:35:05",
-      "elapsed_s": 16129.0,
-      "duration_s": 67.0,
-      "time_limit_s": null,
-      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
     },
     {
       "limit_id": "volts_min",
@@ -828,7 +794,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "rpm_continuous_max",
@@ -840,7 +807,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "rpm_takeoff_max",
@@ -852,7 +820,8 @@
       "severity": "WARNING",
       "time_limit_s": 300,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "oil_press_min",
@@ -864,7 +833,12 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null,
+      "filter_policy": {
+        "filterable": false,
+        "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading."
+      }
     },
     {
       "id": "oil_press_max",
@@ -876,7 +850,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "oil_press_cold_max",
@@ -888,7 +863,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "oil_temp_takeoff_min",
@@ -900,7 +876,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "oil_temp_max",
@@ -912,7 +889,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "oil_temp_optimal_low",
@@ -924,7 +902,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": false,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "coolant_temp_max",
@@ -936,7 +915,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "egt1_max",
@@ -948,7 +928,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "egt2_max",
@@ -960,7 +941,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "egt3_max",
@@ -972,7 +954,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "egt4_max",
@@ -984,7 +967,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "oat_band"
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "map_max",
@@ -996,7 +980,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": "da_band"
+      "stratify_by": "da_band",
+      "min_rpm": null
     },
     {
       "id": "fuel_press_min",
@@ -1008,7 +993,8 @@
       "severity": "WARNING",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": 1000
     },
     {
       "id": "fuel_press_max",
@@ -1020,7 +1006,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": "oat_band",
+      "min_rpm": null
     },
     {
       "id": "volts_min",
@@ -1032,7 +1019,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "volts_max",
@@ -1044,7 +1032,8 @@
       "severity": "CAUTION",
       "time_limit_s": null,
       "report_in_exceedances": true,
-      "stratify_by": null
+      "stratify_by": null,
+      "min_rpm": null
     },
     {
       "id": "egt_split_high_flow",
