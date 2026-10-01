@@ -11,6 +11,31 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## 0.21.0 — October 1, 2026
+
+**Phase detection: landing somewhere higher than you took off.** The flight phases measured
+height above the *departure* airport for the whole log, and the airborne phases only returned
+to the ground through that height test. After landing at a higher airport the test never
+passed, so the flight stayed "descent" or "approach" through rollout, taxi and shutdown
+(11 of the N117ZS logs), and a log with several legs couldn't see its next takeoff (5 logs).
+
+- **New ground test:** airspeed below 30 kt with RPM below 2,000 for 10 seconds means the
+  aircraft is on the ground — impossible in flight (it stalls well above 30 kt, and an
+  engine-out glide keeps airspeed up). Phase detection then switches to taxi and re-measures
+  the field elevation there, so later takeoffs and approaches are judged against the airport
+  the aircraft is actually at.
+- **Takeoff MAP** uses the first real departure only (a takeoff roll followed by a climb), not
+  every takeoff roll in the log pooled together, and no longer counts a high-power runup.
+- **Effect on the N117ZS logs** (all 107, checked before and after): 18 logs change, all as
+  intended — tails relabelled taxi/shutdown, second-leg takeoffs detected, descent minutes no
+  longer including ground time, one takeoff MAP no longer blended with a runup. No exceedance
+  changes; no log changes between flight and ground session.
+- **New tool:** `notebooks/06_phase_regression.py --save NAME` / `--compare NAME` snapshots
+  every log's phases, metrics and exceedances and reports exactly what a code change moves.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
 ## 0.20.0 — October 1, 2026
 
 - **WARNING limits can never be filtered.** They are the Operators Manual red lines: a reading

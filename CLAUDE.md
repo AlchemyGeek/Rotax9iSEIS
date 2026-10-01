@@ -34,3 +34,20 @@ Rules for the data:
   fixtures, workspace caches), to this repo. They contain the tail number,
   times and airports.
 - Treat `EIS-Test-Data` as read-only; the owner adds new flights to it.
+
+## Changing detection heuristics
+
+Phase detection (`slingology_eis/phases.py`), exceedance checking (`limits.py`)
+and per-flight metrics (`fleet.py`) are heuristics tuned on the real logs; a
+fix for one flight can quietly change others. Before changing them, snapshot,
+then compare after the change and confirm every reported difference is
+intended (include the comparison in the commit message or PR):
+
+```bash
+python notebooks/06_phase_regression.py --save before
+# ...make the change...
+python notebooks/06_phase_regression.py --compare before
+```
+
+Snapshots go to `data/phase_snapshots/` (gitignored — derived from flight data).
+

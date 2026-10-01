@@ -153,6 +153,13 @@ def _estimate_field_elevation(df: pd.DataFrame) -> float:
 
 # ── Main detector ─────────────────────────────────────────────────────────────
 
+# Altitude-independent "back on the ground" test (detect_phases).
+_AIRBORNE_STATES = {Phase.CLIMB, Phase.CRUISE, Phase.DESCENT, Phase.APPROACH}
+_ON_GROUND_IAS_KT = 30
+_ON_GROUND_RPM = 2000
+_ON_GROUND_DWELL_S = 10
+
+
 def detect_phases(
     df: pd.DataFrame,
     field_elev_ft: Optional[float] = None,
@@ -215,13 +222,20 @@ def detect_phases(
     power  = _smooth(df["power_pct"].fillna(0),   window=5) if "power_pct" in df.columns else pd.Series(np.zeros(n))
     oil_t  = _smooth(df["oil_temp_f"].fillna(0),  window=11) if "oil_temp_f" in df.columns else pd.Series(np.zeros(n))
 
-    # AGL approximation (baro alt − field elevation)
-    agl    = baro - field_elev_ft
+    # AGL approximation (baro alt − field elevation). The field reference
+    # starts at the departure field and moves to wherever the aircraft is
+    # next detected back on the ground (see the on-ground test below), so a
+    # multi-leg log measures height above the airport it's actually at.
+    field_ref = field_elev_ft
 
     # ── State machine ─────────────────────────────────────────────────────────
     phases = [Phase.UNKNOWN] * n
     state  = Phase.PRE_START
     dwell  = 0   # seconds in current candidate state
+    # Seconds in a row an airborne state has seen ground-only readings
+    # (see _ON_GROUND_* below). Separate from `dwell`, which the airborne
+    # states already use for their own entry/exit timing.
+    on_ground_s = 0
 
     def transition(new_state, i):
         nonlocal state, dwell
@@ -235,10 +249,32 @@ def detect_phases(
         r = rpm.iloc[i]
         v = ias.iloc[i]
         s = vs.iloc[i]
-        a = agl.iloc[i]
+        a = baro.iloc[i] - field_ref
         p = power.iloc[i]
         o = oil_t.iloc[i]
         dwell += 1
+
+        # Back on the ground, whatever AGL says. The airborne states reach
+        # the ground states only through AGL tests, and AGL is measured from
+        # the departure field — which never pass after landing somewhere
+        # higher: those flights stayed DESCENT/APPROACH through rollout, taxi
+        # and shutdown (11 of the N117ZS logs, landing 107-3,422 ft above
+        # their departure field), and multi-leg logs couldn't detect the next
+        # takeoff. Sustained IAS below 30 kt with RPM below 2,000 can't happen
+        # in flight (the aircraft stalls well above 30 kt, and an engine-out
+        # glide keeps IAS up), so it means on the ground: the rollout is over,
+        # so TAXI (whose exits handle takeoff and shutdown), and the field
+        # reference resets to here so later AGL tests use this airport.
+        if state in _AIRBORNE_STATES and v < _ON_GROUND_IAS_KT and r < _ON_GROUND_RPM:
+            on_ground_s += 1
+            if on_ground_s >= _ON_GROUND_DWELL_S:
+                field_ref = baro.iloc[i]
+                transition(Phase.TAXI, i)
+                on_ground_s = 0
+                phases[i] = state
+                continue
+        else:
+            on_ground_s = 0
 
         if state == Phase.PRE_START:
             if r > 500:
