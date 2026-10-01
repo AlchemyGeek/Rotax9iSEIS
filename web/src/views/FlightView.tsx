@@ -689,6 +689,16 @@ export function FlightView() {
         navigate(`/trends?metric=${ev.metric_id}&flight=${flightAnalysis.flight_id}`);
         return;
       }
+      if (ev.kind === "ecu_run" || ev.kind === "exceedance") {
+        // No in-chart home for these (an ECU run isn't a chart-window
+        // concept, and this chart doesn't show exceedance markers) —
+        // same destination Annotations.tsx's refTarget already sends an
+        // ecu_run annotation to. Previously unhandled: this whole branch
+        // was missing, so clicking "View evidence" on an engine_ecu_inflight
+        // insight silently did nothing.
+        navigate("/ecu");
+        return;
+      }
     }
   }
 
