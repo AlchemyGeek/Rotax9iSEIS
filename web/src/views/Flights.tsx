@@ -118,7 +118,14 @@ export function Flights() {
   const [manifest, setManifest] = useState(fixtureManifest);
   const [isRegistryActive, setIsRegistryActive] = useState(false);
   const [usingFixture, setUsingFixture] = useState(true);
-  const [loading, setLoading] = useState(false);
+  // Starts true (not false) so the very first render — before refresh()
+  // below has resolved — renders the loading gate further down instead
+  // of painting the fixture/demo rows this component's state is seeded
+  // with. Only ever flips true->false once, at mount; nothing later
+  // re-sets it, so the loading gate never reappears on a routine
+  // refresh() (Sync, Include, etc. have their own finer-grained
+  // in-progress states for that).
+  const [loading, setLoading] = useState(true);
   const [groupBy, setGroupBy] = useState<GroupBy>("date");
   const [statusFilter, setStatusFilter] = useState<FlightRowStatus | "excluded" | null>(
     (params.get("filter") as FlightRowStatus | "excluded" | null) ?? null
@@ -489,6 +496,19 @@ export function Flights() {
     nextParams.delete("filter");
     setParams(nextParams, { replace: true });
     setShowSkipped((v) => !v);
+  }
+
+  // See the loading state's comment above — avoids flashing the fixture
+  // workspace's sample rows on every navigation to this page before the
+  // real workspace's data has actually loaded.
+  if (loading) {
+    return (
+      <NavShell>
+        <div style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</span>
+        </div>
+      </NavShell>
+    );
   }
 
   return (
