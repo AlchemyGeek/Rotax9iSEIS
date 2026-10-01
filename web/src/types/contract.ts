@@ -459,7 +459,11 @@ export interface AppSettings {
   units: "imperial" | "metric";
   last_active_workspace_id: string | null;
   chart_presets: ChartPreset[];
-  flight_chart: { last_preset_id?: string };
+  // phase_filter: null (default) shows insights from every phase; an
+  // array restricts the Insights panel to insights with evidence/events
+  // landing in one of those phases. Global, like last_preset_id — not
+  // scoped per-flight or per-workspace, so it carries across both.
+  flight_chart: { last_preset_id?: string; phase_filter?: string[] | null };
 }
 
 export interface WorkspaceSettings {

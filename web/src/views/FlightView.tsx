@@ -10,12 +10,14 @@ import { ChannelPicker } from "../components/ChannelPicker";
 import { PresetBar } from "../components/PresetBar";
 import { PhaseCaption } from "../components/PhaseCaption";
 import { PhaseMinimap } from "../components/PhaseMinimap";
+import { PhaseFilter } from "../components/PhaseFilter";
 import { fixtureFlightById, flightAnalysis as fixtureFlight, insightSet as fixtureInsights, kacvSeries, sourceFilename } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import { toSeriesFixture } from "../lib/series";
 import { assignChannelColors } from "../lib/channels";
 import { useChartSession } from "../lib/chartSession";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
+import { phaseAtTime } from "../lib/phases";
 import { colors as themeColors } from "../theme/colors";
 import type {
   Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
@@ -110,6 +112,12 @@ export function FlightView() {
   const [including, setIncluding] = useState(false);
   const [includeError, setIncludeError] = useState<string | null>(null);
 
+  // Insights panel's phase filter (null = every phase) — persisted
+  // globally via AppSettings.flight_chart.phase_filter (same bucket as
+  // last_preset_id), so a selection carries across flights and sessions,
+  // not just within this one page visit.
+  const [phaseFilter, setPhaseFilter] = useState<string[] | null>(null);
+
   function expandSlots(slots: string[]): string[] {
     return expandSlotsWith(slots, slotGroups);
   }
@@ -172,6 +180,7 @@ export function FlightView() {
         setFlightAnalysis(got.flight_analysis);
         setFilename(filename);
         setSkippedInfo(exclusionsResult.entries.find((e) => e.filename === filename) ?? null);
+        setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
 
         setChannelRegistry(registryResult.channels);
         setSlotGroups(registryResult.slot_groups);
@@ -254,6 +263,7 @@ export function FlightView() {
         // rather than showing what looks like a broken/garbled name.
         setFilename(got.source_filename ?? "unknown source file");
         setUsingFixture(false);
+        setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
 
         setChannelRegistry(registryResult.channels);
         setSlotGroups(registryResult.slot_groups);
@@ -545,6 +555,47 @@ export function FlightView() {
 
   const noInsightTopics = useMemo(() => insightSet.topics.filter((t) => t.insights.length === 0), [insightSet]);
 
+  // An insight's phase(s), from whichever of its events/evidence actually
+  // carry a time — an exceedance event's elapsed_s, or a series_window
+  // evidence's midpoint. null means nothing here is time-locatable at all
+  // (a pure baseline/trend insight evidenced only by other flights'
+  // points) — those are never excluded by the phase filter, since
+  // "doesn't apply to any specific phase" isn't the same as "doesn't
+  // match the selected phases."
+  function phasesForInsight(insight: Insight): Set<string> | null {
+    const times: number[] = [];
+    for (const e of insight.events ?? []) if (e.elapsed_s !== null) times.push(e.elapsed_s);
+    for (const ev of insight.evidence) if (ev.kind === "series_window") times.push((ev.start_s + ev.end_s) / 2);
+    if (times.length === 0) return null;
+    const set = new Set<string>();
+    for (const t of times) {
+      const p = phaseAtTime(flightAnalysis.phases, t);
+      if (p) set.add(p);
+    }
+    return set.size > 0 ? set : null;
+  }
+
+  const filteredFlatInsights = useMemo(() => {
+    if (phaseFilter === null) return flatInsights;
+    return flatInsights.filter(({ insight }) => {
+      const phases = phasesForInsight(insight);
+      if (phases === null) return true;
+      return [...phases].some((p) => phaseFilter.includes(p));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flatInsights, phaseFilter, flightAnalysis.phases]);
+
+  function handlePhaseFilterChange(next: string[] | null) {
+    setPhaseFilter(next);
+    if (usingFixture) return;
+    client
+      .getAppSettings()
+      .then((s) => client.saveAppSettings({ ...s, flight_chart: { ...(s.flight_chart ?? {}), phase_filter: next } }))
+      .catch(() => {
+        // persisting the selection is a convenience, not required for this session to work
+      });
+  }
+
   const annotationByInsightId = useMemo(() => {
     const map = new Map<string, Annotation>();
     for (const a of annotations) if (a.ref.kind === "insight") map.set(a.ref.insight_id, a);
@@ -771,13 +822,17 @@ export function FlightView() {
             </div>
           ) : (
           <div style={{ width: 376, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ padding: "16px 20px 10px", flexShrink: 0 }}>
+            <div style={{ padding: "16px 20px 10px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>
-                Insights <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>({flatInsights.length})</span>
+                Insights{" "}
+                <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>
+                  ({filteredFlatInsights.length}{phaseFilter !== null && filteredFlatInsights.length !== flatInsights.length ? ` of ${flatInsights.length}` : ""})
+                </span>
               </div>
+              {!usingFixture && <PhaseFilter selected={phaseFilter} onChange={handlePhaseFilterChange} />}
             </div>
             <div style={{ flexGrow: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-              {flatInsights.map(({ insight, topicId }) => {
+              {filteredFlatInsights.map(({ insight, topicId }) => {
                 const existing = annotationByInsightId.get(insight.id);
                 const limitId = usingFixture ? undefined : filterLimitId(insight, topicId);
                 const peak = insight.events?.length ? Math.max(...insight.events.map((e) => e.excess ?? 0)) : null;
@@ -818,6 +873,14 @@ export function FlightView() {
               })}
               {flatInsights.length === 0 && noInsightTopics.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No insights fired for this flight.</div>
+              )}
+              {flatInsights.length > 0 && filteredFlatInsights.length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  No insights in the selected phase{phaseFilter && phaseFilter.length === 1 ? "" : "s"}.{" "}
+                  <a href="#" onClick={(e) => { e.preventDefault(); handlePhaseFilterChange(null); }} style={{ color: "var(--accent)" }}>
+                    Show all phases
+                  </a>
+                </div>
               )}
               {noInsightTopics.length > 0 && (
                 <div style={{ background: "var(--panel)", borderRadius: 10, padding: "13px 14px" }}>
