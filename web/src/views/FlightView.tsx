@@ -582,6 +582,25 @@ export function FlightView() {
     return set.size > 0 ? set : null;
   }
 
+  // Which of insight.events (by original index — InsightCard needs that
+  // exact index back via onEventClick, not a position in some shorter
+  // filtered list, since it's what evidence.slice() keys off) match the
+  // phase filter. null (no filter) means every index — the common case,
+  // not computed per card for nothing. An event with no elapsed_s can't
+  // be placed in any phase, so it's never hidden rather than guessed at.
+  function visibleEventIndices(insight: Insight): number[] | null {
+    if (phaseFilter === null) return null;
+    const events = insight.events ?? [];
+    return events
+      .map((_, i) => i)
+      .filter((i) => {
+        const elapsed = events[i].elapsed_s;
+        if (elapsed === null) return true;
+        const p = phaseAtTime(flightAnalysis.phases, elapsed);
+        return p === undefined || phaseFilter.includes(p);
+      });
+  }
+
   const filteredFlatInsights = useMemo(() => {
     if (phaseFilter === null) return flatInsights;
     return flatInsights.filter(({ insight }) => {
@@ -869,6 +888,7 @@ export function FlightView() {
                     topicId={topicId}
                     onClick={() => handleEvidenceClick(insight)}
                     onEventClick={(i) => handleEvidenceClick(insight, i)}
+                    visibleEventIndices={visibleEventIndices(insight)}
                     unit={limitFor(insight)?.unit}
                     limitType={limitFor(insight)?.limit_type}
                     filterAction={

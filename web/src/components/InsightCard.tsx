@@ -25,17 +25,26 @@ function fmtDuration(s: number): string {
 }
 
 // Spec 09 §12.1: a limit card's expanded rows — one per (merged) event,
-// each zooming the chart to its own window (evidence[i]).
-function EventRows({ events, unit, limitType, onEventClick }: { events: InsightEvent[]; unit?: string; limitType?: "MIN" | "MAX"; onEventClick?: (index: number) => void }) {
+// each zooming the chart to its own window (evidence[i]). `index` is the
+// event's position in insight.events/evidence, not its position in this
+// (possibly phase-filtered) list — onEventClick keys off the former.
+function EventRows({
+  items, unit, limitType, onEventClick,
+}: {
+  items: { event: InsightEvent; index: number }[];
+  unit?: string;
+  limitType?: "MIN" | "MAX";
+  onEventClick?: (index: number) => void;
+}) {
   return (
     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
-      {events.map((ev, i) => (
+      {items.map(({ event: ev, index }) => (
         <div
           key={ev.event_id}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onEventClick?.(i);
+            onEventClick?.(index);
           }}
           className="mono"
           title="Show this event on the chart"
@@ -69,6 +78,7 @@ export function InsightCard({
   topicId,
   onClick,
   onEventClick,
+  visibleEventIndices,
   unit,
   limitType,
   filterAction,
@@ -81,6 +91,12 @@ export function InsightCard({
   topicId: string;
   onClick?: () => void;
   onEventClick?: (index: number) => void;
+  // The Insights panel's phase filter (FlightView) — original indices
+  // into insight.events that match it, or null when no filter is active
+  // (every event counts). Computed by the caller, not here: it needs
+  // flightAnalysis.phases and the current filter selection, neither of
+  // which this component otherwise knows about.
+  visibleEventIndices?: number[] | null;
   unit?: string;
   limitType?: "MIN" | "MAX";
   // Spec 09 §12.1: "Filter this limit…" / "Edit filter…" on limit cards.
@@ -92,18 +108,28 @@ export function InsightCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
-  const events = insight.events ?? [];
+  const allEvents = insight.events ?? [];
+  const visibleIdx = visibleEventIndices ?? allEvents.map((_, i) => i);
+  const visibleItems = visibleIdx.map((i) => ({ event: allEvents[i], index: i }));
+  const hiddenCount = allEvents.length - visibleItems.length;
+
   // A card with several events has no single "the evidence" to jump to —
   // insight.evidence[0] is just whichever event happened to sort first,
   // not necessarily the one worth seeing. Clicking the card used to jump
   // there anyway under the same "View evidence →" label a single-event
   // card shows, so it read as broken/arbitrary for anyone who clicked
-  // expecting the same one-destination behavior. Multi-event cards now
+  // expecting the same one-destination behavior. Multi-event cards
   // expand the list on click instead (same as the "Show N events" line
-  // below) — a specific event row (already correct, unchanged) is the
-  // only way to jump to a particular moment.
-  const multiEvent = events.length > 1;
-  const jumpable = Boolean(onClick && insight.evidence.length > 0 && !multiEvent);
+  // below) — a specific event row (already correct) is the only way to
+  // jump to a particular moment. Phase-filtered down to exactly one
+  // visible event, a card goes back to being directly jumpable — to
+  // that event specifically (via onEventClick, its real index), not
+  // index 0 of the unfiltered list.
+  const singleFilteredEvent = allEvents.length > 0 && visibleItems.length === 1 ? visibleItems[0] : null;
+  const multiEvent = visibleItems.length > 1;
+  const jumpable = Boolean(
+    onClick && ((allEvents.length === 0 && insight.evidence.length > 0) || singleFilteredEvent !== null)
+  );
   const clickable = jumpable || multiEvent;
   const Wrapper = clickable ? "a" : "div";
 
@@ -124,7 +150,11 @@ export function InsightCard({
       href={clickable ? "#timeline" : undefined}
       onClick={
         jumpable
-          ? (e: React.MouseEvent) => { e.preventDefault(); onClick?.(); }
+          ? (e: React.MouseEvent) => {
+              e.preventDefault();
+              if (singleFilteredEvent) onEventClick?.(singleFilteredEvent.index);
+              else onClick?.();
+            }
           : multiEvent
             ? (e: React.MouseEvent) => toggleEvents(e)
             : undefined
@@ -162,12 +192,17 @@ export function InsightCard({
           )}
         </div>
       )}
-      {events.length > 1 && (
+      {multiEvent && (
         <div onClick={toggleEvents} style={{ fontSize: 11, marginTop: 6, color: "var(--text-tertiary)", cursor: "pointer" }}>
-          {eventsOpen ? "▾ Hide events" : `▸ Show ${events.length} events — click one to view on the chart →`}
+          {eventsOpen
+            ? "▾ Hide events"
+            : `▸ Show ${visibleItems.length}${hiddenCount > 0 ? ` of ${allEvents.length}` : ""} events — click one to view on the chart →`}
         </div>
       )}
-      {events.length > 1 && eventsOpen && <EventRows events={events} unit={unit} limitType={limitType} onEventClick={onEventClick} />}
+      {multiEvent && eventsOpen && <EventRows items={visibleItems} unit={unit} limitType={limitType} onEventClick={onEventClick} />}
+      {allEvents.length > 0 && visibleItems.length === 0 && (
+        <div style={{ fontSize: 11, marginTop: 6, color: "var(--text-tertiary)" }}>No events in the selected phase(s).</div>
+      )}
 
       {notesEnabled && (
         <NoteSection
