@@ -7,6 +7,12 @@ import type { FilterHealth } from "../types/contract";
 
 type Series = FilterHealth["series"];
 
+// Y-axis tick with its unit: "12°F", "5%", "40 rpm".
+function withUnit(v: number, unit: string): string {
+  if (!unit) return `${v}`;
+  return unit === "%" || unit.startsWith("\u00b0") ? `${v}${unit}` : `${v} ${unit}`;
+}
+
 function chartOption({
   series,
   field,
@@ -33,7 +39,7 @@ function chartOption({
   };
   return {
     animation: false,
-    grid: { left: 44, right: 12, top: 10, bottom: 26 },
+    grid: { left: 58, right: 12, top: 10, bottom: 26 },
     tooltip: {
       trigger: "item",
       backgroundColor: colors.panelControl,
@@ -62,7 +68,7 @@ function chartOption({
     yAxis: {
       type: "value",
       scale: false,
-      axisLabel: { color: colors.textTertiary, fontSize: 10, fontFamily: fontMono },
+      axisLabel: { color: colors.textTertiary, fontSize: 10, fontFamily: fontMono, formatter: (v: number) => withUnit(v, unit) },
       splitLine: { lineStyle: { color: colors.borderSubtle } },
     },
     series: [
