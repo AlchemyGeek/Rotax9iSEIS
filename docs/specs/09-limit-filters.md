@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.9 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
+**Status:** v0.10 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -19,6 +19,7 @@
 | 0.7 | Phase 4 implemented. A std floor for `time_above_pct` added to §13; the effective reference, invalid filters and the Drifting windows pinned down (§8, §16). |
 | 0.8 | Phase 5 implemented: copy filters between same-model workspaces (§9). |
 | 0.9 | WARNING limits are never filterable; placeholder caps removed (§6.3, Q2). New `min_rpm` gate (§6.6); `fuel_press_min` checked only at ≥ 1,000 rpm. |
+| 0.10 | **Reopened: WARNING limits are filterable again, with a required note (§6.3).** A consistent WARNING exceedance can be a real issue or an artifact of sensor/calibration drift, and the engine can't tell the two apart — the v0.9 blanket block traded that judgment call for an always-safe default, but a note lets the pilot record which it is and why, same mechanism as a CAUTION limit's optional note, just mandatory. `oil_press_min` keeps its own explicit `filterable: false` override (§15 Q1) — unaffected, since it's a profile-level lock, not the severity rule. No new caps reinstated; the placeholder caps removed in v0.9 stay removed. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -182,22 +183,26 @@ Defaults, when the field is absent:
 | Profile severity | `filterable` | Magnitude modes | Band cap | Duration cap | Note | Review interval |
 |---|---|---|---|---|---|---|
 | CAUTION | true | absolute, percent, z | none | none | optional | 50 h |
-| WARNING | **false unless `max_band_abs` and `max_duration_s` are declared** | absolute, percent | `max_band_abs` | `max_duration_s` | required | 25 h |
+| WARNING | true | absolute, percent, z | none | none | **required** | 25 h |
 
-The WARNING default is fail-safe: a WARNING limit becomes filterable only once its profile declares caps. The 916iS ships with placeholder caps marked `PLACEHOLDER`, the same way the 912iS/914iS profiles mark unverified values. The z mode is never allowed on WARNING limits.
+`filterable: false` (with a pilot-facing `reason`) makes a limit non-filterable regardless of
+severity — it is the only way a limit stops being filterable; `oil_press_min` is the shipped
+example (Q1), locked the same way whether its severity is WARNING or anything else.
 
-`filterable: false` makes a limit non-filterable regardless of severity. Proposed default for `oil_press_min`: non-filterable (Q1).
-
-**Superseded in v0.9: WARNING limits are never filterable.** The caps above were never
-sourced (Rotax and Garmin publish no such numbers) and the N117ZS log set has no legitimate case:
-its only WARNING events, 102 on 53 flights, were all fuel pressure minimum read with the engine
-stopped (§6.6). A WARNING limit is an OM red line — the reading is either real or a sensor fault
-to fix at the source — so the engine refuses a filter on one regardless of `filter_policy`
-(`FILTER_NOT_ALLOWED`, with a plain explanation in the editor), and the placeholder caps were
-removed. Overboost, treated as WARNING (§6.4), is locked with them; its band mechanics remain in
-code for a CAUTION limit that might use them. CAUTION limits keep the table's defaults and may
-declare optional caps and `note_required`. `filterable: false` with a pilot-facing `reason` still
-locks a CAUTION limit; `oil_press_min` keeps its own reason text.
+**Superseded in v0.9, reopened in v0.10.** v0.9 made WARNING limits never filterable: a WARNING
+limit is an OM red line, so the reading was treated as either real or a sensor fault to fix at the
+source, never something to tolerate. v0.10 reopens this: a consistent exceedance on a real
+aircraft can equally be an artifact of sensor calibration or another systemic quirk, not a true
+WARNING-worthy condition, and the engine has no way to tell the two apart from the data alone.
+Rather than force every such case into "never filterable," a WARNING limit is filterable like any
+other, but `note_required` defaults to true for WARNING severity (unlike CAUTION, where it stays
+optional unless the profile asks for it) — the pilot's note is the record of which case applies,
+checked at review time the same way a CAUTION filter's optional note is. The v0.9 placeholder caps
+(`max_band_abs`/`max_duration_s` tied to WARNING) stay removed — nothing in the log set motivated
+reinstating them, and a band/duration cap is still available to any limit via an explicit
+`filter_policy` override regardless of severity. Overboost, treated as WARNING (§6.4), is
+filterable under the same WARNING default as any other WARNING limit, with no profile override
+singling it out; its band mechanics work the same way they do for a CAUTION limit that uses them.
 
 ### 6.6 RPM gate
 

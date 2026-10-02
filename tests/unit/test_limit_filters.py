@@ -57,16 +57,20 @@ def test_caution_limits_allow_every_mode_without_caps():
     assert p["max_band_abs"] is None and not p["note_required"] and p["review_interval_h"] == 50
 
 
-def test_warning_limits_are_never_filterable():
-    """OM red lines, overboost included, are always reported — whatever a
-    profile's filter_policy says."""
+def test_warning_limits_are_filterable_with_a_required_note():
+    """OM red lines are filterable like any other limit — a consistent
+    exceedance can be a real issue or a sensor/calibration artifact, and the
+    engine can't tell which — but always require a note, unlike CAUTION."""
     warning_ids = [lid for lid, lim in CAT.items() if lim["severity"] == "WARNING"]
     assert {"oil_temp_max", "coolant_temp_max", "fuel_press_min", "overboost", "egt_split_high_flow"} <= set(warning_ids)
     for lid in warning_ids:
+        if lid == "oil_press_min":
+            continue  # explicit profile override — see test_oil_pressure_minimum_is_never_filterable
         p = resolve_filter_policy(CAT[lid])
-        assert not p["filterable"], lid
-    assert "red line" in resolve_filter_policy(CAT["oil_temp_max"])["reason"]
-    forced = {**CAT["oil_temp_max"], "filter_policy": {"filterable": True, "max_band_abs": 50}}
+        assert p["filterable"], lid
+        assert p["note_required"], lid
+    # An explicit profile override still wins over the WARNING default.
+    forced = {**CAT["oil_temp_max"], "filter_policy": {"filterable": False, "reason": "no"}}
     assert not resolve_filter_policy(forced)["filterable"]
 
 
@@ -102,18 +106,24 @@ def test_overboost_has_no_duration_condition():
 # ── Guardrails (§7.3, acceptance 8) ───────────────────────────────────────────
 
 @pytest.mark.parametrize("flt,code", [
-    (_filter("oil_temp_max", {"mode": "absolute", "value": 1}, note="gauge"), "FILTER_NOT_ALLOWED"),   # WARNING
-    (_filter("fuel_press_min", duration={"max_event_s": 5}, note="x"), "FILTER_NOT_ALLOWED"),         # WARNING
-    (_filter("oil_press_min", {"mode": "absolute", "value": 1}, note="x"), "FILTER_NOT_ALLOWED"),
+    (_filter("oil_temp_max", {"mode": "absolute", "value": 1}), "FILTER_NOTE_REQUIRED"),       # WARNING, no note
+    (_filter("fuel_press_min", duration={"max_event_s": 5}), "FILTER_NOTE_REQUIRED"),          # WARNING, no note
+    (_filter("oil_press_min", {"mode": "absolute", "value": 1}, note="x"), "FILTER_NOT_ALLOWED"),  # explicit override
     (_filter("no_such_limit", {"mode": "absolute", "value": 1}), "FILTER_UNKNOWN_LIMIT"),
     (_filter("fuel_press_max"), "FILTER_NOT_ALLOWED"),                               # no condition
     (_filter("fuel_press_max", {"mode": "absolute", "value": -1}), "FILTER_NOT_ALLOWED"),
-    (_filter("overboost", {"mode": "absolute", "value": 10}, note="x"), "FILTER_NOT_ALLOWED"),        # WARNING
+    (_filter("overboost", {"mode": "absolute", "value": 10}), "FILTER_NOTE_REQUIRED"),         # WARNING, no note
     (_filter("fuel_press_max", {"mode": "z", "value": 2}), "FILTER_REFERENCE_LOW_N"),
 ])
 def test_invalid_filters_are_diagnosed(flt, code):
     diags = validate_filter(flt, CAT, update_fleet([]))
     assert code in [d["code"] for d in diags]
+
+
+def test_warning_filters_with_a_note_are_valid():
+    assert validate_filter(_filter("oil_temp_max", {"mode": "absolute", "value": 1}, note="gauge reads high"), CAT) == []
+    assert validate_filter(_filter("fuel_press_min", duration={"max_event_s": 5}, note="known sender issue"), CAT) == []
+    assert validate_filter(_filter("overboost", {"mode": "absolute", "value": 10}, note="brief, expected"), CAT) == []
 
 
 def test_valid_filters_pass():
@@ -124,12 +134,12 @@ def test_valid_filters_pass():
 def test_invalid_filter_leaves_the_limit_unfiltered_even_if_hand_edited():
     fa = _flight([_exc("oil_temp_max", "oil_temp_f", "Oil temp maximum", 100, 30, 262.0, 248.0,
                        severity="WARNING", unit="°F")])
-    hand_edited = _filter("oil_temp_max", {"mode": "absolute", "value": 50})   # a WARNING limit
+    hand_edited = _filter("oil_temp_max", {"mode": "absolute", "value": 50})   # a WARNING limit, no note
     iset = evaluate_insights(fa, update_fleet([]), RULES, filters=[hand_edited])
     ins = _limit_topic(iset)["insights"]
     assert len(ins) == 1 and "filter" not in ins[0] and ins[0]["severity"] == "limit"
     codes = {d["code"] for d in iset.header_warnings}
-    assert "FILTER_NOT_ALLOWED" in codes
+    assert "FILTER_NOTE_REQUIRED" in codes
 
 
 def test_only_the_newest_filter_for_a_limit_applies():
@@ -214,17 +224,13 @@ def test_breach_still_fires_the_topic_threshold():
 
 # ── Overboost (§6.4, §10.3, acceptance 9) ─────────────────────────────────────
 
-def _ob_flight(ob_max, caution=True):
-    fa = _flight([], metrics={"overboost_max_block_s": {"id": "overboost_max_block_s", "value": ob_max},
-                              "overboost_total_s": {"id": "overboost_total_s", "value": ob_max}})
-    if caution:  # overboost ships as WARNING (never filterable); exercise the band mechanics on a CAUTION copy
-        fa.limits = [_caution("overboost") if lim["id"] == "overboost" else lim for lim in fa.limits]
-    return fa
+def _ob_flight(ob_max):
+    return _flight([], metrics={"overboost_max_block_s": {"id": "overboost_max_block_s", "value": ob_max},
+                                "overboost_total_s": {"id": "overboost_total_s", "value": ob_max}})
 
 
-def test_shipped_overboost_ignores_a_filter():
-    flt = _filter("overboost", {"mode": "absolute", "value": 20}, note="normal climb procedure")
-    iset = evaluate_insights(_ob_flight(310, caution=False), update_fleet([]), RULES, filters=[flt])
+def test_shipped_overboost_without_a_filter_is_unaffected():
+    iset = evaluate_insights(_ob_flight(310), update_fleet([]), RULES, filters=[])
     ins = next(t for t in iset.topics if t["topic_id"] == "overboost_time")["insights"]
     assert len(ins) == 1 and "filter" not in ins[0] and "Exceeded" in ins[0]["message"]["text"]
 
@@ -524,8 +530,10 @@ def test_drift_reason_names_the_weather_comparison():
 def test_non_filterable_limits_say_why_in_plain_words():
     oil = resolve_filter_policy(CAT["oil_press_min"])
     assert not oil["filterable"] and "lubrication problem" in oil["reason"]
+    # A WARNING limit with no explicit override is filterable (with a note),
+    # not blocked, and so carries no "reason".
     coolant = resolve_filter_policy(CAT["coolant_temp_max"])
-    assert "red line" in coolant["reason"] and "filter_policy" not in coolant["reason"]
+    assert coolant["filterable"] and coolant["reason"] is None and coolant["note_required"]
 
 
 def test_limit_insights_say_whether_they_can_be_filtered():

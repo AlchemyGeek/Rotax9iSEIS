@@ -1275,9 +1275,17 @@ def test_limit_filter_round_trip(registry_server):
     dup = rpc(registry_server, "save_filter", {"filter": draft})
     assert dup["ok"] is False and dup["error"]["code"] == "ALREADY_EXISTS"
 
+    # oil_temp_max is a WARNING limit with no explicit non-filterable
+    # override — filterable, but only with a note (Spec 09 §6.3 v0.10).
     bad = rpc(registry_server, "save_filter", {"filter": {"limit_id": "oil_temp_max",
                                                           "magnitude": {"mode": "absolute", "value": 3}}})
-    assert bad["ok"] is False and bad["error"]["code"] == "INVALID_FILTER" and "red line" in bad["error"]["message"]
+    assert bad["ok"] is False and bad["error"]["code"] == "INVALID_FILTER" and "note is required" in bad["error"]["message"]
+
+    ok = rpc(registry_server, "save_filter", {"filter": {"limit_id": "oil_temp_max",
+                                                         "magnitude": {"mode": "absolute", "value": 3},
+                                                         "note": "sensor reads high"}})
+    assert ok["ok"], ok
+    assert rpc(registry_server, "delete_filter", {"id": ok["result"]["id"]})["result"]["deleted"] is True
 
     assert rpc(registry_server, "delete_filter", {"id": fid})["result"]["deleted"] is True
     assert "filter" not in limit_insights()[0]

@@ -39,19 +39,21 @@ def is_overboost(limit: dict) -> bool:
 
 # ── Policy (§6.3) ───────────────────────────────────────────────────────────
 
-WARNING_REASON = ("This is a WARNING limit — an Operators Manual red line — so it is always reported and "
-                  "can't be filtered. If a reading looks wrong, have the sensor checked rather than hiding it.")
-
 
 def resolve_filter_policy(limit: dict) -> dict:
     """
-    The effective filter policy for a catalogue entry (§6.3). WARNING
-    limits — the OM red lines, overboost included (§6.4) — are never
-    filterable, whatever the profile says: a red-line exceedance is either
-    real or a sensor fault to fix at the source, never something to hide.
-    A CAUTION limit is filterable unless its profile `filter_policy` says
-    `filterable: false` (with a pilot-facing `reason`), and may declare
-    optional caps (`max_band_abs`, `max_duration_s`).
+    The effective filter policy for a catalogue entry (§6.3). A WARNING
+    limit — an OM red line, overboost included (§6.4) — is filterable like
+    any other, but always requires a note: a consistent exceedance can be a
+    real mechanical issue, or it can be an artifact of a miscalibrated
+    sensor or other systemic quirk that isn't itself a WARNING-worthy
+    condition — the note is the pilot's record of which, and why, since the
+    engine can't tell the two apart on its own. A limit is only ever
+    non-filterable when its profile says so explicitly (`filter_policy`
+    `filterable: false`, with a pilot-facing `reason`) — e.g. oil_press_min,
+    where any reading is a direct lubrication signal to check at the
+    source, never one to annotate away. A limit may also declare optional
+    caps (`max_band_abs`, `max_duration_s`).
 
     Returns {filterable, reason, severity, magnitude_modes,
     duration_allowed, max_band_abs, max_duration_s, note_required,
@@ -62,10 +64,7 @@ def resolve_filter_policy(limit: dict) -> dict:
     duration_allowed = not is_overboost(limit)
 
     filterable, reason = True, None
-    if severity == "WARNING":
-        filterable = False
-        reason = raw.get("reason") or WARNING_REASON
-    elif raw.get("filterable") is False:
+    if raw.get("filterable") is False:
         # The profile says why, in words for the pilot (`reason`).
         filterable = False
         reason = raw.get("reason") or "The engine profile marks this limit as one that can't be filtered."
@@ -77,7 +76,7 @@ def resolve_filter_policy(limit: dict) -> dict:
         "duration_allowed": duration_allowed,
         "max_band_abs": raw.get("max_band_abs"),
         "max_duration_s": raw.get("max_duration_s") if duration_allowed else None,
-        "note_required": bool(raw.get("note_required", False)),
+        "note_required": bool(raw.get("note_required", severity == "WARNING")),
         "review_interval_h": raw.get("review_interval_h", DEFAULT_REVIEW_INTERVAL_H.get(severity, 50)),
     }
 
@@ -240,7 +239,7 @@ def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]
                                f"{label}: max event duration {max_event_s:g} s exceeds the cap of "
                                f"{policy['max_duration_s']:g} s.", filter_))
     if policy["note_required"] and not (filter_.get("note") or "").strip():
-        diags.append(_diag("FILTER_NOTE_REQUIRED", f"{label}: a note is required to filter a WARNING limit.", filter_))
+        diags.append(_diag("FILTER_NOTE_REQUIRED", f"{label}: a note is required to filter this limit.", filter_))
     return diags
 
 
