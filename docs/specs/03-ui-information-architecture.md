@@ -1,9 +1,9 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.11 — for review (no code written)
+**Status:** v0.12 — implementation in progress (`web/src/views`, against the local-server adapter)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
-**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.3; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO)
+**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
 
 **Revision history**
@@ -21,6 +21,7 @@
 | 0.9 | §5.4 renamed "ECU investigation" → **Engine ECU CAS Events**, and its "what counts as an event" definition made explicit (an `IN_FLIGHT`-classified occurrence, not any ENGINE ECU alert). A real bug this surfaced, now fixed: Flight view had a `warning`-severity insight built from *ground-context* ECU presence on a flight with zero real in-flight events — corrected per Spec 01 §8.5 v0.9's firing-condition fix. A second real Flight view (the actual flight behind one of the fleet's genuine in-flight events) was built to demonstrate the correctly-scoped case, since the mockup this event's card previously linked to couldn't show it — every event card should link to its own real flight, not a generic stand-in. |
 | 0.10 | §5.3: the "Stratify by" toggle finally has a real behavior spec — it never had one beyond a name. Hidden entirely for a non-stratifiable metric, off by default for the 7 that are (per Spec 01 §8.4 v0.10's real `band_kind_by_metric` values), and honest about lower per-band confidence rather than hiding or upgrading it. |
 | 0.11 | §5.3: with stratification on, outlier rings come from the per-band outliers (Spec 01 v0.13, R8), so a ringed point and a "watch" insight always use the same comparison. `baseline_deviation` now compares within the flight's band, so the stratified view is the one that matches the insights for stratified metrics. |
+| 0.12 | §5.1 aligned with Spec 02 v0.7's two exclusion tiers (§5.11 there). "Ground session (skipped)" removed as a row status — a skipped log never becomes a flight, so it can't be a row; skipped logs (ground session, short flight, corrupt log, user-skipped) get their own **Skipped** panel instead, with read-only preview and Include, as built. The In baselines column is stated to be Tier 2 only. Status header corrected from "no code written". |
 **Baseline reviewed:** repo `main` at commit `1740d1b`
 
 ---
@@ -96,12 +97,13 @@ Replaces the old standalone Import destination and the never-built "just a list"
   | Date / route | Apr 23 · KACV |
   | Duration, engine hours | 4h 30m · 38.2h |
   | Insights | count, colored by worst severity (§5.2's severity tokens) |
-  | In baselines | ✓, or "excluded — <reason>" (Spec 02 §6.3's `excluded` list; toggle lives here) |
+  | In baselines | ✓, or "excluded — <reason>" (Spec 02 §6.3's `excluded` list — Tier 2 of Spec 02 §5.11; toggle lives here) |
   | Status | see below |
   | Source | filename + folder, on hover/expand |
 
   Clicking a row opens Flight view (§5.2).
-- **Status values**, matching Spec 02 §5.5/§5.6 exactly rather than inventing UI-only states: Analyzed · Needs re-analysis (rules/overrides/engine version changed since last computed — Spec 02 §8's `stale` flag) · Missing log (Spec 02 §5.5 — results kept, charts unavailable) · Folder unreachable ("Locate folder") · Different aircraft (Spec 02 §5.6 — informational only, never excludes) · Ground session (skipped) · Unreadable (parse failure).
+- **Status values**, matching Spec 02 §5.5/§5.6 exactly rather than inventing UI-only states: Analyzed · Needs re-analysis (rules/overrides/engine version changed since last computed — Spec 02 §8's `stale` flag) · Missing log (Spec 02 §5.5 — results kept, charts unavailable) · Folder unreachable ("Locate folder") · Different aircraft (Spec 02 §5.6 — informational only, never excludes) · Unreadable (parse failure).
+- **Skipped panel**, separate from the table (Spec 02 §5.11, Tier 1): logs in the workspace's folders that the admission rules kept from becoming flights — ground session, short flight, corrupt log — plus any the pilot skipped. Each shows its category and reason, opens read-only in Flight view so the call can be checked, and has an **Include** action (an override, never a delete). A chip in the header shows the count; the panel's per-log date/duration is fetched only when it's opened, since that re-reads each file.
 - **Grouping:** by date (default) or by folder, mirroring how the pilot already organized their own files — no in-app subset filter beyond that, consistent with Spec 02 §5.4's "subsets are made by organizing folders, not by picking in the app."
 - **Status chips filter the table** — e.g. show only Missing, or only Excluded.
 - **A running "Analyze N new flights" action** after a scan finds new logs, same as Import's old batch-action reasoning: not automatic per-file, so dropping 50 logs doesn't mean waiting through 50 sequential renders.

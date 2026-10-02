@@ -1,11 +1,12 @@
 # Spec 02 — Results Bundle & Workspace
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.6 — for review (no code written)
+**Status:** v0.7 — implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built
 **Suggested repo path:** `docs/specs/02-results-bundle-and-workspace.md`
-**Builds on:** Spec 01 — Engine Contract v0.5; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
+**Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
 **Precedes:** Spec 03 (UI Information Architecture)
-**Baseline reviewed:** repo `main` at commit `ed0ca33` (2026-07-07); the spike results (Spec 04, Appendix A); `workspaces-and-log-browser.md` design notes (2026-09-23)
+**Baseline reviewed:** repo `main` at commit `ed0ca33` (2026-07-07); the spike results (Spec 04, Appendix A); `workspaces-and-log-browser.md` design notes (2026-09-23); v0.7 checked against branch `webui` at commit `fee6577` (2026-10-01)
+**Supersedes:** `docs/specs/08-flight-exclusions.md` (Workspace Flight Exclusions) and the never-committed companion spec "Ground Session Detection" — both folded into §5.11 and §6.8
 
 **Revision history**
 
@@ -16,6 +17,7 @@
 | 0.4 | **Multiple workspaces.** A user needs separate analysis contexts for different aircraft, or for experimenting with a subset of their own logs — v0.3 assumed exactly one workspace per install, which silently corrupts baselines the moment two aircraft's logs mix. Rewrites §5 around a workspace **registry** (many workspaces, one active) sitting above the existing per-workspace layout (which is otherwise unchanged in shape). Logs are now explicitly **referenced by folder, never copied**, matched by content fingerprint so renames/moves survive a rescan. `FleetSelection` (§6.3) splits automatic folder-derived membership from the one real in-app selection (baseline exclusion). `settings.json` (§6.6) splits into app-level and workspace-level. New §6.7 (workspace registry document), §5.5 (cross-aircraft and duplicate-folder safeguards). Four new open questions (Q7–Q10), one existing question (Q5) sharpened with a concrete proposal. Source: `workspaces-and-log-browser.md`. |
 | 0.5 | Q7–Q10 resolved, each folded into the relevant section rather than left as a table entry: §5.6 splits cross-aircraft handling into a hard, by-construction engine-model constraint (workspace-level, not detected per-log) and a purely informational tail-number difference; §6.1's `aircraft` field restructured accordingly; §5.5 (new) covers the missing-log vs. unreachable-folder distinction; §5.8 notes the Spec 01 CLI change Q10 requires. New open item Q11: no data signal is confirmed to exist for detecting a log's engine variant automatically — the by-construction design sidesteps this rather than solves it. |
 | 0.6 | Findings from the first real implementation pass. Two things fixed, not just documented: **`log_folders[].path` was genuinely wrong** — it mixed a JSON-serializable path string with a browser-only `FileSystemDirectoryHandle` in one field, quietly breaking §5.10's "identical JSON" claim; split into a plain display `path` (both realizations) plus a separate non-JSON handle store keyed by a new `folder_id`. **Exact-fingerprint duplicates must not reuse the overlap-duplicate drop-one-keep-one logic** — doing so silently discards a second export path instead of recording it in `imports[]`, defeating the reason that array exists; §5.7 now says so explicitly, plus which import wins when one is picked as primary (reuse the existing `most_rows` comparator). Two things added: `FlightSources.missing` (§6.2 — the field §5.5's persistence rule needed but the original sketch didn't have), and a fingerprint-caching rule (§5.7 — skip re-hashing a file whose path/size/mtime haven't changed, since reading every file's full bytes on every scan was asserted cheap without being addressed). |
+| 0.7 | **Log admission and flight exclusions folded in** (new §5.11, §6.8), replacing the separate Workspace Flight Exclusions spec (filed as a second "Spec 08") and recording the never-committed Ground Session Detection spec it depended on. Written against the implementation, and corrects four things the former spec got wrong: (1) `exclusions.json` governs **admission** (does a log become a flight at all), not baseline contribution — baseline contribution is, and stays, `fleet/selection.json`'s `excluded` list (§6.3). The two are deliberately separate tiers keyed differently (filename vs. `flight_id`), not two copies of one list; §5.11 states why. (2) Parse failures are not `corrupt_log` entries — an unreadable file is never recorded, it surfaces as the Unreadable status (Spec 03 §5.1). (3) `include` never deletes an entry, including a `user_defined` one — it sets `user_override`. (4) `exclusions.json` lives at the workspace root, not `data/`. §5.1, §5.3, §5.9, §6.3 and §7.1 updated to reference the new sections. Status header corrected — it still read "no code written" well after the filesystem realization shipped. New open questions Q12–Q14. |
 
 ---
 
@@ -69,7 +71,7 @@ A pilot can have several workspaces — one per aircraft, or an experiment holdi
 
 A workspace is **a list of one or more log folders, plus everything derived from what's in them.** Not a copy of the logs — a reference. Membership isn't a stored list the app maintains; it's *whatever the referenced folders currently contain*, recomputed on every rescan. Subfolders are included automatically. There is no in-app filter for "which of my logs are in this workspace" — that's controlled entirely by how the pilot organizes their own files into folders, which is deliberate (§5.4 explains why this, not an in-app picker).
 
-The one real in-app selection is narrower and different: which *member* flights feed baselines (§6.3) — a pilot can exclude a known-bad log from the fleet statistics without removing it from the workspace or touching their file system.
+Two in-app controls narrow this, and they answer different questions (§5.11): **admission** — whether a log in a referenced folder becomes a flight at all (ground sessions, short hops and corrupt logs are skipped automatically, visibly, and overridably, recorded in `exclusions.json`, §6.8) — and **baseline exclusion** — which admitted flights feed baselines (§6.3), so a pilot can hold a known-bad flight out of the fleet statistics without removing it from the workspace or touching their file system. Neither is a subset picker: both are per-log exceptions to "everything in the folders," never a list of what's in.
 
 ### 5.2 The registry (app-level, above any one workspace)
 
@@ -111,6 +113,7 @@ workspaces/<workspace_id>/
 │   ├── active.json               # the RuleSet in effect (copy of insight_rules.json + local overrides)
 │   └── engine_overrides.json     # OPTIONAL: engine-profile overrides, if the pilot edits limits
 ├── annotations.json              # host-supplied notes, keyed by flight_id (Spec 01 §8.5, R3)
+├── exclusions.json               # log admission record — skipped logs and overrides, keyed by filename, see §5.11, §6.8
 └── settings.json                 # workspace-level only now — see §6.6
 ```
 
@@ -170,6 +173,7 @@ IndexedDB database: "slingology-eis-workspace-<id>"   (one per workspace)
 ├── store "fleet"         → one record { selection, analysis }
 ├── store "rules"         → one record { active, engine_overrides }
 ├── store "annotations"   → one record (small; keyed internally by flight_id)
+├── store "exclusions"    → one record, the §6.8 document
 └── store "settings"      → one record (workspace-level only, §6.6)
 ```
 
@@ -180,6 +184,59 @@ Raw log bytes are still **never** written to IndexedDB, in either database — u
 ### 5.10 Why the schema is identical everywhere
 
 Both realizations store the **same typed objects** from Spec 01 (§8), for any given active workspace. A local-server response to `GET /workspaces/<id>/flights/<flight_id>` and a browser `db.flights.get(flight_id)` (against that workspace's own IndexedDB database) return byte-identical JSON. This is still what lets the CLI and the UI agree (D5), and what makes exporting a bundle from either host trivial.
+
+### 5.11 Log admission and flight exclusions (new in v0.7)
+
+Folded in from the former Workspace Flight Exclusions spec (and its never-committed companion, Ground Session Detection), and written against what was built. The problem it solves: ground sessions used to be dropped silently at load time with no record, and the only way to keep any other unwanted log out was to move the file out of the folder.
+
+#### 5.11.1 Two tiers, two documents — deliberately
+
+| | **Tier 1 — Admission** | **Tier 2 — Baseline exclusion** |
+|---|---|---|
+| Question | Is this log a flight at all? | Should this flight feed fleet statistics? |
+| Document | `exclusions.json` (§6.8) | `fleet/selection.json` → `excluded` (§6.3) |
+| Keyed by | filename | `flight_id` |
+| Set by | automatic rules at first sight of a file (§5.11.2), or the pilot | the pilot only — never automatic |
+| Effect | the file never becomes a `flight_id`: no `flights/<id>/`, no analysis, no insights, absent from every view except the Skipped panel | the flight stays fully analyzed and visible, with its insights; it is only left out of `rebuild_fleet`'s input |
+| Undo | set `user_override: true` — the entry itself is permanent (§5.11.4) | remove the entry |
+| UI | Flights tab **Skipped** panel: preview the log, Include it | Flights table **In baselines** column toggle |
+
+The former spec said `exclusions.json` drives *baseline contribution* and that excluded flights stay known to the workspace. That is not what was built, and the built behavior is the right one: a ground session has no airborne data to analyze, so admitting it as a flight and then hiding it from baselines would show the pilot an empty Flight view and a row of "unavailable" metrics for something that was never a flight. Conversely, folding Tier 2 into `exclusions.json` would mean throwing away a real flight's analysis and insights just to keep it out of the averages. "Single source of truth" holds **within** each tier; across tiers, two documents answering two questions is the correct shape, not a duplication to be merged.
+
+A third, transient case belongs to neither tier: an **overlap duplicate** (§5.7) dropped during a scan is reported in that scan's result but persisted nowhere — it's re-derived from the folder contents on every scan, exactly like membership itself.
+
+#### 5.11.2 Automatic admission rules
+
+Applied in priority order by one shared classifier, `exclusions.classify_for_auto_exclusion()`, used by both ingestion paths — `scan_workspace()` (web UI / local server) and `load_directory()` (CLI / notebooks). Before v0.7's implementation, `scan_workspace()` had no filtering at all while `load_directory()` did; one classifier is what keeps the two from disagreeing again. The classifier runs on an already phase-annotated frame (Spec 01 phase detection), so it adds no second pass.
+
+1. **`ground_session`** — no row lands in an airborne phase. `AIRBORNE_PHASES` = {`CLIMB`, `CRUISE`, `DESCENT`, `APPROACH`, `LANDING_ROLL`}. `TAKEOFF_ROLL` is **deliberately not** airborne: `TAXI → TAKEOFF_ROLL` fires on RPM alone (with a fallback back to `TAXI`), and only `TAKEOFF_ROLL → CLIMB`'s altitude-gain gate actually confirms liftoff; every other airborne phase is reachable only downstream of that gate. The case that proved it: `log_20260706_180003_KAWO.csv`, a ground run-up that pushed RPM past 4,500 with altitude flat at 158–168 ft, would have been admitted as a flight otherwise. This rule replaced the earlier proxy (RPM > 3,000 and IAS > 30 kt for ≥ 3 min); on the full local fleet at the time of the change (54 files) the two agreed exactly, so no golden fixtures moved.
+2. **`short_flight`** — total airborne-phase time below `min_flight_duration_min` (toolkit `config.json`, default **10**; `0` disables). Conservative on purpose: it targets three-minute circuits, not a twelve-minute hop to a neighbouring field.
+3. **`corrupt_log`** — a time gap of more than 5 minutes inside one session (an avionics restart or SD-card error). Mid-log power-cycle detection (BACKLOG B2) would also belong here and is not yet implemented. **Parse failures are not recorded here**: a file that fails to load is skipped by the scan and shown with the Unreadable status (Spec 03 §5.1), with no `exclusions.json` entry.
+
+Without a workspace (`load_directory(workspace_dir=None)`), only rule 1 applies and nothing is persisted — the CLI still works against a bare log folder.
+
+#### 5.11.3 Classified once, not on every scan
+
+The rules run only when a file is **first seen**. An existing entry is authoritative and the file is not re-parsed to confirm it, and an admitted flight is not re-tested on later scans. This keeps routine Sync cost proportional to what's new, not to the size of the workspace. The consequence, stated plainly: changing `min_flight_duration_min`, or improving phase detection, does **not** retroactively affect flights already admitted or logs already skipped.
+
+The one deliberate retroactive path is the explicit, pilot-triggered **reclassify** operation (`reclassify_existing_flights`, server op `reclassify_flights`), written for workspaces built before `scan_workspace()` had any filtering. It re-applies the rules to admitted flights; one that now classifies as excludable gets its `exclusions.json` entry written **first** and is then removed, so the next scan rediscovers the file, finds the entry, and doesn't re-admit it. Overrides are respected. It does not run the other way — a skipped log that would now pass stays skipped until overridden (Q14).
+
+#### 5.11.4 Overrides and user entries
+
+- **`user_override: true`** admits the log as though it had never been excluded. The entry stays, so the rule that fired (or the pilot's own earlier exclusion) remains on record with the override reason beside it. There is **no delete** — including for `user_defined` entries; the CLI's `include` sets the override rather than removing the entry (the former spec's CLI section said otherwise, contradicting its own permanence rule; the permanence rule won).
+- An override takes effect in the **same** scan: the classifier re-reads the file from disk rather than the copy loaded at the scan's start.
+- Writing an automatic entry is idempotent and never clobbers an existing entry, so an override survives every later rescan. A pilot's explicit exclusion of a file replaces any existing entry for it with a fresh `user_defined` one.
+- Including a skipped log from the UI sets the override and immediately rescans, rebuilding the fleet if a flight appeared. A browser-uploaded file has no saved bytes to rescan (§5.9 — raw bytes are never stored), so for that case the override only clears the way for a re-upload of the same file to be admitted.
+
+#### 5.11.5 Surfaces
+
+| Surface | Tier 1 (admission) | Tier 2 (baselines) |
+|---|---|---|
+| CLI | `flights [--show-excluded]` (header counts from `exclusion_summary()`), `exclude FILENAME --reason …`, `include FILENAME [--reason …]` | — (see Q13) |
+| Server ops | `list_exclusions` (`enrich` opt-in: re-locates and re-parses each skipped file for date/duration — real I/O, so only when the panel is open), `include_excluded_log`, `preview_excluded_log`, `get_excluded_log_series`, `reclassify_flights` | `exclude_flight`, `include_flight` |
+| UI | Flights tab Skipped panel; a skipped log opens read-only in Flight view (`/skipped/:filename`) with nothing persisted, so a pilot can check the call was right before Including it | In baselines toggle (Spec 03 §5.1) |
+
+`exclusions.json` records filenames, never paths, so the Skipped panel re-locates a skipped file by name across the workspace's currently reachable folders (`find_log_file_by_name`). A skipped file in an unreachable folder, or one that was browser-uploaded, still lists — just without its own date or duration.
 
 ## 6. Document shapes
 
@@ -244,7 +301,7 @@ interface FleetSelection {
   // (§5.1, §5.4). Storing a separate "included" list would let it drift from
   // the folders, which is exactly the two-sources-of-truth problem §5.4 exists
   // to avoid. The only real selection this document stores is the exclusion.
-  excluded: { flight_id: string; reason: string }[];  // the one in-app selection: pilot-set, e.g. a known-bad log — NOT auto-set by a different tail number (§5.6), which is informational only and never excludes anything
+  excluded: { flight_id: string; reason: string }[];  // Tier 2 of §5.11: the one in-app *baseline* selection, pilot-set only, e.g. a known-bad flight — NOT auto-set by anything: not a different tail number (§5.6, informational only), and not the admission rules, whose skipped logs never become flight_ids at all (§5.11, §6.8)
   baseline_config: BaselineConfig;   // Spec 01 §8.4 — membership, band_kind_by_metric
 }
 ```
@@ -307,6 +364,27 @@ interface WorkspaceRegistry {
 
 **Local realization:** `~/SlingologyEIS/registry.json` (or the equivalent developer-checkout / Docker path from §5.8), sibling to the `workspaces/` directory, not inside any one workspace. **Browser realization:** the `slingology-eis-registry` IndexedDB database (§5.9). Both are small — even a hundred workspaces is a trivial amount of JSON — so no special sizing concern beyond what §9 already covers for a single workspace.
 
+### 6.8 `exclusions.json` (new in v0.7)
+
+Tier 1 of §5.11 — the admission record. One per workspace, at the workspace root alongside `manifest.json` (the former spec's `data/exclusions.json` predates multiple workspaces and is wrong). Absent file = no entries. Written atomically (temp file + rename).
+
+```ts
+interface ExclusionStore {
+  version: 1;
+  entries: {
+    filename: string;            // log filename only — never a path (see Q12)
+    source: "auto" | "user";
+    category: "ground_session" | "short_flight" | "corrupt_log" | "user_defined";
+    reason: string;              // human-readable, e.g. "below minimum flight duration (8 min < 10 min)"
+    excluded_at: string;         // ISO 8601, when the entry was written
+    user_override: boolean;      // true → admitted despite the entry (§5.11.4)
+    override_reason?: string;
+  }[];
+}
+```
+
+`source: "auto"` pairs with the three rule categories, `source: "user"` with `user_defined`. `exclusion_summary()` reports a count for every category (zero included) plus a separate `overridden` tally — category counts include overridden entries, so the two are additive, not partitioned.
+
 ## 7. The results bundle
 
 A single file, `.eisbundle.json` (or `.eisbundle.zip` — see §7.3), containing a snapshot of some or all of the workspace, self-describing enough to be opened cold on another device.
@@ -327,7 +405,7 @@ interface ResultsBundle {
 }
 ```
 
-Deliberately excluded from the bundle: raw log bytes, full-resolution series data (Spec 01 §8.7) beyond what's needed for the flight-view charts, and any engine-internal cache. The bundle is meant to be readable and diffable, and to stay small — the "no service-side storage" principle (D7) extends naturally to "no accidental raw-data leakage in something meant to be shared."
+Deliberately excluded from the bundle: `exclusions.json` (it records which of *this* pilot's files were skipped — meaningless to a recipient, whose bundle contains only admitted flights by construction; whether a full-workspace backup should carry it is part of Q2's format decision), raw log bytes, full-resolution series data (Spec 01 §8.7) beyond what's needed for the flight-view charts, and any engine-internal cache. The bundle is meant to be readable and diffable, and to stay small — the "no service-side storage" principle (D7) extends naturally to "no accidental raw-data leakage in something meant to be shared."
 
 ### 7.2 GPS handling
 
@@ -366,7 +444,7 @@ Per finding 8 and Spec 04 §2.8:
 
 ## 10. What this spec does not cover
 
-The chart-ready series cache (`series/overview.json` in §5) is sketched but not fully specified — its downsampling parameters and cache-invalidation rule depend on Spec 03's chart design. The rule-playground's exact diff view is Spec 03. Multi-user or multi-device sync of one workspace is out of scope entirely — the bundle import/export *is* the sync mechanism, deliberately manual, consistent with "no service-side storage." Engine-profile override editing (`engine_overrides.json`) is named but not designed. The **Flights tab** (a log browser showing every flight in the active workspace, its status, and whether it feeds baselines) and the **workspace switcher**'s exact placement are Spec 03's job — this spec defines the data they read (§5, §6.3, §6.7), not their layout.
+The chart-ready series cache (`series/overview.json` in §5) is sketched but not fully specified — its downsampling parameters and cache-invalidation rule depend on Spec 03's chart design. The rule-playground's exact diff view is Spec 03. Multi-user or multi-device sync of one workspace is out of scope entirely — the bundle import/export *is* the sync mechanism, deliberately manual, consistent with "no service-side storage." Engine-profile override editing (`engine_overrides.json`) is named but not designed. Mid-log power-cycle detection for `corrupt_log` (§5.11.2) is BACKLOG B2, not this spec. The **Flights tab** (a log browser showing every flight in the active workspace, its status, and whether it feeds baselines) and the **workspace switcher**'s exact placement are Spec 03's job — this spec defines the data they read (§5, §6.3, §6.7), not their layout.
 
 ## 11. Migration and testing
 
@@ -375,6 +453,8 @@ This spec has no engine code to migrate — it's purely a host-side addition, bu
 1. Implement the local-filesystem realization (§5.8) first, since the CLI already has the closest precedent (`data/reports/`) and it's testable without a browser.
 2. Implement `export_bundle`/`import_bundle` against the filesystem realization; test round-tripping the 23-flight fleet (pending more raw logs, per Spec 01 Q6, same limitation as before).
 3. Implement the IndexedDB realization behind the same interface used by the browser adapter (Spec 04 §9.1), and confirm identical JSON shapes between the two.
+
+Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection); steps 2 and 3 are not. §5.11's admission behavior is covered by `tests/unit/test_exclusions.py`, `test_loader.py`, `test_workspace.py` (including reclassify), `test_server.py` (Skipped list, preview) and `tests/cli/test_cli.py` (`flights` / `exclude` / `include`) — run against the project's logs, including the run-up case in §5.11.2.
 
 ## 12. Open questions
 
@@ -391,3 +471,6 @@ This spec has no engine code to migrate — it's purely a host-side addition, bu
 | Q9 | ~~Should a first-time pilot ever have to think about creating a workspace?~~ | **Resolved.** No — auto-create from the tail number in their first imported logs, plain fallback name if parsing fails, always renamable. |
 | Q10 | ~~Does the CLI need `--workspace <name>` as well as a path, plus `workspace list`/`workspace create`?~~ | **Resolved: yes.** `--workspace` accepts either a registered name/id (looked up in the registry) or a literal path (unchanged behavior — a developer-checkout invocation that predates the registry keeps working). This is a real modification to the CLI Spec 01 §7.1 already shipped (Stage 4a, v0.11.0), not a paper change to an unbuilt spec — flag it to Code as required code, not just a doc update. |
 | Q11 | No data signal is confirmed to exist for detecting a log's engine variant (912iS/914iS/915iS/916iS) automatically — `limits.py` shows engine selection is entirely user-configured, never read from the log. The by-construction design in §5.6 sidesteps this (mixing is structurally impossible, not detected-and-blocked), but nothing currently catches a pilot pointing the wrong log at the wrong workspace — it would just silently get the wrong limits. | New. Needs either a real data signal (unconfirmed — the project's dataset is 916iS-only, so this hasn't been checked against other variants) or a manual tail-number-to-engine-model mapping the pilot maintains. Not blocking Q8's resolution; worth its own follow-up. |
+| Q12 | `exclusions.json` is keyed by **filename**, while everything else in the workspace matches logs by content fingerprint (§5.7). Renaming a skipped file makes it look new — it gets classified again (usually re-skipped, but a user override or `user_defined` entry is lost to the renamed copy); and two different files with the same name in two referenced folders share one entry. | New. Leaning: add the file's `source_key` to each entry and match on it first, keeping `filename` for display and for the browser-upload case. Low urgency — G3X names embed date, time and airport, so collisions are rare in practice — but it's the one place the workspace breaks its own matching rule. |
+| Q13 | The CLI's `exclude`/`include` act on **Tier 1** (admission), while the UI's exclude toggle acts on **Tier 2** (baselines). The same verb means different things on two surfaces, and the CLI's Tier 1 entry behaves differently by path: the CLI's own fleet commands honor it on their next run (`load_directory()` reads `exclusions.json` every time), but in a folder-scanned workspace (the web UI's path) a file that's *already* a flight stays one — rules only run on newly seen files (§5.11.3). | New, needs a decision. Options: (a) CLI `exclude` given an already-admitted file targets Tier 2, and only a not-yet-admitted file gets a Tier 1 `user_defined` entry; (b) rename the CLI's Tier 1 verbs `skip`/`unskip` and add `exclude`/`include` for Tier 2, matching the UI. Leaning (b): explicit beats overloaded. |
+| Q14 | `min_flight_duration_min` lives in the toolkit's `config.json` — install-wide — although per-workspace settings exist (§6.6) and an experiment workspace is exactly where a pilot might want a different threshold. And because rules apply once (§5.11.3), changing it affects only new files; `reclassify` only tightens (removes newly-short flights), never loosens (re-admits newly-long-enough skipped logs). | New. Leaning: move it into `WorkspaceSettings`, and make reclassify symmetric for `auto` entries (re-admit a skipped log whose rule no longer fires, leaving `user_defined` entries and overrides untouched). |
