@@ -294,11 +294,6 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                   last breach →
                 </span>
               )}
-              {filter.created_from && (
-                <span onClick={() => navigate(`/flights/${filter.created_from!.flight_id}`)} style={{ cursor: "pointer", color: "var(--accent)" }}>
-                  from flight →
-                </span>
-              )}
               <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
                 {[
                   ["Edit", () => setEditing(editing === filter.id ? null : filter.id)],
