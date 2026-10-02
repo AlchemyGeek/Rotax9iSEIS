@@ -33,11 +33,12 @@ function driftDetailText(details: NonNullable<FilterHealth["drift_details"]>): s
         return `Event frequency: ${Math.round((d.values[0] ?? 0) * 100)}% of the last ${d.window} flights vs ${Math.round((d.typical ?? 0) * 100)}% of the reference; drifting at +${Math.round((d.threshold_delta ?? 0) * 100)} points or more.`;
       }
       const cmp = d.comparison?.scope === "band" ? `reference flights in the "${d.comparison.band}" band` : "all reference flights";
-      const std = Math.max(d.std ?? 0, d.std_floor ?? 0);
+      const above = d.z?.some((z) => z === null)
+        ? "Last flights above a reference that never varied (any increase counts)"
+        : `Last flights ${d.z?.map((z) => (z ?? 0).toFixed(1)).join(" and ")} std devs above typical`;
       return (
-        `${d.metric.replace(/_/g, " ")}: compared with ${cmp} (n=${d.comparison?.n}), typical ${d.typical?.toFixed(2)} ± ${std.toFixed(2)}` +
-        `${d.std_floor && (d.std ?? 0) < d.std_floor ? " (minimum spread applied)" : ""}. ` +
-        `Last flights ${d.z?.map((z) => z.toFixed(1)).join(" and ")} std devs above typical; drifting above ${d.z_threshold} ` +
+        `${d.metric.replace(/_/g, " ")}: compared with ${cmp} (n=${d.comparison?.n}), typical ${d.typical?.toFixed(2)} ± ${(d.std ?? 0).toFixed(2)}. ` +
+        `${above}; drifting above ${d.z_threshold} ` +
         `on 2 flights in a row (set per metric in Baselines → Limit filter drift).`
       );
     })

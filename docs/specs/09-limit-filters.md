@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.10 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
+**Status:** v0.11 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -19,7 +19,8 @@
 | 0.7 | Phase 4 implemented. A std floor for `time_above_pct` added to §13; the effective reference, invalid filters and the Drifting windows pinned down (§8, §16). |
 | 0.8 | Phase 5 implemented: copy filters between same-model workspaces (§9). |
 | 0.9 | WARNING limits are never filterable; placeholder caps removed (§6.3, Q2). New `min_rpm` gate (§6.6); `fuel_press_min` checked only at ≥ 1,000 rpm. |
-| 0.10 | **Reopened: WARNING limits are filterable again, with a required note (§6.3).** A consistent WARNING exceedance can be a real issue or an artifact of sensor/calibration drift, and the engine can't tell the two apart — the v0.9 blanket block traded that judgment call for an always-safe default, but a note lets the pilot record which it is and why, same mechanism as a CAUTION limit's optional note, just mandatory. `oil_press_min` keeps its own explicit `filterable: false` override (§15 Q1) — unaffected, since it's a profile-level lock, not the severity rule. No new caps reinstated; the placeholder caps removed in v0.9 stay removed. |
+| 0.10 | No std floors in the drift checks; a zero-spread reference means any increase counts (§13, Phase 4 notes). Filtering a limit exceeded on fewer than 5 reference flights is allowed but flagged "not advisable" (`propose_limit_filter` advisory, §11.2, §12). |
+| 0.11 | **Reopened: WARNING limits are filterable again, with a required note (§6.3).** A consistent WARNING exceedance can be a real issue or an artifact of sensor/calibration drift, and the engine can't tell the two apart — the v0.9 blanket block traded that judgment call for an always-safe default, but a note lets the pilot record which it is and why, same mechanism as a CAUTION limit's optional note, just mandatory. `oil_press_min` keeps its own explicit `filterable: false` override (§15 Q1) — unaffected, since it's a profile-level lock, not the severity rule. No new caps reinstated; the placeholder caps removed in v0.9 stay removed. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -189,9 +190,9 @@ Defaults, when the field is absent:
 severity — it is the only way a limit stops being filterable; `oil_press_min` is the shipped
 example (Q1), locked the same way whether its severity is WARNING or anything else.
 
-**Superseded in v0.9, reopened in v0.10.** v0.9 made WARNING limits never filterable: a WARNING
+**Superseded in v0.9, reopened in v0.11.** v0.9 made WARNING limits never filterable: a WARNING
 limit is an OM red line, so the reading was treated as either real or a sensor fault to fix at the
-source, never something to tolerate. v0.10 reopens this: a consistent exceedance on a real
+source, never something to tolerate. v0.11 reopens this: a consistent exceedance on a real
 aircraft can equally be an artifact of sensor calibration or another systemic quirk, not a true
 WARNING-worthy condition, and the engine has no way to tell the two apart from the data alone.
 Rather than force every such case into "never filterable," a WARNING limit is filterable like any
@@ -399,7 +400,7 @@ The overboost topic applies the filter band to `ob_max` and shifts the close cal
 | `update_fleet` | Baselines the §5 metrics like every other metric, from the generated `BASELINE_METRIC_DEFS`. No new arguments. |
 | `evaluate_insights(fa, fleet, rules, annotations?, filters?)` | New `filters` argument (the workspace's `LimitFilter[]`). Applies §7 and §10. z-mode filters read their frozen baseline from `fleet`. `InsightSet` gains `filters_hash`; the host's insight cache key includes it. `analysis_key` and `fleet_key` do not depend on filters. |
 | `evaluate_filter_health(flight_analyses, fleet, filters, engine_config)` | **New.** Returns `FilterHealth[]` (§11.3). Frozen and live baselines come from `fleet`; breach detection reads the flights' events. |
-| `propose_limit_filter(flight_analyses, fleet, limit_id, engine_config)` | **New.** Returns a pre-filled draft: the limit, its policy (allowed modes, caps, note requirement), the live baseline of this limit's `peak_excess` and `time_above_pct`, a suggested absolute band (the live baseline's max excess, rounded up), the proposed reference flight IDs, and whether z is available. |
+| `propose_limit_filter(flight_analyses, fleet, limit_id, engine_config)` | **New.** Returns a pre-filled draft: the limit, its policy (allowed modes, caps, note requirement), the live baseline of this limit's `peak_excess` and `time_above_pct`, a suggested absolute band (the live baseline's max excess, rounded up), the proposed reference flight IDs, whether z is available, and an `advisory` (`advisable`, `flights_exceeded`, `flights_considered`, `message`): a limit exceeded on fewer than 5 of the reference flights (for overboost, blocks past the limit) can still be filtered, but the editor shows the message saying it is not advisable and why. |
 | `preview_limit_filter(flight_analyses, fleet, rules, filters, draft)` | **New.** Re-runs `evaluate_insights` over every included flight with and without the draft and returns the per-flight diff: events newly suppressed, breaches, topic insights removed. Same diff shape as the rule playground (Spec 03 §5.5). |
 | `validate_limit_filter(filter, engine_config, fleet?)` | **New.** Returns diagnostics; used by the host before saving and internally by the operations above. `fleet` is needed only to check a z reference's `n`. |
 
@@ -493,7 +494,8 @@ All values are initial placeholders, to be tuned on the full log set.
 | `n_min` for z reference and band comparison | 10 | shared with `baseline_deviation` |
 | Drift z | the metric's `outlier_z_threshold` (default 2.0) | `BaselineConfig`, shared |
 | z `std` floor | 5% of the limit value, min 0.1 engine units | engine |
-| `time_above_pct` drift `std` floor | 1 percentage point (added in Phase 4) | engine |
+| ~~`time_above_pct` drift `std` floor~~ | removed in v0.10: drift checks use the reference spread as is | — |
+| "Not advisable" below | 5 reference flights with the limit exceeded (`ADVISABLE_MIN_FLIGHTS`) | engine |
 | `reference_n` | 20 flights | engine |
 | `reference_min_n` | 5 flights | engine |
 | `frequency_window` | 10 monitored flights | engine |
@@ -567,10 +569,13 @@ review interval (Phase 4). The CLI `report` command reads the workspace's `filte
 
 **Phase 4 notes.**
 
-- *Drift floor for `time_above_pct`.* §13 gave a std floor only for z-mode peak excess. A limit
-  rarely exceeded in its reference has a `time_above_pct` std near zero, so any event would read
-  as Drifting; the drift test floors that std at 1 percentage point. Peak excess uses the z-mode
-  floor (5% of the limit value), and overboost's block time a floor of 1 s.
+- *No floor in the drift checks (v0.10).* Phase 4 floored the reference std (1 percentage point
+  for `time_above_pct`, the z-mode floor for peak excess, 1 s for overboost blocks) so a rarely
+  exceeded limit wouldn't read as Drifting on its first event. The floors were a rule pilots
+  couldn't see; v0.10 removes them. Drift means "higher than your reference flights" with their
+  actual spread, and with a zero spread (e.g. never past the limit) any increase on 2 flights in a
+  row counts, worded "…; your reference flights never did." Filtering such a limit is instead
+  flagged up front as not advisable (§11.2). The z-mode band keeps its floor (§13).
 - *Effective reference* is computed, not stored: the stored reference flights still included,
   extended forward chronologically until `reference_min_n`. Monitored flights are those after the
   last reference flight in that order.
@@ -597,7 +602,7 @@ and say what each flight was compared with, so weather grouping (§6.5) is visib
 being a setting. Drifting reads e.g. "Fuel pressure maximum went further past the limit than
 usual on your last 2 flights: 4.6 and 4.8 psi over the limit, against a typical 3.1 psi for
 your reference flights on cold days (12 flights)" — or "…for all your reference flights" when
-the band has fewer than `n_min`. The z-scores, spread, floor and comparison set move to
+the band has fewer than `n_min`. The z-scores, spread and comparison set move to
 `FilterHealth.drift_details`, shown behind a "How was this decided?" tooltip. The Notes charts
 default to reference / flights since / beyond your filter with a legend; colouring by weather
 band is an opt-in toggle on stratified limits, breaches keeping a red ring. The explainer and

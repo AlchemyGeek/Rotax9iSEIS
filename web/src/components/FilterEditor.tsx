@@ -211,6 +211,12 @@ export function FilterEditor({
         )}
       </div>
 
+      {proposal.advisory && !proposal.advisory.advisable && proposal.advisory.message && (
+        <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--text-secondary)", background: "var(--panel-control)", border: "1px solid var(--border)", borderLeft: "3px solid var(--severity-watch)", borderRadius: 6, padding: "8px 10px" }}>
+          {proposal.advisory.message}
+        </div>
+      )}
+
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
         <input type="checkbox" checked={magnitudeOn} onChange={(e) => setMagnitudeOn(e.target.checked)} />
         <span>{isOverboost ? "A longer block is fine, by" : "A little past the limit is fine, by up to"}</span>

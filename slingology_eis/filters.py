@@ -340,6 +340,28 @@ def _round_up(x: float) -> float:
     return float(math.ceil(x / 5 - 1e-9) * 5)
 
 
+def filter_advisory(fleet, limit: dict, reference_ids: list[str]) -> dict:
+    """
+    Whether filtering this limit makes sense: filters are for exceedances
+    that recur. Exceeded on fewer than ADVISABLE_MIN_FLIGHTS of the
+    reference flights, a filter is still allowed but "not advisable", with
+    a plain-language message saying why.
+    """
+    ob = is_overboost(limit)
+    key = limit_metric_key(limit, "block_s" if ob else "time_above_pct")
+    points = {p["flight_id"]: p.get("value") for p in (fleet.metrics.get(key) or {}).get("points", [])}
+    values = [points[fid] for fid in reference_ids if points.get(fid) is not None]
+    exceeded = sum(1 for v in values if (v > limit["limit_value"] if ob else v > 0))
+    advisable = exceeded >= ADVISABLE_MIN_FLIGHTS
+    message = None
+    if not advisable:
+        message = (f"Not advisable: {limit['label']} was exceeded on {exceeded} of your last {len(values)} "
+                   f"flights. Filters are meant for exceedances that happen regularly; an occasional one is "
+                   f"usually worth looking at each time. You can still save this filter.")
+    return {"advisable": advisable, "flights_exceeded": exceeded, "flights_considered": len(values),
+            "message": message}
+
+
 def propose_limit_filter(flight_analyses: list, fleet, limit_id: str, engine_config: dict) -> dict:
     """
     §11.2 `propose_limit_filter`: a pre-filled draft for the filter
@@ -373,6 +395,7 @@ def propose_limit_filter(flight_analyses: list, fleet, limit_id: str, engine_con
     reference_ids = select_reference(fleet, limit)
     frozen = frozen_baseline(fleet, mag_key, reference_ids)
     return {
+        "advisory": filter_advisory(fleet, limit, reference_ids),
         "limit": limit,
         "policy": policy,
         "live": live,
@@ -453,10 +476,10 @@ FREQUENCY_WINDOW = 10         # monitored flights for the event-frequency test
 FREQUENCY_DELTA = 0.30        # rise in share of flights with events that counts as drift
 QUIET_WINDOW = 10             # monitored flights without events -> Quiet
 DRIFT_PERSISTENCE = 2         # consecutive monitored flights (Spec 08 cylinder_rank pattern)
-# Not in §13: a floor for time_above_pct's reference std. A limit rarely
-# exceeded in its reference has a near-zero std there, and any event at
-# all would otherwise read as drift. In percentage points.
-TIME_ABOVE_STD_FLOOR = 1.0
+# Filtering a limit exceeded on fewer than this many of the reference flights
+# is allowed but "not advisable" (propose_limit_filter's advisory): filters
+# are for exceedances that recur, and an occasional one is worth seeing.
+ADVISABLE_MIN_FLIGHTS = 5
 
 STATUS_ORDER = ("breached", "drifting", "review_due", "quiet", "collecting", "stable")
 
@@ -512,10 +535,17 @@ def _count(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
-def _z(value: Optional[float], stats: dict, floor: float) -> Optional[float]:
+def _z(value: Optional[float], stats: dict) -> Optional[float]:
+    """Std devs above the reference mean — no floor on the spread: drift is
+    "higher than your reference flights", plainly. With a zero spread
+    (every reference flight the same, e.g. never past the limit) any
+    increase counts as above (inf) and anything else as not (0)."""
     if value is None or stats.get("mean") is None:
         return None
-    return (value - stats["mean"]) / max(stats.get("std") or 0.0, floor)
+    std = stats.get("std") or 0.0
+    if std == 0:
+        return math.inf if value > stats["mean"] else 0.0
+    return (value - stats["mean"]) / std
 
 
 def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], engine_config: Optional[dict] = None) -> list[dict]:
@@ -648,32 +678,38 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
             recent = monitored[-DRIFT_PERSISTENCE:]
             unit = limit.get("unit", "")
             past = "under" if limit.get("limit_type") == "MIN" else "over"
-            # (field, frozen stats, std floor, z threshold, pilot wording, value format, suffix after the values)
-            checks = [("block_s" if ob else "peak_excess", frozen_mag, z_std_floor(limit) if not ob else 1.0,
+            # (field, frozen stats, z threshold, pilot wording, value format, suffix after the values)
+            checks = [("block_s" if ob else "peak_excess", frozen_mag,
                        resolve_outlier_z_threshold(baseline_config, mag_key),
                        "the longest overboost block was longer than usual" if ob
                        else "went further past the limit than usual",
                        (lambda v: f"{v:.0f} s") if ob else (lambda v: f"{_fmt_value(v)} {unit}"),
                        "" if ob else f" {past} the limit")]
             if frozen_pct:
-                checks.append(("time_above_pct", frozen_pct, TIME_ABOVE_STD_FLOOR,
+                checks.append(("time_above_pct", frozen_pct,
                                resolve_outlier_z_threshold(baseline_config, pct_key),
                                "spent more of the flight past the limit than usual",
                                lambda v: f"{v:.0f}%", " of engine time"))
-            for field, frozen, floor, z_thr, wording, fmt, suffix in checks:
+            for field, frozen, z_thr, wording, fmt, suffix in checks:
                 comps = [comparison_set(frozen, s["band"]) for s in recent]
-                zs = [_z(s.get(field), stats, floor) for s, (stats, _) in zip(recent, comps)]
+                zs = [_z(s.get(field), stats) for s, (stats, _) in zip(recent, comps)]
                 if all(z is not None and z > z_thr for z in zs):
                     stats, cmp = comps[-1]
                     values = " and ".join(fmt(s[field]) for s in recent)
+                    if not stats.get("std") and not stats["mean"]:
+                        # The reference never went past the limit at all.
+                        against = f"; {comparison_phrase(cmp, limit.get('stratify_by'))} never did."
+                    else:
+                        against = (f", against a typical {fmt(stats['mean'])} for "
+                                   f"{comparison_phrase(cmp, limit.get('stratify_by'))}.")
                     reasons["drifting"].append(
-                        f"{limit['label']} {wording} on your last {DRIFT_PERSISTENCE} flights: {values}{suffix}, "
-                        f"against a typical {fmt(stats['mean'])} for "
-                        f"{comparison_phrase(cmp, limit.get('stratify_by'))}.")
+                        f"{limit['label']} {wording} on your last {DRIFT_PERSISTENCE} flights: {values}{suffix}{against}")
                     health.setdefault("drift_details", []).append({
                         "metric": field, "values": [s[field] for s in recent],
-                        "typical": stats["mean"], "std": stats.get("std"), "std_floor": floor,
-                        "z": [round(z, 2) for z in zs], "z_threshold": z_thr, "comparison": cmp,
+                        "typical": stats["mean"], "std": stats.get("std"),
+                        # null = above a reference with zero spread
+                        "z": [None if math.isinf(z) else round(z, 2) for z in zs],
+                        "z_threshold": z_thr, "comparison": cmp,
                     })
             if share_ref is not None and len(monitored) >= FREQUENCY_WINDOW:
                 window = monitored[-FREQUENCY_WINDOW:]

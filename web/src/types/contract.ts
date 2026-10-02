@@ -651,6 +651,9 @@ export interface BaselineStats {
 export interface FilterProposal {
   limit: LimitDef;
   policy: FilterPolicy;
+  // Filtering a limit exceeded on only a few reference flights is allowed
+  // but not advisable; message says why, in pilot terms.
+  advisory?: { advisable: boolean; flights_exceeded: number; flights_considered: number; message: string | null };
   live: {
     magnitude_metric: string;
     magnitude: BaselineStats;
@@ -736,8 +739,8 @@ export interface FilterHealth {
     values: number[];
     typical: number | null;
     std?: number | null;
-    std_floor?: number;
-    z?: number[];
+    // null: above a reference with zero spread (no std devs to count)
+    z?: (number | null)[];
     z_threshold?: number;
     comparison?: { scope: "band" | "all"; band: string | null; n: number };
     threshold_delta?: number;

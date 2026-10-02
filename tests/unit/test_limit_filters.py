@@ -445,11 +445,13 @@ def test_monitor_breached_then_reviewed():
 
 
 def test_monitor_drift_needs_two_consecutive_flights():
-    # the 2.3 psi floor (5% of 46) dominates the tiny reference std: z = (x - 1.1) / 2.3
+    # reference peak excess 1.1 ± 0.09 psi; no floor on that spread
     one = _health(_TYPICAL + [(1.1, 21.0, None), (2.9, 21.0, None)], 12)
     two = _health(_TYPICAL + [(2.9, 21.0, None), (2.9, 21.0, None)], 12)
     assert one["status"] == "stable"
-    assert two["status"] == "stable"      # z = 0.8: within the floor
+    assert two["status"] == "drifting"
+    assert two["reasons"][0].startswith("Fuel pressure maximum went further past the limit than usual on your last "
+                                        "2 flights: 2.9 psi and 2.9 psi over the limit, against a typical 1.1 psi")
     drift = _health(_TYPICAL + [(1.0, 60.0, None), (1.0, 60.0, None)], 12)
     assert drift["status"] == "drifting"
     assert drift["reasons"][0] == ("Fuel pressure maximum spent more of the flight past the limit than usual on your "
@@ -462,7 +464,7 @@ def test_monitor_drift_needs_two_consecutive_flights():
 
 def test_monitor_drift_threshold_is_the_metrics_outlier_z():
     """Acceptance 11: the per-limit metric's outlier_z_threshold override
-    decides drift too. Reference time above: 21 ± 0.85 %, floored to 1."""
+    decides drift too. Reference time above: 21 ± 0.85 %, so 24 % is z = 3.5."""
     fas, fleet = _monitor_fixture(_TYPICAL + [(1.0, 24.0, None), (1.0, 24.0, None)])   # z = 3
     flt = _filter("fuel_press_max", {"mode": "absolute", "value": 3.0},
                   reference=[f"m{i:03d}" for i in range(12)], created_engine_hours=112.0)
@@ -509,8 +511,8 @@ def test_monitor_stratified_comparison_uses_the_flights_band():
     warm monitored flights sit within the warm band's reference, so no
     drift — though against all reference flights they'd be 2+ std up."""
     ref = [(1.0, 5.0 + 0.2 * (i % 3), "cold") for i in range(40)] + \
-          [(1.0, 30.0 + 0.2 * (i % 3), "warm") for i in range(10)]
-    warm = [(1.0, 31.0, "warm"), (1.0, 31.0, "warm")]
+          [(1.0, 30.0 + 1.0 * (i % 3), "warm") for i in range(10)]
+    warm = [(1.0, 32.0, "warm"), (1.0, 32.0, "warm")]
     h = _health(ref + warm, 50)
     assert h["status"] == "stable"
     # the same values with no band information would read as drift
@@ -542,3 +544,29 @@ def test_limit_insights_say_whether_they_can_be_filtered():
     ins = {i["limit_id"]: i for i in _limit_topic(evaluate_insights(fa, update_fleet([]), RULES))["insights"]}
     assert ins["oil_press_min"]["filterable"] is False
     assert ins["fuel_press_max"]["filterable"] is True
+
+
+def test_drift_against_a_reference_that_never_exceeded():
+    """No floor: with a zero-spread reference (never past the limit) any time
+    past it on 2 flights in a row is drift, said in plain words."""
+    ref = [(None, 0.0, None)] * 12
+    h = _health(ref + [(1.0, 2.0, None), (1.0, 3.0, None)], 12)
+    assert h["status"] == "drifting"
+    assert ("Fuel pressure maximum spent more of the flight past the limit than usual on your last 2 flights: "
+            "2% and 3% of engine time; all your reference flights (12 flights) never did.") in h["reasons"]
+    detail = next(d for d in h["drift_details"] if d["metric"] == "time_above_pct")
+    assert detail["z"] == [None, None] and "std_floor" not in detail
+    assert _health(ref + [(None, 0.0, None)] * 2, 12)["status"] != "drifting"
+
+
+def test_filtering_a_rarely_exceeded_limit_is_allowed_but_not_advisable():
+    rare = [(1.0 if i < 3 else None, 1.0 if i < 3 else 0.0, None) for i in range(20)]
+    fas, fleet = _monitor_fixture(rare)
+    adv = propose_limit_filter(fas, fleet, "fuel_press_max", CFG)["advisory"]
+    assert adv == {"advisable": False, "flights_exceeded": 3, "flights_considered": 20,
+                   "message": "Not advisable: Fuel pressure maximum was exceeded on 3 of your last 20 flights. "
+                              "Filters are meant for exceedances that happen regularly; an occasional one is "
+                              "usually worth looking at each time. You can still save this filter."}
+    fas, fleet = _monitor_fixture(_TYPICAL)
+    adv = propose_limit_filter(fas, fleet, "fuel_press_max", CFG)["advisory"]
+    assert adv["advisable"] and adv["message"] is None and adv["flights_exceeded"] == 12
