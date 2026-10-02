@@ -1,7 +1,7 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.2 — for review (no code written). Q1(a) and Q4 decided (§4.1, §4.2); §6's other findings are still proposals, none acted on until decided.
+**Status:** Draft v0.3 — for review (no code written). Q1(a) and Q4 decided (§4.1, §4.2); overboost reporting moved to `limit_exceedances` (Spec 09 v0.12); §6's other findings are still proposals, none acted on until decided.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
@@ -13,6 +13,7 @@
 |---|---|
 | 0.1 | Initial draft. Admission criteria, register schema, first audit of every current topic, coverage view, lifecycle, topic-spec template. |
 | 0.2 | **Q1(a) decided — Option A:** `limit_exceedances` owns every OM-limit event; a topic that references a limit shows it (analysis line, link, mirrored badge) but never emits a second insight for it (new §4.1). **Q4 decided — Option B:** the topic set is for the engine; planning numbers (cruise nm/gal, cruise fuel flow, fuel burned) move to a flight-summary line with no insights, and the power × DA fuel-flow model (BACKLOG A5) becomes a Research item (new §4.2). Register, audit, outcomes, coverage view and acceptance updated to match. The "verify overboost overlap" item is closed: overboost is not checked by `limit_exceedances` (`report_in_exceedances: false`), so `overboost_time` is its only reporter and there is no duplicate. Q1(b) stays open. |
+| 0.3 | **Overboost exception removed (Spec 09 v0.12).** Overboost is now the single owner of the OM 5-minute takeoff rule and is reported by `limit_exceedances` as an ordinary event (`report_in_exceedances: true`, blocks built with the 30 s merge gap); `rpm_continuous_max` is retired. The v0.2 reasoning that closed "verify overboost overlap" — overboost is not checked by `limit_exceedances`, so `overboost_time` is its single reporter — no longer holds. Overboost becomes an ordinary §4.1 case: `limit_exceedances` owns the event, and `overboost_time` references it (analysis line, link, mirrored badge) and keeps its close-call insight. §4.1, register, audit, outcome, coverage and acceptance 3 updated. |
 
 ---
 
@@ -85,9 +86,9 @@ A topic that references a limit (through a threshold trigger's `limit_ref` — t
 
 The topic keeps everything only it can do — baseline and trend triggers against the aircraft's own history.
 
-**Exception — overboost.** The overboost limit is a duration of an operating regime, not a reading crossing a value, and it is deliberately not checked by `limit_exceedances` (catalogue entry `report_in_exceedances: false`; Spec 09 §6.4 makes it filterable through `overboost_time`). `overboost_time` is therefore its single reporter, which satisfies the same one-report rule. The separate `rpm_takeoff_max` limit (above 5,800 rpm) is an ordinary limit owned by `limit_exceedances`.
+**Overboost is not an exception (v0.3).** Until v0.3, overboost was checked only by `overboost_time` (`report_in_exceedances: false`) and this section made it an exception. Spec 09 v0.12 moves it into `limit_exceedances` as an ordinary event, one per block past the 300 s limit, so it follows the same rule as every other limit: `limit_exceedances` owns the event and `overboost_time` references it. The topic keeps the close call — a block near the limit is not an OM exceedance, so only the topic can report it. The 5,800 rpm ceiling (`rpm_takeoff_max`) is an ordinary limit owned by `limit_exceedances`.
 
-**Follow-ups this decision creates** (not made by this spec): Spec 09 §10.2 — topic threshold triggers become display-only references; Spec 03 §5.2 — the mirrored badge on topic cards; `insight_rules.json` — the `threshold` triggers on `oil_temp_peak` / `coolant_temp_peak` keep only their `limit_ref` for the reference, or move to a non-trigger field.
+**Follow-ups this decision creates** (not made by this spec): for overboost, done in Spec 09 v0.12 (§6.4, §10.3); Spec 09 §10.2 — topic threshold triggers become display-only references; Spec 03 §5.2 — the mirrored badge on topic cards; `insight_rules.json` — the `threshold` triggers on `oil_temp_peak` / `coolant_temp_peak` keep only their `limit_ref` for the reference, or move to a non-trigger field.
 
 ### 4.2 Planning numbers are not topics (Q4, decided v0.2)
 
@@ -129,12 +130,12 @@ Status is the **current** state. §6 gives the audit verdict and proposed status
 | `oil_temp_peak` | Did oil get too hot, or hotter than usual? | health + operational | OM limit (referenced, §4.1) · baseline | Admitted |
 | `coolant_temp_peak` | Did coolant get too hot, or hotter than usual? | health | OM limit (referenced, §4.1) · baseline | Admitted |
 | `oil_coolant_ratio` | Has the oil-vs-coolant balance shifted? | health | baseline | Admitted |
-| `overboost_time` | Did I stay at takeoff power too long? | operational | OM limit (300 s above 5,500 rpm / 100 %) · close-call margin | Admitted |
+| `overboost_time` | Did I stay at takeoff power too long? | operational | OM limit (referenced, §4.1: 300 s above 5,500 rpm / 100 %) · close-call margin | Admitted |
 | `cruise_efficiency` | How far am I going per gallon in cruise? | planning (§4.2) | baseline · trend, DA band | Admitted — to leave the topic set (Q4) |
 | `cruise_fuel_flow` | Is cruise fuel burn normal? | planning (§4.2) | baseline, DA band | Admitted — to leave the topic set (Q4) |
 | `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT) | Admitted |
 | `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (cas.py) | Admitted |
-| `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all except overboost, §4.1) | Admitted — owner of limit events |
+| `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all, overboost included since v0.3, §4.1) | Admitted — owner of limit events |
 | `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | Admitted |
 | `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); rule `enabled: false` |
 | `flight_phase_mix` | Was this flight's climb/cruise/descent split unusual? | — | — | Dropped as a topic in toolkit v0.10.0 (replaced by the "no cruise detected" header note) |
@@ -151,7 +152,7 @@ Each topic was checked against A1–A7 using the code at `fee6577`, the research
 | `oil_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ◐ | Keep; drop its limit insight (§4.1) |
 | `coolant_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ◐ | Keep; drop its limit insight (§4.1) |
 | `oil_coolant_ratio` | ✓ | ✓ | ✓ | ✗ E4 | ◐ | ✓ | ? | Redefine, then re-audit |
-| `overboost_time` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✓ | n/a | Keep (single reporter, §4.1) |
+| `overboost_time` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✓ | n/a | Keep; references the `limit_exceedances` event, keeps the close call (§4.1, v0.3) |
 | `cruise_efficiency` | ✓ | ◐ | ✓ | ✗ | ◐ | ◐ | ◐ | Move to flight summary (§4.2) |
 | `cruise_fuel_flow` | ✓ | ◐ | ✓ | ✗ | ◐ | ✓ | ◐ | Move to flight summary (§4.2); A5 model to Research |
 | `map_at_takeoff` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | ◐ | Keep, provisional; fix config |
@@ -178,7 +179,7 @@ Each topic was checked against A1–A7 using the code at `fee6577`, the research
 
 Proposal: redefine as a temperature **difference** (oil − coolant), measured simultaneously in a stable phase (cruise mean, or peak-time-aligned). State the mechanism: oil cooler effectiveness vs. coolant radiator effectiveness — a blocked oil cooler raises the difference, a coolant-side problem lowers it. Grade it E2 or demote to Research.
 
-**`overboost_time` — keep.** OM: 5,500 rpm maximum continuous, 5,800 rpm takeoff limited to 5 minutes (E1). Time above 5,500 rpm or 100 % power is therefore the time-limited regime. Operational class, direct action (throttle back after takeoff). One exceedance in the snapshot (381 s, ATC delay), two flights ≥ 240 s. Overboost is a computed limit id (`overboost`), but its catalogue entry has `report_in_exceedances: false`, so `limit_exceedances` never emits an event for it — `overboost_time` is its single reporter (§4.1, exception). No duplicate.
+**`overboost_time` — keep.** OM: 5,500 rpm maximum continuous, 5,800 rpm takeoff limited to 5 minutes (E1). Time above 5,500 rpm or 100 % power is therefore the time-limited regime. Operational class, direct action (throttle back after takeoff). One exceedance in the snapshot (381 s, ATC delay), two flights ≥ 240 s. Since v0.3 (Spec 09 v0.12) a block past the limit is a `limit_exceedances` event; the topic references it (§4.1) and keeps what only it can report — the close call and the time-in-regime context. Overboost also replaced `rpm_continuous_max`, which raised a CAUTION on every takeoff because it had no time allowance.
 
 **`cruise_efficiency` — move to the flight summary (§4.2).** nmpg integrates **ground speed** (`fuel.py`), so a headwind looks like an efficiency loss — the dominant term is wind, not the engine (fails A4 as a health topic). FADEC fuel flow is model-based, ±10 % (OM). A DA band reduces but doesn't remove the confounders: power setting, wind, weight. Its "decreasing — worth watching" trend implies engine degradation that the data can't support. **Decided (§4.2):** cruise nm/gal becomes a flight-summary number with no insights. A true-airspeed, matched-power redefinition is possible later through the lifecycle, but isn't proposed now.
 
@@ -205,7 +206,7 @@ Provisional until the rule reflects what's computed and the model has altitude d
 | Outcome | Topics |
 |---|---|
 | Keep as is | `egt_cyl_deviation`, `engine_ecu_inflight`, `limit_exceedances` |
-| Keep as is (single reporter of its limit) | `overboost_time` |
+| Keep; reference the limit event, keep the close call (decided, §4.1, v0.3) | `overboost_time` |
 | Keep; drop the duplicate limit insight (decided, §4.1) | `oil_temp_peak`, `coolant_temp_peak` |
 | Keep; overlap to declare, trigger review pending Q1(b) | `egt_spread` |
 | Keep, provisional (named condition) | `cylinder_rank` (no positive case yet), `map_at_takeoff` (config mismatch, altitude diversity) |
@@ -222,8 +223,8 @@ Logged engine channels against the topics and limit checks that use them. A blan
 
 | Channel | Topics | OM limit checks | Gap / decision |
 |---|---|---|---|
-| `rpm` | `overboost_time` | idle min, continuous max, takeoff max | — |
-| `power_pct` | `overboost_time` | — | — |
+| `rpm` | `overboost_time` | idle min, takeoff max (5,800 rpm ceiling), overboost (5-minute rule) | — |
+| `power_pct` | `overboost_time` | overboost (5-minute rule) | — |
 | `map_inhg` | `map_at_takeoff` | MAP max | — |
 | `egt1–4_f` | `egt_spread`, `egt_cyl_deviation`, `cylinder_rank` | EGT max ×4, EGT split ×2 | — |
 | `oil_temp_f` | `oil_temp_peak`, `oil_coolant_ratio`, `climb_thermal_rate` | takeoff min, max, optimal-band low | Candidate **C1**: oil-temperature optimal band / condensation (metric exists, not surfaced) |
@@ -304,7 +305,7 @@ How a non-technical owner submits one, and how bundles get shared, is deliberate
 
 1. Every `topic_id` in `insight_rules.json` and every topic emitted by `evaluate_insights` has a register entry. Nothing is emitted without one, and no rule exists without one.
 2. Every Admitted topic has an evidence grade of E1 or E2 for its mechanism, recorded in its entry.
-3. No OM-limit exceedance produces more than one insight on a flight (§4.1) — checked by a test against the project logs that includes a real exceedance (the 381 s overboost flight, and a synthetic oil/coolant exceedance).
+3. No OM-limit exceedance produces more than one insight on a flight (§4.1) — checked by a test against the project logs that includes a real exceedance (the 381 s overboost flight, `log_20260423_135821_KTOA.csv`: one `limit_exceedances` event and no `overboost_time` insight for it; and a synthetic oil/coolant exceedance).
 4. No planning number (§4.2) produces an insight.
 5. §6's audit numbers are re-run on the full local log set (Claude Code environment, 100+ logs), within the comparison scope each topic actually uses, and the A7 verdicts confirmed or revised. This is v0.2's main job.
 6. §6.2's outcomes have a decision recorded — accepted, rejected, or deferred — each with a BACKLOG reference.

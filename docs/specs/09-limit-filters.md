@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.11 — implemented (engine 0.20.0), Phases 1–5 (§16); Q5 (Trends group) remains a follow-up
+**Status:** v0.12 — Phases 1–5 implemented (engine 0.20.0); Phase 6 (RPM limits and overboost as a limit event, §6.4, §6.7) proposed, not implemented (§16); Q5 (Trends group) remains a follow-up
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -21,6 +21,7 @@
 | 0.9 | WARNING limits are never filterable; placeholder caps removed (§6.3, Q2). New `min_rpm` gate (§6.6); `fuel_press_min` checked only at ≥ 1,000 rpm. |
 | 0.10 | No std floors in the drift checks; a zero-spread reference means any increase counts (§13, Phase 4 notes). Filtering a limit exceeded on fewer than 5 reference flights is allowed but flagged "not advisable" (`propose_limit_filter` advisory, §11.2, §12). |
 | 0.11 | **Reopened: WARNING limits are filterable again, with a required note (§6.3).** A consistent WARNING exceedance can be a real issue or an artifact of sensor/calibration drift, and the engine can't tell the two apart — the v0.9 blanket block traded that judgment call for an always-safe default, but a note lets the pilot record which it is and why, same mechanism as a CAUTION limit's optional note, just mandatory. `oil_press_min` keeps its own explicit `filterable: false` override (§15 Q1) — unaffected, since it's a profile-level lock, not the severity rule. No new caps reinstated; the placeholder caps removed in v0.9 stay removed. |
+| 0.12 | **RPM limits and overboost (Q4 resolved, Phase 6 proposed).** The profiles encoded the OM's two RPM rules (5,500 rpm max continuous; 5,800 rpm for at most 5 minutes) wrongly: `rpm_continuous_max` had no time allowance, so every takeoff at T.O. power raised a CAUTION, and `rpm_takeoff_max` reported a run above 5,800 rpm only if it lasted over 300 s, so a short overspeed went unreported. Overboost becomes the single owner of the 5-minute rule and is reported by `limit_exceedances` as an ordinary event, built with the 30 s merge gap (§6.4); `rpm_continuous_max` is retired; `rpm_takeoff_max` becomes a plain ceiling with no time limit, and `time_limit_s` leaves the profile schema (§6.7). Two new optional `filter_policy` fields, `magnitude_modes` and `duration_allowed`, let a profile restrict a limit's filter (§6.3); they replace overboost's hard-coded special case. The 5,800 rpm ceiling declares absolute mode only, no duration condition and a 30 rpm band cap, so a pilot can filter takeoff-setpoint jitter (e.g. +20 rpm) without being able to hide an overspeed. `overboost_time` no longer emits a threshold insight (§10.2, §10.3; Spec 10 §4.1). Applied to all four profiles. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -130,7 +131,7 @@ Proposed IDs for the 916iS:
 | Label | `id` |
 |---|---|
 | Idle RPM minimum | `rpm_idle_min` |
-| Max continuous RPM | `rpm_continuous_max` |
+| ~~Max continuous RPM~~ | ~~`rpm_continuous_max`~~ — retired in v0.12 (§6.7) |
 | Takeoff RPM (5-min limit) | `rpm_takeoff_max` |
 | Oil pressure min (>3500 rpm) | `oil_press_min` |
 | Oil pressure max (>3500 rpm) | `oil_press_max` |
@@ -146,7 +147,7 @@ Proposed IDs for the 916iS:
 | Bus voltage minimum | `volts_min` |
 | Bus voltage maximum | `volts_max` |
 
-The two computed EGT split limits get fixed IDs `egt_split_high_flow` and `egt_split_low_flow`, declared in the profile's `egt_spread` section. The overboost limit gets `overboost` in the `overboost` section. The same ID means the same limit across engine models. `limits.py` fails loudly on a missing or duplicate ID.
+The two computed EGT split limits get fixed IDs `egt_split_high_flow` and `egt_split_low_flow`, declared in the profile's `egt_spread` section. The overboost limit gets `overboost` in the `overboost` section. A retired ID is never reused for a different limit. The same ID means the same limit across engine models. `limits.py` fails loudly on a missing or duplicate ID.
 
 ### 6.2 Exceedance merge gap
 
@@ -156,7 +157,7 @@ New profile-level field:
 "exceedance_merge_gap_s": 30
 ```
 
-An event ends only when the reading has stayed within the limit for at least this many seconds. Shorter dips are absorbed into the event. The gap is measured in **time** (`datetime`), not rows, because phase filtering (`lim.phases`) makes rows non-contiguous. Merging happens **before** the existing `time_limit_s`, `min_duration_s` and `min_duration_by_phase` checks, so those apply to the merged event. Value is a placeholder to be tuned on the full log set (§14).
+An event ends only when the reading has stayed within the limit for at least this many seconds. Shorter dips are absorbed into the event. The gap is measured in **time** (`datetime`), not rows, because phase filtering (`lim.phases`) makes rows non-contiguous. Merging happens **before** the `min_duration_s` and `min_duration_by_phase` checks, so those apply to the merged event (`time_limit_s`, also applied after merging until v0.12, is removed in §6.7). Value is a placeholder to be tuned on the full log set (§14).
 
 On KACV, fuel pressure max goes from 38 events to 33 at a 5 s gap, 7 at 30 s, and 3 at 120 s.
 
@@ -173,6 +174,8 @@ New optional per-limit field:
 ```json
 "filter_policy": {
   "filterable": true,
+  "magnitude_modes": ["absolute", "percent"],
+  "duration_allowed": true,
   "max_band_abs": 35.0,
   "max_duration_s": 10,
   "review_interval_h": 25
@@ -185,6 +188,19 @@ Defaults, when the field is absent:
 |---|---|---|---|---|---|---|
 | CAUTION | true | absolute, percent, z | none | none | optional | 50 h |
 | WARNING | true | absolute, percent, z | none | none | **required** | 25 h |
+
+**Restricting a limit's filter (v0.12).** Two optional fields narrow what a filter on one limit
+may use. Both default to the table above when absent.
+
+- `magnitude_modes`: the subset of `absolute`, `percent`, `z` this limit allows. A cap on the band
+  is enforced in absolute and percent mode only (§7.3), so a limit with a band cap that must not be
+  bypassed declares the modes the cap covers.
+- `duration_allowed`: `false` removes the duration condition (§7.2) for this limit; `max_duration_s`
+  is then ignored.
+
+These replace the hard-coded overboost case (`is_overboost` in the policy code): overboost now
+declares its restrictions in its profile section like any other limit (§6.4). The 5,800 rpm
+ceiling uses them (§6.7).
 
 `filterable: false` (with a pilot-facing `reason`) makes a limit non-filterable regardless of
 severity — it is the only way a limit stops being filterable; `oil_press_min` is the shipped
@@ -223,6 +239,13 @@ no sub-42 psi stretch of 10 s or more at or above 1,000 rpm in any log.
 - It is treated as WARNING (it is the same OM 5-minute rule as takeoff RPM).
 - With a band `b`, the effective limit is `300 + b` and the close-call threshold is `300 + b − close_call_margin_s`. A pilot whose normal procedure produces 250 s blocks can set +20 s: the effective limit becomes 320 s, the close call starts at 260 s, and 250 s is silent.
 
+**v0.12: single owner of the 5-minute rule, reported as a limit event.** The OM allows takeoff performance (above 5,500 rpm max continuous, up to 5,800 rpm) for at most 5 minutes. Overboost is the one rule that enforces this; `rpm_continuous_max` is retired (§6.7). Overboost keeps its definition — a row is in the regime when `rpm > rpm_threshold` **or** `power_pct > power_pct_threshold` — because the OM limit applies to takeoff power, not RPM alone. On KACV the two conditions agree: the longest block is 61 s by RPM alone, 57 s by power alone and 61 s for either.
+
+- **Blocks use the merge gap.** A block ends only when the engine has stayed out of the regime for at least the profile's `exceedance_merge_gap_s` (30 s, §6.2), measured in time. A takeoff that dips below 5,500 rpm for a few seconds and goes back up stays one block; before v0.12 the dip reset the clock. Merging is the conservative choice for a time limit, and it matches how every other event is built. `overboost_total_s` (rows in the regime) is unchanged; `overboost_max_block_s` and `limit_overboost_block_s` become the longest **merged** block, so the fleet metric and the event always agree.
+- **Reported by `limit_exceedances`.** The catalogue entry changes to `report_in_exceedances: true`. A block longer than the effective limit is an ordinary exceedance event (§11.1): `limit_id: "overboost"`, `param: "overboost"`, unit `s`, `limit_type: "MAX"`, `limit_value` 300, `observed_value` the block length, `excess` = block − 300, `start_utc` / `elapsed_s` the block's start, `duration_s` the block length. One event per block past the limit; a flight with two long blocks gets two events under one insight (§10.1).
+- **Filter policy in the profile.** The `overboost` section declares `filter_policy: {"magnitude_modes": ["absolute", "percent"], "duration_allowed": false}`, replacing the hard-coded case. A band works as described above.
+- **Close call stays with the topic.** A block within `close_call_margin_s` of the effective limit is not an OM exceedance, so `limit_exceedances` never reports it. `overboost_time` keeps its close-call insight (§10.3).
+
 ### 6.5 Stratification
 
 New optional per-limit field `stratify_by: "oat_band" | "da_band" | null`, used for the §5 metrics. Defaults follow the research paper §9 convention already used by `BASELINE_METRIC_DEFS`:
@@ -235,7 +258,38 @@ New optional per-limit field `stratify_by: "oat_band" | "da_band" | null`, used 
 
 Whether fuel pressure depends on OAT (fuel temperature) is an open question (Q7); the log-set report in §14.2 should show whether any unstratified limit metric clearly varies by band.
 
-**From the log-set report (Phase 2, 53 flights):** `fuel_press_max` peak excess varies with OAT band (eta² 0.18; cold +4.1 psi, mild +3.3 psi), so the 916iS and 915iS profiles set `stratify_by: "oat_band"` on it; its time-above share does not (eta² 0.07). The large density-altitude effects on the `time_above_pct` of `fuel_press_min` and `rpm_continuous_max` (eta² 0.40) follow flight profile (short low-DA flights with more takeoffs and pattern work), not weather, so those stay unstratified. The other stratified limits (temperatures, EGT, MAP, overboost) have too few events on this aircraft to test.
+**From the log-set report (Phase 2, 53 flights):** `fuel_press_max` peak excess varies with OAT band (eta² 0.18; cold +4.1 psi, mild +3.3 psi), so the 916iS and 915iS profiles set `stratify_by: "oat_band"` on it; its time-above share does not (eta² 0.07). The large density-altitude effects on the `time_above_pct` of `fuel_press_min` and `rpm_continuous_max` (eta² 0.40; `rpm_continuous_max` retired in v0.12, §6.7) follow flight profile (short low-DA flights with more takeoffs and pattern work), not weather, so those stay unstratified. The other stratified limits (temperatures, EGT, MAP, overboost) have too few events on this aircraft to test.
+
+### 6.7 RPM limits (v0.12)
+
+The OM (916iS Chapter 2.1; 915iS the same structure) has two RPM rules that work together: 5,500 rpm is the maximum continuous speed, and up to 5,800 rpm is permitted for at most 5 minutes. Anything between 5,500 and 5,800 rpm is legal for up to 5 minutes; anything above 5,800 rpm is never permitted. The profiles encoded them as two independent limits with the time allowance on the wrong one:
+
+| Limit | Before v0.12 | Effect |
+|---|---|---|
+| `rpm_continuous_max` | max 5,500, CAUTION, no time limit | Any run above 5,500 rpm was an event, so every takeoff at T.O. power raised a CAUTION (KACV: 67 s, peak 5,810 rpm). |
+| `rpm_takeoff_max` | max 5,800, WARNING, `time_limit_s: 300` | A run above 5,800 rpm was reported only if it lasted over 300 s; a short overspeed was never reported. |
+
+Changes:
+
+1. **`rpm_continuous_max` is retired** from all four profiles. Its rule — time above 5,500 rpm — is the overboost rule, which now owns it (§6.4). Its §5 metrics stop being produced; existing filters on it become `FILTER_UNKNOWN_LIMIT` (§11.4) and are listed on the Notes page for removal. Notes attached to its insights stay on their flights as orphaned annotations, visible on the Notes page.
+2. **`rpm_takeoff_max` is a plain ceiling.** It loses `time_limit_s`: any reading above 5,800 rpm is an event, of any duration, and stays WARNING.
+3. **`time_limit_s` leaves the profile schema.** No limit uses it after change 2. The check in `limits._add_event` and the field in `FlightAnalysis.limits` (§11.1) are removed; a profile that still declares it fails to load, so a stale profile can't silently keep the old meaning.
+4. **The ceiling's filter policy.** The G3X logs RPM in 10 rpm steps, and the takeoff setpoint sits at the ceiling, so readings of 5,810–5,820 rpm appear at takeoff and occasionally in cruise (KACV: 2 samples, 5,810 at takeoff and 5,820 in cruise). Where takeoff RPM settles depends on the individual aircraft (prop and governing), so this is a per-aircraft tolerance, handled by a filter:
+
+```json
+"filter_policy": {
+  "magnitude_modes": ["absolute"],
+  "duration_allowed": false,
+  "max_band_abs": 30
+}
+```
+
+A pilot sets, for example, absolute +20 rpm with a note ("takeoff-setpoint jitter"). The cap allows three display steps and makes any reading of 5,840 rpm or more unfilterable. Absolute only, because percent is meaningless at this scale and z would bypass the cap (§7.3). No duration condition, because a tolerated short duration would hide a short overspeed of any size. The 30 rpm value comes from the G3X display step, not from the engine, so it is the same in every profile; it is confirmed on the full log set before release (§14, item 18).
+
+The filter on the ceiling and the 5-minute rule on overboost are independent: a 6-minute takeoff at 5,810 rpm is suppressed on the ceiling by a +20 filter but still reported by overboost.
+
+5. **All four profiles.** 916iS and 915iS (both VERIFIED) and 912iS and 914iS (PLACEHOLDER) get changes 1–4. The 912iS and 914iS values keep their `PLACEHOLDER` markers; only the structure changes, so verifying them against their OMs later means editing numbers.
+6. **Profile corrections made in the same change.** The `overboost` note in the 916iS and 915iS profiles reads "at or above 5,800 rpm / 100% power"; it becomes "above 5,500 rpm or 100 % power for more than 5 minutes", matching `rpm_threshold`. The 912iS profile declares `turbocharged: true`; the 912iS is normally aspirated, so it becomes `false`. The 5-minute rule still applies to the 912iS, so its `overboost` section stays (the name is a misnomer on a non-turbo engine; renaming is out of scope, Q9).
 
 ## 7. Filter semantics
 
@@ -253,14 +307,14 @@ For percent and z, the UI always shows the resolved band in display units next t
 
 ### 7.2 Duration condition
 
-`max_event_s`: an event is tolerated if its (merged) duration is at most this. Measured per event, after merging. For WARNING limits, `max_event_s ≤ filter_policy.max_duration_s`.
+`max_event_s`: an event is tolerated if its (merged) duration is at most this. Measured per event, after merging. When the limit's policy declares `max_duration_s`, `max_event_s ≤ max_duration_s`. Not available when the policy sets `duration_allowed: false` (§6.3).
 
 ### 7.3 Validation
 
 The engine validates filters, not only the UI:
 
 - `limit_id` exists in the workspace's engine profile, and the limit is filterable.
-- The mode is allowed for the limit's severity; band and duration are within caps.
+- The mode is in the limit's `magnitude_modes`, and a duration condition is present only if `duration_allowed`; band and duration are within caps.
 - A note is present for WARNING limits.
 - A z reference has `n ≥ n_min`.
 
@@ -361,7 +415,9 @@ Because `kind` is part of the id, adding a filter (or a flight gaining its first
 { "type": "threshold", "limit_ref": "oil_temp_max", "severity": "limit" }
 ```
 
-Applies to `oil_temp_peak` (`oil_temp_max`), `coolant_temp_peak` (`coolant_temp_max`) and `overboost_time` (`overboost`). A topic threshold insight fires only if the flight has at least one **unsuppressed** event for that limit. Filters therefore work on topics automatically, including duration filters, and the two places can't disagree.
+Applies to `oil_temp_peak` (`oil_temp_max`) and `coolant_temp_peak` (`coolant_temp_max`); until v0.12 also `overboost_time` (`overboost`), which no longer has a threshold trigger (§10.3). A topic threshold insight fires only if the flight has at least one **unsuppressed** event for that limit. Filters therefore work on topics automatically, including duration filters, and the two places can't disagree.
+
+Spec 10 §4.1 goes further: a topic that references a limit shows its `limit_exceedances` insight (analysis line, link, mirrored badge) instead of emitting its own. That follow-up for the oil and coolant topics belongs to Spec 10; v0.12 applies it to overboost only (§10.3).
 
 The topics' `baseline_deviation` triggers are unaffected: a filter never suppresses them (§2, "They work together").
 
@@ -369,7 +425,9 @@ This is a behaviour change even without filters: a peak above 248°F that the pr
 
 ### 10.3 Overboost
 
-The overboost topic applies the filter band to `ob_max` and shifts the close call with it (§6.4). A filtered overboost produces the `filtered` insight at `watch`; the close call follows the effective limit.
+~~The overboost topic applies the filter band to `ob_max` and shifts the close call with it (§6.4). A filtered overboost produces the `filtered` insight at `watch`; the close call follows the effective limit.~~ Superseded in v0.12.
+
+Overboost events are `limit_exceedances` events (§6.4). The filter band applies there like any other limit's: one insight per flight for `overboost`, with `filtered` (at `watch`, since overboost is WARNING) and breach insights per §10.1. `overboost_time` removes its threshold trigger; its card mirrors the `limit_exceedances` insight for `overboost` as Spec 10 §4.1 describes. It keeps its close-call insight, computed against the effective limit (`300 + b − close_call_margin_s`), so the close call still moves with the band. Across the log set, every flight has at most one insight that reports an overboost block past the limit (§14, item 19).
 
 ### 10.4 Where the change monitor surfaces
 
@@ -388,10 +446,11 @@ The overboost topic applies the filter band to `ob_max` and shifts the close cal
 - `event_id: string` — `limit_id` + start UTC; stable reference for annotations and drill-down
 - `excess: number`
 - merged durations (§6.2)
+- v0.12: overboost blocks past the limit, in the same shape (§6.4)
 
 `FlightAnalysis.metrics` gains the §5 columns. `analysis_key` changes, because event detection and metrics change.
 
-`FlightAnalysis.limits` (added in Phase 1): the engine profile's limit catalogue this flight was checked against, one entry per limit side: `{id, param, label, unit, limit_type, limit_value, severity, time_limit_s, report_in_exceedances, stratify_by, filter_policy?, close_call_margin_s?}`. It lets `evaluate_insights` resolve a `limit_ref` and a filter's limit without taking the engine profile as a new argument, and it is covered by `analysis_key` through the profile hash. Empty for analyses written before engine 0.17; those fall back to the legacy numeric thresholds until re-analysed.
+`FlightAnalysis.limits` (added in Phase 1): the engine profile's limit catalogue this flight was checked against, one entry per limit side: `{id, param, label, unit, limit_type, limit_value, severity, report_in_exceedances, stratify_by, filter_policy?, close_call_margin_s?}` (`time_limit_s` removed in v0.12, §6.7). It lets `evaluate_insights` resolve a `limit_ref` and a filter's limit without taking the engine profile as a new argument, and it is covered by `analysis_key` through the profile hash. Empty for analyses written before engine 0.17; those fall back to the legacy numeric thresholds until re-analysed.
 
 ### 11.2 Operations
 
@@ -503,7 +562,9 @@ All values are initial placeholders, to be tuned on the full log set.
 | `quiet_window` | 10 monitored flights | engine |
 | `review_interval_h` | 50 h CAUTION, 25 h WARNING | profile default |
 | `close_call_margin_s` | 60 s | profile `overboost` |
-| ~~WARNING caps~~ | removed in v0.9: WARNING limits are never filterable | — |
+| ~~WARNING caps~~ | removed in v0.9; v0.11 reopened WARNING filtering with a required note and no default caps — a cap is set per limit in `filter_policy` | — |
+| `max_band_abs` (`rpm_takeoff_max`) | 30 rpm, absolute mode only, no duration condition | profile, all four (§6.7) |
+| Overboost block merge gap | the profile's `exceedance_merge_gap_s` (30 s) | profile (§6.4) |
 | `min_rpm` (`fuel_press_min`) | 1,000 rpm | profile |
 | `stratify_by` | per §6.5 | profile |
 
@@ -515,10 +576,10 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 2. **Merge gap and metrics report:** event counts per limit across the log set before and after merging, with the gap distribution, to support the chosen value. For each limit, the §5 metrics by OAT and DA band, to support the `stratify_by` defaults. KACV fuel pressure max drops from 77 events. No merged event spans a gap longer than `exceedance_merge_gap_s`.
 3. **Per-limit baselines:** `update_fleet` produces baselines, trends, outliers and (where configured) stratified baselines for every limit's §5 metrics, using the same functions as existing metrics. Excluded flights are absent from their points.
 4. **One insight per limit:** without filters, each flight has at most one `limit_exceedances` insight per limit, and its events match `FlightAnalysis.exceedances`. Characterization goldens are updated deliberately, with the diff reviewed.
-5. **Topic parity:** across the log set, `oil_temp_peak`, `coolant_temp_peak` and `overboost_time` threshold insights fire exactly when there is an unsuppressed event for the referenced limit. No `"limit": <number>` remains in threshold triggers. A filter on `oil_temp_max` never removes an `oil_temp_peak` `baseline_deviation` insight.
+5. **Topic parity:** across the log set, `oil_temp_peak` and `coolant_temp_peak` threshold insights fire exactly when there is an unsuppressed event for the referenced limit. No `"limit": <number>` remains in threshold triggers. A filter on `oil_temp_max` never removes an `oil_temp_peak` `baseline_deviation` insight.
 6. **Magnitude filter:** KACV with `fuel_press_max` absolute +2.5 psi: the 50.4 psi event is the only breach; all others are suppressed; one `filtered` insight and one breach insight.
 7. **Duration filter and either-filter:** an event within the duration condition but beyond the band is suppressed; an event outside both is a breach.
-8. **Guardrails enforced in the engine:** z on a WARNING limit, a band or duration over the cap, a missing note, or a non-filterable limit all produce a diagnostic and leave the limit unfiltered, even if `filters.json` is hand-edited.
+8. **Guardrails enforced in the engine:** a mode not in the limit's `magnitude_modes`, a duration condition where `duration_allowed` is false, a band or duration over the cap, a missing note, or a non-filterable limit all produce a diagnostic and leave the limit unfiltered, even if `filters.json` is hand-edited.
 9. **Overboost:** band shifts both the effective limit and the close call; duration condition rejected.
 10. **Frozen baseline:** the frozen baseline equals `baseline()` over the reference flights' points. Excluding a reference flight and rebuilding baselines removes it from the frozen baseline; if that drops a z reference below `n_min`, the filter becomes invalid with `FILTER_REFERENCE_LOW_N`.
 11. **One threshold:** changing a per-limit metric's `outlier_z_threshold` override changes both its chart outliers and the filter's drift decision.
@@ -527,6 +588,10 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 14. **Caching:** changing a filter changes `filters_hash` and the insight cache key, not `analysis_key` or `fleet_key`.
 15. **Retroactivity:** after a filter is saved, reopening an older flight shows its exceedances filtered.
 16. **Copy:** copying to a workspace with a different engine model is refused; copying to a same-model workspace selects a fresh reference.
+17. **RPM limits (v0.12), log set:** no profile contains `rpm_continuous_max` or `time_limit_s`, and a profile declaring `time_limit_s` fails to load. On KACV, the 67 s takeoff produces no RPM CAUTION and no overboost event; without a filter, `rpm_takeoff_max` raises one WARNING insight with two events (5,810 rpm at takeoff, 5,820 rpm in cruise); with absolute +20 rpm, both are suppressed and one `filtered` insight at `watch` remains. Across the log set, the count of flights with an RPM CAUTION goes to zero, and every reading above 5,800 rpm appears as a `rpm_takeoff_max` event regardless of duration.
+18. **Ceiling cap from data:** the per-flight peak excess of `rpm_takeoff_max` across the log set is reported. If any flight peaks above 5,830 rpm, it is reviewed before the 30 rpm cap is fixed. A filter of +40 rpm, a z-mode filter, a percent filter or a duration filter on `rpm_takeoff_max` each produce `FILTER_NOT_ALLOWED`.
+19. **Overboost as a limit event:** the 381 s flight (`log_20260423_135821_KTOA.csv`, ATC delay) produces exactly one `overboost` event in `limit_exceedances` with the block's start and duration, one WARNING insight, and no insight from `overboost_time` for the same block. A synthetic flight with a takeoff block that dips below 5,500 rpm for 10 s and resumes forms one merged block; a dip longer than 30 s forms two. `overboost_max_block_s` equals the longest merged block on every flight, and the fleet values are regenerated with the diff reviewed.
+20. **Other profiles:** 915iS, 912iS and 914iS load with the v0.12 structure; unit tests on synthetic series check the ceiling, the filter policy and the overboost event for each. Real-log coverage is 916iS only.
 
 ## 15. Open questions
 
@@ -535,11 +600,12 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 | Q1 | Should `oil_press_min` (>3500 rpm) be non-filterable? It is the most direct sign of lubrication failure. | **Adopted as proposed (Phase 3):** `filterable: false` in all profiles. Reversible in the profile. |
 | Q2 | ~~Where do the WARNING caps come from?~~ **Superseded (v0.9): WARNING limits are never filterable (§6.3).** | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. **Phase 3:** 916iS ships the placeholder caps in §6.3, marked `PLACEHOLDER`; still to be replaced with sourced values. |
 | Q3 | One global merge gap, or per limit? | **Resolved (Phase 1).** Global 30 s, with a per-limit override; `rpm_idle_min` uses 0 s (§6.2). |
-| Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | Out of scope here; filtered independently for now. |
+| Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | **Resolved (v0.12).** Overboost is the single owner of the 5-minute rule, reported by `limit_exceedances` with the 30 s merge gap (§6.4). `rpm_continuous_max` is retired; `rpm_takeoff_max` is a plain 5,800 rpm ceiling with a capped, absolute-only filter for takeoff-setpoint jitter (§6.7). |
 | Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |
 | Q6 | Existing annotations attached to per-event `limit_exceedances` insights will be orphaned by the new insight IDs. Migrate them? | **Resolved (Phase 1).** On re-analysis, each note on an old per-event insight moves to the new per-limit insight for the same flight and limit; several notes on one limit are joined (`workspace.migrate_limit_annotations`). |
 | Q7 | Does fuel pressure vary with OAT enough to need stratification? | **Resolved (Phase 2).** Peak excess does, time above doesn't; `fuel_press_max` is OAT-stratified (§6.5). |
 | Q8 | ~~Filters compare within the flight's band, but `baseline_deviation` compares against all flights. Align them?~~ | **Resolved (option B).** `baseline_deviation` moves to stratified leave-one-out comparison with an unstratified fallback below `n_min`: Spec 01 v0.13, R8; Spec 03 v0.11 §5.3 for the Trends outlier rings. Implemented as its own change, not part of Spec 09, but Spec 09's frozen-baseline comparison calls the same helper. |
+| Q9 | "Overboost" is a misnomer for the 5-minute rule on the normally aspirated 912iS. Rename the limit (e.g. `takeoff_power_time`)? | Deferred. Renaming an id needs a filter and annotation migration; not worth it until a 912iS user exists. |
 
 ## 16. Implementation plan and status
 
@@ -552,6 +618,7 @@ Built in phases, each shippable on its own.
 | 3 | Filters: `filter_policy` (§6.3), magnitude (absolute, percent, z) and duration semantics and validation (§7), frozen baseline and reference selection (§8.1), `filters.json` (§9), filtered and breach insights (§10.1, §10.3), `evaluate_insights(filters=)`, propose/preview/validate operations and server ops (§11), Flight view editor (§12.1), basic Notes list | Done, engine 0.19.0 |
 | 4 | Change monitor (§8.2), `evaluate_filter_health`, review and re-baseline, Notes page filter cards with charts, nav badge and Flights banner (§10.4, §12.2–12.3), per-limit z overrides in the rule playground (§12.4) | Done, engine 0.19.0 |
 | 5 | Copy filters between workspaces (§9) | Done, engine 0.19.0 |
+| 6 | RPM limits and overboost (v0.12): `magnitude_modes` / `duration_allowed` in `filter_policy` replacing the overboost special case (§6.3); overboost blocks merged and reported by `limit_exceedances`, `overboost_time` threshold trigger removed (§6.4, §10.3); `rpm_continuous_max` retired, `rpm_takeoff_max` ceiling with its filter policy, `time_limit_s` removed, profile corrections, all four profiles (§6.7); `insight_rules.json` version bump; characterization goldens and fleet values regenerated; acceptance 17–20 | Proposed |
 
 **Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
 older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgrade_limit_refs`),
