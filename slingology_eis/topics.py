@@ -31,29 +31,51 @@ def z_score(value: float, mean: float, std: float) -> float:
     return (value - mean) / std
 
 
-def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str]:
-    """Check a baseline_deviation trigger. Returns (triggered, insight_text)."""
+def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str, dict]:
+    """
+    Check a baseline_deviation trigger. Returns (triggered, insight_text,
+    comparison). `comparison` (Spec 01 R8, §8.4 v0.13) names what the
+    flight was actually compared against — {"scope": "band"|"all",
+    "band": str|None, "n": int} — taken from b["comparison"] when present
+    (operations.py's _topic_baseline sets it for every stratified or
+    unstratified metric) or synthesized as an "all" comparison for a
+    caller that built `b` some other way. The insight text always names
+    the comparison too, not just the values field — a fallback from band
+    to all-flights should be visible to the pilot reading it, not just
+    to a client that happens to read `message.values`.
+    """
+    comparison = b.get("comparison") or {"scope": "all", "band": None, "n": b.get("n", 0)}
     if value is None or b.get("mean") is None or b.get("std") is None:
-        return False, ""
+        return False, "", comparison
     z = z_score(value, b["mean"], b["std"])
     threshold = rule.get("z_score_threshold", 2.0)
     if abs(z) >= threshold:
         direction = "above" if z > 0 else "below"
-        return True, f"{'⚠' if z > 0 else '↓'} {abs(z):.1f} std devs {direction} your personal average."
-    return False, ""
+        if comparison.get("scope") == "band" and comparison.get("band"):
+            scope_text = f"your other {comparison['band']} flights, n={comparison['n']}"
+        else:
+            scope_text = f"all your flights, n={comparison.get('n', 0)}"
+        return True, f"{'⚠' if z > 0 else '↓'} {abs(z):.1f} std devs {direction} {scope_text}.", comparison
+    return False, "", comparison
 
 
 def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
     """Check a trend trigger. Returns (triggered, insight_text)."""
-    t = b.get("trend", {})
-    if not t or t.get("direction") in (None, "insufficient data", "flat / no clear trend"):
+    t = b.get("trend") or {}
+    r2, n, direction = t.get("r_squared"), t.get("n"), t.get("direction")
+    # r2/n are None (and direction reads "insufficient data" / "insufficient_data"
+    # / "flat / no clear trend" depending on which code path built this dict —
+    # legacy fleet.py vs the Stage 3 contract) whenever there isn't enough data
+    # for a fit; guard on the values themselves, not a specific spelling.
+    if not t or r2 is None or n is None:
         return False, ""
-    r2 = t.get("r_squared", 0)
-    n  = t.get("n", 0)
     if r2 < rule.get("r2_min", 0.5) or n < rule.get("n_min", 10):
         return False, ""
-    if t["direction"] == rule.get("direction"):
-        return True, (f"⚠ Trending {t['direction']} over engine hours "
+    wanted = rule.get("direction")
+    # "either" (Spec 08 §6): a drift in both directions matters, e.g. a
+    # cylinder running hotter (lean injector) or cooler (ignition, probe).
+    if direction == wanted or (wanted == "either" and direction in ("increasing", "decreasing")):
+        return True, (f"⚠ Trending {direction} over engine hours "
                       f"(slope={t['slope']:+.3f}/hr, R²={r2:.2f}, n={n}).")
     return False, ""
 
@@ -94,9 +116,9 @@ def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, e
     if enabled:
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(spread, b, rule)
+                triggered, text, comparison = baseline_triggered(spread, b, rule)
                 if triggered:
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
@@ -116,9 +138,9 @@ def egt4_elevation(elev, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(elev, b, rule)
+            triggered, text, comparison = baseline_triggered(elev, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -145,7 +167,117 @@ def cylinder_rank(rank_order: list, rank_stable: Optional[bool], fleet_note: str
     return {"analysis": analysis, "insights": insights}
 
 
-def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool) -> dict:
+def hot_cylinder_change(
+    window: list[dict],
+    established: dict,
+    rule: Optional[dict],
+    engine_name: Optional[str] = None,
+) -> dict:
+    """
+    Spec 08 §6 `cylinder_rank` topic. `window` is this flight's hottest-
+    cylinder point preceded by up to `consecutive_flights - 1` earlier ones
+    (oldest first, each {"hottest_cyl", "margin_f"}); `established` is
+    baselines.established_hot_cylinder()'s result, computed without the
+    flights in the window. `rule` is the hot_cyl_changed trigger, or None
+    when the rule is disabled.
+
+    Insights carry their own "severity" when it differs from the rule's —
+    a mismatch against a profile prior (not yet learned for this aircraft)
+    is informational, not a warning.
+    """
+    if not window:
+        return {"analysis": "Insufficient cruise data for cylinder rank analysis.", "insights": []}
+    this = window[-1]
+    cyl, margin = this["hottest_cyl"], this.get("margin_f")
+    margin_min = (rule or {}).get("margin_min_f", 15)
+    margin_str = f"+{margin:.0f}°F over next" if margin is not None else "margin unknown"
+    ambiguous = margin is None or margin < margin_min
+    too_close = " — too close to call" if ambiguous else ""
+    analysis = f"Hottest this flight: Cyl {cyl} ({margin_str}{too_close}). "
+
+    src, usual = established.get("source"), established.get("cyl")
+    if src == "learned":
+        analysis += (f"Usual hottest for this aircraft: Cyl {usual} "
+                     f"({established['share'] * 100:.0f}% of {established['n']} flights).")
+    elif src == "prior":
+        analysis += (f"Typical hottest for the {engine_name or 'engine'} profile: Cyl {usual} "
+                     f"(not yet learned for this aircraft — {established['n']} usable flights).")
+    else:
+        analysis += "Usual hottest cylinder not yet established for this aircraft."
+
+    insights = []
+    if rule is None or src == "none":
+        return {"analysis": analysis, "insights": insights}
+    consecutive = max(1, int(rule.get("consecutive_flights", 2)))
+    if len(window) < consecutive:
+        return {"analysis": analysis, "insights": insights}
+    changed = all(
+        p["hottest_cyl"] != usual and p.get("margin_f") is not None and p["margin_f"] >= margin_min
+        for p in window[-consecutive:]
+    )
+    if not changed:
+        return {"analysis": analysis, "insights": insights}
+
+    flights = f"for {consecutive} consecutive flights" if consecutive > 1 else "this flight"
+    if src == "learned":
+        text = (f"⚠ Cyl {cyl} ran hottest ({margin_str}) {flights}; this aircraft's usual "
+                f"hottest is Cyl {usual}. A cylinder running hotter is consistent with a lean "
+                f"injector; the usual hottest cooling can point to an ignition/plug issue or "
+                f"an EGT probe fault. Compare the per-cylinder balance trend.")
+        insights.append({"trigger": "threshold", "text": text})
+    else:
+        text = (f"Cyl {cyl} ran hottest ({margin_str}) {flights}; the typical "
+                f"{engine_name or 'engine'} pattern is Cyl {usual}. Not an anomaly by itself — "
+                f"this aircraft's own pattern isn't established yet.")
+        insights.append({"trigger": "threshold", "text": text, "severity": "info"})
+    return {"analysis": analysis, "insights": insights}
+
+
+def cyl_deviation(cyls: list[dict]) -> dict:
+    """
+    Spec 08 §6 `egt_cyl_deviation` topic: each cylinder's cruise EGT vs.
+    the mean of the others, against its own baseline. `cyls` holds one
+    {"cyl", "value", "b", "triggers"} per cylinder (b: the topic-baseline
+    shape baseline_triggered/trend_triggered read; triggers: the rule's
+    triggers as they apply to that cylinder). Insights carry a
+    "cyl" key so the caller can attach per-cylinder evidence.
+    """
+    present = [c for c in cyls if c["value"] is not None]
+    if not present:
+        return {"analysis": "Per-cylinder EGT balance not available.", "insights": []}
+    parts = []
+    for c in present:
+        b = c["b"]
+        avg = f" (avg {b['mean']:+.0f})" if b.get("mean") is not None else ""
+        parts.append(f"Cyl {c['cyl']} {c['value']:+.0f}°F{avg}")
+    n = max((c["b"].get("n") or 0) for c in present)
+    analysis = "Vs. mean of the other cylinders: " + ", ".join(parts) + f" ({n} flights{confidence_note({'n': n})})."
+
+    insights = []
+    for c in present:
+        for rule in c["triggers"]:
+            if rule["type"] == "baseline_deviation":
+                triggered, text, comparison = baseline_triggered(c["value"], c["b"], rule)
+                if triggered:
+                    insights.append({"trigger": "baseline_deviation", "cyl": c["cyl"],
+                                     "text": f"Cyl {c['cyl']}: {text}", "comparison": comparison})
+            elif rule["type"] == "trend":
+                triggered, text = trend_triggered(c["b"], rule)
+                if triggered:
+                    insights.append({"trigger": "trend", "cyl": c["cyl"],
+                                     "text": f"Cyl {c['cyl']}: {text}"})
+    return {"analysis": analysis, "insights": insights}
+
+
+def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optional[float] = None,
+              filter_limit: Optional[float] = None, filter_text: str = "") -> dict:
+    """
+    `filter_limit` (Spec 09 §6.4/§10.3): with a filter on the overboost
+    limit, the effective limit (OM limit + band). A block past the OM
+    limit but within it is reported quietly (outcome "suppressed"); past it,
+    "beyond your filter" (outcome "breach"). The caller passes the close
+    call already shifted with the band.
+    """
     if ob_max is None:
         return {"analysis": "Overboost data not available (no RPM channel).", "insights": []}
     analysis = (
@@ -153,9 +285,16 @@ def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool) -> dict:
         f"OM limit: {ob_limit}s."
     )
     insights = []
-    if ob_exceeded:
+    if ob_exceeded and filter_limit is not None:
+        if ob_max <= filter_limit:
+            insights.append({"trigger": "threshold", "filter_outcome": "suppressed",
+                             "text": f"Longest block {ob_max}s, past the OM {ob_limit}s limit but within your filter ({filter_text})."})
+        else:
+            insights.append({"trigger": "threshold", "filter_outcome": "breach",
+                             "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s — beyond your filter ({filter_text})."})
+    elif ob_exceeded:
         insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s."})
-    elif ob_max >= 240:
+    elif ob_max >= (close_call_s if close_call_s is not None else ob_limit - 60):
         insights.append({"trigger": "threshold", "text": f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
                          f"Pull back to climb power promptly after takeoff."})
     return {"analysis": analysis, "insights": insights}
@@ -206,43 +345,68 @@ def takeoff_map(obs_map, obs_pa, obs_oat, map_model: dict) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def oil_temp_peak(oil_max, b: dict, rule_triggers: list) -> dict:
+def _om_limit_text(om_limit: Optional[dict]) -> str:
+    return f"{om_limit['limit_value']:.0f}°F" if om_limit else "248°F"
+
+
+def _threshold_fired(value, rule: dict, om_limit: Optional[dict], limit_events: Optional[list]) -> tuple[bool, float]:
+    """
+    A topic threshold trigger (Spec 09 §10.2). With the referenced profile
+    limit resolved (`om_limit`), it fires exactly when the flight has at
+    least one unsuppressed exceedance event for that limit — the limit's
+    own phase and duration rules apply, and a filter that hides the
+    event hides this too. Without it (a caller that doesn't pass one, or
+    a flight analysed before Spec 09), the legacy numeric comparison.
+    """
+    if om_limit is not None and limit_events is not None:
+        return bool(limit_events), om_limit["limit_value"]
+    limit = rule.get("limit", 248)
+    return (value is not None and value > limit), limit
+
+
+def oil_temp_peak(oil_max, b: dict, rule_triggers: list, om_limit: Optional[dict] = None,
+                  limit_events: Optional[list] = None) -> dict:
     if oil_max is None or b.get("mean") is None:
         return {"analysis": "Oil temperature data not available.", "insights": []}
     note = confidence_note(b)
     analysis = (
         f"Peak {oil_max:.0f}°F. "
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note}). OM limit: 248°F."
+        f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold" and oil_max > rule.get("limit", 248):
-            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
+        if rule["type"] == "threshold":
+            fired, limit_value = _threshold_fired(oil_max, rule, om_limit, limit_events)
+            if fired:
+                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
         elif rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oil_max, b, rule)
+            triggered, text, comparison = baseline_triggered(oil_max, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
-def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list) -> dict:
+def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list, om_limit: Optional[dict] = None,
+                  limit_events: Optional[list] = None) -> dict:
     if coolant_max is None or b.get("mean") is None:
         return {"analysis": "Coolant temperature data not available.", "insights": []}
     note = confidence_note(b)
     analysis = (
         f"Peak {coolant_max:.0f}°F. "
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note}). OM limit: 248°F."
+        f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold" and coolant_max > rule.get("limit", 248):
-            insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {rule['limit']}°F."})
+        if rule["type"] == "threshold":
+            fired, limit_value = _threshold_fired(coolant_max, rule, om_limit, limit_events)
+            if fired:
+                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
         elif rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(coolant_max, b, rule)
+            triggered, text, comparison = baseline_triggered(coolant_max, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -258,9 +422,9 @@ def oil_coolant_ratio(oc_ratio, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oc_ratio, b, rule)
+            triggered, text, comparison = baseline_triggered(oc_ratio, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -275,9 +439,9 @@ def cruise_efficiency(nmpg, b: dict, rule_triggers: list) -> dict:
         insights = []
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(nmpg, b, rule)
+                triggered, text, comparison = baseline_triggered(nmpg, b, rule)
                 if triggered:
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
             elif rule["type"] == "trend":
                 triggered, text = trend_triggered(b, rule)
                 if triggered:
@@ -307,14 +471,14 @@ def cruise_fuel_flow(fuel_flow, b: dict, rule_triggers: list,
         insights = []
         for rule in rule_triggers:
             if rule["type"] == "baseline_deviation":
-                triggered, text = baseline_triggered(fuel_flow, b, rule)
+                triggered, text, comparison = baseline_triggered(fuel_flow, b, rule)
                 if triggered:
                     if da_high:
                         text = (text + " Note: this flight's cruise DA was "
                                        "significantly higher than your typical cruise — "
                                        "altitude and power setting affect fuel flow. "
                                        "A power/altitude model is needed for a fully valid comparison.")
-                    insights.append({"trigger": "baseline_deviation", "text": text})
+                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
         return {"analysis": analysis, "insights": insights}
     if b.get("mean") is None:
         return {"analysis": "Still building your cruise fuel flow baseline.", "insights": []}
@@ -358,9 +522,64 @@ def climb_thermal_rate(oil_rise, b: dict, rule_triggers: list) -> dict:
     insights = []
     for rule in rule_triggers:
         if rule["type"] == "baseline_deviation":
-            triggered, text = baseline_triggered(oil_rise, b, rule)
+            triggered, text, comparison = baseline_triggered(oil_rise, b, rule)
             if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text})
+                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
+    return {"analysis": analysis, "insights": insights}
+
+
+def _fmt_duration(seconds: float) -> str:
+    s = int(round(seconds))
+    if s < 60:
+        return f"{s} s"
+    if s < 3600:
+        return f"{s // 60} min {s % 60} s" if s % 60 else f"{s // 60} min"
+    return f"{s // 3600} h {(s % 3600) // 60} min"
+
+
+def limit_exceedance_groups(groups: list[dict]) -> dict:
+    """
+    Spec 09 §10.1: one insight per limit per flight — or, for a filtered
+    limit, a quiet "filtered" insight for the events the filter tolerates
+    plus a "breach" insight for any it doesn't. `groups` holds one
+    {"limit": {label, unit, limit_type, limit_value, severity}, "events":
+    [serialized exceedance, ...], "kind": "exceedance"|"breach"|"filtered",
+    "filter_text": str} per insight, in display order. Returns
+    {"analysis", "insights"}; each insight carries its group index under
+    "group" so the caller can attach limit_id, events and evidence.
+    """
+    if not groups:
+        return {"analysis": "No OM hard-limit exceedances this flight.", "insights": []}
+    insights = []
+    total = suppressed = 0
+    limits_seen = set()
+    for i, g in enumerate(groups):
+        lim, events = g["limit"], g["events"]
+        kind = g.get("kind", "exceedance")
+        limits_seen.add(lim.get("id", lim["label"]))
+        total += len(events)
+        worst = max(events, key=lambda e: e.get("excess") if e.get("excess") is not None else
+                    (e["observed_value"] if lim["limit_type"] == "MAX" else -e["observed_value"]))
+        time_above = sum(e["duration_s"] for e in events)
+        unit = lim.get("unit", "")
+        side = "min" if lim["limit_type"] == "MIN" else "max"
+        count = f"{len(events)} event{'s' if len(events) != 1 else ''}"
+        worst_text = f"worst {worst['observed_value']:.1f} {unit} ({side} {lim['limit_value']:.1f} {unit})"
+        if kind == "filtered":
+            suppressed += len(events)
+            text = (f"{lim['label']}: {count} within your filter ({g.get('filter_text', '')}), "
+                    f"{worst_text}, {_fmt_duration(time_above)} past the limit.")
+        elif kind == "breach":
+            text = (f"⚠ [{lim['severity']}] {lim['label']}: {count} beyond your filter "
+                    f"({g.get('filter_text', '')}), {worst_text}, {_fmt_duration(time_above)} past the limit.")
+        else:
+            text = (f"⚠ [{lim['severity']}] {lim['label']}: {count}, {worst_text}, "
+                    f"{_fmt_duration(time_above)} past the limit.")
+        insights.append({"trigger": "threshold", "text": text, "group": i})
+    n_limits = len(limits_seen)
+    analysis = (f"{n_limits} OM limit{'s' if n_limits != 1 else ''} exceeded this flight "
+                f"({total} event{'s' if total != 1 else ''}"
+                + (f", {suppressed} within your filters" if suppressed else "") + "):")
     return {"analysis": analysis, "insights": insights}
 
 

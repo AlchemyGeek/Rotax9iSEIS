@@ -1,0 +1,239 @@
+{
+  "flight_id": "fl_20260527_200344_KSFF",
+  "analysis_key": "fixture-fl_20260527_200344_KSFF-v1",
+  "source_keys": [
+    "fixture-source-key-2"
+  ],
+  "header": {
+    "date": "2026-05-27",
+    "start_utc": "2026-05-27T20:03:44Z",
+    "engine_hours_start": 54.9,
+    "engine_hours_end": 56.2,
+    "airport_hint": "KSFF",
+    "aircraft": {
+      "ident": "N117ZS",
+      "system_id": "60002D19C364F"
+    }
+  },
+  "phases": [
+    {
+      "phase": "TAXI",
+      "start_utc": "2026-05-27T20:03:44Z",
+      "duration_s": 1560
+    },
+    {
+      "phase": "CLIMB",
+      "start_utc": null,
+      "duration_s": 762
+    },
+    {
+      "phase": "CRUISE",
+      "start_utc": null,
+      "duration_s": 5238
+    },
+    {
+      "phase": "DESCENT",
+      "start_utc": null,
+      "duration_s": 732
+    },
+    {
+      "phase": "SHUTDOWN",
+      "start_utc": null,
+      "duration_s": 258
+    }
+  ],
+  "metrics": {
+    "date": {
+      "id": "date",
+      "value": "2026-05-27"
+    },
+    "engine_hours": {
+      "id": "engine_hours",
+      "value": 56.2
+    },
+    "duration_min": {
+      "id": "duration_min",
+      "value": 141.9
+    },
+    "airborne_min": {
+      "id": "airborne_min",
+      "value": 115.7
+    },
+    "egt_spread_mean_f": {
+      "id": "egt_spread_mean_f",
+      "value": 54.8
+    },
+    "egt_spread_max_f": {
+      "id": "egt_spread_max_f",
+      "value": 70.0
+    },
+    "egt4_elevation_f": {
+      "id": "egt4_elevation_f",
+      "value": 44.1
+    },
+    "egt_rank_stable": {
+      "id": "egt_rank_stable",
+      "value": true
+    },
+    "fadec_gallons": {
+      "id": "fadec_gallons",
+      "value": 13.035
+    },
+    "cruise_nmpg": {
+      "id": "cruise_nmpg",
+      "value": 19.84
+    },
+    "cruise_fuel_flow_gph": {
+      "id": "cruise_fuel_flow_gph",
+      "value": 6.61
+    },
+    "oil_temp_max_f": {
+      "id": "oil_temp_max_f",
+      "value": 218.0
+    },
+    "coolant_temp_max_f": {
+      "id": "coolant_temp_max_f",
+      "value": 189.0
+    },
+    "oil_coolant_ratio": {
+      "id": "oil_coolant_ratio",
+      "value": 1.153
+    },
+    "overboost_total_s": {
+      "id": "overboost_total_s",
+      "value": 274
+    },
+    "overboost_max_block_s": {
+      "id": "overboost_max_block_s",
+      "value": 274
+    },
+    "cas_inflight_anomaly_count": {
+      "id": "cas_inflight_anomaly_count",
+      "value": 5
+    },
+    "max_altitude_ft": {
+      "id": "max_altitude_ft",
+      "value": 8056.0
+    },
+    "max_ias_kt": {
+      "id": "max_ias_kt",
+      "value": 131.0
+    },
+    "phase_climb_min": {
+      "id": "phase_climb_min",
+      "value": 12.7
+    },
+    "phase_cruise_min": {
+      "id": "phase_cruise_min",
+      "value": 87.3
+    },
+    "phase_descent_min": {
+      "id": "phase_descent_min",
+      "value": 12.2
+    },
+    "cruise_da_ft": {
+      "id": "cruise_da_ft",
+      "value": 9127.0
+    },
+    "cruise_oat_c": {
+      "id": "cruise_oat_c",
+      "value": 7.9
+    },
+    "da_band": {
+      "id": "da_band",
+      "value": "very_high"
+    },
+    "oat_band": {
+      "id": "oat_band",
+      "value": "mild"
+    },
+    "climb_oil_rise_f_per_min": {
+      "id": "climb_oil_rise_f_per_min",
+      "value": -0.31
+    },
+    "climb_coolant_rise_f_per_min": {
+      "id": "climb_coolant_rise_f_per_min",
+      "value": -0.22
+    },
+    "climb_vs_bucket_dominant": {
+      "id": "climb_vs_bucket_dominant",
+      "value": "normal"
+    }
+  },
+  "exceedances": [],
+  "cas_events": [],
+  "ecu_runs": [
+    {
+      "start_utc": "2026-05-27T20:06:38Z",
+      "duration_s": 1,
+      "classification": "IN_FLIGHT",
+      "co_alerts": [
+        "EFIS ON BKUP",
+        "FUEL PRESS",
+        "OIL PRESS",
+        "NAV ON BKUP",
+        "RAGL FAIL"
+      ],
+      "context": {
+        "mean_rpm": 510,
+        "mean_oil_press_psi": 2,
+        "mean_oil_temp_f": 103,
+        "mean_coolant_temp_f": 104,
+        "mean_main_volts": 13.0,
+        "mean_baro_alt_ft": 1977
+      }
+    }
+  ],
+  "quality": [],
+  "provenance": {
+    "engine_version": "fixture-0.1",
+    "schema_version": "01-v0.8",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "fixture",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "fixture",
+    "source_keys": [
+      "fixture-source-key-2"
+    ]
+  },
+  "available_channels": [
+    "baro_alt_ft",
+    "baro_inhg",
+    "batt_amps",
+    "co_ppm",
+    "coolant_temp_f",
+    "da_ft",
+    "egt1_f",
+    "egt2_f",
+    "egt3_f",
+    "egt4_f",
+    "egt_max_f",
+    "egt_mean_f",
+    "egt_min_f",
+    "egt_spread_f",
+    "fuel_flow_gph",
+    "fuel_press_psi",
+    "fuel_qty_l_gal",
+    "fuel_qty_r_gal",
+    "gnd_spd_kt",
+    "gps_alt_ft",
+    "ias_kt",
+    "lat_g",
+    "main_volts",
+    "map_inhg",
+    "norm_g",
+    "oat_c",
+    "oil_press_psi",
+    "oil_temp_f",
+    "pitch_deg",
+    "power_pct",
+    "press_alt_ft",
+    "roll_deg",
+    "rpm",
+    "tas_kt",
+    "vs_fpm",
+    "wind_spd_kt"
+  ]
+}

@@ -25,6 +25,10 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 
+from . import exclusions as _exclusions
+from .limits import resolve_min_flight_duration_min
+from .phases import detect_phases
+
 
 # ── Column renaming: G3X names → short aliases ───────────────────────────────
 
@@ -325,7 +329,7 @@ def load_directory(
     directory: str | Path,
     pattern: str = "*.csv",
     skip_ground_sessions: bool = True,
-    min_airborne_min: float = 3.0,
+    workspace_dir: Optional[Path] = None,
     verbose: bool = True,
 ) -> list[tuple[pd.DataFrame, AirframeInfo]]:
     """
@@ -339,34 +343,69 @@ def load_directory(
     Parameters
     ----------
     skip_ground_sessions : bool, default True
-        Exclude ground-only sessions (engine run-up, taxi test, avionics
-        check) where the aircraft never actually flew. These sessions have
-        near-zero airborne time and no useful flight analytics — including
-        them produces misleading results in every downstream module
-        (false temperature outliers, meaningless phase labels, blank cells
-        across most analytics columns). They also inflate counts and degrade
-        trend quality by adding x-axis points with identical engine-hours.
+        Exclude ground-only sessions, short flights, and files with a
+        large internal time gap (see workspace_dir below) — none of these
+        have useful flight analytics, and including them produces
+        misleading results in every downstream module (false temperature
+        outliers, meaningless phase labels, blank cells across most
+        analytics columns; short flights and ground sessions also inflate
+        counts and degrade trend quality with x-axis points at identical
+        engine-hours).
 
-        Ground-session detection: a file is excluded if its estimated
-        airborne time (rows with RPM > 3,000 AND IAS > 30kt) is less than
-        min_airborne_min. This is an approximation that doesn't require
-        running the full phase-detection state machine at load time.
+        Ground-session detection (Spec 02 §5.11.2): a file
+        is excluded if and only if `detect_phases()` finds no row in an
+        airborne phase (`phases.AIRBORNE_PHASES` — CLIMB, CRUISE, DESCENT,
+        APPROACH, LANDING_ROLL; deliberately not TAKEOFF_ROLL, which is
+        reachable from a ground run-up alone with no confirmed liftoff —
+        see the comment on AIRBORNE_PHASES). This replaced an earlier
+        RPM/IAS threshold approximation that was a proxy for what the phase
+        detector already answers definitively — same state machine that
+        labels the rest of the flight, not a second, cruder opinion.
 
         Pass skip_ground_sessions=False only if you specifically need to
         examine ground sessions (e.g. for ENGINE ECU powerup behavior
         in isolation from flight operations — but note that full flights
         contain all the same POWERUP/LANE_CHECK/SHUTDOWN patterns and are
-        sufficient to establish those baselines without the noise).
+        sufficient to establish those baselines without the noise). This
+        also disables the short-flight and time-gap checks below, and
+        exclusions.json is neither read nor written.
 
-    min_airborne_min : float, default 3.0
-        Threshold in minutes for the ground-session filter. Files with
-        estimated airborne time below this are excluded when
-        skip_ground_sessions=True.
+    workspace_dir : Path, optional
+        Spec 02 §5.11. When given (and
+        skip_ground_sessions is True), every exclusion decision is looked
+        up and recorded in `workspace_dir/exclusions.json` (see
+        `exclusions.py`) instead of being silently dropped:
+          - A file with an existing entry (any category, auto or user) is
+            skipped without re-parsing or re-running phase detection —
+            the answer is already on record.
+          - A newly-detected ground session, short flight (airborne time
+            below `min_flight_duration_min` from the toolkit's
+            config.json, default 10 min, 0 disables the check), or file
+            with an internal time gap over 5 minutes (a strong signal of
+            a mid-session avionics restart or SD card error —
+            `corrupt_log`) gets a fresh auto-exclusion entry written
+            before being skipped.
+          - Ground session takes priority over short flight, which takes
+            priority over the time-gap check, when more than one would
+            apply — one entry per file, not a pile-up.
+        A `user_override: true` entry (set via
+        `exclusions.set_user_override`) always keeps its flight in the
+        results despite matching one of the rules above. When
+        workspace_dir is None (the default), only the ground-session rule
+        applies (Spec 02 §5.11.2): auto-detect and skip, but don't persist
+        anything.
 
-    Returns a list of (DataFrame, AirframeInfo) tuples,
-    sorted chronologically by the datetime of the first record.
+    Returns a list of (DataFrame, AirframeInfo) tuples, sorted
+    chronologically by the datetime of the first record. Every DataFrame
+    carries a populated `phase` column (`detect_phases()` runs on every
+    file regardless of `skip_ground_sessions`) — downstream callers that
+    already re-run `detect_phases()` on the result get the same answer,
+    just redundantly; nothing breaks either way.
     """
     directory = Path(directory)
+
+    exclusions_data = _exclusions.load_exclusions(workspace_dir) if workspace_dir is not None else None
+    min_flight_duration_min = resolve_min_flight_duration_min()
 
     # Case-insensitive glob: build a regex from the pattern and scan once,
     # rather than relying on Path.glob (which is case-sensitive on
@@ -398,23 +437,49 @@ def load_directory(
 
     for f in files:
         try:
+            filename = f.name
+
+            # An existing exclusions.json entry (auto or user) is
+            # authoritative — don't re-parse or re-run phase detection to
+            # confirm what's already on record (Spec 02 §5.11.3).
+            if (skip_ground_sessions and exclusions_data is not None
+                    and _exclusions.is_excluded(filename, exclusions_data)):
+                skipped.append(filename)
+                if verbose:
+                    print(f"  · {filename}  already excluded — skipped")
+                continue
+
             df, info = load_log(f)
 
-            # ── Ground-session detection ───────────────────────────────────
-            # Estimate airborne time without running the full phase-detection
-            # state machine: count rows where the engine is running AND the
-            # aircraft is moving at flight speed. This is fast (no VS/altitude
-            # smoothing needed) and sufficient for a binary ground/flight split.
+            # ── Phase detection ──────────────────────────────────────────────
+            # Runs regardless of skip_ground_sessions so every returned
+            # DataFrame carries a populated 'phase' column (Spec 02
+            # §5.11.2) — ground-session status is then read
+            # directly off it rather than approximated separately.
+            df = detect_phases(df, verbose=False)
+
             if skip_ground_sessions:
-                ias = df["ias_kt"].fillna(0) if "ias_kt" in df.columns else pd.Series(0, index=df.index)
-                rpm = df["rpm"].fillna(0)    if "rpm"    in df.columns else pd.Series(0, index=df.index)
-                airborne_rows = ((rpm > 3000) & (ias > 30)).sum()
-                airborne_min  = airborne_rows / 60.0   # 1Hz logging → rows ≈ seconds
-                if airborne_min < min_airborne_min:
-                    skipped.append(f.name)
+                category, reason = _exclusions.classify_for_auto_exclusion(
+                    df, min_flight_duration_min, check_short_flight_and_gap=workspace_dir is not None,
+                )
+
+                if category is not None and workspace_dir is not None:
+                    _exclusions.add_auto_exclusion(workspace_dir, filename, category, reason)
+                    # add_auto_exclusion() is a no-op if an entry already
+                    # exists — which includes one a user already overrode
+                    # (e.g. a prior run's auto-exclusion since flagged
+                    # user_override: true). Re-check against the current
+                    # on-disk state rather than the stale copy loaded at
+                    # the top of this call, so that override wins here
+                    # too, not just on this file's *next* run.
+                    if not _exclusions.is_excluded(filename, _exclusions.load_exclusions(workspace_dir)):
+                        category = None
+
+                if category is not None:
+                    skipped.append(filename)
                     if verbose:
-                        print(f"  · {f.name}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
-                              f"ground session ({airborne_min:.1f} min airborne) — skipped")
+                        print(f"  · {filename}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
+                              f"{reason} — skipped")
                     continue
 
             results.append((df, info))
@@ -442,7 +507,6 @@ def load_directory(
             print(f"⚠ Failed files:")
             for name, err in failed:
                 print(f"    {name}: {err}")
-    return results
     return results
 
 

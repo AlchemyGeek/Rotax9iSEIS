@@ -79,6 +79,30 @@ Track departure elevation distribution in fleet_metrics to monitor readiness.
 
 ---
 
+### A7. Fuel pump state inference model
+**Type:** Research → possible code
+The G3X log has no channel reporting which fuel pump(s) are running — confirmed across the
+full fleet's column set, identical in every log (`FPCM FAULT` is a fault flag, not a state
+indicator). `fuel_press_psi` is the only available signal, and pump transitions (a pump
+dropping out, a second pump cutting in) plausibly show up as steps/dips in that trace.
+
+Idea: a model (rule-based thresholds on the pressure signature to start; a trained
+classifier later if the rule-based version isn't reliable enough) that infers "pump 1 /
+pump 2 / both / indeterminate" per time window from `fuel_press_psi` (and possibly
+`fuel_flow_gph`, RPM, phase) as supporting signal. Output would feed in as a derived
+channel/metric for analysis, the same way the `map_at_takeoff` empirical model already
+works from fleet data (Spec 01 §6.4, §8.5) — not a claim that the raw log carries this
+information.
+
+**Needs:** example flights with a *known* pump schedule (e.g. a deliberate pump-test
+flight, or pilot-reported pump switching) to correlate against the pressure trace and
+validate any candidate model before trusting its output in reports. Directly relevant to
+G1 (fuel-pressure exceedances root cause, section G) — a pump-state signal could
+distinguish "pump test / normal pump cycling" from "genuine sensor fault or pressure
+problem" in those exceedance events.
+
+---
+
 ## B — Bug Fixes & Signal Quality
 
 ### ~~B3. IN-FLIGHT ENGINE ECU — per-event reporting~~ — COMPLETED in v0.10.0
@@ -98,6 +122,28 @@ Need a lightweight mechanism to attach a note/known-cause to a specific flight's
 *"April 23 — exceeded 300s limit (+81s). Note: ATC delay at LAX."*
 This is not suppression — the event still shows — but lets the pilot's own context travel
 with the finding.
+
+---
+
+### B5. Touch-and-go detection — LANDING_ROLL has no re-acceleration exit
+**Type:** Code
+Traced from `phases.py`'s current transition table — not yet tested against a real
+touch-and-go log, since none of the data used so far obviously contains one. `LANDING_ROLL`
+only exits via `v < 5 and r < 2500` -> `TAXI`, or `r < 500` -> `SHUTDOWN`. A genuine
+touch-and-go (wheels touch briefly, power added immediately, ground speed staying well
+above 5 kt throughout) satisfies neither condition, so the state machine likely never
+leaves `LANDING_ROLL`, and every subsequent circuit is silently misclassified for the
+rest of the flight.
+
+Stop-and-goes (full stop, taxi back, depart again) and go-arounds are both handled
+correctly already: `LANDING_ROLL -> TAXI -> TAKEOFF_ROLL` for the former, `APPROACH ->
+CLIMB` (triggered by VS > 400 fpm) for the latter. Only the no-full-stop touch-and-go
+case is the gap.
+
+**Needs:** a real touch-and-go / pattern-work log to confirm before fixing. If
+confirmed, the likely fix is a `LANDING_ROLL` exit back toward `TAKEOFF_ROLL`/`CLIMB`
+when ground speed and RPM start climbing again without ever dropping below the TAXI
+threshold — mirroring the go-around logic already in `APPROACH`.
 
 ---
 
@@ -194,6 +240,10 @@ sensor/CAN-dropout artifacts) and some sustained near-max readings (possibly gen
 units/reference-frame mismatch — the 916iS config's fuel-pressure minimum note says
 "relative to MAP" while the logged channel may be absolute). Deliberately deferred until
 the tool's analysis capabilities are more complete. Investigate post-v0.11.0.
+
+See also A7 (fuel pump state inference model) — a pump-state signal, even an
+approximate one, would help separate "pump test / pump cycling, expected" readings
+from genuine sensor or pressure problems in this investigation.
 
 ---
 

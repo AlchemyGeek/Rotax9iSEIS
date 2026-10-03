@@ -50,6 +50,27 @@ class Phase(str, Enum):
     UNKNOWN      = "UNKNOWN"
 
 
+# Phases where the aircraft is off the ground. A file with no row in any of
+# these is a ground session (Spec 02 §5.11.2) — the engine
+# ran, it may have taxied or even run up to full power, but it never flew.
+# Exported so callers outside this module (loader.py's ground-session check)
+# don't hardcode the same phase list a second time.
+#
+# Deliberately excludes TAKEOFF_ROLL, unlike the spec's first draft — it's
+# still a ground-roll phase by definition, and unlike CLIMB/CRUISE/DESCENT/
+# APPROACH/LANDING_ROLL (all reachable only via TAKEOFF_ROLL -> CLIMB's real
+# altitude-gain gate, `v>50 and s>200`), TAXI -> TAKEOFF_ROLL fires on RPM
+# alone with a documented fallback straight back to TAXI if the aircraft
+# never actually leaves the ground. A real fleet flight (a ground run-up
+# that spiked RPM past 4500 with altitude flat at 158-168 ft the whole
+# time) hit exactly this: 42 rows labeled TAKEOFF_ROLL, zero of them
+# airborne. Including TAKEOFF_ROLL here would have kept that ground
+# session in the flight list.
+AIRBORNE_PHASES = frozenset({
+    Phase.CLIMB, Phase.CRUISE, Phase.DESCENT, Phase.APPROACH, Phase.LANDING_ROLL,
+})
+
+
 # ── Smoothing helper ──────────────────────────────────────────────────────────
 
 def _smooth(series: pd.Series, window: int = 5) -> pd.Series:
@@ -81,27 +102,63 @@ def _estimate_field_elevation(df: pd.DataFrame) -> float:
 
     ias = df["ias_kt"] if "ias_kt" in df.columns else pd.Series(0, index=df.index)
 
+    # Restrict the search to before the flight's first climb-out. Without
+    # this, a short departure taxi (few matching "on the ground" rows)
+    # lets .iloc[:60] below reach past it into a later ground segment —
+    # taxi-in after landing, a fuel stop — which can be at a completely
+    # different field elevation and silently dominates the median,
+    # corrupting AGL for the whole flight (a real case: 14 genuine
+    # departure-taxi rows at ~630 ft MSL plus 46 landing/taxi-in rows at
+    # ~137 ft MSL from the destination produced a 137 ft "field
+    # elevation" — AGL never cleared the 50 ft takeoff-roll gate again).
+    # 50 kt mirrors the TAKEOFF_ROLL -> CLIMB transition's own "clearly
+    # airborne" threshold below, so this and the main state machine agree
+    # on what counts as having left the ground.
+    airborne = np.flatnonzero(ias.fillna(0).to_numpy() > 50)
+    departure_window = df.iloc[:airborne[0]] if len(airborne) else df
+    departure_ias = ias.iloc[:airborne[0]] if len(airborne) else ias
+
     # Widen progressively if the strict ground filter doesn't yield enough
     # valid (non-NaN) altitude samples — e.g. a brief sensor dropout right
     # at engine start can leave the first few "ground" rows all NaN.
+    #
+    # The median is taken over every matching row in the departure
+    # window, not just the first N — a real log (log_20260613_193731_
+    # KAWO.csv) had its baro altimeter read a physically-impossible
+    # ~-330 ft for the first ~170 seconds after power-on before settling
+    # on the real ~131 ft field elevation; capping the window to the
+    # first 60 matching rows caught only the glitch (it alone was over
+    # 60 rows long) and never reached the ~150 stable rows that followed
+    # in the same departure window. The full-window median instead lets
+    # the majority (the real, stable reading) win outright.
     for rpm_ceiling, ias_ceiling, min_valid in [
         (2500, 5,  10),    # strict: clearly stationary, engine idling
         (3000, 15, 10),    # looser: still clearly on the ground
         (4500, 30, 5),     # taxi-speed fallback
     ]:
-        candidate = df[
-            (df["rpm"].fillna(9999) < rpm_ceiling) &
-            (ias.fillna(99) < ias_ceiling)
+        candidate = departure_window[
+            (departure_window["rpm"].fillna(9999) < rpm_ceiling) &
+            (departure_ias.fillna(99) < ias_ceiling)
         ]["baro_alt_ft"].dropna()
         if len(candidate) >= min_valid:
-            return float(candidate.iloc[:60].median())
+            return float(candidate.median())
 
-    # Last resort: first non-NaN altitude anywhere in the log
+    # Last resort: first non-NaN altitude before climb-out, else anywhere in the log
+    first_valid = departure_window["baro_alt_ft"].dropna()
+    if len(first_valid):
+        return float(first_valid.iloc[0])
     first_valid = df["baro_alt_ft"].dropna()
     return float(first_valid.iloc[0]) if len(first_valid) else 0.0
 
 
 # ── Main detector ─────────────────────────────────────────────────────────────
+
+# Altitude-independent "back on the ground" test (detect_phases).
+_AIRBORNE_STATES = {Phase.CLIMB, Phase.CRUISE, Phase.DESCENT, Phase.APPROACH}
+_ON_GROUND_IAS_KT = 30
+_ON_GROUND_RPM = 2000
+_ON_GROUND_DWELL_S = 10
+
 
 def detect_phases(
     df: pd.DataFrame,
@@ -165,13 +222,20 @@ def detect_phases(
     power  = _smooth(df["power_pct"].fillna(0),   window=5) if "power_pct" in df.columns else pd.Series(np.zeros(n))
     oil_t  = _smooth(df["oil_temp_f"].fillna(0),  window=11) if "oil_temp_f" in df.columns else pd.Series(np.zeros(n))
 
-    # AGL approximation (baro alt − field elevation)
-    agl    = baro - field_elev_ft
+    # AGL approximation (baro alt − field elevation). The field reference
+    # starts at the departure field and moves to wherever the aircraft is
+    # next detected back on the ground (see the on-ground test below), so a
+    # multi-leg log measures height above the airport it's actually at.
+    field_ref = field_elev_ft
 
     # ── State machine ─────────────────────────────────────────────────────────
     phases = [Phase.UNKNOWN] * n
     state  = Phase.PRE_START
     dwell  = 0   # seconds in current candidate state
+    # Seconds in a row an airborne state has seen ground-only readings
+    # (see _ON_GROUND_* below). Separate from `dwell`, which the airborne
+    # states already use for their own entry/exit timing.
+    on_ground_s = 0
 
     def transition(new_state, i):
         nonlocal state, dwell
@@ -185,17 +249,49 @@ def detect_phases(
         r = rpm.iloc[i]
         v = ias.iloc[i]
         s = vs.iloc[i]
-        a = agl.iloc[i]
+        a = baro.iloc[i] - field_ref
         p = power.iloc[i]
         o = oil_t.iloc[i]
         dwell += 1
+
+        # Back on the ground, whatever AGL says. The airborne states reach
+        # the ground states only through AGL tests, and AGL is measured from
+        # the departure field — which never pass after landing somewhere
+        # higher: those flights stayed DESCENT/APPROACH through rollout, taxi
+        # and shutdown (11 of the N117ZS logs, landing 107-3,422 ft above
+        # their departure field), and multi-leg logs couldn't detect the next
+        # takeoff. Sustained IAS below 30 kt with RPM below 2,000 can't happen
+        # in flight (the aircraft stalls well above 30 kt, and an engine-out
+        # glide keeps IAS up), so it means on the ground: the rollout is over,
+        # so TAXI (whose exits handle takeoff and shutdown), and the field
+        # reference resets to here so later AGL tests use this airport.
+        if state in _AIRBORNE_STATES and v < _ON_GROUND_IAS_KT and r < _ON_GROUND_RPM:
+            on_ground_s += 1
+            if on_ground_s >= _ON_GROUND_DWELL_S:
+                field_ref = baro.iloc[i]
+                transition(Phase.TAXI, i)
+                on_ground_s = 0
+                phases[i] = state
+                continue
+        else:
+            on_ground_s = 0
 
         if state == Phase.PRE_START:
             if r > 500:
                 transition(Phase.ENGINE_START, i)
 
         elif state == Phase.ENGINE_START:
-            if r > 1500 and r < 3000 and v < 10:
+            # v's ceiling is deliberately generous, not a tight "still
+            # motionless" gate — several real flights (one over 5 hours
+            # long) have a genuine ground/idle IAS baseline of 10-25 kt
+            # while parked (a breezy ramp, or just this pitot/static
+            # system's noise floor), well above a 10 kt ceiling. Unlike
+            # every other phase here, ENGINE_START has no fallback path
+            # at all if this gate never opens — every flight passes
+            # through it, so this was the single most consequential of
+            # the phase-detection gates being too tight for this fleet's
+            # real sensor behavior.
+            if r > 1500 and r < 3000 and v < 30:
                 transition(Phase.WARMUP, i)
 
         elif state == Phase.WARMUP:
@@ -209,7 +305,20 @@ def detect_phases(
                 transition(Phase.SHUTDOWN, i)
 
         elif state == Phase.TAXI:
-            if r > 4500 and v < 35 and a < 50:
+            # v's ceiling is deliberately generous, not a tight "just
+            # starting to roll" gate: a turbocharged Rotax iS can spool
+            # from idle to full power within a single 1 Hz sample, so on
+            # a real flight (log_20260408_141810_KTOA.csv, and the KACV
+            # fixture flight) IAS was already well past a 35 kt ceiling
+            # by the very first row where RPM cleared 4500 — the
+            # transition's own gate never opened, and TAXI never
+            # recovers once missed (unlike every other phase here, which
+            # can at least fall back to SHUTDOWN or WARMUP). AGL < 50 ft
+            # is still what actually distinguishes this from being
+            # airborne; a brief high-power/high-IAS ground event that
+            # isn't a real takeoff (a gusty runup) just falls back out to
+            # TAXI again below, same as before.
+            if r > 4500 and v < 60 and a < 50:
                 transition(Phase.TAKEOFF_ROLL, i)
             elif r < 500:
                 transition(Phase.SHUTDOWN, i)

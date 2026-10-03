@@ -5,7 +5,12 @@
     "Available engines: 912iS, 914iS, 915iS, 916iS",
     "The engine config files live in the engines/ directory.",
     "916iS and 915iS are fully sourced from their official OMs.",
-    "912iS and 914iS are placeholders — verify against your engine's OM before use."
+    "912iS and 914iS are placeholders — verify against your engine's OM before use.",
+    "min_flight_duration_min: minutes of airborne time below which a flight",
+    "is auto-excluded from baselines as a 'short flight' (pattern work,",
+    "touch-and-goes). Set to 0 to disable. Does not affect the separate",
+    "ground-session rule, which runs regardless."
   ],
-  "engine": "916iS"
+  "engine": "916iS",
+  "min_flight_duration_min": 10
 }

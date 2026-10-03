@@ -6,7 +6,8 @@
   "type": "object",
   "required": [
     "flight_id", "analysis_key", "source_keys", "header", "phases",
-    "metrics", "exceedances", "cas_events", "ecu_runs", "quality", "provenance"
+    "metrics", "exceedances", "cas_events", "ecu_runs", "quality", "provenance",
+    "available_channels"
   ],
   "additionalProperties": false,
   "properties": {
@@ -67,7 +68,10 @@
           "elapsed_s": { "type": ["number", "null"] },
           "duration_s": { "type": "number" },
           "time_limit_s": { "type": ["number", "null"] },
-          "note": { "type": "string" }
+          "note": { "type": "string" },
+          "limit_id": { "type": ["string", "null"], "description": "Spec 09 §6.1: the limit's stable id." },
+          "event_id": { "type": "string", "description": "Spec 09 §11.1: limit_id@start_utc." },
+          "excess": { "type": ["number", "null"], "description": "Spec 09 §4: how far past the limit, in engine units." }
         }
       }
     },
@@ -110,7 +114,34 @@
       "type": "array",
       "items": { "$ref": "#/$defs/diagnostic" }
     },
-    "provenance": { "$ref": "#/$defs/provenance" }
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "available_channels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Spec 07 §5: chartable registry ids present in this flight's log and not entirely NaN."
+    },
+    "limits": {
+      "type": "array",
+      "description": "Spec 09: the engine profile's limit catalogue this flight was checked against (limits.limit_catalog). Absent or empty for analyses written before Spec 09.",
+      "items": {
+        "type": "object",
+        "required": ["id", "param", "label", "unit", "limit_type", "limit_value", "severity"],
+        "properties": {
+          "id": { "type": "string" },
+          "param": { "type": "string" },
+          "label": { "type": "string" },
+          "unit": { "type": "string" },
+          "limit_type": { "type": "string", "enum": ["MIN", "MAX"] },
+          "limit_value": { "type": "number" },
+          "severity": { "type": "string" },
+          "time_limit_s": { "type": ["number", "null"] },
+          "report_in_exceedances": { "type": "boolean" },
+          "stratify_by": { "type": ["string", "null"] },
+          "filter_policy": { "type": "object" },
+          "close_call_margin_s": { "type": "number" }
+        }
+      }
+    }
   },
   "$defs": {
     "missingReason": {
@@ -123,7 +154,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "value": { "type": ["number", "boolean", "string", "null"] },
+        "value": {
+          "type": ["number", "boolean", "string", "null", "array"],
+          "items": { "type": "integer" },
+          "description": "Arrays only for list-valued metrics, e.g. egt_rank_order (cylinder numbers, hottest first; Spec 08 §4)."
+        },
         "unit": { "type": "string" },
         "missing": { "$ref": "#/$defs/missingReason" },
         "window": {

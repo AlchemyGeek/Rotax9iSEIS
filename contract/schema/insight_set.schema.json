@@ -11,6 +11,7 @@
     "analysis_key": { "type": "string" },
     "fleet_key": { "type": "string" },
     "rules_hash": { "type": "string" },
+    "filters_hash": { "type": "string", "description": "Spec 09 §11.2: hash of the limit filters applied." },
     "topics": {
       "type": "array",
       "items": {
@@ -57,7 +58,23 @@
         "message": {
           "type": "object",
           "required": ["text"],
-          "properties": { "text": { "type": "string" } }
+          "properties": {
+            "text": { "type": "string" },
+            "values": {
+              "type": "object",
+              "properties": {
+                "comparison": {
+                  "type": "object",
+                  "required": ["scope", "n"],
+                  "properties": {
+                    "scope": { "type": "string", "enum": ["band", "all"] },
+                    "band": { "type": ["string", "null"] },
+                    "n": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
         },
         "evidence": {
           "type": "array",
@@ -77,7 +94,33 @@
             "n": { "type": "integer" }
           }
         },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "limit_id": { "type": "string", "description": "Spec 09 §11.3: set on limit_exceedances insights." },
+        "filterable": { "type": "boolean", "description": "Spec 09 §6.3: whether this insight's limit can be filtered." },
+        "filter": {
+          "type": "object",
+          "required": ["filter_id", "outcome"],
+          "properties": {
+            "filter_id": { "type": "string" },
+            "outcome": { "type": "string", "enum": ["suppressed", "breach"] }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["event_id", "elapsed_s", "duration_s", "observed_value", "excess", "suppressed_by"],
+            "properties": {
+              "event_id": { "type": "string" },
+              "start_utc": { "type": "string" },
+              "elapsed_s": { "type": ["number", "null"] },
+              "duration_s": { "type": "number" },
+              "observed_value": { "type": "number" },
+              "excess": { "type": ["number", "null"] },
+              "suppressed_by": { "enum": ["magnitude", "duration", null] }
+            }
+          }
+        }
       }
     },
     "diagnostic": {

@@ -47,8 +47,8 @@ def test_engine_limits_from_config_returns_one_limit_per_entry():
     # silently made check_exceedances() find zero exceedances for every
     # engine, since it iterates this list.
     config = {"limits": [
-        {"param": "rpm", "label": "RPM max", "unit": "rpm", "max_val": 5800},
-        {"param": "oil_temp_f", "label": "Oil temp max", "unit": "f", "max_val": 248},
+        {"id": "rpm_max", "param": "rpm", "label": "RPM max", "unit": "rpm", "max_val": 5800},
+        {"id": "oil_temp_max", "param": "oil_temp_f", "label": "Oil temp max", "unit": "f", "max_val": 248},
     ]}
     limits = engine_limits_from_config(config)
     assert len(limits) == 2

@@ -14,6 +14,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from slingology_eis import workspace as _workspace
 from slingology_eis.cli import anonymize, main
 
 from ..conftest import LOGS_DIR, requires_flight_logs
@@ -141,13 +142,100 @@ def test_rules_check_invalid_file_exits_one(tmp_path, capsys):
 
 
 # ── stubs ─────────────────────────────────────────────────────────────────
+# `serve` is no longer a stub (Spec 04 §9.2 local-server adapter) — its own
+# tests live in tests/unit/test_server.py, since calling `main(["serve"])`
+# here would block forever on serve_forever() in-process.
 
 def test_export_bundle_stub_exits_two():
     assert main(["export-bundle", "--quiet"]) == 2
 
 
-def test_serve_stub_exits_two():
-    assert main(["serve", "--quiet"]) == 2
+# ── workspace list / create (Spec 01 v0.6 §7.1, Spec 02 v0.5 Q10) ──────────
+# `_PACKAGED_HOME` is monkeypatched to an isolated tmp dir and pre-created
+# so resolve_registry_path()/resolve_workspaces_root() never touch this
+# repo's own real data/registry.json or data/workspaces/ — those three
+# resolution functions have no CLI flag to redirect them directly.
+
+@pytest.fixture
+def isolated_packaged_home(tmp_path, monkeypatch):
+    home = tmp_path / "SlingologyEIS"
+    home.mkdir()
+    monkeypatch.setattr(_workspace, "_PACKAGED_HOME", home)
+    return home
+
+
+def test_workspace_list_empty_registry(isolated_packaged_home, capsys):
+    rc = main(["workspace", "list", "--quiet"])
+    assert rc == 0
+    assert "No workspaces yet" in capsys.readouterr().out
+
+
+def test_workspace_create_then_list(isolated_packaged_home, capsys):
+    rc = main(["workspace", "create", "N117ZS — all", "--engine", "916iS",
+               "--tail-number", "N117ZS", "--json", "--quiet"])
+    assert rc == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["name"] == "N117ZS — all"
+    assert created["engine_model"] == "916iS"
+    assert created["primary_tail_number"] == "N117ZS"
+    ws_dir = isolated_packaged_home / "workspaces" / created["id"]
+    assert (ws_dir / "manifest.json").exists()
+
+    rc = main(["workspace", "list", "--json", "--quiet"])
+    assert rc == 0
+    entries = json.loads(capsys.readouterr().out)
+    assert len(entries) == 1
+    assert entries[0]["id"] == created["id"]
+    assert entries[0]["flight_count"] == 0
+
+
+def test_workspace_create_rejects_unknown_engine(isolated_packaged_home, capsys):
+    rc = main(["workspace", "create", "bad-engine-ws", "--engine", "917iS", "--quiet"])
+    assert rc == 1
+
+
+def test_workspace_create_duplicate_name_exits_one(isolated_packaged_home, capsys):
+    rc = main(["workspace", "create", "dupe", "--engine", "916iS", "--quiet"])
+    assert rc == 0
+    rc = main(["workspace", "create", "dupe", "--engine", "916iS", "--quiet"])
+    assert rc == 1
+
+
+def test_workspace_missing_subcommand_exits_two():
+    with pytest.raises(SystemExit) as exc:
+        main(["workspace"])
+    assert exc.value.code == 2
+
+
+# ── --workspace resolves a registered name/id, or falls back to a path ────
+
+def test_dash_dash_workspace_resolves_registered_name(isolated_packaged_home, synthetic_logs_dir, capsys):
+    rc = main(["workspace", "create", "by-name", "--engine", "916iS", "--json", "--quiet"])
+    assert rc == 0
+    created = json.loads(capsys.readouterr().out)
+
+    # --workspace given the registered *name* (not its id, not a literal
+    # path) resolves to the same directory workspace.py itself wrote to
+    # (Q10) — proven by running `fleet` (which writes fleet/analysis.json
+    # into whatever resolve_workspace_dir() resolves to) against the name.
+    rc = main(["fleet", "--logs", str(synthetic_logs_dir), "--workspace", "by-name", "--quiet"])
+    assert rc == 0
+    ws_dir_by_name = isolated_packaged_home / "workspaces" / created["id"]
+    assert (ws_dir_by_name / "fleet" / "analysis.json").exists()
+
+
+def test_dash_dash_workspace_literal_path_still_works_unregistered(tmp_path, isolated_packaged_home, capsys):
+    """A literal path that matches no registered workspace — the
+    pre-registry CLI behavior must be exactly unchanged."""
+    unregistered = tmp_path / "some-dev-checkout-workspace"
+    rc = main(["flight", "--logs", str(tmp_path), "--workspace", str(unregistered), "--quiet", "nonexistent.csv"])
+    # Not about this specific subcommand succeeding — just confirming
+    # resolve_workspace_dir(str(unregistered)) doesn't blow up trying a
+    # registry lookup and silently redirect elsewhere; the "log not
+    # found" failure proves --logs/--workspace were both honored as
+    # literal paths, same as always.
+    assert rc == 1
+    assert "Log not found" in capsys.readouterr().err
 
 
 # ── real-data subcommands (gated: private logs, may be absent) ──────────────
@@ -199,3 +287,74 @@ def test_import_then_fleet_uses_cached_workspace(tmp_path, capsys):
     # Trying the currently-shipped rules against themselves: no diff.
     assert diff["added"] == []
     assert diff["removed"] == []
+
+
+# ── flights / exclude / include (Spec 02 §5.11) ─────────────────────────────
+
+def test_flights_lists_ground_session_and_persists_exclusion(synthetic_logs_dir, tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    rc = main(["flights", "--logs", str(synthetic_logs_dir), "--workspace", str(workspace),
+               "--show-excluded", "--json", "--quiet"])
+    assert rc == 0
+    d = json.loads(capsys.readouterr().out)
+    # The shared synthetic fixture has no ias_kt/baro_alt_ft — RPM alone
+    # never clears TAXI -> TAKEOFF_ROLL, so it's a ground session.
+    assert d["included"] == []
+    assert d["excluded_summary"]["ground_session"] == 1
+    assert (workspace / "exclusions.json").exists()
+
+
+def test_flights_without_show_excluded_omits_excluded_detail(synthetic_logs_dir, tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    rc = main(["flights", "--logs", str(synthetic_logs_dir), "--workspace", str(workspace),
+               "--json", "--quiet"])
+    assert rc == 0
+    d = json.loads(capsys.readouterr().out)
+    assert d["excluded"] is None
+    # The header summary is always present, regardless of --show-excluded.
+    assert d["excluded_summary"]["ground_session"] == 1
+
+
+def test_exclude_requires_reason(synthetic_logs_dir, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        main(["exclude", _SYNTHETIC_NAME, "--logs", str(synthetic_logs_dir),
+              "--workspace", str(tmp_path / "workspace")])
+    assert exc.value.code == 2
+
+
+def test_include_unknown_filename_exits_one(tmp_path, capsys):
+    rc = main(["include", "never-seen.csv", "--workspace", str(tmp_path / "workspace"), "--quiet"])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+
+
+@requires_flight_logs
+def test_exclude_then_include_roundtrip(tmp_path, capsys):
+    workspace = tmp_path / "workspace"
+    first_log = sorted(LOGS_DIR.glob("*.csv"))[0]
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    assert rc == 0
+    before = json.loads(capsys.readouterr().out)
+    before_names = {r["filename"] for r in before["included"]}
+    assert first_log.name in before_names
+
+    rc = main(["exclude", first_log.name, "--reason", "test: ferry flight",
+               "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--quiet"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    after_exclude = json.loads(capsys.readouterr().out)
+    assert first_log.name not in {r["filename"] for r in after_exclude["included"]}
+    assert len(after_exclude["included"]) == len(before["included"]) - 1
+
+    rc = main(["include", first_log.name, "--reason", "actually keep it",
+               "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--quiet"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
+    after_include = json.loads(capsys.readouterr().out)
+    assert first_log.name in {r["filename"] for r in after_include["included"]}
+    assert len(after_include["included"]) == len(before["included"])

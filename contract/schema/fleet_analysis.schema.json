@@ -23,7 +23,8 @@
     },
     "models": { "type": "array", "items": { "$ref": "#/$defs/model" } },
     "quality": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
-    "provenance": { "type": "object", "required": ["engine_version", "source_keys"] }
+    "provenance": { "type": "object", "required": ["engine_version", "source_keys"] },
+    "cylinder_balance": { "$ref": "#/$defs/cylinderBalance" }
   },
   "$defs": {
     "confidence": {
@@ -58,6 +59,27 @@
         "confidence": { "$ref": "#/$defs/confidence" }
       }
     },
+    "bandStats": {
+      "type": "object",
+      "required": ["n", "mean", "std", "min", "max", "confidence"],
+      "properties": {
+        "n": { "type": "integer" },
+        "mean": { "type": ["number", "null"] },
+        "std": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "trend": { "$ref": "#/$defs/trend" },
+        "outliers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "z_score"],
+            "properties": { "flight_id": { "type": "string" }, "z_score": { "type": "number" } }
+          }
+        }
+      }
+    },
     "metricFleet": {
       "type": "object",
       "required": ["metric_id", "baseline", "trend", "points", "outliers"],
@@ -70,7 +92,7 @@
           "required": ["band_kind", "bands"],
           "properties": {
             "band_kind": { "type": "string", "enum": ["oat_band", "da_band"] },
-            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseline" } }
+            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/bandStats" } }
           }
         },
         "points": {
@@ -109,6 +131,43 @@
         "r_squared": { "type": ["number", "null"] },
         "confidence": { "$ref": "#/$defs/confidence" },
         "capture": { "type": "string" }
+      }
+    },
+    "cylinderBalance": {
+      "description": "Spec 08 §5 — per-flight hottest cylinder and the aircraft's usual one. Optional: fleet results written before Spec 08 lack it.",
+      "type": "object",
+      "required": ["margin_min_f", "expected_hot_cyl", "established_hot_cyl", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "margin_min_f": { "type": "number" },
+        "expected_hot_cyl": { "type": ["integer", "null"], "minimum": 1, "maximum": 4 },
+        "established_hot_cyl": {
+          "type": "object",
+          "required": ["cyl", "share", "n", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "cyl": { "type": ["integer", "null"], "minimum": 1, "maximum": 4 },
+            "share": { "type": ["number", "null"] },
+            "n": { "type": "integer" },
+            "source": { "type": "string", "enum": ["learned", "prior", "none"] }
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "date", "x", "hottest_cyl", "margin_f", "rank_order"],
+            "additionalProperties": false,
+            "properties": {
+              "flight_id": { "type": "string" },
+              "date": { "type": "string" },
+              "x": { "type": ["number", "null"] },
+              "hottest_cyl": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "margin_f": { "type": ["number", "null"] },
+              "rank_order": { "type": ["array", "null"], "items": { "type": "integer" } }
+            }
+          }
+        }
       }
     },
     "diagnostic": {

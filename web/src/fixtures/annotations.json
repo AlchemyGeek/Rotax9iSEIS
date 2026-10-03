@@ -1,0 +1,45 @@
+{
+  "version": "1",
+  "annotations": [
+    {
+      "id": "ann_ksff_oilpress",
+      "flight_id": "fl_20260527_200344_KSFF",
+      "ref": {
+        "kind": "ecu_run",
+        "ref": "run_20260527_200638_KSFF"
+      },
+      "note": "Ground power-up before oil warmed \u2014 not an in-flight event. Confirmed against B.U.D.S., no stored fault.",
+      "created_at": "2026-06-02T00:00:00Z"
+    },
+    {
+      "id": "ann_overboost_jun13",
+      "flight_id": "fl_20260613_193731_KAWO",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_overboost"
+      },
+      "note": "Deliberate \u2014 practicing short-field go-around technique, brief overboost expected on the power-up.",
+      "created_at": "2026-06-14T00:00:00Z"
+    },
+    {
+      "id": "ann_fuel_sender_apr23",
+      "flight_id": "fl_20260423_200615_KACV",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_fuel_sender"
+      },
+      "note": "Confirmed with the mechanic \u2014 right tank sender reads high since the last annual. Replacement on order.",
+      "created_at": "2026-04-25T00:00:00Z"
+    },
+    {
+      "id": "ann_ecu_before_start_apr23",
+      "flight_id": "fl_20260423_200615_KACV",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_ecu_before_start"
+      },
+      "note": "Pulled B.U.D.S. per the report's guidance \u2014 no stored fault found. Likely transient during avionics power-up.",
+      "created_at": "2026-04-25T00:00:00Z"
+    }
+  ]
+}

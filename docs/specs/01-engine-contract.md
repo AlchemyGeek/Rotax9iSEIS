@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.6 — for review (no code written)
+**Status:** Draft v0.14 — for review (no code written)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -15,7 +15,15 @@
 | 0.3 | Added `--logs DIR` to the CLI global options (§7.1), independent of `--workspace DIR`. A non-technical, no-repo user (Spec 02 §5.1) must be able to point both flags at plain folders with no git checkout involved; see Spec 02 v0.2 for the workspace-side default resolution this supports. |
 | 0.4 | Added `CUSTOM` to `EngineProfile.source_status` (§6.3, §8.1) and diagnostic `ENGINE_CUSTOM_OVERRIDE`, for a host-merged profile built from a shipped profile plus a pilot's `engine_overrides.json` (Spec 02 §6.4). The engine itself is unchanged — it still only ever receives one `EngineProfile`; merging happens host-side. |
 | 0.5 | Stage 4 split into 4a (CLI adapter) and 4b (browser worker + local server) (§11). The CLI ships first: it's the cheapest adapter to build, it's a live conformance check on the Stage 3 contract before the harder browser work starts, and its `--json` output becomes the source for regenerating Spec 05's fixtures from real data instead of hand-authored values. No change to D2 (browser-compute remains the primary deployment path) — this only reorders *building* the adapters, not which one users get. |
-| 0.6 | §9 rewritten from evidence, not speculation: all 13 report topics were ported in Stage 3 (not just the two Q3 proposed as a freeze trigger), and the v0.1 sketch doesn't match what they needed. Q3 resolved (§14). `TopicResult.insight: Insight \| null` corrected to `insights: Insight[]` (§8.5) — one of the five findings. |
+| 0.6 | §7.1 needs a real follow-up: multi-workspace support (Spec 02 v0.5, Q10, resolved) requires `--workspace` to accept a registered name/id — looked up in the registry — as well as a literal path, plus `workspace list`/`workspace create` subcommands. This is a modification to the CLI already shipped (Stage 4a, v0.11.0), not a paper change to an unbuilt spec. Not designing the exact flag/subcommand shape in this revision — flagged here so it isn't missed, full design deferred to when Spec 02's registry lands in code. |
+| 0.7 | The CLI shape from §0.6 is now built: `workspace list [--json]`, `workspace create <name> [--tail-number IDENT] [--engine NAME] [--json]`, nested-subparser style matching `rules check`/`rules try`. One thing decided rather than left as shipped: `workspace create` had been resolving a missing `--engine` through the same fallback chain every other command uses (flag → env var → `config.json` → 916iS default) — reasonable for a one-off `flight`/`report` run, wrong for `workspace create`, where the choice is locked for the workspace's lifetime (Spec 02 §5.6: the only fix for a wrong `engine_model` is abandoning the workspace and making a new one). **`--engine` is now required on `workspace create` specifically, with no default** — every other command's fallback chain is unchanged. A permanent, hard-to-undo choice shouldn't silently inherit a throwaway command's low-stakes default. |
+| 0.8 | §8.4: `BaselineConfig` gains `outlier_z_threshold` (global default 2.0) and a per-metric `outlier_z_threshold_overrides` map — one number, driving both `FleetMetric.outliers` and the `baseline_deviation` insight trigger, which were previously implicitly separate. Per-metric override exists because a badly skewed metric (`overboost_total_s`) doesn't mean the same thing under a z-score threshold tuned for a roughly normal one. Follows Spec 03 §3's new persona principle: this lives in the rule playground, never surfaced to the casual-pilot workflow. |
+| 0.9 | §8.5: `engine_ecu_inflight` firing condition made explicit — only when the flight has a real `IN_FLIGHT`-classified `EcuRun`, never for ground-context presence alone. A wireframe had this backwards (warning-severity insight built from ground-context data, on a flight with zero real in-flight events); fixture and mockup corrected, this is the spec-level fix so it can't recur. Ground-context ECU presence is Analysis-only on every flight where that's all there is — flagging it per-flight would warn on nearly every flight in the fleet, the opposite of what an insight is for. |
+| 0.10 | §8.4: documented, not designed — `by_band`/`band_kind_by_metric` were typed with no real content; checked the actual repo and `baseline_stratified`/`trend_stratified` already exist, are already wired into `update_fleet`, and are backed by real physical reasoning ("the research paper §9") that was never written into this spec. Added the real `DA_BANDS`/`OAT_BANDS` boundaries, the real per-metric assignment (5 metrics → `oat_band`, 2 → `da_band`, the rest `null`), and the confidence-per-band trade-off, all pulled from the shipped code rather than invented. |
+| 0.11 | §8.4: `outlier_z_threshold` confirmed wired and unified (one resolver, both consumers) during implementation. One thing clarified rather than fixed: `outliers[]` (all-flights baseline) and the `baseline_deviation` insight (leave-one-out, R2) can legitimately disagree in count per metric — always by the same amount R2's own damping evidence predicts. Only the threshold was ever meant to be shared; the two baseline statistics were always meant to differ. Written down explicitly so it isn't mistaken for unfinished unification later. |
+| 0.12 | Spec 08 (cylinder balance) lands: §8.2 EGT registry gains `egt1..4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order` (the first list-valued metric — `MetricValue.value` may now be an integer array); `egt4_elevation_f` stays one minor version as a deprecated alias of `egt4_deviation_f`. §8.4 `FleetAnalysis` gains optional `cylinder_balance` and the four `egtN_deviation` fleet metrics (`oat_band`). §8.5 `cylinder_rank` is wired (it was the one unimplemented topic) and `egt_cyl_deviation` is new; `egt4_elevation` ships disabled. `update_fleet` takes an optional engine config for the profile's `expected_hot_cylinder` prior. |
+| 0.13 | §8.4: new **R8** — `baseline_deviation` compares a flight against the leave-one-out baseline **of its own weather band** for stratified metrics, falling back to the unstratified leave-one-out baseline when the flight has no band or its band has fewer than `n_min` other flights. Removes the seasonal false positives the unstratified comparison produced and makes insights agree with the stratified Trends view. `by_band.bands[*]` gains per-band `outliers`; insight `values` record which comparison was used. Acceptance criterion 8 (§12) is superseded: its counts are regenerated on the full log set. Decided in the Spec 09 discussion (Q8); Spec 09's filter monitor uses the same comparison rule. |
+| 0.14 | §6.4: documented, not designed — `fuel_press_psi` is the only signal the logs carry for fuel pump activity; the G3X CSV has no pump-selection or pump-running channel (`FPCM FAULT` is a fault flag, not a state indicator — confirmed against the full fleet's column set, which is identical across logs). Noted as a known gap, with a future pump-state inference model (predicting which pump(s) are running from the pressure signature) tracked as BACKLOG A7. Raised investigating the real fuel-pressure exceedances from BACKLOG G1. |
 
 ---
 
@@ -61,6 +69,7 @@ The UI can only be as good as the structured output behind it. Today the engine'
 | R5 | `flight_id` stays fingerprint-based; overlap matches surface as `INGEST_DUPLICATE_OF` and the host keeps an alias list. Provisional until checked against the full log set. | Q1 |
 | R6 | The CLI is retained as a thin client and becomes a single `slingology-eis` command with subcommands (§7.1). | new |
 | R7 | Stage 0 golden outputs are captured as a **known-defect baseline** (finding 9); the detector fix is a separate reviewed change (§11). | new |
+| R8 | For stratified metrics, baseline comparisons use the leave-one-out baseline of the flight's own band, with an unstratified fallback below `n_min` (§8.4). | Spec 09 Q8 |
 
 ## 3. Findings from the code review that shape the contract
 
@@ -137,6 +146,8 @@ A log file may contain several avionics power cycles (BACKLOG B2), and ground-on
 
 The public API exposes **normalized channel ids only** (snake_case, unit-suffixed where the current code does: `rpm`, `oil_temp_f`, `egt1_f`, `egt_spread_f`, `fuel_flow_gph`, `map_inhg`, `ias_kt`, `vs_fpm`, `da_ft`, …). Raw Garmin column names are not part of the contract. The registry declares, per channel: id, unit, description, source (`raw` | `derived`), and whether it is charted by default. `get_series` accepts only registry ids.
 
+**No direct fuel pump state (v0.14).** `fuel_press_psi` is sensitive to which fuel pump(s) are running — a pump dropping out or a second pump cutting in shows up as a step or dip in the pressure trace — but the G3X log has no channel that reports pump selection or pump-running state directly. `FPCM FAULT` is a fault flag (fires on a pump-system fault), not a status indicator; it does not distinguish "pump 1 running," "pump 2 running," or "both." This is a real gap for root-causing fuel-pressure exceedances (BACKLOG G1), not something the current engine can paper over with another channel. A future capability — inferring pump state from the pressure signature (and any other correlated channels) rather than reading it directly — is tracked as BACKLOG A7, deliberately out of scope here: it would be a model (trained or rule-based, in the same vein as the `map_at_takeoff` empirical model already built from fleet data, §8.5) feeding a derived channel or metric, not a new raw channel the log itself provides.
+
 ## 7. Operations
 
 All operations use one envelope, regardless of transport.
@@ -197,10 +208,14 @@ The CLI is **retained** as a thin client of the engine. It is not the interface 
 | `engines` | `list_engines` | – |
 | `export-bundle` | results bundle (Spec 02) | – |
 | `serve` | starts the local server and UI (path 2) | – |
+| `workspace list [--json]` | reads the registry (Spec 02 §5.2/§6.7) | – |
+| `workspace create <name> [--tail-number IDENT] [--engine NAME] [--json]` | creates a registry entry + workspace (Spec 02 §5.1) | – |
 
-**Global options:** `--logs DIR`, `--workspace DIR`, `--engine NAME`, `--json`, `--anonymize`, `--quiet`. **Exit codes:** `0` success, `1` operation failed, `2` usage error.
+**Global options:** `--logs DIR`, `--workspace NAME-OR-DIR`, `--engine NAME`, `--json`, `--anonymize`, `--quiet`. **Exit codes:** `0` success, `1` operation failed, `2` usage error.
 
-`--logs` and `--workspace` are independent — neither implies the other, and neither implies a git checkout. Their defaults, in order of precedence, are resolved by the host (not the engine) as: (1) the flag, if given; (2) a packaged install's own default folder (a named folder under the user's home directory — see Spec 02 §5.1 for the exact path); (3) `<repo-root>/data/logs` and `<repo-root>/data/` respectively, **only** when the CLI is run from inside a git checkout and neither flag nor (2) applies. Case (3) exists for contributors and CI reproducing the current scripts' behavior; it is not the default for anyone who installed the tool rather than cloned it.
+`--workspace` now resolves against the registry first (a matching name or id) before falling back to treating the value as a literal path — a developer-checkout invocation that predates the registry is unaffected. `--logs` and `--workspace` are independent — neither implies the other, and neither implies a git checkout.
+
+**`--engine` is required on `workspace create`, with no default** — the one deliberate exception to every other command's fallback chain (below). `engine_model` is locked for the workspace's lifetime (Spec 02 §5.6); the only fix for a wrong choice is abandoning the workspace and creating a new one, so it shouldn't silently inherit a throwaway command's low-stakes default. Every other command's defaults, in order of precedence, are resolved by the host (not the engine) as: (1) the flag, if given; (2) a packaged install's own default folder (a named folder under the user's home directory — see Spec 02 §5.1 for the exact path); (3) `<repo-root>/data/logs` and `<repo-root>/data/` respectively, **only** when the CLI is run from inside a git checkout and neither flag nor (2) applies. Case (3) exists for contributors and CI reproducing the current scripts' behavior; it is not the default for anyone who installed the tool rather than cloned it.
 
 **Compatibility**
 
@@ -257,7 +272,7 @@ The **metric registry** replaces the implicit `FlightMetrics` dataclass. Ids are
 |---|---|
 | Header | `date`, `engine_hours`, `duration_min`, `airborne_min`, `max_altitude_ft`, `max_ias_kt`, `fadec_gallons` |
 | Phases | `phase_climb_min`, `phase_cruise_min`, `phase_descent_min` |
-| EGT | `egt_spread_mean_f`, `egt_spread_max_f`, `egt4_elevation_f`, `egt_rank_stable` |
+| EGT | `egt_spread_mean_f`, `egt_spread_max_f`, `egt1_deviation_f`…`egt4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order`, `egt_rank_stable`, `egt4_elevation_f` (deprecated alias of `egt4_deviation_f`; Spec 08) |
 | Fuel | `cruise_nmpg`, `cruise_fuel_flow_gph` |
 | Thermal | `oil_temp_max_f`, `oil_temp_below_optimal_pct`, `coolant_temp_max_f`, `oil_coolant_ratio`, `climb_oil_rise_f_per_min`, `climb_coolant_rise_f_per_min`, `climb_vs_bucket_dominant` |
 | Boost | `overboost_total_s`, `overboost_max_block_s` |
@@ -293,31 +308,87 @@ interface Trend    { n: number; slope: number|null; r_squared: number|null;
                      direction: "increasing"|"decreasing"|"flat"|"insufficient_data";
                      x: "engine_hours"; confidence: Baseline["confidence"] }
 interface MetricFleet { metric_id: string; baseline: Baseline; trend: Trend;
-                        by_band?: { band_kind: "oat_band"|"da_band"; bands: Record<string, Baseline> };
+                        by_band?: { band_kind: "oat_band"|"da_band";
+                                    bands: Record<string, Baseline & { trend?: Trend;
+                                                                       outliers: { flight_id: string; z_score: number }[] }> };  // per-band outliers: R8
                         points: { flight_id: string; date: string; x: number|null; value: number; band?: string }[];
-                        outliers: { flight_id: string; z_score: number }[] }
+                        outliers: { flight_id: string; z_score: number }[] }   // computed against the ALL-FLIGHTS baseline (`baseline` above), not leave-one-out — see note below
 interface Model    { id: "takeoff_map"; kind: "linear_regression"; features: string[];
                      coefficients: Record<string, number>; n: number; r_squared: number|null;
                      confidence: Baseline["confidence"]; capture: string }  // capture: e.g. "RPM>=5500 during TAKEOFF_ROLL"
 interface FleetAnalysis { fleet_key: string; flight_ids: string[]; excluded: {flight_id:string; reason:string}[];
                           metrics: Record<string, MetricFleet>; models: Model[];
-                          quality: Diagnostic[]; provenance: Provenance }
+                          quality: Diagnostic[]; provenance: Provenance;
+                          cylinder_balance?: CylinderBalance }  // Spec 08 §5; absent in pre-Spec-08 results
 ```
 
 `confidence.level` is a **structured enum**; the human sentence ("MODERATE (n=15 …)") is a renderer concern. The `points` array replaces the `raw` blocks in `baselines.json` and is what the trend charts draw.
+
+**Stratification (`by_band`) — documenting real, already-implemented behavior.** This was typed but never written up; `baseline_stratified`/`trend_stratified` already exist in `fleet.py`, already wired into `update_fleet`, with real reasoning behind the design (the code cites "the research paper §9" directly):
+
+- **Density altitude (`da_band`) is the correct normalizer for performance metrics** (cruise efficiency, fuel flow) — two flights at the same DA present the engine with the same oxygen for combustion regardless of how that DA was reached, so DA alone is the right single variable.
+- **Outside air temperature (`oat_band`) is separately needed for thermal metrics** (EGT spread, oil/coolant temps) — DA alone isn't sufficient there, because ambient air is simultaneously the *cooling* medium: a hot-and-high flight and a cold-and-low flight can share the same DA and still have very different cooling margins.
+
+Real band boundaries, exactly as implemented:
+
+```ts
+const DA_BANDS  = [[-2000, 2000, "low"], [2000, 5000, "moderate"], [5000, 9000, "high"], [9000, 20000, "very_high"]];  // ft
+const OAT_BANDS = [[-40, 5, "cold"], [5, 20, "mild"], [20, 30, "warm"], [30, 55, "hot"]];  // °C
+```
+
+Real per-metric assignment (this is `band_kind_by_metric`'s actual populated content, not a placeholder):
+
+| Metric | `band_kind` | Metric | `band_kind` |
+|---|---|---|---|
+| `egt_spread_mean_f` | `oat_band` | `cruise_nmpg` (cruise efficiency) | `da_band` |
+| `egt1..4_deviation_f` (and deprecated `egt4_elevation_f`) | `oat_band` | `cruise_fuel_flow_gph` | `da_band` |
+| `oil_temp_max_f` | `oat_band` | `overboost_total_s` | `null` — no physical reason to stratify a boost event by weather |
+| `coolant_temp_max_f` | `oat_band` | `climb_oil_rise_f_per_min` | `null` |
+| `oil_coolant_ratio` | `oat_band` | `cruise_da_ft`, `takeoff_map_inhg` | `null` — these describe the condition itself |
+
+Every metric not listed defaults to `null` (no stratification) unless a future topic explicitly assigns one.
+
+**Confidence is honestly lower per band, by design, not a bug to fix.** `confidence_label(n)`: `n<3` → `VERY_LOW` ("essentially anecdotal"), `n<10` → `LOW`, `n<30` → `MODERATE`, else `GOOD` (`MIN_FLIGHTS_FOR_CONFIDENCE = 10`, same threshold used fleet-wide). Splitting 23 flights into 4 DA bands means each band typically lands in `LOW` or `MODERATE` even when the unstratified fleet baseline is `GOOD` — this is the correct, stated trade-off for a cleaner comparison, not something a UI should try to hide or upgrade.
+
+**`outliers[]` and the `baseline_deviation` insight can legitimately disagree in count per metric — confirmed during implementation, not a bug to chase.** They share one threshold (`outlier_z_threshold`, above) but compare against two different statistics by design: `outliers[]` is computed against the **all-flights** baseline (the same `baseline` field used for the Trends display band), while the insight trigger uses the **leave-one-out** baseline (R2, below). Leave-one-out will always find equal-or-more flights crossing the threshold than all-flights does, for the reason R2's own evidence already documents — self-inclusion damps a flight's own z-score. So a point can be ringed as an outlier on Trends without a matching insight having fired, and that's the all-flights/leave-one-out difference showing through correctly, not the threshold-unification work leaving something half-fixed. Only the threshold was ever meant to be one number; the two baseline statistics were always meant to differ.
 
 **Baseline membership (resolved, R2).** The current code builds one baseline over all flights (script 03) and script 04 compares each flight against it, so a flight is compared against a baseline that includes itself. The contract instead specifies:
 
 - `FleetAnalysis` keeps the all-flights baseline for display (trend charts, baseline bands) and the per-flight `points` array.
 - `evaluate_insights` compares each flight against a **leave-one-out** baseline derived from `points` (mean and standard deviation excluding that flight).
 - `baseline_deviation` triggers require a minimum sample size, `n_min` (proposed default 10, matching the existing trend triggers; tunable per rule through the rule playground). Below it, the analysis line is shown with a `BASELINE_LOW_N` note and no insight fires.
+- For stratified metrics, the leave-one-out baseline is taken **within the flight's own band** (R8, below).
+
+**Stratified comparison (R8).** Until v0.13, stratification was display-only: the Trends view could split a metric by band, but `baseline_deviation` always compared a flight against every other flight regardless of weather. For thermal metrics that produced seasonal noise. A hot-day oil temperature peak stood out against a fleet that included winter flights and fired a "watch" insight every summer, while a winter flight running warm for winter could hide inside the all-season spread. It also made the chart and the insights disagree: a point sitting well inside its own band on the stratified Trends view could still carry a "higher than usual" insight.
+
+The rule, applied per metric by `evaluate_insights`:
+
+1. If `band_kind_by_metric[metric]` is `null`, compare against the unstratified leave-one-out baseline (unchanged behaviour).
+2. Otherwise, if the flight has a band (`points[].band` present) and at least `n_min` **other** flights share that band, compare against the leave-one-out baseline of that band.
+3. Otherwise, fall back to the unstratified leave-one-out baseline.
+4. If that is also below `n_min`, no insight fires and the analysis line carries `BASELINE_LOW_N`, as before.
+
+The same `outlier_z_threshold` applies whichever baseline is used; only the comparison set changes. Trend triggers are unaffected: a trend is always over engine hours across all flights.
+
+The insight's `message.values` gain `comparison: { scope: "band" | "all"; band?: string; n: number }`, and the text names it ("higher than your other warm-day flights, n=14" or "higher than all your flights, n=23"), so a pilot can always see what the flight was compared with. A fallback is not a diagnostic; it is just visible in `comparison`.
+
+For the display side to agree, `update_fleet` computes `outliers` per band as well (`by_band.bands[b].outliers`, against that band's all-flights baseline, same threshold). The Trends view rings per-band outliers when stratification is on and the fleet-wide `outliers` when it is off (Spec 03 §5.3). The existing all-flights versus leave-one-out difference (above) carries over unchanged within each band.
+
+Consequences, accepted deliberately: per-band samples are smaller, so a new aircraft spends longer in fallback before band comparisons start (the `confidence` trade-off already described for stratified baselines), and existing insights change for stratified metrics, including Spec 08's `egt1..4_deviation`, which are `oat_band`. Spec 09's filter monitor uses this same rule for its frozen baselines, so filters and baseline insights share one definition of "comparable flights".
 
 ```ts
 interface BaselineConfig {
   membership: "leave_one_out" | "all";   // default "leave_one_out"
-  band_kind_by_metric: Record<string, "oat_band" | "da_band" | null>;
+  band_kind_by_metric: Record<string, "oat_band" | "da_band" | null>;   // real values above, not empty
+  outlier_z_threshold: number;                              // global default: 2.0
+  outlier_z_threshold_overrides?: Record<string, number>;    // metric_id -> override, sparse
 }
 ```
+
+
+**One threshold, two consumers — not two independently configurable numbers.** `outlier_z_threshold` (resolved per metric as `overrides[metric_id] ?? outlier_z_threshold`) is the single value that decides both (a) which points `update_fleet` marks in `FleetMetric.outliers` (below) and (b) whether `evaluate_insights`'s `baseline_deviation` trigger fires for that metric. Earlier drafts of this spec left the two implicitly separate — a real gap, since a pilot seeing a point ringed as an outlier on a trend chart with no corresponding insight (or the reverse) would have no idea why they disagreed, when the honest answer should be "they can't disagree, they're the same number." Default 2.0 (roughly the two-tailed 95% mark) covers any metric with no override. Per-metric overrides exist because some metrics are badly skewed — `overboost_total_s` is mostly near-zero with occasional spikes, and a z-score threshold tuned for a roughly normal metric like EGT spread doesn't mean the same thing statistically there. (A skewed metric like that may eventually want a percentile-based threshold instead of a z-score at all — not solved here, just noted as a real limit of this mechanism, not something per-metric tuning alone fixes.)
+
+Both `outlier_z_threshold` and `n_min` are edited in the same place: the rule playground (Spec 03 §5.5), alongside the threshold/condition edits it already makes to `insight_rules.json`. One UI surface over two underlying documents (`fleet/selection.json`'s `BaselineConfig` and `rules/active.json`) — not a new settings screen. This is also where Spec 03's persona principle (§3) applies concretely: a casual pilot never opens Baselines & Models and never sees this number; a value that lives here is, by construction, something only a pilot who went looking for it can touch.
 
 Evidence from the review (23 real flights in `fleet_metrics.csv`, |z| ≥ 2.0): self-inclusion changed four borderline results (z between 1.8 and 2.1, always damped); a "prior flights only" baseline was unstable and order-dependent. At n = 23, about one chance trigger per metric is expected at this threshold, which is why the sample-size gate matters more for new users with few flights.
 
@@ -325,14 +396,19 @@ Evidence from the review (23 real flights in `fleet_metrics.csv`, |z| ≥ 2.0): 
 
 ```ts
 interface TopicResult {
-  topic_id: string;               // rule id: egt_spread, egt4_elevation, cylinder_rank, oil_temp_peak,
+  topic_id: string;               // rule id: egt_spread, egt_cyl_deviation, cylinder_rank (Spec 08), oil_temp_peak,
                                   // coolant_temp_peak, oil_coolant_ratio, overboost_time, cruise_efficiency,
                                   // cruise_fuel_flow, map_at_takeoff, engine_ecu_inflight, flight_phase_mix,
                                   // limit_exceedances, climb_thermal_rate
   analysis: { template: string; values: Record<string, number|string|null>; text: string };  // always present
-  insights: Insight[];                                                    // zero or more (§9 v0.6 finding 4)
+  insight: Insight | null;                                                                    // conditional
   metric_ids: string[];
 }
+```
+
+**`engine_ecu_inflight` fires only when this flight has a real `IN_FLIGHT`-classified `EcuRun`** (§8.6) — not merely when the ENGINE ECU CAS alert is present somewhere in the log. A wireframe pass got this wrong: it built an insight named `engine_ecu_inflight`, severitized as `warning`, whose actual content described *ground-context* presence (active during `POWERUP`, before engine start) — which is the routine case on nearly every flight (141 of 145 real fleet ECU runs are ground-context), not an anomaly. Flagging that per-flight would mean nearly every flight gets the same warning, which is exactly what an insight shouldn't do — it should flag a genuine deviation, not restate a near-universal baseline. Ground-context ECU presence belongs in the `Analysis` text only, no `insight`, on every flight where that's all there is. `engine_ecu_inflight` should read as silent for such a flight, correctly, not as a workaround — there's nothing to flag. On a flight that *does* have a real `IN_FLIGHT` run, the insight is real and warranted; per-event detail (which co-active alerts, and whether any of them correlate with an actual out-of-range engine parameter rather than just another avionics-backup indication) lives in `EcuAnalysis` (§8.6), not duplicated here.
+
+```ts
 interface Insight {
   id: string; topic_id: string; rule_id: string;
   trigger: "threshold" | "baseline_deviation" | "trend";
@@ -377,24 +453,15 @@ Downsampling uses a min/max-preserving envelope (so peaks such as max EGT or oil
 
 ## 9. Extension model (community)
 
-**Rewritten in v0.6.** The v0.1 sketch below this note was written before any topic existed in the library; Stage 3 then ported all 13 report topics into `evaluate_insights()`, not just the two Q3 proposed as a freeze trigger. Five findings from that port contradict the sketch:
-
-1. **Topics consume metrics; they don't produce them.** Every registry metric (§8.2) is computed once, together, before any topic runs (`fleet.compute_flight_metrics`). No topic computes its own metrics — each is a pure interpretation layer over already-computed `MetricValue`s. The sketch's "the metrics it produces... a compute function returning `MetricValue`s" conflated two different extension points (metric production, topic interpretation) into one.
-2. **Named-condition dispatch doesn't exist, and wasn't needed.** `insight_rules.json` still carries `"condition"` fields (`rank_changed`, `vs_om_expected`, `any_inflight`, `any_exceedance`) for four topics, but nothing reads them at evaluation time — each of those four topics is direct code in `evaluate_insights()`, not routed through a condition registry. The registry looked necessary on paper; building 12 working topics without one showed it wasn't.
-3. **Topic compute signatures are genuinely heterogeneous, not uniform.** Across the 13: one needs an OM limit and an enabled flag; several need only a value and a baseline; one needs a fitted regression model; one needs extra stratification context; two bypass the baseline pattern entirely and read raw per-flight fields (ECU runs, exceedances) directly. A single `compute(value, baseline, triggers)` call — the sketch's implicit shape — does not fit all of them.
-4. **An insight is a list, not a nullable singleton.** Real topics (e.g. EGT spread) can trigger a `baseline_deviation` and a `trend` insight on the same flight at once. `insight: Insight | null` (§8.5) loses one of them; it must be `insights: Insight[]`.
-5. **Required channels/phases are already declared, one layer down.** The metric registry (§8.2) already carries `requires_phase`/`requires_channel` per metric. A topic doesn't need to re-declare this — it inherits it transitively through the `metric_ids` it lists.
-
-**Revised sketch** (still not frozen — see Q3):
-
 A **Topic** is the unit of extension. A topic module declares:
 
-- `id`, and the `metric_ids` (§8.2 registry entries) it interprets — requirements are inherited from those entries, not re-declared,
-- a per-flight `compute(context) -> { analysis, insights }` function, where `context` is the slice of `FlightAnalysis`, `FleetAnalysis`, and `RuleSet` the topic actually needs — not a fixed positional signature; real topics' inputs vary too much for one,
-- zero or more `insights` per invocation (`Insight[]`, never a nullable singleton),
-- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code — unbuilt, unevidenced either way; kept as-is from the v0.1 sketch.
+- `id` and the metrics it produces (registry entries with unit, description, stratification band kind),
+- required channels and phases (so missing inputs yield `CHANNEL_MISSING` / `NO_PHASE`, not exceptions),
+- a per-flight compute function returning `MetricValue`s, events, and analysis-line values,
+- named conditions it contributes to the rule engine (today's hard-coded ones: `rank_changed`, `vs_om_expected`, `any_inflight`, `any_exceedance`),
+- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code.
 
-The rule engine is generic over the three trigger types (`threshold`, `baseline_deviation`, `trend`). Named-condition dispatch is dropped from the sketch — the real implementation never needed it. Engine profiles and rule sets remain plain JSON. This section is still an **interface sketch**, not an enforced contract: `evaluate_insights()`'s topic dispatch today is a hardcoded map (Spec 01 §12 acceptance criterion 7 fails on this), not a registry a contributor could extend by dropping in a module. Turning this sketch into that registry is unbuilt follow-up work, not part of this revision.
+The rule engine is generic over the three existing trigger types (`threshold`, `baseline_deviation`, `trend`) plus registered conditions. Engine profiles and rule sets remain plain JSON. This section is an **interface sketch**: it will be frozen only after Migration Stage 2 shows what the extracted code actually needs.
 
 ## 10. Configuration, options, and privacy
 
@@ -426,7 +493,7 @@ The phase-detector fix (finding 9) is **not** part of these stages. It lands as 
 5. Every result validates against the generated JSON Schemas; serialization contains no bare `NaN`.
 6. No core function reads the filesystem, environment, or wall clock (enforced by a test that runs the core with file access blocked).
 7. Adding a hypothetical topic requires no edits outside its own module, its rule entries, and (optionally) a view hint.
-8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (|z| ≥ 2.0, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2.
+8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (using the default `outlier_z_threshold` of 2.0, no per-metric overrides set, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2. **Superseded by R8 (v0.13)** for the stratified metrics: the counts are regenerated on the full log set with stratified comparison, reported per metric as band comparisons, fallbacks, and insights added/removed versus the unstratified rule. Climb oil rise (unstratified) must be unchanged.
 9. Scripts 01–04 produce output identical to the Stage 0 goldens after Stages 1–3; every §7 workflow is reachable via a `slingology-eis` subcommand whose `--json` output validates against the schemas.
 
 **Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the four genuine `IN_FLIGHT` runs) needs the raw log set, either shared in the project or run locally to produce golden outputs.
@@ -442,6 +509,6 @@ Results bundle and workspace format (Spec 02); UI layout and chart choices (Spec
 | # | Question | Status |
 |---|---|---|
 | Q1 | Should `flight_id` also survive re-exports that shift the start minute? | Provisionally resolved (R5). Confirm by running duplicate detection over the full log set and counting `exact` vs `overlap` groups. Needs the raw logs. |
-| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Resolved in v0.6 (§9). The proposed freeze trigger — two topics ported without special-casing — wasn't met: all 13 were ported in Stage 3, and special-casing turned out to be necessary for at least 4 of them (§9 findings 2–3). The sketch is rewritten from that evidence. Still not literally frozen: `evaluate_insights()`'s dispatch remains a hardcoded map, not an enforced registry (acceptance criterion 7) — building that registry is separate, unbuilt follow-up work. |
+| Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Deferred. Freeze after two structurally different topics (a simple threshold topic such as overboost and a model-based one such as takeoff MAP) are ported in Stage 2 without special-casing. |
 | Q6 | Are the four `IN_FLIGHT` ECU events and the KSFF `OIL PRESS` co-alert to remain test fixtures? | Proposed: yes, as short scrubbed excerpts (GPS dropped or offset). Needs the raw logs. |
 | Q8 | How are the built UI assets packaged so that `slingology-eis serve` works from a plain `pip`/`pipx` install (bundled in the wheel, or fetched at first run)? | New. To be settled in Spec 04. |

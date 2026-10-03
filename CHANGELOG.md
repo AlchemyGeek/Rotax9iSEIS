@@ -11,6 +11,194 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
+## Unreleased
+
+**Limit filters: no hidden floors; a plain "not advisable" note instead.**
+
+- **Filter editor:** filtering a limit that was exceeded on fewer than 5 of your last 20 flights
+  is still allowed, but the editor says it isn't advisable and why. Filters are for exceedances
+  that happen regularly, and an occasional one is usually worth looking at each time.
+- **Drifting** compares recent flights with your reference flights as they are, without a
+  minimum spread. If the reference flights never went past the limit, time past it on 2
+  flights in a row reads "…; your reference flights never did." (The z-mode filter band keeps
+  its minimum spread.)
+- `propose_limit_filter` returns `advisory`; `FilterHealth.drift_details` drops `std_floor`,
+  and its `z` is `null` against a zero-spread reference. Analysis results are unchanged, so no
+  re-analysis.
+
+## 0.21.0 — October 1, 2026
+
+**Phase detection: landing somewhere higher than you took off.** The flight phases measured
+height above the *departure* airport for the whole log, and the airborne phases only returned
+to the ground through that height test. After landing at a higher airport the test never
+passed, so the flight stayed "descent" or "approach" through rollout, taxi and shutdown
+(11 of the N117ZS logs), and a log with several legs couldn't see its next takeoff (5 logs).
+
+- **New ground test:** airspeed below 30 kt with RPM below 2,000 for 10 seconds means the
+  aircraft is on the ground — impossible in flight (it stalls well above 30 kt, and an
+  engine-out glide keeps airspeed up). Phase detection then switches to taxi and re-measures
+  the field elevation there, so later takeoffs and approaches are judged against the airport
+  the aircraft is actually at.
+- **Takeoff MAP** uses the first real departure only (a takeoff roll followed by a climb), not
+  every takeoff roll in the log pooled together, and no longer counts a high-power runup.
+- **Effect on the N117ZS logs** (all 107, checked before and after): 18 logs change, all as
+  intended — tails relabelled taxi/shutdown, second-leg takeoffs detected, descent minutes no
+  longer including ground time, one takeoff MAP no longer blended with a runup. No exceedance
+  changes; no log changes between flight and ground session.
+- **New tool:** `notebooks/06_phase_regression.py --save NAME` / `--compare NAME` snapshots
+  every log's phases, metrics and exceedances and reports exactly what a code change moves.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
+## 0.20.0 — October 1, 2026
+
+- **WARNING limits can never be filtered.** They are the Operators Manual red lines: a reading
+  past one is either real or a sensor fault to fix, never something to hide. The engine refuses
+  such a filter whatever the profile says, and the Flight view's limit card offers "Why can't I
+  filter this?" instead. The placeholder caps shipped in 0.19.0 are removed. Overboost, treated
+  as WARNING, is locked too. CAUTION limits (e.g. fuel pressure maximum, max continuous RPM, bus
+  voltage) stay filterable.
+- **Fuel pressure minimum no longer fires with the engine stopped.** It is checked only at or
+  above 1,000 rpm (new per-limit `min_rpm`). On the N117ZS logs this removes 102 false WARNING
+  events — one or two on every flight, all readings near 0 psi before start or at shutdown —
+  and no real ones. A phase list couldn't do it: some logs label post-shutdown rows as descent
+  or approach.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
+## 0.19.0 — September 30, 2026
+
+**Limit filters and change monitoring (Spec 09 Phases 3–5).** Silence a known, consistent
+exceedance without losing it, and still be told when that behaviour changes.
+
+- **Filter this limit…** on any limit card in the Flight view opens an inline editor,
+  pre-filled with this aircraft's typical and worst excess and a suggested band. Two separate
+  conditions, and an event needs only one to be tolerated: **magnitude** (absolute, % of the
+  limit, or z against the filter's reference flights) and **duration** (events up to N s).
+  **Preview** shows how many events on how many flights the filter would hide, and how many
+  flights would still breach it, before you save.
+- **Suppressed, not deleted:** a filtered limit's tolerated events collapse into one quiet
+  insight (info for CAUTION limits, watch for WARNING) that still expands to every event;
+  anything beyond the filter is reported at the limit's normal severity, marked "beyond your
+  filter". Topic thresholds (oil/coolant peak, overboost) follow the same filter; baseline
+  deviation and trend insights are never filtered.
+- **Guardrails, enforced in the engine:** WARNING limits are filterable only up to caps the
+  engine profile declares, never in z mode, and only with a note. `oil_press_min` is never
+  filterable. The 916iS ships **PLACEHOLDER caps** (e.g. oil and coolant temperature 5°F / 10 s,
+  EGT 20°F / 10 s, MAP 0.5 inHg / 5 s, fuel pressure minimum 1 psi / 10 s, overboost +30 s) —
+  review them. Other profiles have no caps, so their WARNING limits aren't filterable yet. An
+  invalid or hand-edited filter is ignored with a diagnostic; the limit reports unfiltered.
+- **Overboost:** a band moves both the effective limit and the close call.
+- **Change monitor:** every filter is watched against a frozen reference (the 20 most recent
+  flights when it was set). Its status is **Breached** (an event beyond it since the last
+  review), **Drifting** (peak excess or time past the limit above the reference on 2 flights
+  running, at the metric's own outlier z; or events on 30 points more of the last 10 flights
+  than in the reference), **Review due** (50 engine hours for CAUTION limits, 25 for WARNING),
+  **Quiet** (no events in 10 flights), **Collecting** or **Stable**. Stratified limits compare
+  within the flight's weather band once it has 10 reference flights.
+- **Notes page:** a *Limit filters* section with a card per filter: status and reasons, two
+  charts over flights (peak excess with the band drawn, and time past the limit; reference
+  flights shaded, breaching flights red), last breach, hours since review, and **Edit**,
+  **Re-baseline**, **Mark reviewed**, **History**, **Remove**. Plus a short explanation of how
+  filters differ from baselines.
+- **Copy filters from…** another workspace with the same engine model (Notes page). Copies
+  get a fresh reference from this workspace's own flights; limits already filtered here are
+  skipped. A different engine model is refused.
+- **Attention:** the Notes nav item shows a badge, and the Flights page a one-line banner,
+  when a filter is Breached or Drifting.
+- **Rule playground:** a *Limit filter drift* group sets the per-limit metrics'
+  `outlier_z_threshold` overrides — one number for both the Trends outliers and drift.
+- **Storage:** `filters.json` in the workspace, with each filter's history. The CLI `report`
+  command applies the workspace's filters too.
+- **Contract:** `evaluate_insights(…, filters=)`; `InsightSet.filters_hash`; new operations
+  `validate_limit_filter`, `propose_limit_filter`, `preview_limit_filter`,
+  `evaluate_filter_health`; server ops `list_filters`, `propose_filter`, `preview_filter`,
+  `save_filter`, `delete_filter`, `filter_health`, `review_filter`, `rebaseline_filter`,
+  `copy_filters`.
+- Existing workspaces re-analyse their flights on the next scan (engine version change), so
+  each flight carries the new filter policies.
+
+---
+
+## 0.18.0 — September 30, 2026
+
+**Per-limit baseline metrics (Spec 09 Phase 2).** Groundwork for limit filters: each limit's
+behaviour is now tracked per flight and baselined like every other metric.
+
+- **New per-flight metrics** for every limit checked for exceedances:
+  `lim_<limit_id>_peak_excess` (largest excess of any event; missing when the flight had none)
+  and `lim_<limit_id>_time_above_pct` (time past the limit as a share of engine-running time,
+  PRE_START and SHUTDOWN excluded). Overboost gets `lim_overboost_block_s` instead.
+- **Fleet:** `update_fleet` baselines them as `limit_<limit_id>_…`, with trend, outliers at the
+  metric's own `outlier_z_threshold`, and weather bands from the limit's new `stratify_by`
+  (temperatures and EGT split by OAT, MAP and overboost by density altitude, others none).
+  Their definitions are generated from the engine profile, not hand-listed. No insight rules
+  use them and the Trends view doesn't list them yet.
+- **Fuel pressure maximum is OAT-stratified** (916iS, 915iS): its peak excess varies with OAT
+  on the N117ZS log set (cold +4.1 psi vs mild +3.3 psi); `notebooks/05_limit_events_report.py`
+  now prints each limit metric's variation by band.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
+## 0.17.0 — September 30, 2026
+
+**Limit exceedances, one card per limit (Spec 09 Phase 1).** Fixes the fragmentation and
+duplication that made the limits topic easy to skim past. Filters come in a later phase.
+
+- **Stable limit ids:** every limit in all four engine profiles has an `id` (e.g.
+  `fuel_press_max`), plus `egt_split_high_flow`, `egt_split_low_flow` and `overboost` for the
+  computed limits. A profile with a missing or duplicate id no longer loads.
+- **Event merging:** a reading that dips back within a limit for less than
+  `exceedance_merge_gap_s` (30 s) no longer ends the event; duration rules apply to the merged
+  event. Chosen from the N117ZS log set (`notebooks/05_limit_events_report.py`): fuel pressure
+  maximum drops from 573 to 158 events. `rpm_idle_min` keeps a 0 s gap (per-limit override),
+  since merging would join brief governor dips into long events.
+- **Fixed:** a phase-filtered limit no longer joins exceedances either side of an excluded
+  phase into one event.
+- **One insight per limit per flight:** `limit_exceedances` shows a count, the worst reading
+  and the total time past the limit; the card expands to its events, each zooming the chart.
+  Insight ids no longer depend on the message text, so notes stay attached. Notes on the old
+  per-event insights move to the new per-limit insight when the flight is re-analysed.
+- **Topic thresholds follow the engine profile:** `oil_temp_peak`, `coolant_temp_peak` and
+  `overboost_time` reference a limit (`limit_ref`) instead of a hard-coded 248°F / 300 s, and
+  fire only when the flight has an event for that limit. Fixes the 915iS (266°F oil limit).
+  Rules go to v1.3; a workspace's older rule copy is read as `limit_ref`. The overboost
+  close call now comes from the profile (`close_call_margin_s`, 60 s).
+- **Contract:** exceedances gain `limit_id`, `event_id`, `excess`; `FlightAnalysis.limits`
+  carries the profile's limit catalogue; limit insights carry `limit_id` and `events`.
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
+
+---
+
+## 0.14.0 — September 26, 2026
+
+**Cylinder balance (Spec 08).** The toolkit no longer assumes cylinder 4 is the hottest. It
+learns each aircraft's usual hottest cylinder from its own flights and flags when that changes.
+
+- **New per-flight metrics:** `egt1..4_deviation_f` (each cylinder's cruise EGT minus the
+  mean of the others), `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order`.
+  `egt4_elevation_f` remains as a deprecated alias of `egt4_deviation_f`.
+- **Fixed:** `egt_rank_stable` now means "the same cylinder was hottest for ≥ 80% of cruise".
+  It used to test only whether the most common hottest cylinder was unique.
+- **Fleet:** four new baselined metrics (`egt1..4_deviation`, OAT-stratified) and
+  `FleetAnalysis.cylinder_balance`: per-flight hottest cylinder plus the aircraft's usual one
+  (learned after 10 clear flights at ≥ 70% agreement, else the engine profile's new
+  `expected_hot_cylinder`: 4 for the 916iS/915iS, none for the 912iS/914iS).
+- **Insights:** `cylinder_rank` is wired. It warns when a different cylinder runs hottest by
+  ≥ 15°F for 2 consecutive flights; it is informational only when the aircraft's own pattern
+  isn't learned yet. New `egt_cyl_deviation` watches each cylinder's balance against its own
+  baseline and trend in either direction. The `egt4_elevation` rule now ships disabled.
+- **Rules:** `applies_to` (one rule block for several metrics) and trend `"direction": "either"`.
+- **Web UI:** Trends → EGT → *cylinder balance*: four deviation lines, a hottest-cylinder strip
+  and the usual-hottest chip. The rule playground edits the new rule parameters.
+- Existing workspaces re-analyse their flights on the next scan (engine version change), which
+  fills in the new metrics.
+
+---
+
 ## 0.11.0 — September 23, 2026
 
 **The engine contract refactor (Stages 0–4a) and the new `slingology-eis` CLI.** The

@@ -1,5 +1,4 @@
-/data/logs/
-/data/reports/
+/data/
 /tests/characterization/golden/
 
 __pycache__/
@@ -8,3 +7,4 @@ __pycache__/
 .venv/
 .DS_Store
 *.egg-info/
+.idea/

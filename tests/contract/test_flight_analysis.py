@@ -109,6 +109,17 @@ KACV_LOG = "log_20260423_200615_KACV.csv"
 @requires_flight_logs
 @requires_golden_fixtures
 def test_analyze_flight_kacv_reproduces_fleet_metrics_csv_row():
+    """
+    Known-stale as of the phases.py fix (TAXI -> TAKEOFF_ROLL's gate
+    requiring RPM > 4500 and IAS < 35 on the same sample, which this
+    flight's turbocharged spool-up never satisfied): golden/
+    fleet_metrics.csv's KACV row was captured under the old buggy phase
+    detection, so every phase-derived metric here (takeoff_*, cruise_*,
+    climb_*) now legitimately differs from it. Not fixed here — the
+    golden CSV needs regenerating, and that wasn't asked for as part of
+    this fix — but the acceptance-criterion assertions below (not
+    golden-derived) are updated to the now-correct behavior.
+    """
     log_path = LOGS_DIR / KACV_LOG
     if not log_path.exists():
         pytest.skip(f"{KACV_LOG} not present locally")
@@ -139,23 +150,36 @@ def test_analyze_flight_kacv_reproduces_fleet_metrics_csv_row():
             assert str(csv_val) == str(my_val), f"{metric_id}: {my_val} != {csv_val}"
     assert checked >= 30  # sanity: we actually compared something
 
-    # Acceptance criterion 1's specific expected missing reasons
-    assert metrics["takeoff_map_inhg"]["missing"] == "NO_PHASE"
-    assert metrics["takeoff_pressure_alt_ft"]["missing"] == "NO_PHASE"
-    assert metrics["takeoff_oat_c"]["missing"] == "NO_PHASE"
-    assert metrics["cruise_nmpg"]["missing"] == "NO_PHASE"
+    # These used to be criterion 1's example of NO_PHASE (no TAKEOFF_ROLL/
+    # CRUISE phase to compute from) — now that this flight's phases are
+    # detected correctly, all four have real values instead.
+    assert "missing" not in metrics["takeoff_map_inhg"]
+    assert "missing" not in metrics["takeoff_pressure_alt_ft"]
+    assert "missing" not in metrics["takeoff_oat_c"]
+    assert "missing" not in metrics["cruise_nmpg"]
 
 
 @requires_flight_logs
-def test_analyze_flight_kacv_emits_phase_diagnostics():
+def test_analyze_flight_kacv_has_clean_phase_detection():
+    """
+    Regression guard, not a golden comparison: this flight used to be
+    the canonical real-data example of both PHASE_TAKEOFF_NOT_DETECTED
+    and PHASE_NO_CRUISE firing, on the assumption that was an inherent
+    data limitation. It wasn't — phases.py had a real bug (the
+    TAXI -> TAKEOFF_ROLL gate required RPM > 4500 and IAS < 35 on the
+    *same* 1 Hz sample; a turbocharged Rotax can cross both within one
+    sample, closing the gate for the rest of the flight with no
+    recovery path). Fixed, this flight has an entirely ordinary climb/
+    cruise/descent profile and should emit neither diagnostic.
+    """
     log_path = LOGS_DIR / KACV_LOG
     if not log_path.exists():
         pytest.skip(f"{KACV_LOG} not present locally")
 
     fa = analyze_flight(log_path.read_bytes(), KACV_LOG, _engine_config(), "916iS")
     codes = {d["code"] for d in fa.to_dict()["quality"]}
-    assert "PHASE_TAKEOFF_NOT_DETECTED" in codes
-    assert "PHASE_NO_CRUISE" in codes
+    assert "PHASE_TAKEOFF_NOT_DETECTED" not in codes
+    assert "PHASE_NO_CRUISE" not in codes
 
 
 @requires_flight_logs

@@ -6,18 +6,26 @@ RuleSet JSON and pass the parsed dict in.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from .contract import Diagnostic
 from .operations import FlightAnalysis, FleetAnalysis, evaluate_insights
 
 _VALID_TRIGGER_TYPES = {"threshold", "baseline_deviation", "trend"}
 _VALID_SEVERITIES = {"info", "watch", "warning", "limit"}
+_VALID_TREND_DIRECTIONS = {"increasing", "decreasing", "either"}
 
 
-def validate_rules(rules: dict) -> list[dict]:
+def validate_rules(rules: dict, limit_ids: Optional[set] = None) -> list[dict]:
     """
     Schema and semantic checks on a RuleSet (insight_rules.json shape).
     Returns a list of Diagnostic dicts; empty means valid (errors use
     severity "error", looser issues "warn").
+
+    `limit_ids` (Spec 09 §10.2): the engine profile's limit ids. When
+    given, a threshold trigger's `limit_ref` that isn't one of them is an
+    error. A threshold trigger may carry `limit_ref` or, in a rule set
+    written before rules v1.3, a bare numeric `limit`.
     """
     diagnostics: list[Diagnostic] = []
 
@@ -42,6 +50,15 @@ def validate_rules(rules: dict) -> list[dict]:
                 message=f"{topic_id}: missing or non-boolean 'enabled'.",
                 refs={"topic_id": topic_id},
             ))
+        applies_to = topic.get("applies_to")
+        if applies_to is not None and not (
+            isinstance(applies_to, list) and applies_to and all(isinstance(m, str) for m in applies_to)
+        ):
+            diagnostics.append(Diagnostic(
+                code="RULES_SCHEMA_ERROR", severity="error", scope="topic",
+                message=f"{topic_id}: 'applies_to' must be a non-empty list of metric ids.",
+                refs={"topic_id": topic_id},
+            ))
         triggers = topic.get("triggers")
         if not isinstance(triggers, list):
             diagnostics.append(Diagnostic(
@@ -58,6 +75,26 @@ def validate_rules(rules: dict) -> list[dict]:
                     refs={"topic_id": topic_id, "index": i},
                 ))
                 continue
+            if trig["type"] == "trend" and trig.get("direction") not in _VALID_TREND_DIRECTIONS:
+                diagnostics.append(Diagnostic(
+                    code="RULES_SCHEMA_ERROR", severity="warn", scope="topic",
+                    message=f"{topic_id}.triggers[{i}]: unknown trend direction {trig.get('direction')!r}.",
+                    refs={"topic_id": topic_id, "index": i},
+                ))
+            if trig["type"] == "threshold" and "limit_ref" in trig:
+                ref = trig["limit_ref"]
+                if not isinstance(ref, str) or not ref:
+                    diagnostics.append(Diagnostic(
+                        code="RULES_SCHEMA_ERROR", severity="error", scope="topic",
+                        message=f"{topic_id}.triggers[{i}]: 'limit_ref' must be a limit id string.",
+                        refs={"topic_id": topic_id, "index": i},
+                    ))
+                elif limit_ids is not None and ref not in limit_ids:
+                    diagnostics.append(Diagnostic(
+                        code="RULES_LIMIT_REF_UNRESOLVED", severity="error", scope="topic",
+                        message=f"{topic_id}.triggers[{i}]: limit_ref {ref!r} is not a limit in the engine profile.",
+                        refs={"topic_id": topic_id, "index": i, "limit_ref": ref},
+                    ))
             severity = trig.get("severity")
             if severity is not None and severity not in _VALID_SEVERITIES:
                 diagnostics.append(Diagnostic(

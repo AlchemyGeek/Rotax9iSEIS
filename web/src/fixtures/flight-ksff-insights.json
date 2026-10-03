@@ -1,0 +1,128 @@
+{
+  "flight_id": "fl_20260527_200344_KSFF",
+  "analysis_key": "fixture-fl_20260527_200344_KSFF-v1",
+  "fleet_key": "fixture-fleet-v1",
+  "rules_hash": "fixture-rules-v1",
+  "header_warnings": [],
+  "topics": [
+    {
+      "topic_id": "engine_ecu_inflight",
+      "analysis": {
+        "template": "",
+        "values": {},
+        "text": "1 in-flight ENGINE ECU event, 20:06:38."
+      },
+      "insight": {
+        "id": "in_ecu_inflight_ksff",
+        "topic_id": "engine_ecu_inflight",
+        "rule_id": "engine_ecu_inflight",
+        "trigger": "threshold",
+        "severity": "warning",
+        "message": {
+          "template": "",
+          "values": {
+            "oil_press_psi": 2
+          },
+          "text": "In-flight ENGINE ECU event at 20:06:38 \u2014 oil pressure read 2 psi at the same moment, a real engine-parameter correlation, not just an avionics-backup indication."
+        },
+        "evidence": [
+          {
+            "kind": "ecu_run",
+            "ref": "run_20260527_200638_KSFF"
+          },
+          {
+            "kind": "series_window",
+            "channels": [
+              "oil_press_psi"
+            ],
+            "start_s": 143,
+            "end_s": 145
+          }
+        ],
+        "confidence": {
+          "level": "GOOD",
+          "n": 1
+        }
+      },
+      "metric_ids": [
+        "cas_inflight_anomaly_count"
+      ]
+    },
+    {
+      "topic_id": "overboost_time",
+      "analysis": {
+        "template": "",
+        "values": {},
+        "text": "Overboost total 274s, one continuous block."
+      },
+      "insight": {
+        "id": "in_overboost_ksff",
+        "topic_id": "overboost_time",
+        "rule_id": "overboost_time",
+        "trigger": "threshold",
+        "severity": "watch",
+        "message": {
+          "template": "",
+          "values": {
+            "total_s": 274,
+            "limit_s": 300
+          },
+          "text": "Overboost recorded \u2014 274s total, one continuous block, closest to the 300s OM limit of any flight in the fleet."
+        },
+        "evidence": [
+          {
+            "kind": "metric",
+            "metric_id": "overboost_total_s"
+          }
+        ],
+        "confidence": {
+          "level": "GOOD",
+          "n": 1
+        }
+      },
+      "metric_ids": [
+        "overboost_total_s",
+        "overboost_max_block_s"
+      ]
+    },
+    {
+      "topic_id": "egt_spread",
+      "insight": null,
+      "analysis": {
+        "template": "",
+        "values": {},
+        "text": "Mean spread 54.8\u00b0F, max 70\u00b0F \u2014 within normal range."
+      },
+      "metric_ids": [
+        "egt_spread_mean_f",
+        "egt_spread_max_f"
+      ]
+    },
+    {
+      "topic_id": "cruise_efficiency",
+      "insight": null,
+      "analysis": {
+        "template": "",
+        "values": {},
+        "text": "19.8 nmpg at 6.61 gph \u2014 consistent with fleet norms."
+      },
+      "metric_ids": [
+        "cruise_nmpg",
+        "cruise_fuel_flow_gph"
+      ]
+    }
+  ],
+  "provenance": {
+    "engine_version": "fixture-0.1",
+    "schema_version": "01-v0.8",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "fixture",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "fixture",
+    "source_keys": [
+      "fixture-source-key-2"
+    ]
+  }
+}
