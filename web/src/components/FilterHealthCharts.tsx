@@ -7,6 +7,12 @@ import type { FilterHealth } from "../types/contract";
 
 type Series = FilterHealth["series"];
 
+// Y-axis tick with its unit: "12°F", "5%", "40 rpm".
+function withUnit(v: number, unit: string): string {
+  if (!unit) return `${v}`;
+  return unit === "%" || unit.startsWith("\u00b0") ? `${v}${unit}` : `${v} ${unit}`;
+}
+
 function chartOption({
   series,
   field,
@@ -33,7 +39,7 @@ function chartOption({
   };
   return {
     animation: false,
-    grid: { left: 44, right: 12, top: 10, bottom: 26 },
+    grid: { left: 58, right: 12, top: 10, bottom: 26 },
     tooltip: {
       trigger: "item",
       backgroundColor: colors.panelControl,
@@ -62,7 +68,7 @@ function chartOption({
     yAxis: {
       type: "value",
       scale: false,
-      axisLabel: { color: colors.textTertiary, fontSize: 10, fontFamily: fontMono },
+      axisLabel: { color: colors.textTertiary, fontSize: 10, fontFamily: fontMono, formatter: (v: number) => withUnit(v, unit) },
       splitLine: { lineStyle: { color: colors.borderSubtle } },
     },
     series: [
@@ -150,6 +156,16 @@ export function FilterHealthCharts({
     [health, byWeather],
   );
   const legendStyle: React.CSSProperties = { fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" };
+  // A limit none of the flights went past has no magnitudes to plot, and
+  // its time-past-the-limit chart is all zeros — say so instead.
+  const anyEvents = health.series.some((s) => s[magField] !== null && s[magField] !== undefined && s.engine_hours !== null);
+  if (!anyEvents) {
+    return (
+      <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+        None of your flights has gone past this limit yet, so there is nothing to chart.
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "grid", gridTemplateColumns: isOverboost ? "1fr" : "1fr 1fr", gap: 12 }}>

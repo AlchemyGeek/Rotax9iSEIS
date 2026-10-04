@@ -11,7 +11,21 @@ python -c "import slingology_eis; print(slingology_eis.__version__)"
 
 ---
 
-## Unreleased
+## 0.22.0 — October 4, 2026
+
+**Idle RPM minimum no longer fires with the engine stopped.** It is now checked only at or
+above 1,000 rpm, the same gate fuel pressure minimum has had since 0.20.0. A log that records
+0 rpm for a while before the engine starts counted that as an idle exceedance 1,800 rpm deep,
+which also squashed the filter chart for this limit.
+
+- **Effect on the N117ZS logs** (all 107, checked before and after): 2 logs change. Two 0 rpm
+  events before engine start are gone (log_20260706_160502, log_20260718_141654). On
+  log_20260718_141654, the 35 s of idle below 1,800 rpm right after start is now reported on
+  its own, worst 1,080 rpm (the first second of spool-up).
+- **Filter charts:** a limit none of your flights has gone past (e.g. fuel pressure minimum)
+  shows "nothing to chart" instead of two empty charts. The charts' Y axes show units, and the
+  filter row's "from flight" link is gone (Edit works in place).
+- Existing workspaces re-analyse their flights on the next scan (engine version change).
 
 **Limit filters: no hidden floors; a plain "not advisable" note instead.**
 

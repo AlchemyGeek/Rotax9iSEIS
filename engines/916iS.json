@@ -33,6 +33,8 @@
       "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
       "exceedance_merge_gap_s": 0,
       "min_duration_s": 30,
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance — same gate as fuel_press_min. A real low idle stays well above 1,000 rpm.",
+      "min_rpm": 1000,
       "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
     },
     {
