@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -725,7 +726,7 @@ def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
 def load_workspace_rules(ws_dir: Path, shipped_rules: dict) -> dict:
     f = ws_dir / "rules" / "active.json"
     if f.exists():
-        return upgrade_limit_refs(json.loads(f.read_text()))
+        return upgrade_phase_a_rules(upgrade_limit_refs(json.loads(f.read_text())))
     return shipped_rules
 
 
@@ -752,6 +753,65 @@ def upgrade_limit_refs(rules: dict) -> dict:
                 trig.pop("limit")
                 trig.pop("unit", None)
                 trig["limit_ref"] = ref
+    return rules
+
+
+# Spec 10 Phase A: these topics no longer exist (D1, D3, Q4 — their
+# metrics/baselines may still exist, but the rule and the topic function
+# are gone, so a rule block for them is meaningless, not just inert).
+_PHASE_A_REMOVED_TOPICS = ("oil_coolant_ratio", "egt4_elevation", "flight_phase_mix", "cruise_efficiency", "cruise_fuel_flow")
+
+
+def upgrade_phase_a_rules(rules: dict) -> dict:
+    """
+    A workspace's rules/active.json saved before Spec 10 Phase A may still
+    carry rule blocks for removed topics, or the old insight-raising shape
+    for cylinder_rank/climb_thermal_rate. Upgraded in memory (the file
+    itself is left as the pilot saved it until next saved) — each change
+    is reported with warnings.warn, never applied silently.
+    """
+    topics = rules.get("rules")
+    if not isinstance(topics, dict):
+        return rules
+
+    for topic_id in _PHASE_A_REMOVED_TOPICS:
+        if topic_id in topics:
+            topics.pop(topic_id)
+            warnings.warn(
+                f"Workspace rules/active.json had a '{topic_id}' rule block — that topic "
+                f"was removed (Spec 10 Phase A). Dropped on load.",
+            )
+
+    cylinder_rank = topics.get("cylinder_rank")
+    if isinstance(cylinder_rank, dict) and (cylinder_rank.get("enabled") is not False or "triggers" in cylinder_rank):
+        old_trigger = next(
+            (t for t in cylinder_rank.get("triggers", []) if isinstance(t, dict) and t.get("type") == "threshold"),
+            {},
+        )
+        topics["cylinder_rank"] = {
+            "enabled": False,
+            "_comment": "Retired as an insight (Spec 10 D4): egt_cyl_deviation fires first "
+                        "on the same event. Rank stays as context — see Spec 08 §6.",
+            "margin_min_f": old_trigger.get("margin_min_f", cylinder_rank.get("margin_min_f", 15)),
+            "consecutive_flights": old_trigger.get("consecutive_flights", cylinder_rank.get("consecutive_flights", 2)),
+        }
+        warnings.warn(
+            "Workspace rules/active.json had cylinder_rank enabled as an insight — "
+            "forced to the new context-only shape (Spec 10 D4).",
+        )
+
+    climb = topics.get("climb_thermal_rate")
+    if isinstance(climb, dict) and climb.get("enabled") is not False:
+        climb["enabled"] = False
+        climb.setdefault(
+            "_comment",
+            "Research (Spec 10 D2): fails A7; metrics still computed for research. Not shown to casual users.",
+        )
+        warnings.warn(
+            "Workspace rules/active.json had climb_thermal_rate enabled — "
+            "forced to disabled (Research status, Spec 10 D2).",
+        )
+
     return rules
 
 

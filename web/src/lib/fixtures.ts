@@ -39,10 +39,10 @@ import type {
 // no literal source filename).
 //
 // Exception (Spec 08 §11): the cylinder-balance data (egt1..4_deviation,
-// cylinder_balance, and the cylinder_rank / egt_cyl_deviation topics) was
-// added without the private logs. Cyl 4 is the real egt4_elevation per
-// flight; the split across cyls 1–3 is synthetic. Everything derived from
-// it was computed by the engine.
+// cylinder_balance, and the egt_cyl_deviation topic) was added without
+// the private logs. Cyl 4 is the real egt4_deviation per flight; the
+// split across cyls 1–3 is synthetic. Everything derived from it was
+// computed by the engine.
 export const flightAnalysis = flightAnalysisRaw as FlightAnalysis;
 export const insightSet = insightSetRaw as InsightSet;
 export const fleetAnalysis = fleetAnalysisRaw as FleetAnalysis;

@@ -97,19 +97,6 @@
         "egt_spread_mean_f",
         "egt_spread_max_f"
       ]
-    },
-    {
-      "topic_id": "cruise_efficiency",
-      "insight": null,
-      "analysis": {
-        "template": "",
-        "values": {},
-        "text": "19.8 nmpg at 6.61 gph \u2014 consistent with fleet norms."
-      },
-      "metric_ids": [
-        "cruise_nmpg",
-        "cruise_fuel_flow_gph"
-      ]
     }
   ],
   "provenance": {

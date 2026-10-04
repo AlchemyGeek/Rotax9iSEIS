@@ -161,6 +161,11 @@ class FlightAnalysis:
     # a limit_ref without the profile in hand. Empty for analyses written
     # before Spec 09.
     limits: list[dict] = field(default_factory=list)
+    # Spec 08 v0.3 §6 (Spec 10 D4): fleet-dependent, so analyze_flight()
+    # (pure, no fleet in hand) always leaves this False — evaluate_insights()
+    # sets the real value from FleetAnalysis.cylinder_balance before this
+    # object is serialized to a caller.
+    hot_cyl_changed: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -177,6 +182,7 @@ class FlightAnalysis:
             "provenance": self.provenance,
             "available_channels": self.available_channels,
             "limits": self.limits,
+            "hot_cyl_changed": self.hot_cyl_changed,
         }
 
 
@@ -555,11 +561,53 @@ def _chronological(points: list[dict]) -> list[dict]:
     return sorted(points, key=lambda p: (p["x"] is None, p["x"] or 0.0, p["date"]))
 
 
+_HOT_CYL_CHANGED_CONSECUTIVE = 2  # matches insight_rules.json's cylinder_rank default
+
+
+def _hot_cyl_changed_flags(
+    points: list[dict], expected_cyl: Optional[int], margin_min_f: float, consecutive: int,
+) -> dict[str, bool]:
+    """
+    Spec 08 v0.3 §6: per-flight context flag — has the hottest cylinder
+    differed from the aircraft's usual one, by at least margin_min_f, for
+    `consecutive` flights running (this one and the ones immediately
+    before it)? Computed once over the whole fleet (points already
+    chronological) rather than per flight at request time, since Trends
+    needs it for every point on the strip at once, not just one flight —
+    the same leave-window-out principle established_hot_cylinder() itself
+    uses. No longer an insight (Spec 10 D4): egt_cyl_deviation is what
+    actually fires; this only feeds the flag on FlightAnalysis and the
+    Trends strip/panel marks (§7 item 4).
+    """
+    from .baselines import established_hot_cylinder
+
+    flags: dict[str, bool] = {}
+    for i, p in enumerate(points):
+        window = points[max(0, i - consecutive + 1): i + 1]
+        if len(window) < consecutive:
+            flags[p["flight_id"]] = False
+            continue
+        window_ids = {w["flight_id"] for w in window}
+        established = established_hot_cylinder(
+            [(q["hottest_cyl"], q.get("margin_f")) for q in points if q["flight_id"] not in window_ids],
+            expected_cyl, margin_min_f,
+        )
+        usual = established.get("cyl")
+        flags[p["flight_id"]] = established.get("source") != "none" and all(
+            w["hottest_cyl"] != usual and w.get("margin_f") is not None and w["margin_f"] >= margin_min_f
+            for w in window
+        )
+    return flags
+
+
 def _cylinder_balance(df: pd.DataFrame, expected_cyl: Optional[int]) -> dict:
     from .baselines import established_hot_cylinder
     from .egt import MARGIN_MIN_F
 
     points = _hot_cyl_points(df)
+    flags = _hot_cyl_changed_flags(points, expected_cyl, MARGIN_MIN_F, _HOT_CYL_CHANGED_CONSECUTIVE)
+    for p in points:
+        p["hot_cyl_changed"] = flags.get(p["flight_id"], False)
     return {
         "margin_min_f": MARGIN_MIN_F,
         "expected_hot_cyl": expected_cyl,
@@ -723,12 +771,8 @@ def update_fleet(
 # topic-shaped keys) — this is the one place that reconciles them.
 _TOPIC_METRIC_MAP = {
     "egt_spread": ("egt_spread_mean_f", "egt_spread"),
-    "egt4_elevation": ("egt4_elevation_f", "egt4_elevation"),
     "oil_temp_peak": ("oil_temp_max_f", "oil_temp_peak"),
     "coolant_temp_peak": ("coolant_temp_max_f", "coolant_temp_peak"),
-    "oil_coolant_ratio": ("oil_coolant_ratio", "oil_coolant_ratio"),
-    "cruise_efficiency": ("cruise_nmpg", "cruise_efficiency"),
-    "cruise_fuel_flow": ("cruise_fuel_flow_gph", "cruise_fuel_flow"),
     "climb_thermal_rate": ("climb_oil_rise_f_per_min", "climb_thermal_rate"),
 }
 
@@ -866,11 +910,6 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
     return "limit" if trigger_type == "threshold" else "watch"
 
 
-# Legacy workspace rule copies still say "rank_changed" (never wired);
-# Spec 08 §6 renamed the condition to what it now checks.
-_HOT_CYL_CONDITIONS = ("hot_cyl_changed", "rank_changed")
-
-
 def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) -> None:
     """Spec 08 §6 `egt_cyl_deviation`: one rule block applied to each
     cylinder's balance metric (`applies_to`), each against its own
@@ -910,50 +949,18 @@ def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) ->
         topics_out[-1]["_low_n"] = True
 
 
-def _emit_hot_cylinder(fa, fleet, r_data, emit) -> None:
-    """Spec 08 §6 `cylinder_rank`: has the hottest cylinder moved away from
-    the aircraft's usual one, by a clear margin, for N flights running?"""
-    from .baselines import established_hot_cylinder
-    from .egt import MARGIN_MIN_F
-
+def _hot_cyl_changed_for(fa, fleet) -> bool:
+    """Spec 08 v0.3 §6: `hot_cyl_changed` is a flag on FlightAnalysis, not
+    a rule condition — `cylinder_rank` emits no TopicResult. The flag
+    itself is computed fleet-wide, once per update_fleet() (same
+    leave-window-out principle as established_hot_cylinder), not
+    recomputed here with rule-playground overrides — Trends needs the
+    same flag for every flight on the strip at once, not just the one
+    being evaluated, so there is exactly one computation to agree with
+    (_hot_cyl_changed_flags)."""
     cb = fleet.cylinder_balance or {}
-    rule_cfg = r_data.get("cylinder_rank", {})
-    rule = None
-    if rule_cfg.get("enabled", True):
-        rule = next((t for t in rule_cfg.get("triggers", [])
-                     if t.get("type") == "threshold" and t.get("condition") in _HOT_CYL_CONDITIONS), None)
-    margin_min = (rule or {}).get("margin_min_f", cb.get("margin_min_f", MARGIN_MIN_F))
-    consecutive = max(1, int((rule or {}).get("consecutive_flights", 2)))
-
-    window: list[dict] = []
-    hottest = fa.metrics.get("egt_hottest_cyl", {}).get("value")
-    if hottest is not None:
-        this = {
-            "flight_id": fa.flight_id,
-            "date": str(fa.header.get("date")),
-            "x": fa.header.get("engine_hours_start"),
-            "hottest_cyl": int(hottest),
-            "margin_f": fa.metrics.get("egt_hottest_margin_f", {}).get("value"),
-        }
-        seq = _chronological([p for p in cb.get("points", []) if p["flight_id"] != fa.flight_id] + [this])
-        i = next(k for k, p in enumerate(seq) if p["flight_id"] == fa.flight_id)
-        window = seq[max(0, i - consecutive + 1): i + 1]
-
-    # "Usual" is judged without the flights under test, the same
-    # leave-out principle as the metric baselines (R2).
-    window_ids = {p["flight_id"] for p in window}
-    established = established_hot_cylinder(
-        [(p["hottest_cyl"], p.get("margin_f")) for p in cb.get("points", []) if p["flight_id"] not in window_ids],
-        cb.get("expected_hot_cyl"), margin_min,
-    )
-    engine_name = (fa.provenance.get("engine_profile") or {}).get("id")
-    raw = topics.hot_cylinder_change(window, established, rule, engine_name)
-    if raw["insights"] and window:
-        keys = {f"egt{window[-1]['hottest_cyl']}_deviation", f"egt{established['cyl']}_deviation"}
-        for ins in raw["insights"]:
-            ins["evidence"] = [{"kind": "metric", "metric_id": k} for k in sorted(keys) if k in fleet.metrics]
-    metric_ids = [k for k in _CYL_DEVIATION_KEYS if k in fleet.metrics]
-    emit("cylinder_rank", raw, metric_ids, established.get("n") or 0)
+    point = next((p for p in cb.get("points", []) if p["flight_id"] == fa.flight_id), None)
+    return bool(point and point.get("hot_cyl_changed"))
 
 
 def evaluate_insights(
@@ -1102,10 +1109,12 @@ def evaluate_insights(
 
     # ── The 8 topics driven by a single flight metric + fleet baseline ──────
     for topic_id, (flight_metric_id, fleet_key) in _TOPIC_METRIC_MAP.items():
-        # Deprecated alias of egt_cyl_deviation's cylinder 4 (Spec 08 §4):
-        # shipped disabled, still evaluated for a workspace rule set that
-        # enables it.
-        if topic_id == "egt4_elevation" and not r_data.get(topic_id, {}).get("enabled", False):
+        # Spec 10 D2: climb_thermal_rate ships disabled (Research status) —
+        # a disabled topic emits no TopicResult at all, not just zero
+        # insights, so it has no Flight view card. The rise-rate metrics
+        # themselves stay computed (fm/fleet_analysis), just not surfaced
+        # as a topic here.
+        if not r_data.get(topic_id, {}).get("enabled", True):
             continue
         value = fm.get(flight_metric_id, {}).get("value")
         fleet_metric = fleet_analysis.metrics.get(fleet_key)
@@ -1130,23 +1139,10 @@ def evaluate_insights(
         if topic_id == "egt_spread":
             enabled = r_data.get(topic_id, {}).get("enabled", True)
             raw = topics.egt_spread(value, 392, b, triggers, enabled)
-        elif topic_id == "egt4_elevation":
-            raw = topics.egt4_elevation(value, b, triggers)
         elif topic_id in ("oil_temp_peak", "coolant_temp_peak"):
             om_limit, limit_events, triggers = _resolve_threshold_limit(topic_id, triggers)
             fn = topics.oil_temp_peak if topic_id == "oil_temp_peak" else topics.coolant_temp_peak
             raw = fn(value, b, triggers, om_limit=om_limit, limit_events=limit_events)
-        elif topic_id == "oil_coolant_ratio":
-            raw = topics.oil_coolant_ratio(value, b, triggers)
-        elif topic_id == "cruise_efficiency":
-            raw = topics.cruise_efficiency(value, b, triggers)
-        elif topic_id == "cruise_fuel_flow":
-            da_fleet = fleet_analysis.metrics.get("cruise_da_ft", {}).get("baseline", {})
-            raw = topics.cruise_fuel_flow(
-                value, b, triggers,
-                this_da=fm.get("cruise_da_ft", {}).get("value"),
-                fleet_da_avg=da_fleet.get("mean"), fleet_da_std=da_fleet.get("std"),
-            )
         elif topic_id == "climb_thermal_rate":
             raw = topics.climb_thermal_rate(value, b, triggers)
         else:  # pragma: no cover — exhaustive per _TOPIC_METRIC_MAP
@@ -1161,7 +1157,7 @@ def evaluate_insights(
             topics_out[-1]["_low_n"] = True
 
     _emit_cyl_deviation(flight_analysis, fleet_analysis, r_data, baseline_config, _emit, topics_out)
-    _emit_hot_cylinder(flight_analysis, fleet_analysis, r_data, _emit)
+    flight_analysis.hot_cyl_changed = _hot_cyl_changed_for(flight_analysis, fleet_analysis)
 
     # ── Topics with their own data source (no shared baseline pattern) ──────
     # Spec 09 v0.12 §6.4/§10.3: a block past the limit is now an ordinary

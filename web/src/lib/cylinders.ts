@@ -19,7 +19,6 @@ export const CYL_COLORS: Record<number, string> = {
 /** ?metric= ids that open this view, and which cylinder they focus. */
 export function cylinderFocusFor(metricId: string): number | null | undefined {
   if (metricId === "cylinder_balance") return null;
-  if (metricId === "egt4_elevation") return 4; // deprecated alias (Spec 08 §4)
   const m = /^egt([1-4])_deviation$/.exec(metricId);
   return m ? Number(m[1]) : undefined;
 }

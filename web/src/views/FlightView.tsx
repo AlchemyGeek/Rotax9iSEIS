@@ -634,6 +634,25 @@ export function FlightView() {
   const hasPhaseWarning = flightAnalysis.quality.some((q) => q.code === "PHASE_TAKEOFF_NOT_DETECTED");
   const fullEnd = flightAnalysis.phases.at(-1)?.end_s ?? 0;
 
+  // Flight-summary line (Spec 03 §5.2, Spec 10 §4.2 / Q4): fuel burned,
+  // cruise nm/gal, mean cruise fuel flow — planning numbers, not topics,
+  // so no severity token and no insight/card. The nm/gal and fuel-flow
+  // figures need a cruise phase; fuel burned (FADEC total) doesn't.
+  // No `?` yet (Phase E).
+  const fuelBurned = flightAnalysis.metrics.fadec_gallons?.value;
+  const cruiseNmpg = flightAnalysis.metrics.cruise_nmpg?.value;
+  const cruiseFuelFlow = flightAnalysis.metrics.cruise_fuel_flow_gph?.value;
+  const noCruiseReason = flightAnalysis.quality.find((q) => q.code === "PHASE_NO_CRUISE")?.message;
+  const cruiseValueText = (value: unknown, suffix: string) =>
+    typeof value === "number" ? `${value.toFixed(1)} ${suffix}` : `— (${noCruiseReason ?? "no cruise detected"})`;
+  const flightSummaryLine = (
+    <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
+      Fuel burned: {typeof fuelBurned === "number" ? `${fuelBurned.toFixed(1)} gal` : "—"}
+      {"  ·  "}Cruise: {cruiseValueText(cruiseNmpg, "nm/gal")}
+      {"  ·  "}Cruise fuel flow: {cruiseValueText(cruiseFuelFlow, "gal/hr")}
+    </div>
+  );
+
   useEffect(() => {
     setVisibleWindow([0, flightAnalysis.phases.at(-1)?.end_s ?? 0]);
   }, [flightAnalysis]);
@@ -823,6 +842,7 @@ export function FlightView() {
               {filename}
             </span>
           </div>
+          {flightSummaryLine}
         </div>
 
         {/* Body */}

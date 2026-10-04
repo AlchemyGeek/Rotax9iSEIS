@@ -15,10 +15,15 @@ const client = getEngineClient();
 
 const GROUPS: { label: string; metrics: string[] }[] = [
   // cylinder_balance is a composite view over egt1..4_deviation (Spec 08 §7),
-  // not a fleet metric of its own; egt4_elevation is its deprecated predecessor.
+  // not a fleet metric of its own.
   { label: "EGT", metrics: ["egt_spread", "cylinder_balance"] },
+  // cruise_efficiency/cruise_fuel_flow raise no insight (Spec 10 Q4) but
+  // stay here as context — fuel burned/nm-per-gal/fuel flow are still
+  // worth seeing over time, just not worth an alert.
   { label: "FUEL", metrics: ["cruise_efficiency", "cruise_fuel_flow"] },
-  { label: "THERMAL", metrics: ["oil_temp_peak", "coolant_temp_peak", "oil_coolant_ratio", "climb_thermal_rate"] },
+  // climb_thermal_rate is Research status (Spec 10 D2) — no Trends chart
+  // for a topic that's not shown to casual users.
+  { label: "THERMAL", metrics: ["oil_temp_peak", "coolant_temp_peak"] },
   { label: "BOOST", metrics: ["overboost_time"] },
   { label: "OTHER", metrics: ["cruise_da_ft", "takeoff_map_inhg"] },
 ];
@@ -69,8 +74,8 @@ export function Trends() {
     };
   }, []);
 
-  // egt{n}_deviation / egt4_elevation links (insight evidence, old URLs)
-  // land on the cylinder balance view, focused on that cylinder.
+  // egt{n}_deviation links (insight evidence) land on the cylinder
+  // balance view, focused on that cylinder.
   const cylFocusParam = cylinderFocusFor(selected);
   const showCylinderBalance = cylFocusParam !== undefined && hasCylinderBalance(fleet);
   const metric = showCylinderBalance ? undefined : fleet.metrics[selected];

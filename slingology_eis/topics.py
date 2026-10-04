@@ -126,24 +126,6 @@ def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, e
     return {"analysis": analysis, "insights": insights}
 
 
-def egt4_elevation(elev, b: dict, rule_triggers: list) -> dict:
-    if elev is None or b.get("mean") is None:
-        return {"analysis": "EGT4 elevation not available.", "insights": []}
-    note = confidence_note(b)
-    analysis = (
-        f"EGT4 is {elev:+.0f}°F vs cylinders 1–3. "
-        f"Your average: {b['mean']:+.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note})."
-    )
-    insights = []
-    for rule in rule_triggers:
-        if rule["type"] == "baseline_deviation":
-            triggered, text, comparison = baseline_triggered(elev, b, rule)
-            if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
-    return {"analysis": analysis, "insights": insights}
-
-
 def cylinder_rank(rank_order: list, rank_stable: Optional[bool], fleet_note: str) -> dict:
     if not rank_order:
         return {"analysis": "Insufficient cruise data for cylinder rank analysis.", "insights": []}
@@ -164,72 +146,6 @@ def cylinder_rank(rank_order: list, rank_stable: Optional[bool], fleet_note: str
                 "injector or ignition imbalance. Compare per-cylinder EGT means "
                 "in script 01.",
     }]
-    return {"analysis": analysis, "insights": insights}
-
-
-def hot_cylinder_change(
-    window: list[dict],
-    established: dict,
-    rule: Optional[dict],
-    engine_name: Optional[str] = None,
-) -> dict:
-    """
-    Spec 08 §6 `cylinder_rank` topic. `window` is this flight's hottest-
-    cylinder point preceded by up to `consecutive_flights - 1` earlier ones
-    (oldest first, each {"hottest_cyl", "margin_f"}); `established` is
-    baselines.established_hot_cylinder()'s result, computed without the
-    flights in the window. `rule` is the hot_cyl_changed trigger, or None
-    when the rule is disabled.
-
-    Insights carry their own "severity" when it differs from the rule's —
-    a mismatch against a profile prior (not yet learned for this aircraft)
-    is informational, not a warning.
-    """
-    if not window:
-        return {"analysis": "Insufficient cruise data for cylinder rank analysis.", "insights": []}
-    this = window[-1]
-    cyl, margin = this["hottest_cyl"], this.get("margin_f")
-    margin_min = (rule or {}).get("margin_min_f", 15)
-    margin_str = f"+{margin:.0f}°F over next" if margin is not None else "margin unknown"
-    ambiguous = margin is None or margin < margin_min
-    too_close = " — too close to call" if ambiguous else ""
-    analysis = f"Hottest this flight: Cyl {cyl} ({margin_str}{too_close}). "
-
-    src, usual = established.get("source"), established.get("cyl")
-    if src == "learned":
-        analysis += (f"Usual hottest for this aircraft: Cyl {usual} "
-                     f"({established['share'] * 100:.0f}% of {established['n']} flights).")
-    elif src == "prior":
-        analysis += (f"Typical hottest for the {engine_name or 'engine'} profile: Cyl {usual} "
-                     f"(not yet learned for this aircraft — {established['n']} usable flights).")
-    else:
-        analysis += "Usual hottest cylinder not yet established for this aircraft."
-
-    insights = []
-    if rule is None or src == "none":
-        return {"analysis": analysis, "insights": insights}
-    consecutive = max(1, int(rule.get("consecutive_flights", 2)))
-    if len(window) < consecutive:
-        return {"analysis": analysis, "insights": insights}
-    changed = all(
-        p["hottest_cyl"] != usual and p.get("margin_f") is not None and p["margin_f"] >= margin_min
-        for p in window[-consecutive:]
-    )
-    if not changed:
-        return {"analysis": analysis, "insights": insights}
-
-    flights = f"for {consecutive} consecutive flights" if consecutive > 1 else "this flight"
-    if src == "learned":
-        text = (f"⚠ Cyl {cyl} ran hottest ({margin_str}) {flights}; this aircraft's usual "
-                f"hottest is Cyl {usual}. A cylinder running hotter is consistent with a lean "
-                f"injector; the usual hottest cooling can point to an ignition/plug issue or "
-                f"an EGT probe fault. Compare the per-cylinder balance trend.")
-        insights.append({"trigger": "threshold", "text": text})
-    else:
-        text = (f"Cyl {cyl} ran hottest ({margin_str}) {flights}; the typical "
-                f"{engine_name or 'engine'} pattern is Cyl {usual}. Not an anomaly by itself — "
-                f"this aircraft's own pattern isn't established yet.")
-        insights.append({"trigger": "threshold", "text": text, "severity": "info"})
     return {"analysis": analysis, "insights": insights}
 
 
@@ -402,81 +318,6 @@ def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list, om_limit: Optio
             if triggered:
                 insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
     return {"analysis": analysis, "insights": insights}
-
-
-def oil_coolant_ratio(oc_ratio, b: dict, rule_triggers: list) -> dict:
-    if oc_ratio is None or b.get("mean") is None:
-        return {"analysis": "Oil/coolant ratio not available for this flight.", "insights": []}
-    note = confidence_note(b)
-    analysis = (
-        f"Oil/coolant ratio this flight: {oc_ratio:.2f}. "
-        f"Your average: {b['mean']:.2f} ± {b['std']:.2f} "
-        f"({b['n']} flights{note})."
-    )
-    insights = []
-    for rule in rule_triggers:
-        if rule["type"] == "baseline_deviation":
-            triggered, text, comparison = baseline_triggered(oc_ratio, b, rule)
-            if triggered:
-                insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
-    return {"analysis": analysis, "insights": insights}
-
-
-def cruise_efficiency(nmpg, b: dict, rule_triggers: list) -> dict:
-    if nmpg is not None and b.get("mean") is not None:
-        note = confidence_note(b)
-        analysis = (
-            f"{nmpg:.1f} nm/gal this flight. "
-            f"Your average: {b['mean']:.1f} ± {b['std']:.1f} nm/gal "
-            f"({b['n']} flights{note}, DA-stratified)."
-        )
-        insights = []
-        for rule in rule_triggers:
-            if rule["type"] == "baseline_deviation":
-                triggered, text, comparison = baseline_triggered(nmpg, b, rule)
-                if triggered:
-                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
-            elif rule["type"] == "trend":
-                triggered, text = trend_triggered(b, rule)
-                if triggered:
-                    insights.append({"trigger": "trend", "text": text})
-        return {"analysis": analysis, "insights": insights}
-    if b.get("mean") is None:
-        return {"analysis": "Still building your cruise efficiency baseline.", "insights": []}
-    return {"analysis": "No cruise efficiency data for this flight.", "insights": []}
-
-
-def cruise_fuel_flow(fuel_flow, b: dict, rule_triggers: list,
-                      this_da=None, fleet_da_avg=None, fleet_da_std=None) -> dict:
-    if fuel_flow is not None and b.get("mean") is not None:
-        note = confidence_note(b)
-        da_note = ""
-        da_high = False
-        if this_da is not None and fleet_da_avg is not None and fleet_da_std:
-            da_z = (this_da - fleet_da_avg) / fleet_da_std
-            da_note = f" at cruise DA {this_da:,.0f} ft (fleet avg {fleet_da_avg:,.0f} ft)"
-            da_high = da_z > 1.0
-
-        analysis = (
-            f"{fuel_flow:.1f} gph this flight{da_note}. "
-            f"Your average: {b['mean']:.1f} ± {b['std']:.1f} gph "
-            f"({b['n']} flights{note}, all altitudes blended)."
-        )
-        insights = []
-        for rule in rule_triggers:
-            if rule["type"] == "baseline_deviation":
-                triggered, text, comparison = baseline_triggered(fuel_flow, b, rule)
-                if triggered:
-                    if da_high:
-                        text = (text + " Note: this flight's cruise DA was "
-                                       "significantly higher than your typical cruise — "
-                                       "altitude and power setting affect fuel flow. "
-                                       "A power/altitude model is needed for a fully valid comparison.")
-                    insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
-        return {"analysis": analysis, "insights": insights}
-    if b.get("mean") is None:
-        return {"analysis": "Still building your cruise fuel flow baseline.", "insights": []}
-    return {"analysis": "No cruise fuel flow data for this flight.", "insights": []}
 
 
 def engine_ecu_inflight(ecu_runs: list[dict]) -> dict:

@@ -53,15 +53,17 @@ def test_evaluate_insights_touches_no_filesystem(monkeypatch, real_flight_analys
 
 @requires_flight_logs
 def test_evaluate_insights_covers_every_topic(real_flight_analyses, real_fleet_analysis, rules):
-    """cylinder_rank is wired as of Spec 08; egt4_elevation is its
-    deprecated predecessor, shipped disabled."""
+    """Spec 10 Phase A: oil_coolant_ratio and egt4_elevation are removed
+    completely (D1, D3); cylinder_rank (D4) and climb_thermal_rate (D2)
+    ship disabled and emit no TopicResult; cruise_efficiency and
+    cruise_fuel_flow raise no insight (Q4) but their metrics/baselines
+    still exist, so they're absent here too."""
     if not real_flight_analyses:
         pytest.skip("no local flight logs")
     iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, rules)
     topic_ids = {t["topic_id"] for t in iset.to_dict()["topics"]}
     expected = {
-        "egt_spread", "egt_cyl_deviation", "cylinder_rank", "oil_temp_peak", "coolant_temp_peak",
-        "oil_coolant_ratio", "cruise_efficiency", "cruise_fuel_flow", "climb_thermal_rate",
+        "egt_spread", "egt_cyl_deviation", "oil_temp_peak", "coolant_temp_peak",
         "overboost_time", "map_at_takeoff", "engine_ecu_inflight", "limit_exceedances",
     }
     assert topic_ids == expected

@@ -75,7 +75,6 @@ def egt_health(
         spread_hi_limit_f    : applicable spread limit (392°F at normal flow)
         spread_pct_of_limit  : spread_mean as % of limit (>80% = approaching limit)
         egt{n}_deviation_f   : mean EGTn − mean of the other cylinders, per cylinder
-        egt4_elevation_f     : deprecated alias of egt4_deviation_f (Spec 08 §4)
         hottest_cyl          : cylinder number with the highest cruise-mean EGT
         hottest_margin_f     : cruise-mean EGT of hottest − second hottest
         rank_order           : EGT column names by cruise mean, hottest first
@@ -140,17 +139,14 @@ def egt_health(
 
     # ── Per-cylinder balance (Spec 08 §4) ─────────────────────────────────────
     # Each cylinder's cruise mean vs. the pooled mean of the others — no
-    # cylinder is assumed to be the hot one. Pooled over all cruise rows
-    # (not the row-aligned egt_data) so egt4_deviation_f stays identical to
-    # the egt4_elevation_f it replaces.
+    # cylinder is assumed to be the hot one. Pooled over all cruise rows,
+    # not the row-aligned egt_data.
     if len(avail) > 1:
         for col in avail:
             others = [c for c in avail if c != col]
             dev = cruise[col].mean() - cruise[others].stack().mean()
             if not pd.isna(dev):
                 result[f"egt{cyl_number(col)}_deviation_f"] = round(float(dev), 1)
-        if "egt4_deviation_f" in result:
-            result["egt4_elevation_f"] = result["egt4_deviation_f"]
 
     # ── Hottest cylinder and rank order ───────────────────────────────────────
     if len(avail) >= 2 and len(egt_data) > 0:
@@ -190,7 +186,6 @@ def egt_trend(
             "spread_mean_f":   h.get("spread_mean_f"),
             "spread_max_f":    h.get("spread_max_f"),
             "spread_pct_limit":h.get("spread_pct_of_limit"),
-            "egt4_elevation_f":h.get("egt4_elevation_f"),
             "hottest_cyl":     h.get("hottest_cyl"),
             "hottest_margin_f":h.get("hottest_margin_f"),
             "rank_stable":     h.get("rank_stable"),

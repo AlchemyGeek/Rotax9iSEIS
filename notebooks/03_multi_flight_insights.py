@@ -135,7 +135,6 @@ def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, ou
     # ── Confirmed trends (R²≥0.5) ─────────────────────────────────────────────
     trend_metrics = [
         ("egt_spread_mean_f",  "EGT spread",         "increasing", "widening cylinder imbalance"),
-        ("egt4_elevation_f",   "EGT4 elevation",     "increasing", "cylinder 4 running progressively hotter"),
         ("oil_temp_max_f",     "Oil temp peak",      "increasing", "oil temperature creeping up"),
         ("coolant_temp_max_f", "Coolant temp peak",  "increasing", "coolant temperature creeping up"),
         ("cruise_nmpg",        "Cruise efficiency",  "decreasing", "fuel efficiency declining"),
@@ -261,10 +260,8 @@ def main():
 
     baseline_metrics = [
         ("egt_spread_mean_f",   "EGT spread, cruise mean (°F)"),
-        ("egt4_elevation_f",    "EGT4 elevation vs cyl 1-3 (°F)"),
         ("oil_temp_max_f",      "Oil temp, per-flight max (°F)"),
         ("coolant_temp_max_f",  "Coolant temp, per-flight max (°F)"),
-        ("oil_coolant_ratio",   "Oil/coolant temp ratio"),
         ("cruise_fuel_flow_gph","Cruise fuel flow (gal/hr)"),
         ("cruise_nmpg",         "Cruise efficiency (nm/gal)"),
     ]
@@ -286,8 +283,6 @@ def main():
 
         trend_metrics = [
             ("egt_spread_mean_f",   "EGT spread (cylinder balance health)"),
-            ("egt4_elevation_f",    "EGT4 elevation"),
-            ("oil_coolant_ratio",   "Oil/coolant ratio (cooling system health)"),
             ("oil_temp_below_optimal_pct", "% time oil below optimal band"),
         ]
         for col, label in trend_metrics:
@@ -340,7 +335,6 @@ def main():
 
     outlier_metrics = [
         ("egt_spread_max_f",    "EGT spread max"),
-        ("egt4_elevation_f",    "EGT4 elevation"),
         ("oil_temp_max_f",      "Oil temp max"),
         ("coolant_temp_max_f",  "Coolant temp max"),
         ("overboost_total_s",   "Overboost time"),

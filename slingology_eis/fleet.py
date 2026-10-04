@@ -109,7 +109,6 @@ class FlightMetrics:
     egt_hottest_margin_f: Optional[float] = None
     egt_rank_order: Optional[list] = None   # cylinder numbers, hottest first
     egt_rank_stable: Optional[bool] = None
-    egt4_elevation_f: Optional[float] = None  # deprecated alias of egt4_deviation_f
 
     # Fuel
     fadec_gallons: Optional[float] = None
@@ -120,7 +119,6 @@ class FlightMetrics:
     oil_temp_max_f: Optional[float] = None
     oil_temp_below_optimal_pct: Optional[float] = None
     coolant_temp_max_f: Optional[float] = None
-    oil_coolant_ratio: Optional[float] = None
 
     # Overboost
     overboost_total_s: Optional[int] = None
@@ -259,10 +257,6 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
     )
     coolant_max = airborne["coolant_temp_f"].max() if "coolant_temp_f" in airborne.columns else None
     oil_max     = airborne["oil_temp_f"].max() if "oil_temp_f" in airborne.columns else None
-    oc_ratio    = (
-        round(float(oil_max / coolant_max), 3)
-        if oil_max and coolant_max and coolant_max > 0 else None
-    )
 
     phase_min = {}
     if "phase" in df.columns:
@@ -321,14 +315,12 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         egt_hottest_margin_f=egt.get("hottest_margin_f"),
         egt_rank_order=[cyl_number(c) for c in egt["rank_order"]] if egt.get("rank_order") else None,
         egt_rank_stable=egt.get("rank_stable"),
-        egt4_elevation_f=egt.get("egt4_elevation_f"),
         fadec_gallons=fuel_total.get("fadec_gallons"),
         cruise_nmpg=eff.get("nmpg") if eff else None,
         cruise_fuel_flow_gph=eff.get("mean_fuel_flow_gph") if eff else None,
         oil_temp_max_f=round(float(oil_max), 1) if oil_max else None,
         oil_temp_below_optimal_pct=below_optimal_pct,
         coolant_temp_max_f=round(float(coolant_max), 1) if coolant_max else None,
-        oil_coolant_ratio=oc_ratio,
         overboost_total_s=ob.get("overboost_total_s"),
         overboost_max_block_s=ob.get("overboost_max_block_s"),
         cas_inflight_anomaly_count=inflight_anomalies,

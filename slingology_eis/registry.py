@@ -75,9 +75,6 @@ _register("egt", [
     ("egt_hottest_margin_f", "°F", "Cruise-mean EGT of the hottest cylinder minus the next hottest", "CRUISE"),
     ("egt_rank_order", None, "Cylinders ordered hottest to coldest by cruise-mean EGT", "CRUISE"),
     ("egt_rank_stable", None, "Whether the same cylinder was hottest for at least 80% of cruise", "CRUISE"),
-    # Deprecated alias of egt4_deviation_f (Spec 08 §4) — kept one minor
-    # version so existing bundles, baselines and fixtures still load.
-    ("egt4_elevation_f", "°F", "Deprecated: same as egt4_deviation_f", "CRUISE"),
 ])
 
 _register("fuel", [
@@ -90,7 +87,6 @@ _register("thermal", [
     ("oil_temp_below_optimal_pct", "%",
      "Percent of airborne time with oil temp below 194°F/90°C", None, "oil_temp_f"),
     ("coolant_temp_max_f", "°F", "Peak coolant temperature (airborne)", None, "coolant_temp_f"),
-    ("oil_coolant_ratio", None, "Oil/coolant peak-temperature ratio", None, "oil_temp_f"),
     ("climb_oil_rise_f_per_min", "°F/min", "Oil temperature rise rate during climb", "CLIMB"),
     ("climb_coolant_rise_f_per_min", "°F/min", "Coolant temperature rise rate during climb", "CLIMB"),
     ("climb_vs_bucket_dominant", None, "Most common vertical-speed bucket during climb", "CLIMB"),

@@ -357,7 +357,7 @@ def test_validate_rules_checks_limit_ref(rules):
 
 def test_shipped_rules_have_no_numeric_thresholds(rules):
     for topic_id, topic in rules["rules"].items():
-        for trig in topic["triggers"]:
+        for trig in topic.get("triggers", []):
             if trig["type"] == "threshold":
                 assert "limit" not in trig, topic_id
 

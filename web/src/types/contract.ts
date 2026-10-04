@@ -96,6 +96,10 @@ export interface FlightAnalysis {
   provenance: Provenance;
   available_channels: string[];
   limits?: LimitDef[];
+  // Spec 08 v0.3 §6 (Spec 10 D4): fleet-dependent context flag, set by
+  // evaluate_insights() from FleetAnalysis.cylinder_balance — not present
+  // (treat as false) on analyses written before Spec 10 Phase A.
+  hot_cyl_changed?: boolean;
 }
 
 export type Evidence =
@@ -283,6 +287,8 @@ export interface HotCylinderPoint {
   hottest_cyl: number;
   margin_f: number | null;
   rank_order: number[] | null;
+  // Spec 08 v0.3 §6 (Spec 10 D4): context flag, not an insight.
+  hot_cyl_changed: boolean;
 }
 
 export interface CylinderBalance {

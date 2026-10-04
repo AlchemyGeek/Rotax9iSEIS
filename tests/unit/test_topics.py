@@ -225,29 +225,6 @@ def test_coolant_temp_peak_no_duplication():
     assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
 
 
-def test_cruise_fuel_flow_high_da_appends_note():
-    b = {"mean": 6.0, "std": 0.5, "n": 20}
-    rule = {"type": "baseline_deviation", "z_score_threshold": 1.0}
-    result = topics.cruise_fuel_flow(
-        8.0, b, [rule], this_da=12000, fleet_da_avg=5000, fleet_da_std=1000,
-    )
-    assert "cruise DA was" in result["insights"][0]["text"]
-
-
-def test_cruise_fuel_flow_low_da_no_note():
-    b = {"mean": 6.0, "std": 0.5, "n": 20}
-    rule = {"type": "baseline_deviation", "z_score_threshold": 1.0}
-    result = topics.cruise_fuel_flow(
-        8.0, b, [rule], this_da=5000, fleet_da_avg=5000, fleet_da_std=1000,
-    )
-    assert "cruise DA was" not in result["insights"][0]["text"]
-
-
-def test_cruise_fuel_flow_still_building():
-    result = topics.cruise_fuel_flow(8.0, {"mean": None}, [])
-    assert "Still building" in result["analysis"]
-
-
 def test_limit_exceedances_none():
     result = topics.limit_exceedances([])
     assert result["insights"] == []

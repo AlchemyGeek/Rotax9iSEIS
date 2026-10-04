@@ -139,6 +139,10 @@
           "close_call_margin_s": { "type": "number" }
         }
       }
+    },
+    "hot_cyl_changed": {
+      "type": "boolean",
+      "description": "Spec 08 v0.3 §6 (Spec 10 D4): fleet-dependent context flag, set by evaluate_insights() from FleetAnalysis.cylinder_balance — not an insight. Absent or false for analyses written before Spec 10 Phase A."
     }
   },
   "$defs": {

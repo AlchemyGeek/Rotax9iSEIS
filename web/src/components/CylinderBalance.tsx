@@ -38,12 +38,14 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
   }, [fleet]);
 
   const strip = useMemo(() => cb?.points ?? [], [cb]);
-  const offPattern = useMemo(
-    () =>
-      new Set(
-        strip.filter((p) => usual != null && p.hottest_cyl !== usual && (p.margin_f ?? 0) >= marginMin).map((p) => p.flight_id),
-      ),
-    [strip, usual, marginMin],
+  // Spec 08 v0.3 §6/§7 item 4: the hottest-cylinder flag (Spec 10 D4) —
+  // not raised as an insight any more (egt_cyl_deviation fires first),
+  // kept here as context on the chart. Computed server-side (the same
+  // leave-window-out, consecutive-flights logic established_hot_cyl
+  // itself uses), not re-derived client-side.
+  const flagged = useMemo(
+    () => new Set(strip.filter((p) => p.hot_cyl_changed).map((p) => p.flight_id)),
+    [strip],
   );
 
   const option = useMemo<EChartsOption>(() => {
@@ -93,6 +95,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
     // Flight picked up from an insight or the Flights table: a vertical
     // rule on both panels.
     const highlightX = strip.find((p) => p.flight_id === highlightFlight)?.x;
+    const flaggedXs = strip.filter((p) => flagged.has(p.flight_id)).map((p) => p.x).filter((x): x is number => x != null);
 
     // Both panels share one engine-hours extent so a flight's strip mark
     // sits directly under its line points.
@@ -135,7 +138,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
             const note = hot.margin != null && hot.margin < marginMin ? " (too close to call)" : "";
             lines.push(`hottest: Cyl ${hot.hottest}, ${margin}${note}`);
             if (hot.rank) lines.push(`order ${hot.rank.join(" > ")}`);
-            if (offPattern.has(hot.value[2])) lines.push(`differs from usual (Cyl ${usual})`);
+            if (flagged.has(hot.value[2])) lines.push(`hottest-cylinder flag: differs from usual (Cyl ${usual})`);
           }
           return lines.join("<br/>");
         },
@@ -209,10 +212,28 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
             symbol: CYL_SYMBOLS[p.hottest_cyl]?.echarts ?? "circle",
             itemStyle:
               p.margin_f != null && p.margin_f >= marginMin
-                ? { color: CYL_COLORS[p.hottest_cyl], borderColor: offPattern.has(p.flight_id) ? colors.textPrimary : colors.panel, borderWidth: 2 }
+                ? { color: CYL_COLORS[p.hottest_cyl], borderColor: flagged.has(p.flight_id) ? colors.textPrimary : colors.panel, borderWidth: 2 }
                 : { color: colors.panel, borderColor: CYL_COLORS[p.hottest_cyl], borderWidth: 2 },
           })),
         },
+        // Spec 08 §7 item 4: the hottest-cylinder flag marked on both
+        // panels, as context — a thin tick, not the bright dashed
+        // highlightX line reserved for explicit insight/table navigation.
+        ...(flaggedXs.length
+          ? [0, 1].map((idx) => ({
+              type: "line" as const,
+              xAxisIndex: idx,
+              yAxisIndex: idx,
+              data: [],
+              markLine: {
+                silent: true,
+                symbol: "none",
+                lineStyle: { color: colors.textTertiary, type: "dotted" as const, width: 1 },
+                label: { show: false },
+                data: flaggedXs.map((x) => ({ xAxis: x })),
+              },
+            }))
+          : []),
         ...(highlightX != null
           ? [0, 1].map((idx) => ({
               type: "line" as const,
@@ -230,7 +251,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
           : []),
       ],
     } as EChartsOption;
-  }, [byCyl, focus, strip, marginMin, highlightFlight, usual, offPattern]);
+  }, [byCyl, focus, strip, marginMin, highlightFlight, usual, flagged]);
 
   const focusMetric = focus != null ? byCyl[focus] : undefined;
 
@@ -280,7 +301,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
             </button>
           ))}
           <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-            strip: filled = hottest by ≥ {marginMin}°F &middot; hollow = too close to call &middot; white ring = differs from usual
+            strip: filled = hottest by ≥ {marginMin}°F &middot; hollow = too close to call &middot; white ring = hottest-cylinder flag set
           </span>
         </div>
       </div>
@@ -318,11 +339,11 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
         })}
       </div>
 
-      {offPattern.size > 0 && (
+      {flagged.size > 0 && (
         <div style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", marginTop: 12, fontSize: 12, color: "var(--text-secondary)" }}>
-          Hottest cylinder differed from the usual Cyl {usual} (by ≥ {marginMin}°F) on:{" "}
+          Hottest-cylinder flag set (differs from the usual Cyl {usual} by ≥ {marginMin}°F, consecutive flights) on:{" "}
           {strip
-            .filter((p) => offPattern.has(p.flight_id))
+            .filter((p) => flagged.has(p.flight_id))
             .map((p, i) => (
               <span key={p.flight_id}>
                 {i > 0 && ", "}

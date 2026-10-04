@@ -1,6 +1,6 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "68f34ecedf0d67f12ecf038b52f893ae6754503ce1a4a1b671ccd9a280811ada",
+  "analysis_key": "089cfd4d4cd0a062bc56956bb038e800984b85e79cfc600c249d4cd6e8f085ce",
   "source_keys": [
     "e6db755e9c40fa8c"
   ],
@@ -234,11 +234,6 @@
       "id": "egt_rank_stable",
       "value": true
     },
-    "egt4_elevation_f": {
-      "id": "egt4_elevation_f",
-      "value": 42.7,
-      "unit": "\u00b0F"
-    },
     "cruise_nmpg": {
       "id": "cruise_nmpg",
       "value": 17.45,
@@ -263,10 +258,6 @@
       "id": "coolant_temp_max_f",
       "value": 179.0,
       "unit": "\u00b0F"
-    },
-    "oil_coolant_ratio": {
-      "id": "oil_coolant_ratio",
-      "value": 1.19
     },
     "climb_oil_rise_f_per_min": {
       "id": "climb_oil_rise_f_per_min",
@@ -1039,7 +1030,7 @@
   ],
   "quality": [],
   "provenance": {
-    "engine_version": "0.22.0",
+    "engine_version": "0.23.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
@@ -1358,5 +1349,6 @@
         "duration_allowed": false
       }
     }
-  ]
+  ],
+  "hot_cyl_changed": false
 }

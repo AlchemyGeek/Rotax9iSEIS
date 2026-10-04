@@ -67,10 +67,6 @@
       "id": "egt_spread_max_f",
       "value": 70.0
     },
-    "egt4_elevation_f": {
-      "id": "egt4_elevation_f",
-      "value": 44.1
-    },
     "egt_rank_stable": {
       "id": "egt_rank_stable",
       "value": true
@@ -94,10 +90,6 @@
     "coolant_temp_max_f": {
       "id": "coolant_temp_max_f",
       "value": 189.0
-    },
-    "oil_coolant_ratio": {
-      "id": "oil_coolant_ratio",
-      "value": 1.153
     },
     "overboost_total_s": {
       "id": "overboost_total_s",

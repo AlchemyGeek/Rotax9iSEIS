@@ -1,8 +1,8 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "68f34ecedf0d67f12ecf038b52f893ae6754503ce1a4a1b671ccd9a280811ada",
+  "analysis_key": "089cfd4d4cd0a062bc56956bb038e800984b85e79cfc600c249d4cd6e8f085ce",
   "fleet_key": "40da4139c9c8211d165e2645dba63f8a54135fd73b3b4eeb546561ac81b01e4a",
-  "rules_hash": "9a51bb008ace9198d80c3a05626cbca59873cf53be6053b7e507844c8e963335",
+  "rules_hash": "51928197f5520fdbfaf41cbf6d30025a07a85d4c61a0ae5e9ea0e3d1ccdc8f33",
   "filters_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "topics": [
     {
@@ -36,62 +36,9 @@
       ]
     },
     {
-      "topic_id": "oil_coolant_ratio",
-      "analysis": {
-        "text": "Oil/coolant ratio this flight: 1.19. Your average: 1.11 \u00b1 0.04 (49 flights)."
-      },
-      "insights": [],
-      "metric_ids": [
-        "oil_coolant_ratio"
-      ]
-    },
-    {
-      "topic_id": "cruise_efficiency",
-      "analysis": {
-        "text": "17.4 nm/gal this flight. Your average: 19.1 \u00b1 1.5 nm/gal (38 flights, DA-stratified)."
-      },
-      "insights": [],
-      "metric_ids": [
-        "cruise_efficiency"
-      ]
-    },
-    {
-      "topic_id": "cruise_fuel_flow",
-      "analysis": {
-        "text": "6.9 gph this flight at cruise DA 8,175 ft (fleet avg 5,052 ft). Your average: 6.4 \u00b1 0.5 gph (38 flights, all altitudes blended)."
-      },
-      "insights": [],
-      "metric_ids": [
-        "cruise_fuel_flow"
-      ]
-    },
-    {
-      "topic_id": "climb_thermal_rate",
-      "analysis": {
-        "text": "Oil temp rose -0.1\u00b0F/min during climb. Your average: 1.2 \u00b1 3.3\u00b0F/min (49 flights)."
-      },
-      "insights": [],
-      "metric_ids": [
-        "climb_thermal_rate"
-      ]
-    },
-    {
       "topic_id": "egt_cyl_deviation",
       "analysis": {
         "text": "Vs. mean of the other cylinders: Cyl 1 -28\u00b0F (avg -31), Cyl 2 -6\u00b0F (avg -9), Cyl 3 -9\u00b0F (avg -7), Cyl 4 +43\u00b0F (avg +47) (49 flights)."
-      },
-      "insights": [],
-      "metric_ids": [
-        "egt1_deviation",
-        "egt2_deviation",
-        "egt3_deviation",
-        "egt4_deviation"
-      ]
-    },
-    {
-      "topic_id": "cylinder_rank",
-      "analysis": {
-        "text": "Hottest this flight: Cyl 4 (+36\u00b0F over next). Usual hottest for this aircraft: Cyl 4 (100% of 47 flights)."
       },
       "insights": [],
       "metric_ids": [
@@ -413,7 +360,7 @@
   ],
   "header_warnings": [],
   "provenance": {
-    "engine_version": "0.22.0",
+    "engine_version": "0.23.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
@@ -421,7 +368,7 @@
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-    "rules_hash": "9a51bb008ace9198d80c3a05626cbca59873cf53be6053b7e507844c8e963335",
+    "rules_hash": "51928197f5520fdbfaf41cbf6d30025a07a85d4c61a0ae5e9ea0e3d1ccdc8f33",
     "source_keys": [
       "e6db755e9c40fa8c"
     ]

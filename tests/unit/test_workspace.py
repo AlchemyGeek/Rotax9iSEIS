@@ -10,6 +10,7 @@ handling all need actual parseable CSVs to mean anything.
 from __future__ import annotations
 
 import shutil
+import warnings
 from pathlib import Path
 
 import pytest
@@ -202,6 +203,77 @@ def test_annotations_for_flight_filters_by_flight_id(tmp_path):
     fl_1_notes = ws.annotations_for_flight(ws_dir, "fl_1")
     assert len(fl_1_notes) == 1
     assert fl_1_notes[0]["note"] == "note on fl_1"
+
+
+# ── Rules upgrade (Spec 10 Phase A) ──────────────────────────────────────
+
+def _old_rules():
+    return {
+        "version": "1.3",
+        "rules": {
+            "egt_spread": {"enabled": True, "triggers": []},
+            "oil_coolant_ratio": {"enabled": True, "triggers": [{"type": "baseline_deviation", "n_min": 10}]},
+            "egt4_elevation": {"enabled": False, "triggers": []},
+            "flight_phase_mix": {"enabled": True, "triggers": []},
+            "cruise_efficiency": {"enabled": True, "triggers": []},
+            "cruise_fuel_flow": {"enabled": True, "triggers": []},
+            "cylinder_rank": {
+                "enabled": True,
+                "triggers": [{
+                    "type": "threshold", "condition": "hot_cyl_changed",
+                    "margin_min_f": 20, "consecutive_flights": 3, "severity": "warning",
+                }],
+            },
+            "climb_thermal_rate": {"enabled": True, "triggers": [{"type": "baseline_deviation", "n_min": 10, "severity": "watch"}]},
+        },
+    }
+
+
+def test_upgrade_drops_removed_topic_rules_with_a_warning():
+    with pytest.warns(UserWarning, match="oil_coolant_ratio"):
+        out = ws.upgrade_phase_a_rules(_old_rules())
+    for topic_id in ("oil_coolant_ratio", "egt4_elevation", "flight_phase_mix", "cruise_efficiency", "cruise_fuel_flow"):
+        assert topic_id not in out["rules"]
+    assert "egt_spread" in out["rules"]
+
+
+def test_upgrade_forces_cylinder_rank_disabled_preserving_custom_margins():
+    with pytest.warns(UserWarning, match="cylinder_rank"):
+        out = ws.upgrade_phase_a_rules(_old_rules())
+    cr = out["rules"]["cylinder_rank"]
+    assert cr["enabled"] is False
+    assert "triggers" not in cr
+    # pilot had customized these via the old threshold trigger
+    assert cr["margin_min_f"] == 20
+    assert cr["consecutive_flights"] == 3
+
+
+def test_upgrade_forces_climb_thermal_rate_disabled_keeping_triggers():
+    with pytest.warns(UserWarning, match="climb_thermal_rate"):
+        out = ws.upgrade_phase_a_rules(_old_rules())
+    ctr = out["rules"]["climb_thermal_rate"]
+    assert ctr["enabled"] is False
+    assert ctr["triggers"] == [{"type": "baseline_deviation", "n_min": 10, "severity": "watch"}]
+
+
+def test_upgrade_is_quiet_on_an_already_current_rule_set(tmp_path):
+    import json as _json
+    current = _json.loads((Path(__file__).resolve().parent.parent.parent / "insight_rules.json").read_text())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ws.upgrade_phase_a_rules(current)  # must not warn
+
+
+def test_load_workspace_rules_applies_the_upgrade(tmp_path):
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "rules-upgrade", "916iS")
+    ws_dir = root / manifest.id
+    ws.save_workspace_rules(ws_dir, _old_rules())
+
+    with pytest.warns(UserWarning):
+        loaded = ws.load_workspace_rules(ws_dir, shipped_rules={"version": "1.5", "rules": {}})
+    assert "oil_coolant_ratio" not in loaded["rules"]
+    assert loaded["rules"]["cylinder_rank"]["enabled"] is False
 
 
 # ── Missing vs unreachable folder — real logs required ───────────────────

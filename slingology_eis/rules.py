@@ -59,7 +59,11 @@ def validate_rules(rules: dict, limit_ids: Optional[set] = None) -> list[dict]:
                 message=f"{topic_id}: 'applies_to' must be a non-empty list of metric ids.",
                 refs={"topic_id": topic_id},
             ))
-        triggers = topic.get("triggers")
+        # Spec 08 v0.3 §6 (Spec 10 D4): cylinder_rank ships with no
+        # 'triggers' key at all — it keeps margin_min_f/consecutive_flights
+        # for the rule playground but emits nothing, so there's no
+        # trigger list to validate. Missing means empty, not invalid.
+        triggers = topic.get("triggers", [])
         if not isinstance(triggers, list):
             diagnostics.append(Diagnostic(
                 code="RULES_SCHEMA_ERROR", severity="error", scope="topic",

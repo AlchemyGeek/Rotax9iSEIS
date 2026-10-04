@@ -150,13 +150,6 @@ def _main():
     enabled = r_data.get("egt_spread", {}).get("enabled", True)
     render_topic(topics.egt_spread(spread, egt.get("spread_hi_limit_f", 392), b, rule_triggers, enabled))
 
-    # ── EGT4 ELEVATION ───────────────────────────────────────────────────────
-    section("EGT4 ELEVATION")
-    elev = egt.get("egt4_elevation_f")
-    b = b_data.get("egt4_elevation", {})
-    rule_triggers = r_data.get("egt4_elevation", {}).get("triggers", [])
-    render_topic(topics.egt4_elevation(elev, b, rule_triggers))
-
     # ── CYLINDER RANK ─────────────────────────────────────────────────────────
     section("CYLINDER RANK")
     rank_stable = egt.get("rank_stable")
@@ -212,43 +205,19 @@ def _main():
     rule_triggers = r_data.get("coolant_temp_peak", {}).get("triggers", [])
     render_topic(topics.coolant_temp_peak(coolant_max, b, rule_triggers))
 
-    # ── OIL/COOLANT RATIO ────────────────────────────────────────────────────
-    section("OIL/COOLANT RATIO")
-    oc_ratio = float(fm_row["oil_coolant_ratio"]) \
-        if fm_row is not None and not math.isnan(fm_row["oil_coolant_ratio"]) else None
-    b = b_data.get("oil_coolant_ratio", {})
-    rule_triggers = r_data.get("oil_coolant_ratio", {}).get("triggers", [])
-    render_topic(topics.oil_coolant_ratio(oc_ratio, b, rule_triggers))
-
-    # ── CRUISE EFFICIENCY ─────────────────────────────────────────────────────
-    section("CRUISE EFFICIENCY")
-    b = b_data.get("cruise_efficiency", {})
-    rule_triggers = r_data.get("cruise_efficiency", {}).get("triggers", [])
-    # Pull from fleet_metrics for this flight if available
-    fm_path = _TOOLKIT / "data" / "reports" / "fleet_metrics.csv"
-    nmpg = None
-    if fm_path.exists():
-        import pandas as pd
-        fm = pd.read_csv(fm_path)
-        match = fm[fm["source_file"] == log_path.name]
-        if len(match):
-            nmpg = match["cruise_nmpg"].iloc[0]
-            nmpg = None if (isinstance(nmpg, float) and math.isnan(nmpg)) else nmpg
-    render_topic(topics.cruise_efficiency(nmpg, b, rule_triggers))
-
-    # ── CRUISE FUEL FLOW ─────────────────────────────────────────────────────
-    section("CRUISE FUEL FLOW")
-    fuel_flow = float(fm_row["cruise_fuel_flow_gph"]) \
-        if fm_row is not None and not math.isnan(fm_row["cruise_fuel_flow_gph"]) else None
-    b = b_data.get("cruise_fuel_flow", {})
-    rule_triggers = r_data.get("cruise_fuel_flow", {}).get("triggers", [])
-    this_da = float(fm_row["cruise_da_ft"]) \
-        if fm_row is not None and not math.isnan(fm_row["cruise_da_ft"]) else None
-    da_b = b_data.get("cruise_da_ft", {})
-    render_topic(topics.cruise_fuel_flow(
-        fuel_flow, b, rule_triggers,
-        this_da=this_da, fleet_da_avg=da_b.get("mean"), fleet_da_std=da_b.get("std"),
-    ))
+    # ── FLIGHT SUMMARY (fuel burned, cruise nm/gal, cruise fuel flow) ────────
+    # Spec 10 Q4: planning numbers, not topics — no insight, no rule. Values
+    # only, matching the web Flight view's summary line.
+    section("FLIGHT SUMMARY")
+    fuel_used_gal = fm_row["fadec_gallons"] \
+        if fm_row is not None and "fadec_gallons" in fm_row.index and not math.isnan(fm_row["fadec_gallons"]) else None
+    nmpg = fm_row["cruise_nmpg"] \
+        if fm_row is not None and "cruise_nmpg" in fm_row.index and not math.isnan(fm_row["cruise_nmpg"]) else None
+    fuel_flow = fm_row["cruise_fuel_flow_gph"] \
+        if fm_row is not None and "cruise_fuel_flow_gph" in fm_row.index and not math.isnan(fm_row["cruise_fuel_flow_gph"]) else None
+    print(f"    Fuel burned: {fuel_used_gal:.1f} gal" if fuel_used_gal is not None else "    Fuel burned: —")
+    print(f"    Cruise: {nmpg:.1f} nm/gal" if nmpg is not None else "    Cruise: — (no cruise detected)")
+    print(f"    Cruise fuel flow: {fuel_flow:.1f} gal/hr" if fuel_flow is not None else "    Cruise fuel flow: — (no cruise detected)")
 
     # ── ENGINE ECU ────────────────────────────────────────────────────────────
     section("ENGINE ECU")

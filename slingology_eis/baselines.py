@@ -30,11 +30,8 @@ BASELINE_METRIC_DEFS = [
     ("egt2_deviation", "egt2_deviation_f", "oat_band"),
     ("egt3_deviation", "egt3_deviation_f", "oat_band"),
     ("egt4_deviation", "egt4_deviation_f", "oat_band"),
-    # Deprecated alias of egt4_deviation (Spec 08 §4), kept one minor version.
-    ("egt4_elevation", "egt4_elevation_f", "oat_band"),
     ("oil_temp_peak", "oil_temp_max_f", "oat_band"),
     ("coolant_temp_peak", "coolant_temp_max_f", "oat_band"),
-    ("oil_coolant_ratio", "oil_coolant_ratio", "oat_band"),
     ("overboost_time", "overboost_total_s", None),
     ("cruise_efficiency", "cruise_nmpg", "da_band"),
     ("cruise_fuel_flow", "cruise_fuel_flow_gph", "da_band"),

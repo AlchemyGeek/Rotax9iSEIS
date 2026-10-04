@@ -46,11 +46,6 @@ def test_egt_health_deviation_hottest_and_margin():
     assert h["rank_order"][0] == "egt2_f"
 
 
-def test_egt4_elevation_is_alias_of_egt4_deviation():
-    h = egt_health(_cruise_df([1400, 1410, 1405, 1450]))
-    assert h["egt4_elevation_f"] == h["egt4_deviation_f"]
-
-
 def test_rank_stable_true_when_one_cylinder_dominates():
     assert egt_health(_cruise_df([1400, 1400, 1400, 1460]))["rank_stable"] is True
 
@@ -108,73 +103,80 @@ def _fa(i, hottest, margin, devs=None, engine="916iS"):
     )
 
 
-def _hot_insights(fa, fleet, rules=_RULES):
-    d = evaluate_insights(fa, fleet, rules).to_dict()
-    return next(t for t in d["topics"] if t["topic_id"] == "cylinder_rank")
+def _cylinder_rank_topics(fas, fleet, rules=_RULES):
+    """Spec 10 D4: cylinder_rank emits no TopicResult at all any more —
+    evaluating every flight must never produce one."""
+    return [
+        t["topic_id"]
+        for fa in fas
+        for t in evaluate_insights(fa, fleet, rules).to_dict()["topics"]
+        if t["topic_id"] == "cylinder_rank"
+    ]
+
+
+def _flag(fa, fleet, rules=_RULES):
+    """hot_cyl_changed is set as a side effect of evaluate_insights (Spec
+    08 v0.3 §6) — it's fleet-dependent, so analyze_flight() alone can't
+    compute it."""
+    evaluate_insights(fa, fleet, rules)
+    return fa.hot_cyl_changed
 
 
 def test_fleet_learns_cyl2_and_raises_nothing_on_916_profile():
-    """§10.2: an aircraft whose cyl 2 runs hottest isn't flagged for
-    disagreeing with the 916iS prior."""
+    """Spec 08 v0.3 §10 acceptance 2: an aircraft whose cyl 2 runs hottest
+    sets no hottest-cylinder flag for disagreeing with the 916iS prior,
+    and cylinder_rank emits no TopicResult."""
     fas = [_fa(i, 2, 30.0) for i in range(15)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
     cb = fleet.cylinder_balance
     assert cb["established_hot_cyl"]["cyl"] == 2
     assert cb["established_hot_cyl"]["source"] == "learned"
-    for fa in fas:
-        assert _hot_insights(fa, fleet)["insights"] == []
+    assert all(_flag(fa, fleet) is False for fa in fas)
+    assert _cylinder_rank_topics(fas, fleet) == []
 
 
-def test_switch_for_two_consecutive_flights_raises_exactly_one_warning():
-    """§10.3: cyl 4 → cyl 2 by ≥ 20 °F on the last two flights."""
+def test_switch_for_two_consecutive_flights_sets_the_flag_on_the_second():
+    """Spec 08 v0.3 §10 acceptance 3 (flag part — Phase A scope; the
+    egt_cyl_deviation message naming the change is Phase B): cyl 4 → cyl 2
+    by ≥ 20 °F for two consecutive flights sets the flag on the second
+    one, and cylinder_rank still emits no TopicResult."""
     fas = [_fa(i, 4, 40.0) for i in range(12)] + [_fa(12, 2, 22.0), _fa(13, 2, 25.0)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
-    fired = [(fa.flight_id, ins) for fa in fas for ins in _hot_insights(fa, fleet)["insights"]]
-    assert len(fired) == 1
-    fid, ins = fired[0]
-    assert fid == "f13"
-    assert ins["severity"] == "warning"
-    assert "Cyl 2 ran hottest" in ins["message"]["text"] and "usual hottest is Cyl 4" in ins["message"]["text"]
-    assert {e["metric_id"] for e in ins["evidence"]} == {"egt2_deviation", "egt4_deviation"}
+    flags = {fa.flight_id: _flag(fa, fleet) for fa in fas}
+    assert flags["f12"] is False
+    assert flags["f13"] is True
+    assert all(f is False for fid, f in flags.items() if fid not in ("f12", "f13"))
+    assert _cylinder_rank_topics(fas, fleet) == []
 
 
-def test_single_flight_switch_raises_nothing():
+def test_single_flight_switch_sets_no_flag():
     fas = [_fa(i, 4, 40.0) for i in range(12)] + [_fa(12, 2, 30.0), _fa(13, 4, 40.0)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
-    assert all(_hot_insights(fa, fleet)["insights"] == [] for fa in fas)
+    assert all(_flag(fa, fleet) is False for fa in fas)
 
 
-def test_switch_below_margin_raises_nothing():
+def test_switch_below_margin_sets_no_flag():
     fas = [_fa(i, 4, 40.0) for i in range(12)] + [_fa(12, 2, 10.0), _fa(13, 2, 12.0)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
-    assert all(_hot_insights(fa, fleet)["insights"] == [] for fa in fas)
+    assert all(_flag(fa, fleet) is False for fa in fas)
 
 
-def test_mismatch_against_prior_only_is_info():
+def test_switch_against_a_prior_also_sets_the_flag():
+    """The flag isn't limited to a *learned* usual cylinder — only to
+    established_hot_cyl's source being "none" (acceptance 4)."""
     fas = [_fa(i, 2, 30.0) for i in range(3)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
     assert fleet.cylinder_balance["established_hot_cyl"]["source"] == "prior"
-    ins = _hot_insights(fas[-1], fleet)["insights"]
-    assert len(ins) == 1 and ins[0]["severity"] == "info"
+    assert _flag(fas[-1], fleet) is True
 
 
-def test_no_pattern_912_raises_nothing():
-    """§10.4: no prior, nothing learned yet."""
+def test_no_pattern_912_sets_no_flag():
+    """Spec 08 v0.3 §10 acceptance 4: a 912iS workspace with no learned
+    pattern and no prior sets no flag."""
     fas = [_fa(i, 1 + i % 4, 30.0, engine="912iS") for i in range(8)]
     fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": None})
     assert fleet.cylinder_balance["established_hot_cyl"]["source"] == "none"
-    topic = _hot_insights(fas[-1], fleet)
-    assert topic["insights"] == []
-    assert "not yet established" in topic["analysis"]["text"]
-
-
-def test_legacy_rank_changed_condition_still_evaluated():
-    rules = json.loads(json.dumps(_RULES))
-    rules["rules"]["cylinder_rank"]["triggers"] = [
-        {"type": "threshold", "condition": "rank_changed", "severity": "warning"}]
-    fas = [_fa(i, 4, 40.0) for i in range(12)] + [_fa(12, 2, 22.0), _fa(13, 2, 25.0)]
-    fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
-    assert len(_hot_insights(fas[-1], fleet, rules)["insights"]) == 1
+    assert all(_flag(fa, fleet) is False for fa in fas)
 
 
 def test_cyl_deviation_flags_the_drifting_cylinder():
@@ -190,12 +192,15 @@ def test_cyl_deviation_flags_the_drifting_cylinder():
     assert set(topic["metric_ids"]) == {f"egt{n}_deviation" for n in range(1, 5)}
 
 
-def test_shipped_rules_skip_deprecated_egt4_elevation_topic():
+def test_egt4_elevation_and_cylinder_rank_emit_no_topic():
+    """Spec 10 D3 (egt4_elevation, removed completely) and D4
+    (cylinder_rank, disabled — context only)."""
     fas = [_fa(i, 4, 40.0) for i in range(3)]
     fleet = update_fleet(fas)
     topic_ids = {t["topic_id"] for t in evaluate_insights(fas[0], fleet, _RULES).topics}
     assert "egt4_elevation" not in topic_ids
-    assert {"cylinder_rank", "egt_cyl_deviation"} <= topic_ids
+    assert "cylinder_rank" not in topic_ids
+    assert "egt_cyl_deviation" in topic_ids
 
 
 def test_results_validate_against_schemas():
@@ -207,12 +212,13 @@ def test_results_validate_against_schemas():
 
 
 def test_old_fleet_without_cylinder_balance_still_evaluates():
-    """§10.5: a fleet cache from before Spec 08."""
+    """§10.5: a fleet cache from before Spec 08 — no cylinder_balance to
+    look the flag up in, so it stays False rather than erroring."""
     fas = [_fa(i, 4, 40.0) for i in range(3)]
     fleet = update_fleet(fas)
     fleet.cylinder_balance = None
-    topic = _hot_insights(fas[0], fleet)
-    assert topic["insights"] == []
+    assert _flag(fas[0], fleet) is False
+    assert _cylinder_rank_topics(fas, fleet) == []
 
 
 # ── Rules ────────────────────────────────────────────────────────────────────
