@@ -829,21 +829,6 @@ def _topic_baseline(fleet_metric: Optional[dict], flight_id: str, n_min: int = 1
     }
 
 
-# Spec 09 §10.2: topic threshold triggers reference a profile limit by id
-# (`limit_ref`). A rule set written before that (a workspace's own
-# rules/active.json copy) still carries a bare `"limit": <number>`; these
-# are the limits those numbers always meant.
-_DEFAULT_LIMIT_REFS = {
-    "oil_temp_peak": "oil_temp_max",
-    "coolant_temp_peak": "coolant_temp_max",
-    "overboost_time": "overboost",
-}
-
-
-def _limit_ref(topic_id: str, trigger: Optional[dict]) -> Optional[str]:
-    return (trigger or {}).get("limit_ref") or _DEFAULT_LIMIT_REFS.get(topic_id)
-
-
 def exceedance_limit_id(e: dict) -> str:
     """An exceedance's limit_id — or, for an analysis written before Spec
     09 (no limit_id), a stand-in built from what it does carry, so its
@@ -1051,24 +1036,30 @@ def evaluate_insights(
         for lid, evs in events_by_limit.items()
     }
 
-    def _resolve_threshold_limit(topic_id: str, triggers: list[dict]) -> tuple[Optional[dict], Optional[list], list[dict]]:
-        """(om_limit, unsuppressed events, triggers) for a topic whose
-        threshold trigger references a profile limit. An unresolvable
-        limit_ref drops the threshold trigger and reports a diagnostic
-        rather than silently comparing against nothing."""
-        trig = next((tr for tr in triggers if tr.get("type") == "threshold"), None)
-        if trig is None or not limits_by_id:
-            return None, None, triggers
-        ref = _limit_ref(topic_id, trig)
+    def _resolve_limit_ref_events(topic_id: str) -> tuple[Optional[dict], Optional[list]]:
+        """
+        Spec 10 §4.1 (Spec 09 §10.2, §10.3): (om_limit, unsuppressed events)
+        for a topic's rule-level `limit_refs` — the one mechanism every
+        limit-referencing topic uses now (oil_temp_peak, coolant_temp_peak,
+        overboost_time alike; Phase 6's overboost-only fallback is gone).
+        `limit_refs` can in principle list more than one limit, but every
+        current topic lists exactly one — the one this drives the analysis
+        line and TopicResult.limit_refs for. An unresolvable entry reports
+        a diagnostic rather than silently comparing against nothing.
+        """
+        refs = r_data.get(topic_id, {}).get("limit_refs") or []
+        if not refs or not limits_by_id:
+            return None, None
+        ref = refs[0]
         om_limit = limits_by_id.get(ref)
         if om_limit is None:
             limit_diagnostics.append(Diagnostic(
                 code="RULES_LIMIT_REF_UNRESOLVED", severity="warn", scope="topic",
-                message=f"{topic_id}: threshold limit_ref {ref!r} is not a limit in this engine profile.",
+                message=f"{topic_id}: limit_refs entry {ref!r} is not a limit in this engine profile.",
                 refs={"topic_id": topic_id, "limit_ref": ref},
             ).to_dict())
-            return None, None, [tr for tr in triggers if tr is not trig]
-        return om_limit, unsuppressed_by_limit.get(ref, []), triggers
+            return None, None
+        return om_limit, unsuppressed_by_limit.get(ref, [])
 
     def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int):
         confidence = _confidence(fleet_n)
@@ -1140,7 +1131,7 @@ def evaluate_insights(
             enabled = r_data.get(topic_id, {}).get("enabled", True)
             raw = topics.egt_spread(value, 392, b, triggers, enabled)
         elif topic_id in ("oil_temp_peak", "coolant_temp_peak"):
-            om_limit, limit_events, triggers = _resolve_threshold_limit(topic_id, triggers)
+            om_limit, limit_events = _resolve_limit_ref_events(topic_id)
             fn = topics.oil_temp_peak if topic_id == "oil_temp_peak" else topics.coolant_temp_peak
             raw = fn(value, b, triggers, om_limit=om_limit, limit_events=limit_events)
         elif topic_id == "climb_thermal_rate":
@@ -1159,20 +1150,42 @@ def evaluate_insights(
     _emit_cyl_deviation(flight_analysis, fleet_analysis, r_data, baseline_config, _emit, topics_out)
     flight_analysis.hot_cyl_changed = _hot_cyl_changed_for(flight_analysis, fleet_analysis)
 
+    cyl_dev_topic = next((t for t in topics_out if t["topic_id"] == "egt_cyl_deviation"), None)
+
+    # Spec 08 §6 (Spec 10 D4): the deviation insight for the cylinder that
+    # is now hottest names the change and the usual cylinder — only when
+    # that specific cylinder's own insight fired, matched via its evidence
+    # (the "cyl" key _emit_cyl_deviation pops is gone by the time a topic
+    # reaches topics_out). The flag itself and its margin/consecutive-flight
+    # logic are unchanged from Phase A.
+    if flight_analysis.hot_cyl_changed and cyl_dev_topic and cyl_dev_topic["insights"]:
+        hottest_cyl = fm.get("egt_hottest_cyl", {}).get("value")
+        usual_cyl = (fleet_analysis.cylinder_balance or {}).get("established_hot_cyl", {}).get("cyl")
+        if hottest_cyl is not None and usual_cyl is not None:
+            target_metric = f"egt{int(hottest_cyl)}_deviation"
+            for ins in cyl_dev_topic["insights"]:
+                if any(e.get("metric_id") == target_metric for e in ins["evidence"]):
+                    ins["message"]["text"] += f" It is now the hottest cylinder (usually cylinder {usual_cyl})."
+
+    # Spec 08 §6 (Spec 10 D8): egt_spread's baseline_deviation insight
+    # folds into the cylinder insight(s) whenever any egt_cyl_deviation
+    # trigger fired — one insight instead of two reporting the same
+    # underlying imbalance. The trend trigger is never affected.
+    egt_spread_topic = next((t for t in topics_out if t["topic_id"] == "egt_spread"), None)
+    if cyl_dev_topic and cyl_dev_topic["insights"] and egt_spread_topic:
+        spread_bd = [i for i in egt_spread_topic["insights"] if i["trigger"] == "baseline_deviation"]
+        if spread_bd:
+            egt_spread_topic["insights"] = [i for i in egt_spread_topic["insights"] if i["trigger"] != "baseline_deviation"]
+            for ins in cyl_dev_topic["insights"]:
+                ins["message"]["text"] += " EGT spread is also outside its usual range."
+
     # ── Topics with their own data source (no shared baseline pattern) ──────
-    # Spec 09 v0.12 §6.4/§10.3: a block past the limit is now an ordinary
-    # limit_exceedances event (below) — this topic only resolves the close
-    # call, whose threshold still shifts with any active filter band.
-    ob_triggers = r_data.get("overboost_time", {}).get("triggers", [])
-    ob_trigger = next((t for t in ob_triggers if t.get("type") == "threshold"), None)
-    ob_om = limits_by_id.get(_limit_ref("overboost_time", ob_trigger)) if limits_by_id else None
-    if limits_by_id and ob_trigger is not None and ob_om is None:
-        limit_diagnostics.append(Diagnostic(
-            code="RULES_LIMIT_REF_UNRESOLVED", severity="warn", scope="topic",
-            message=f"overboost_time: threshold limit_ref {_limit_ref('overboost_time', ob_trigger)!r} "
-                    f"is not a limit in this engine profile.",
-            refs={"topic_id": "overboost_time", "limit_ref": _limit_ref("overboost_time", ob_trigger)},
-        ).to_dict())
+    # Spec 09 v0.12 §6.4/§10.3, Spec 10 §4.1: a block past the limit is an
+    # ordinary limit_exceedances event (below); this topic only resolves
+    # the close call, whose threshold still shifts with any active filter
+    # band. `_resolve_limit_ref_events` is the same resolution oil_temp_peak
+    # / coolant_temp_peak use — overboost no longer gets its own mechanism.
+    ob_om, _ = _resolve_limit_ref_events("overboost_time")
     if ob_om is not None:
         ob_limit = ob_om["limit_value"]
         ob_filter = valid_filters.get(ob_om["id"])
@@ -1180,7 +1193,7 @@ def evaluate_insights(
                    if ob_filter is not None else 0.0)
         ob_close_call = (ob_limit + ob_band) - ob_om.get("close_call_margin_s", 60)
     else:
-        ob_limit = (ob_trigger or {}).get("limit", 300)
+        ob_limit = 300
         ob_close_call = None
     ob_total = fm.get("overboost_total_s", {}).get("value")
     ob_max = fm.get("overboost_max_block_s", {}).get("value")
@@ -1340,6 +1353,28 @@ def evaluate_insights(
         "insights": limit_insights,
         "metric_ids": [],
     })
+
+    # Spec 10 §4.1 (Spec 01 §8.5 TopicResult.limit_refs, Spec 09 §10.2/
+    # §10.3): every topic that declares limit_refs at rule level gets each
+    # entry resolved to this flight's limit_exceedances insight for that
+    # limit, or None if none fired — drives the mirrored badge (Spec 03
+    # §5.2/§12.1). A limit can carry two insights on one flight only when a
+    # filter splits events into breach + filtered (§10.1); breach (or a
+    # plain, unfiltered exceedance) is preferred over a filtered one so the
+    # badge mirrors the more actionable state.
+    for t in topics_out:
+        refs = r_data.get(t["topic_id"], {}).get("limit_refs")
+        if not refs:
+            continue
+        resolved = []
+        for lid in refs:
+            candidates = [li for li in limit_insights if li["limit_id"] == lid]
+            best = max(
+                candidates,
+                key=lambda li: 0 if (li.get("filter") or {}).get("outcome") == "suppressed" else 1,
+            ) if candidates else None
+            resolved.append({"limit_id": lid, "insight_id": best["id"] if best else None})
+        t["limit_refs"] = resolved
 
     # header_warnings carries the flight's own quality diagnostics (e.g.
     # PHASE_NO_CRUISE — the "no stable cruise phase" banner the old text

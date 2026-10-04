@@ -69,6 +69,40 @@ def test_evaluate_insights_covers_every_topic(real_flight_analyses, real_fleet_a
     assert topic_ids == expected
 
 
+def test_no_flight_has_more_than_one_insight_per_limit(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 10 acceptance 3: across the whole log set, no flight's
+    limit_exceedances topic carries more than one insight for the same
+    limit_id (the mixed breach+filtered case is structurally possible per
+    §10.1 but doesn't occur without a filter saved, which this fixture
+    fleet has none of)."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        limit_topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
+        limit_ids = [i["limit_id"] for i in limit_topic["insights"]]
+        assert len(limit_ids) == len(set(limit_ids)), (fa.flight_id, limit_ids)
+
+
+def test_limit_refs_mirror_a_real_insight_when_one_fires(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 10 §4.1: wherever a topic's limit_refs resolves to a non-null
+    insight_id on real data, that id is actually present in the same
+    flight's limit_exceedances insights (the mirror points at something
+    real, never a dangling id)."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    checked_a_resolved_ref = False
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        limit_ids_present = {i["id"] for t in iset.topics if t["topic_id"] == "limit_exceedances" for i in t["insights"]}
+        for t in iset.topics:
+            for ref in t.get("limit_refs") or []:
+                if ref["insight_id"] is not None:
+                    checked_a_resolved_ref = True
+                    assert ref["insight_id"] in limit_ids_present, (fa.flight_id, t["topic_id"], ref)
+    assert checked_a_resolved_ref, "no flight in the log set exercised a resolved limit_refs entry"
+
+
 # ── Leave-one-out baseline membership (R2) ───────────────────────────────────
 
 @requires_flight_logs

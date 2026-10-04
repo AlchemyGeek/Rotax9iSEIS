@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "rules": {
     "egt_spread": {
       "enabled": true,
@@ -44,12 +44,8 @@
     },
     "oil_temp_peak": {
       "enabled": true,
+      "limit_refs": ["oil_temp_max"],
       "triggers": [
-        {
-          "type": "threshold",
-          "limit_ref": "oil_temp_max",
-          "severity": "limit"
-        },
         {
           "type": "baseline_deviation",
           "n_min": 10,
@@ -59,12 +55,8 @@
     },
     "coolant_temp_peak": {
       "enabled": true,
+      "limit_refs": ["coolant_temp_max"],
       "triggers": [
-        {
-          "type": "threshold",
-          "limit_ref": "coolant_temp_max",
-          "severity": "limit"
-        },
         {
           "type": "baseline_deviation",
           "n_min": 10,
@@ -73,8 +65,9 @@
       ]
     },
     "overboost_time": {
-      "_comment": "v0.12 (Spec 09 §6.4/§10.3): the threshold trigger is removed — a block past the limit is now an ordinary limit_exceedances event. This topic only reports the close call, which isn't rule-driven (no trigger needed for it).",
+      "_comment": "v0.12 (Spec 09 §6.4/§10.3): the threshold trigger is removed — a block past the limit is now an ordinary limit_exceedances event. This topic only reports the close call, which isn't rule-driven (no trigger needed for it). v0.13 (Spec 10 §4.1): limit_refs drives the mirrored badge, the same mechanism oil_temp_peak/coolant_temp_peak use.",
       "enabled": true,
+      "limit_refs": ["overboost"],
       "triggers": []
     },
     "map_at_takeoff": {

@@ -59,6 +59,26 @@ def validate_rules(rules: dict, limit_ids: Optional[set] = None) -> list[dict]:
                 message=f"{topic_id}: 'applies_to' must be a non-empty list of metric ids.",
                 refs={"topic_id": topic_id},
             ))
+        # Spec 10 §4.1 (Spec 09 §10.2, v0.13): a rule-level limit_refs list,
+        # resolved to this flight's limit_exceedances insight for each
+        # limit (never a threshold trigger of its own). Unresolvable is an
+        # error, the same as a threshold trigger's limit_ref.
+        limit_refs = topic.get("limit_refs")
+        if limit_refs is not None:
+            if not (isinstance(limit_refs, list) and limit_refs and all(isinstance(r, str) and r for r in limit_refs)):
+                diagnostics.append(Diagnostic(
+                    code="RULES_SCHEMA_ERROR", severity="error", scope="topic",
+                    message=f"{topic_id}: 'limit_refs' must be a non-empty list of limit id strings.",
+                    refs={"topic_id": topic_id},
+                ))
+            elif limit_ids is not None:
+                for ref in limit_refs:
+                    if ref not in limit_ids:
+                        diagnostics.append(Diagnostic(
+                            code="RULES_LIMIT_REF_UNRESOLVED", severity="error", scope="topic",
+                            message=f"{topic_id}: limit_refs entry {ref!r} is not a limit in the engine profile.",
+                            refs={"topic_id": topic_id, "limit_ref": ref},
+                        ))
         # Spec 08 v0.3 §6 (Spec 10 D4): cylinder_rank ships with no
         # 'triggers' key at all — it keeps margin_min_f/consecutive_flights
         # for the rule playground but emits nothing, so there's no

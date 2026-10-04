@@ -4961,7 +4961,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "e0d5de55bc6f39fb",
@@ -4974,7 +4975,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "0e8784425c25c656",
@@ -4987,7 +4989,8 @@
           3,
           2,
           1
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "c355c8f176ece094",
@@ -5000,7 +5003,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "f98a62808a81935a",
@@ -5013,7 +5017,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "afa3994b502aa2d1",
@@ -5026,7 +5031,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "584e022a47517397",
@@ -5039,7 +5045,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "d9cf4cb3ad16129e",
@@ -5052,7 +5059,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "c3e1129443d78b39",
@@ -5065,7 +5073,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "9c371069cd31b889",
@@ -5078,7 +5087,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "2ecf6193fb4bba2f",
@@ -5091,7 +5101,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "39d4610e6a691915",
@@ -5104,7 +5115,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "df3c2e9ffe08091e",
@@ -5117,7 +5129,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "c924536e435145ed",
@@ -5130,7 +5143,8 @@
           2,
           3,
           1
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "a603d96498fb1db0",
@@ -5143,7 +5157,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "076889019f6a405b",
@@ -5156,7 +5171,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "bd03e79c9a3aa5c1",
@@ -5169,7 +5185,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "5c45821c81da250e",
@@ -5182,7 +5199,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "5b686ab1daabc3f5",
@@ -5195,7 +5213,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "2b2945dbdee75885",
@@ -5208,7 +5227,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "f2e63159ec0d6632",
@@ -5221,7 +5241,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "90132d8dd417225c",
@@ -5234,7 +5255,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "0c530710a1c60e1c",
@@ -5247,7 +5269,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "8cf33695e94227bf",
@@ -5260,7 +5283,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "abbcb5dde18f399f",
@@ -5273,7 +5297,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "68d91c240953f50f",
@@ -5286,7 +5311,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "6ab567cc2f46e677",
@@ -5299,7 +5325,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "eefe8c71499d54b9",
@@ -5312,7 +5339,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "f6ac8353a8589aa4",
@@ -5325,7 +5353,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "62843b1a45406ade",
@@ -5338,7 +5367,8 @@
           2,
           3,
           1
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "f52342eb6fc37071",
@@ -5351,7 +5381,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "3e6575a23df359a6",
@@ -5364,7 +5395,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "3c8493c674d56815",
@@ -5377,7 +5409,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "6509deccbb08e9f5",
@@ -5390,7 +5423,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "52ed07baad5f7668",
@@ -5403,7 +5437,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "4b0d94be7f9a9f86",
@@ -5416,7 +5451,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "54b85ee48c519d3f",
@@ -5429,7 +5465,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "359b223e06789cfe",
@@ -5442,7 +5479,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "10285670c98641de",
@@ -5455,7 +5493,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "b4fd722ff6022173",
@@ -5468,7 +5507,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "cd88cb8a16a5e3d8",
@@ -5481,7 +5521,8 @@
           2,
           1,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "defd669a4e252d54",
@@ -5494,7 +5535,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "8bc537f17546a07b",
@@ -5507,7 +5549,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "1a5c0b0ff91b5421",
@@ -5520,7 +5563,8 @@
           2,
           3,
           1
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "406d7ebf268b0214",
@@ -5533,7 +5577,8 @@
           3,
           1,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "672d48d4db912d05",
@@ -5546,7 +5591,8 @@
           1,
           3,
           2
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "f255e90f0cacaac6",
@@ -5559,7 +5605,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       },
       {
         "flight_id": "b0d9ab627f8732c7",
@@ -5572,7 +5619,8 @@
           1,
           2,
           3
-        ]
+        ],
+        "hot_cyl_changed": false
       }
     ]
   }

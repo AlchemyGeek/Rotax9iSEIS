@@ -1,8 +1,8 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "089cfd4d4cd0a062bc56956bb038e800984b85e79cfc600c249d4cd6e8f085ce",
+  "analysis_key": "78c3faff52399a9687ac5cdd1c6ac3007bd632e57b84ba7ccef7a3044e006077",
   "fleet_key": "40da4139c9c8211d165e2645dba63f8a54135fd73b3b4eeb546561ac81b01e4a",
-  "rules_hash": "51928197f5520fdbfaf41cbf6d30025a07a85d4c61a0ae5e9ea0e3d1ccdc8f33",
+  "rules_hash": "0526b90539e857804a31b7e0e06ec4ab6f912855beb0ee88dbbdfc51002942ed",
   "filters_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "topics": [
     {
@@ -23,6 +23,12 @@
       "insights": [],
       "metric_ids": [
         "oil_temp_peak"
+      ],
+      "limit_refs": [
+        {
+          "limit_id": "oil_temp_max",
+          "insight_id": null
+        }
       ]
     },
     {
@@ -33,6 +39,12 @@
       "insights": [],
       "metric_ids": [
         "coolant_temp_peak"
+      ],
+      "limit_refs": [
+        {
+          "limit_id": "coolant_temp_max",
+          "insight_id": null
+        }
       ]
     },
     {
@@ -57,6 +69,12 @@
       "metric_ids": [
         "overboost_total_s",
         "overboost_max_block_s"
+      ],
+      "limit_refs": [
+        {
+          "limit_id": "overboost",
+          "insight_id": null
+        }
       ]
     },
     {
@@ -360,15 +378,15 @@
   ],
   "header_warnings": [],
   "provenance": {
-    "engine_version": "0.23.0",
+    "engine_version": "0.25.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
-      "hash": "dd1c4adb16bc1c126569f364d1c5cee339695dbc6db5c542055bf6dde8589a67",
+      "hash": "9292ae07038f5ddd6da16e1e4f080a45455d003ac1667d2a0e5e8b77759fceb8",
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-    "rules_hash": "51928197f5520fdbfaf41cbf6d30025a07a85d4c61a0ae5e9ea0e3d1ccdc8f33",
+    "rules_hash": "0526b90539e857804a31b7e0e06ec4ab6f912855beb0ee88dbbdfc51002942ed",
     "source_keys": [
       "e6db755e9c40fa8c"
     ]

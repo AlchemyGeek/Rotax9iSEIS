@@ -227,21 +227,106 @@ def _hot_oil_flight(observed):
     return fa
 
 
-def test_filter_on_oil_temp_hides_the_topic_threshold_but_not_baseline_deviation():
+def test_filter_on_oil_temp_hides_the_mirrored_badge_but_not_baseline_deviation():
+    # Spec 10 §4.1 (Spec 09 §10.2, v0.13): oil_temp_peak never has its own
+    # threshold insight to hide — a filter changes which limit_exceedances
+    # insight TopicResult.limit_refs mirrors instead (exceedance -> filtered).
     flt = _filter("oil_temp_max", {"mode": "absolute", "value": 5}, note="gauge reads high")
     fa = _hot_oil_flight(251.0)   # z vs the 200-211°F fleet: baseline_deviation fires
     before = next(t for t in evaluate_insights(fa, _oil_fleet(), RULES).topics if t["topic_id"] == "oil_temp_peak")
-    after = next(t for t in evaluate_insights(fa, _oil_fleet(), RULES, filters=[flt]).topics
-                 if t["topic_id"] == "oil_temp_peak")
-    assert sorted(i["trigger"] for i in before["insights"]) == ["baseline_deviation", "threshold"]
+    iset_after = evaluate_insights(fa, _oil_fleet(), RULES, filters=[flt])
+    after = next(t for t in iset_after.topics if t["topic_id"] == "oil_temp_peak")
+    assert [i["trigger"] for i in before["insights"]] == ["baseline_deviation"]
     assert [i["trigger"] for i in after["insights"]] == ["baseline_deviation"]
+    assert "Exceeded OM limit" in before["analysis"]["text"]
+    assert "Exceeded OM limit" not in after["analysis"]["text"]  # suppressed, not an exceedance any more
+    mirrored_id = after["limit_refs"][0]["insight_id"]
+    mirrored = next(i for t in iset_after.topics if t["topic_id"] == "limit_exceedances" for i in t["insights"])
+    assert mirrored_id == mirrored["id"]
+    assert mirrored.get("filter", {}).get("outcome") == "suppressed"
 
 
-def test_breach_still_fires_the_topic_threshold():
+def test_breach_still_mirrors_a_limit_exceedances_insight():
     flt = _filter("oil_temp_max", {"mode": "absolute", "value": 5}, note="gauge reads high")
     fa = _hot_oil_flight(260.0)
-    t = next(t for t in evaluate_insights(fa, _oil_fleet(), RULES, filters=[flt]).topics if t["topic_id"] == "oil_temp_peak")
-    assert "threshold" in [i["trigger"] for i in t["insights"]]
+    iset = evaluate_insights(fa, _oil_fleet(), RULES, filters=[flt])
+    t = next(t for t in iset.topics if t["topic_id"] == "oil_temp_peak")
+    assert "Exceeded OM limit" in t["analysis"]["text"]
+    mirrored_id = t["limit_refs"][0]["insight_id"]
+    assert mirrored_id is not None
+    mirrored = next(i for topic in iset.topics if topic["topic_id"] == "limit_exceedances"
+                     for i in topic["insights"] if i["id"] == mirrored_id)
+    assert mirrored.get("filter", {}).get("outcome") == "breach"
+
+
+def _coolant_metric(v):
+    return {"coolant_temp_max_f": {"id": "coolant_temp_max_f", "value": v}}
+
+
+def _oil_and_coolant_fleet():
+    """Both topics' baselines established, same shape as _oil_fleet()."""
+    from slingology_eis.operations import FleetAnalysis
+    oil_points = [{"flight_id": f"o{i}", "date": "2025-12-01", "x": float(i), "value": 200.0 + i} for i in range(12)]
+    coolant_points = [{"flight_id": f"c{i}", "date": "2025-12-01", "x": float(i), "value": 180.0 + i} for i in range(12)]
+    return FleetAnalysis(
+        fleet_key="fk", flight_ids=[p["flight_id"] for p in oil_points],
+        metrics={
+            "oil_temp_peak": {"metric_id": "oil_temp_peak", "points": oil_points, "trend": {}},
+            "coolant_temp_peak": {"metric_id": "coolant_temp_peak", "points": coolant_points, "trend": {}},
+        },
+        provenance={"baseline_config": {}},
+    )
+
+
+def test_spec09_acceptance_21_oil_and_coolant_exceedance_on_one_flight():
+    """Spec 09 v0.14 acceptance 21: a synthetic flight with one oil and one
+    coolant exceedance produces exactly one insight per limit, both from
+    limit_exceedances; the topics emit no limit insight of their own, name
+    the exceedance in their analysis line, and carry the reference via
+    limit_refs. A filter suppressing every oil event flips oil's mirrored
+    state to filtered, leaving coolant as an unfiltered breach."""
+    fa = _flight(
+        [
+            _exc("oil_temp_max", "oil_temp_f", "Oil temp maximum", 100, 30, 252.0, 248.0, severity="CAUTION", unit="°F"),
+            _exc("coolant_temp_max", "coolant_temp_f", "Coolant temp maximum", 200, 30, 251.0, 248.0, severity="CAUTION", unit="°F"),
+        ],
+        metrics=_oil_metric(252.0) | _coolant_metric(251.0),
+    )
+    fa.limits = [
+        _caution(lim["id"]) if lim["id"] in ("oil_temp_max", "coolant_temp_max") else lim for lim in fa.limits
+    ]
+    fleet = _oil_and_coolant_fleet()
+
+    # ── no filter: one insight per limit, both topics mirror a real one ──
+    iset = evaluate_insights(fa, fleet, RULES)
+    limit_topic = _limit_topic(iset)
+    assert sorted(i["limit_id"] for i in limit_topic["insights"]) == ["coolant_temp_max", "oil_temp_max"]
+    assert len(limit_topic["insights"]) == len({i["limit_id"] for i in limit_topic["insights"]})
+
+    oil_topic = next(t for t in iset.topics if t["topic_id"] == "oil_temp_peak")
+    coolant_topic = next(t for t in iset.topics if t["topic_id"] == "coolant_temp_peak")
+    assert [i for i in oil_topic["insights"] if i["trigger"] == "threshold"] == []
+    assert [i for i in coolant_topic["insights"] if i["trigger"] == "threshold"] == []
+    assert "Exceeded OM limit" in oil_topic["analysis"]["text"]
+    assert "Exceeded OM limit" in coolant_topic["analysis"]["text"]
+
+    oil_ref, coolant_ref = oil_topic["limit_refs"][0], coolant_topic["limit_refs"][0]
+    assert oil_ref["insight_id"] is not None and coolant_ref["insight_id"] is not None
+    by_id = {i["id"]: i for i in limit_topic["insights"]}
+    assert by_id[oil_ref["insight_id"]]["limit_id"] == "oil_temp_max"
+    assert by_id[coolant_ref["insight_id"]]["limit_id"] == "coolant_temp_max"
+
+    # ── a filter suppressing every oil event: oil's mirror flips to filtered ──
+    flt = _filter("oil_temp_max", {"mode": "absolute", "value": 5}, note="gauge reads high")
+    iset_f = evaluate_insights(fa, fleet, RULES, filters=[flt])
+    oil_topic_f = next(t for t in iset_f.topics if t["topic_id"] == "oil_temp_peak")
+    coolant_topic_f = next(t for t in iset_f.topics if t["topic_id"] == "coolant_temp_peak")
+    limit_topic_f = _limit_topic(iset_f)
+
+    oil_mirrored = next(i for i in limit_topic_f["insights"] if i["id"] == oil_topic_f["limit_refs"][0]["insight_id"])
+    assert oil_mirrored.get("filter", {}).get("outcome") == "suppressed"
+    coolant_mirrored = next(i for i in limit_topic_f["insights"] if i["id"] == coolant_topic_f["limit_refs"][0]["insight_id"])
+    assert "filter" not in coolant_mirrored  # untouched by the oil-only filter
 
 
 # ── Overboost (§6.4, §10.3, acceptance 9) ─────────────────────────────────────

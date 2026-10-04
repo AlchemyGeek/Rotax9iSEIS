@@ -152,6 +152,11 @@ export interface TopicResult {
   analysis: { text: string };
   insights: Insight[];
   metric_ids: string[];
+  // Spec 10 §4.1 (Spec 01 §8.5): the rule's limit_refs, each resolved to
+  // this flight's limit_exceedances insight for that limit, or null if
+  // none fired. Drives the mirrored badge (Spec 03 §5.2); never an
+  // insight of its own.
+  limit_refs?: { limit_id: string; insight_id: string | null }[];
 }
 
 export interface InsightSet {
@@ -190,10 +195,29 @@ export interface RuleTrigger {
 
 export type TrendDirection = "increasing" | "decreasing" | "either";
 
+export interface RuleTopic {
+  enabled: boolean;
+  // Spec 08 v0.3 §6 (Spec 10 D4): cylinder_rank ships with no triggers at
+  // all — context only, nothing to fire — so this is optional, not a
+  // guaranteed array.
+  triggers?: RuleTrigger[];
+  // applies_to (Spec 08 §6): one rule block shared by several fleet metric ids.
+  applies_to?: string[];
+  _comment?: string;
+  // cylinder_rank's own margin/consecutive-flight settings (Spec 08 §6) —
+  // top-level now, not nested in a trigger; the rule playground still
+  // edits them even though the topic itself emits nothing.
+  margin_min_f?: number;
+  consecutive_flights?: number;
+  // Spec 10 §4.1 (Spec 09 §10.2): oil_temp_peak / coolant_temp_peak /
+  // overboost_time declare the limit(s) they mirror here, never as a
+  // trigger of their own.
+  limit_refs?: string[];
+}
+
 export interface RuleSet {
   version: string;
-  // applies_to (Spec 08 §6): one rule block shared by several fleet metric ids.
-  rules: Record<string, { enabled: boolean; triggers: RuleTrigger[]; applies_to?: string[]; _comment?: string }>;
+  rules: Record<string, RuleTopic>;
 }
 
 export interface WorkspaceRulesResult {

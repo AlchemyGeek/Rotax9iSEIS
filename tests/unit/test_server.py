@@ -296,11 +296,13 @@ def test_reorder_user_presets_rejects_mismatched_set(registry_server):
 def test_get_default_rules(server):
     d = rpc(server, "get_default_rules", {})
     assert d["ok"]
-    # Spec 09 §10.2: the threshold follows the profile's own limit
-    assert d["result"]["rules"]["oil_temp_peak"]["triggers"][0]["limit_ref"] == "oil_temp_max"
+    # Spec 10 §4.1 (Spec 09 §10.2, v0.13): the rule-level limit_refs field
+    # follows the profile's own limit, not a threshold trigger any more.
+    assert d["result"]["rules"]["oil_temp_peak"]["limit_refs"] == ["oil_temp_max"]
     # v0.12 §10.3: overboost_time no longer has a threshold trigger of its
     # own — a block past the limit is an ordinary limit_exceedances event.
     assert d["result"]["rules"]["overboost_time"]["triggers"] == []
+    assert d["result"]["rules"]["overboost_time"]["limit_refs"] == ["overboost"]
 
 
 def test_unknown_op_returns_envelope_error(server):
@@ -887,20 +889,23 @@ def test_get_save_reset_workspace_rules(registry_server):
 
     shipped = got["result"]["shipped_rules"]
     edited = json.loads(json.dumps(shipped))
-    edited["rules"]["oil_temp_peak"]["triggers"][1]["severity"] = "info"
+    # oil_temp_peak's only trigger left (Spec 10 §4.1 removed its
+    # threshold) is baseline_deviation, at index 0.
+    edited["rules"]["oil_temp_peak"]["triggers"][0]["severity"] = "info"
 
     saved = rpc(registry_server, "save_workspace_rules", {"rules": edited})
     assert saved["ok"], saved
-    assert saved["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "info"
+    assert saved["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][0]["severity"] == "info"
 
     refetched = rpc(registry_server, "get_workspace_rules", {})
-    assert refetched["result"]["rules"]["rules"]["coolant_temp_peak"]["triggers"][0]["severity"] == "limit"
+    # coolant_temp_peak, untouched control: still its shipped baseline_deviation default.
+    assert refetched["result"]["rules"]["rules"]["coolant_temp_peak"]["triggers"][0]["severity"] == "watch"
     # shipped_rules is untouched by the edit — always "what's shipped"
-    assert refetched["result"]["shipped_rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "watch"
+    assert refetched["result"]["shipped_rules"]["rules"]["oil_temp_peak"]["triggers"][0]["severity"] == "watch"
 
     reset = rpc(registry_server, "reset_workspace_rules", {})
     assert reset["ok"], reset
-    assert reset["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "watch"
+    assert reset["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][0]["severity"] == "watch"
 
 
 def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_server):
@@ -920,32 +925,37 @@ def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_s
     _import_oil_temp_flight(registry_server, 2, 150)
 
     before = rpc(registry_server, "get_flight", {"flight_id": flight_id})
-    oil_insights_before = [
-        i for t in before["result"]["insight_set"]["topics"] if t["topic_id"] == "oil_temp_peak" for i in t["insights"]
-    ]
-    # 255F is past the 916iS's 248F oil_temp_max, so the topic threshold
-    # (Spec 09 §10.2: it follows that limit's exceedance events) fires.
-    assert [i["trigger"] for i in oil_insights_before] == ["threshold"]
-    assert oil_insights_before[0]["severity"] == "limit"
+    oil_before = next(t for t in before["result"]["insight_set"]["topics"] if t["topic_id"] == "oil_temp_peak")
+    # 255F is past the 916iS's 248F oil_temp_max, so the topic names the
+    # exceedance (Spec 10 §4.1) — but never fires an insight of its own;
+    # TopicResult.limit_refs mirrors the real limit_exceedances insight.
+    assert oil_before["insights"] == []
+    assert "Exceeded OM limit" in oil_before["analysis"]["text"]
+    mirrored_id = oil_before["limit_refs"][0]["insight_id"]
+    assert mirrored_id is not None
+    mirrored_before = next(i for t in before["result"]["insight_set"]["topics"] if t["topic_id"] == "limit_exceedances"
+                            for i in t["insights"] if i["id"] == mirrored_id)
+    assert mirrored_before["severity"] == "limit"
     before_row = next(r for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]
                       if r["flight_id"] == flight_id)
     assert before_row["worst_severity"] == "limit"
 
+    # The severity that actually governs the mirrored badge is
+    # limit_exceedances' own trigger (Spec 10 §4.1) — oil_temp_peak has no
+    # threshold trigger of its own left to edit.
     shipped = rpc(registry_server, "get_default_rules", {})["result"]
     edited = json.loads(json.dumps(shipped))
-    for topic_id in ("oil_temp_peak", "limit_exceedances"):
-        for trig in edited["rules"][topic_id]["triggers"]:
-            if trig["type"] == "threshold":
-                trig["severity"] = "watch"
+    for trig in edited["rules"]["limit_exceedances"]["triggers"]:
+        if trig["type"] == "threshold":
+            trig["severity"] = "watch"
     rpc(registry_server, "save_workspace_rules", {"rules": edited})
 
     after = rpc(registry_server, "get_flight", {"flight_id": flight_id})
-    oil_insights_after = [
-        i for t in after["result"]["insight_set"]["topics"] if t["topic_id"] == "oil_temp_peak" for i in t["insights"]
-    ]
-    assert len(oil_insights_after) == 1
-    assert oil_insights_after[0]["trigger"] == "threshold"
-    assert oil_insights_after[0]["severity"] == "watch"
+    oil_after = next(t for t in after["result"]["insight_set"]["topics"] if t["topic_id"] == "oil_temp_peak")
+    assert oil_after["insights"] == []
+    mirrored_after = next(i for t in after["result"]["insight_set"]["topics"] if t["topic_id"] == "limit_exceedances"
+                           for i in t["insights"] if i["id"] == oil_after["limit_refs"][0]["insight_id"])
+    assert mirrored_after["severity"] == "watch"
 
     status_list = rpc(registry_server, "list_flights_with_status", {})
     row = next(r for r in status_list["result"]["rows"] if r["flight_id"] == flight_id)

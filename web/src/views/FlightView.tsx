@@ -552,6 +552,23 @@ export function FlightView() {
     }
   }
 
+  // Spec 10 §4.1 (Spec 09 §10.2/§10.3, Spec 03 §5.2/§12.1): a topic that
+  // declares limit_refs shows the referenced limit_exceedances insight's
+  // own badge and links to it, instead of (or in addition to) any insight
+  // of its own — one card, mirroring the one real insight, never a second
+  // entry in the list.
+  const insightsById = useMemo(() => {
+    const map = new Map<string, Insight>();
+    for (const topic of insightSet.topics) for (const ins of topic.insights) map.set(ins.id, ins);
+    return map;
+  }, [insightSet]);
+
+  function mirroredLimitInsight(t: TopicResult): Insight | null {
+    const ref = t.limit_refs?.[0];
+    if (!ref?.insight_id) return null;
+    return insightsById.get(ref.insight_id) ?? null;
+  }
+
   const flatInsights = useMemo(() => {
     const items: { insight: Insight; topicId: string }[] = [];
     for (const topic of insightSet.topics) {
@@ -1132,7 +1149,7 @@ export function FlightView() {
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Analysis</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                   {insightSet.topics.map((t) => {
-                    const topInsight = topTopicInsight(t);
+                    const topInsight = mirroredLimitInsight(t) ?? topTopicInsight(t);
                     const clickable = Boolean(topInsight && topInsight.evidence.length > 0);
                     const Wrapper = clickable ? "a" : "div";
                     return (

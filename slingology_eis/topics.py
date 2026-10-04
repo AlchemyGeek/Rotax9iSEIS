@@ -259,21 +259,6 @@ def _om_limit_text(om_limit: Optional[dict]) -> str:
     return f"{om_limit['limit_value']:.0f}°F" if om_limit else "248°F"
 
 
-def _threshold_fired(value, rule: dict, om_limit: Optional[dict], limit_events: Optional[list]) -> tuple[bool, float]:
-    """
-    A topic threshold trigger (Spec 09 §10.2). With the referenced profile
-    limit resolved (`om_limit`), it fires exactly when the flight has at
-    least one unsuppressed exceedance event for that limit — the limit's
-    own phase and duration rules apply, and a filter that hides the
-    event hides this too. Without it (a caller that doesn't pass one, or
-    a flight analysed before Spec 09), the legacy numeric comparison.
-    """
-    if om_limit is not None and limit_events is not None:
-        return bool(limit_events), om_limit["limit_value"]
-    limit = rule.get("limit", 248)
-    return (value is not None and value > limit), limit
-
-
 def oil_temp_peak(oil_max, b: dict, rule_triggers: list, om_limit: Optional[dict] = None,
                   limit_events: Optional[list] = None) -> dict:
     if oil_max is None or b.get("mean") is None:
@@ -284,13 +269,14 @@ def oil_temp_peak(oil_max, b: dict, rule_triggers: list, om_limit: Optional[dict
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
         f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
+    # Spec 10 §4.1 (Spec 09 §10.2): no insight of its own for the limit —
+    # TopicResult.limit_refs carries the reference, this just names it in
+    # plain language when it fired (unsuppressed by any filter).
+    if limit_events:
+        analysis += f" Exceeded OM limit of {_om_limit_text(om_limit)} — see Operators Manual limits."
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold":
-            fired, limit_value = _threshold_fired(oil_max, rule, om_limit, limit_events)
-            if fired:
-                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
-        elif rule["type"] == "baseline_deviation":
+        if rule["type"] == "baseline_deviation":
             triggered, text, comparison = baseline_triggered(oil_max, b, rule)
             if triggered:
                 insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
@@ -307,13 +293,11 @@ def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list, om_limit: Optio
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
         f"({b['n']} flights{note}). OM limit: {_om_limit_text(om_limit)}."
     )
+    if limit_events:
+        analysis += f" Exceeded OM limit of {_om_limit_text(om_limit)} — see Operators Manual limits."
     insights = []
     for rule in rule_triggers:
-        if rule["type"] == "threshold":
-            fired, limit_value = _threshold_fired(coolant_max, rule, om_limit, limit_events)
-            if fired:
-                insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM limit of {limit_value:.0f}°F."})
-        elif rule["type"] == "baseline_deviation":
+        if rule["type"] == "baseline_deviation":
             triggered, text, comparison = baseline_triggered(coolant_max, b, rule)
             if triggered:
                 insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})

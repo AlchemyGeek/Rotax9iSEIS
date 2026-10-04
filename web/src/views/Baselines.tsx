@@ -4,7 +4,7 @@ import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { fleetAnalysis as fixtureFleet, insightRules as fixtureRules } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
-import type { BaselineConfig, FilterListEntry, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
+import type { BaselineConfig, FilterListEntry, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -238,7 +238,17 @@ export function Baselines() {
   function updateTrigger(topicId: string, index: number, patch: Partial<RuleTrigger>) {
     setDraftRules((prev) => {
       const next = clone(prev);
-      Object.assign(next.rules[topicId].triggers[index], patch);
+      Object.assign((next.rules[topicId].triggers ?? [])[index], patch);
+      return next;
+    });
+  }
+
+  // cylinder_rank's margin_min_f/consecutive_flights (Spec 08 §6): top-
+  // level on the topic, not inside a trigger — this topic has no triggers.
+  function updateTopicField(topicId: string, patch: Partial<Pick<RuleTopic, "margin_min_f" | "consecutive_flights">>) {
+    setDraftRules((prev) => {
+      const next = clone(prev);
+      Object.assign(next.rules[topicId], patch);
       return next;
     });
   }
@@ -258,7 +268,7 @@ export function Baselines() {
   const filterEntries = filterList;
   const topic = draftRules.rules[selectedTopic];
   const shippedTopic = shippedRules.rules[selectedTopic];
-  const hasBaselineDeviation = topic?.triggers.some((t) => t.type === "baseline_deviation") ?? false;
+  const hasBaselineDeviation = (topic?.triggers ?? []).some((t) => t.type === "baseline_deviation");
   const resolvedZ = draftBaselineConfig.outlier_z_threshold_overrides?.[selectedTopic] ?? draftBaselineConfig.outlier_z_threshold;
   const overridden = draftBaselineConfig.outlier_z_threshold_overrides?.[selectedTopic] !== undefined;
 
@@ -440,8 +450,43 @@ export function Baselines() {
               </div>
             )}
 
+            {topic.limit_refs && (
+              <div style={{ background: "var(--panel)", borderRadius: 12, padding: 20, display: "grid", gridTemplateColumns: "160px 1fr 200px", gap: 16, alignItems: "center" }}>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Limit{topic.limit_refs.length > 1 ? "s" : ""}</label>
+                <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  mirrors <span style={{ color: "var(--text-secondary)" }}>{topic.limit_refs.join(", ")}</span>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                  from the engine profile — to accept a known exceedance, filter the limit instead
+                </div>
+              </div>
+            )}
+
+            {topic.margin_min_f !== undefined && (
+              <div style={{ background: "var(--panel)", borderRadius: 12, padding: 20, display: "grid", gridTemplateColumns: "160px 1fr 200px", gap: 16, alignItems: "center" }}>
+                <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Min lead over next cylinder (°F)</label>
+                {numberInput(topic.margin_min_f, (v) => updateTopicField(selectedTopic, { margin_min_f: v }), { min: 0 })}
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                  shipped default: {shippedTopic?.margin_min_f ?? "—"}
+                </div>
+
+                {topic.consecutive_flights !== undefined && (
+                  <>
+                    <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Consecutive flights</label>
+                    {numberInput(topic.consecutive_flights, (v) => updateTopicField(selectedTopic, { consecutive_flights: v }), { min: 1 })}
+                    <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                      shipped default: {shippedTopic?.consecutive_flights ?? "—"}
+                    </div>
+                  </>
+                )}
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", gridColumn: "1 / -1" }}>
+                  Context only (Spec 10 D4) — this topic marks the hottest-cylinder flag but raises no insight of its own.
+                </div>
+              </div>
+            )}
+
             <div style={{ background: "var(--panel)", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
-              {topic.triggers.map((trig, i) => (
+              {(topic.triggers ?? []).map((trig, i) => (
                 <div key={i} style={{ borderTop: i > 0 ? "1px solid var(--border)" : undefined, paddingTop: i > 0 ? 16 : 0 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 200px", gap: 16, alignItems: "center" }}>
                     <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Trigger type</label>
@@ -455,7 +500,7 @@ export function Baselines() {
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Limit{trig.unit ? ` (${trig.unit})` : ""}</label>
                         {numberInput(trig.limit, (v) => updateTrigger(selectedTopic, i, { limit: v }))}
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                          shipped default: {shippedTopic?.triggers[i]?.limit ?? "—"}
+                          shipped default: {shippedTopic?.triggers?.[i]?.limit ?? "—"}
                         </div>
                       </>
                     )}
@@ -480,31 +525,13 @@ export function Baselines() {
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>structural — not editable here</div>
                       </>
                     )}
-                    {trig.type === "threshold" && trig.margin_min_f !== undefined && (
-                      <>
-                        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Min lead over next cylinder (°F)</label>
-                        {numberInput(trig.margin_min_f, (v) => updateTrigger(selectedTopic, i, { margin_min_f: v }), { min: 0 })}
-                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                          shipped default: {shippedTopic?.triggers[i]?.margin_min_f ?? "—"}
-                        </div>
-                      </>
-                    )}
-                    {trig.type === "threshold" && trig.consecutive_flights !== undefined && (
-                      <>
-                        <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Consecutive flights</label>
-                        {numberInput(trig.consecutive_flights, (v) => updateTrigger(selectedTopic, i, { consecutive_flights: v }), { min: 1 })}
-                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                          shipped default: {shippedTopic?.triggers[i]?.consecutive_flights ?? "—"}
-                        </div>
-                      </>
-                    )}
 
                     {trig.type === "baseline_deviation" && (
                       <>
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Sample-size gate (n_min)</label>
                         {numberInput(trig.n_min ?? 10, (v) => updateTrigger(selectedTopic, i, { n_min: v }), { min: 0 })}
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                          shipped default: {shippedTopic?.triggers[i]?.n_min ?? 10}
+                          shipped default: {shippedTopic?.triggers?.[i]?.n_min ?? 10}
                         </div>
 
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Outlier z-threshold</label>
@@ -542,7 +569,7 @@ export function Baselines() {
 
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Min R²</label>
                         {numberInput(trig.r2_min ?? 0.5, (v) => updateTrigger(selectedTopic, i, { r2_min: v }), { step: 0.05, min: 0, max: 1 })}
-                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>shipped default: {shippedTopic?.triggers[i]?.r2_min ?? 0.5}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>shipped default: {shippedTopic?.triggers?.[i]?.r2_min ?? 0.5}</div>
 
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Sample-size gate (n_min)</label>
                         {numberInput(trig.n_min ?? 10, (v) => updateTrigger(selectedTopic, i, { n_min: v }), { min: 0 })}
@@ -564,8 +591,8 @@ export function Baselines() {
                   </div>
                 </div>
               ))}
-              {!hasBaselineDeviation && topic.triggers.every(
-                (t) => t.type === "threshold" && t.limit === undefined && t.margin_min_f === undefined && t.consecutive_flights === undefined,
+              {!hasBaselineDeviation && (topic.triggers ?? []).length > 0 && (topic.triggers ?? []).every(
+                (t) => t.type === "threshold" && t.limit === undefined,
               ) && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   This rule's condition is structural (not a tunable number) — nothing to drag here, but severity is still editable.

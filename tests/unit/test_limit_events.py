@@ -311,16 +311,26 @@ def _oil_fleet():
 
 
 def test_topic_threshold_fires_only_with_a_limit_event(rules):
-    # A 252°F peak with no oil_temp_max event (e.g. excluded by the limit's
-    # own phase or duration rules) no longer fires the topic threshold.
+    # Spec 10 §4.1 (Spec 09 §10.2, v0.13): oil_temp_peak never emits a
+    # threshold insight of its own any more — TopicResult.limit_refs
+    # resolves to the limit_exceedances insight (or None), and the
+    # analysis line only names the exceedance when one actually fired.
     fa = _flight([], metrics=_oil_metric(252.0))
-    oil = _topic(evaluate_insights(fa, _oil_fleet(), rules), "oil_temp_peak")["insights"]
-    assert [i for i in oil if i["trigger"] == "threshold"] == []
+    topic = _topic(evaluate_insights(fa, _oil_fleet(), rules), "oil_temp_peak")
+    assert [i for i in topic["insights"] if i["trigger"] == "threshold"] == []
+    assert topic["limit_refs"] == [{"limit_id": "oil_temp_max", "insight_id": None}]
+    assert "Exceeded OM limit" not in topic["analysis"]["text"]
 
     fa2 = _flight([_exc("oil_temp_max", "oil_temp_f", "Oil temp maximum", 100, 30, 252.0, 248.0,
                         severity="WARNING", unit="°F")], metrics=_oil_metric(252.0))
-    oil2 = _topic(evaluate_insights(fa2, _oil_fleet(), rules), "oil_temp_peak")["insights"]
-    assert [i["message"]["text"] for i in oil2 if i["trigger"] == "threshold"] == ["⚠ Exceeded OM limit of 248°F."]
+    iset2 = evaluate_insights(fa2, _oil_fleet(), rules)
+    topic2 = _topic(iset2, "oil_temp_peak")
+    assert [i for i in topic2["insights"] if i["trigger"] == "threshold"] == []
+    assert "Exceeded OM limit of 248°F" in topic2["analysis"]["text"]
+    ref = topic2["limit_refs"][0]
+    assert ref["limit_id"] == "oil_temp_max" and ref["insight_id"] is not None
+    mirrored = next(i for t in iset2.topics if t["topic_id"] == "limit_exceedances" for i in t["insights"])
+    assert ref["insight_id"] == mirrored["id"]
 
 
 def test_topic_threshold_uses_the_profiles_value():
@@ -329,21 +339,29 @@ def test_topic_threshold_uses_the_profiles_value():
     assert cat["oil_temp_max"]["limit_value"] == 266.0
 
 
-def test_pre_spec09_flight_keeps_legacy_threshold(rules):
+def test_pre_spec09_flight_has_no_limit_refs_and_no_crash(rules):
+    # A flight analysed before Spec 09 carries no limits catalogue — the
+    # legacy numeric-threshold fallback this test used to check is gone
+    # entirely (Spec 10 §4.1); there's simply nothing to resolve or fire,
+    # and no diagnostic (that's the ordinary case, not an error).
     fa = _flight([], metrics=_oil_metric(252.0), limits=[])
-    oil = _topic(evaluate_insights(fa, _oil_fleet(), rules), "oil_temp_peak")["insights"]
-    assert [i["message"]["text"] for i in oil if i["trigger"] == "threshold"] == ["⚠ Exceeded OM limit of 248°F."]
+    iset = evaluate_insights(fa, _oil_fleet(), rules)
+    topic = _topic(iset, "oil_temp_peak")
+    assert [i for i in topic["insights"] if i["trigger"] == "threshold"] == []
+    assert topic["limit_refs"] == [{"limit_id": "oil_temp_max", "insight_id": None}]
+    assert "Exceeded OM limit" not in topic["analysis"]["text"]
+    assert not any(d["code"] == "RULES_LIMIT_REF_UNRESOLVED" for d in iset.header_warnings)
 
 
 def test_unresolved_limit_ref_is_a_diagnostic_not_an_insight(rules):
     bad = copy.deepcopy(rules)
-    for trig in bad["rules"]["oil_temp_peak"]["triggers"]:
-        if trig["type"] == "threshold":
-            trig["limit_ref"] = "no_such_limit"
+    bad["rules"]["oil_temp_peak"]["limit_refs"] = ["no_such_limit"]
     fa = _flight([_exc("oil_temp_max", "oil_temp_f", "Oil temp maximum", 100, 30, 252.0, 248.0,
                        severity="WARNING", unit="°F")], metrics=_oil_metric(252.0))
     iset = evaluate_insights(fa, _oil_fleet(), bad)
-    assert [i for i in _topic(iset, "oil_temp_peak")["insights"] if i["trigger"] == "threshold"] == []
+    topic = _topic(iset, "oil_temp_peak")
+    assert [i for i in topic["insights"] if i["trigger"] == "threshold"] == []
+    assert "Exceeded OM limit" not in topic["analysis"]["text"]
     assert any(d["code"] == "RULES_LIMIT_REF_UNRESOLVED" for d in iset.header_warnings)
 
 
@@ -351,7 +369,7 @@ def test_validate_rules_checks_limit_ref(rules):
     ids = {lim["id"] for lim in limit_catalog(load_engine_config("916iS"))}
     assert validate_rules(rules, limit_ids=ids) == []
     bad = copy.deepcopy(rules)
-    bad["rules"]["oil_temp_peak"]["triggers"][0]["limit_ref"] = "nope"
+    bad["rules"]["oil_temp_peak"]["limit_refs"] = ["nope"]
     assert any(d["code"] == "RULES_LIMIT_REF_UNRESOLVED" for d in validate_rules(bad, limit_ids=ids))
 
 

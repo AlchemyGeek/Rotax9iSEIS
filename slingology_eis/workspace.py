@@ -726,7 +726,11 @@ def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
 def load_workspace_rules(ws_dir: Path, shipped_rules: dict) -> dict:
     f = ws_dir / "rules" / "active.json"
     if f.exists():
-        return upgrade_phase_a_rules(upgrade_limit_refs(json.loads(f.read_text())))
+        rules = json.loads(f.read_text())
+        rules = upgrade_limit_refs(rules)
+        rules = upgrade_to_limit_refs(rules)
+        rules = upgrade_phase_a_rules(rules)
+        return rules
     return shipped_rules
 
 
@@ -753,6 +757,41 @@ def upgrade_limit_refs(rules: dict) -> dict:
                 trig.pop("limit")
                 trig.pop("unit", None)
                 trig["limit_ref"] = ref
+    return rules
+
+
+# Spec 10 §4.1 (Spec 09 §10.2, v0.13): oil_temp_peak, coolant_temp_peak and
+# overboost_time used to reference their limit via a `threshold` trigger's
+# `limit_ref`; now it's a rule-level `limit_refs` list and none of the
+# three has a threshold trigger any more.
+_LIMIT_REFS_TOPICS = ("oil_temp_peak", "coolant_temp_peak", "overboost_time")
+
+
+def upgrade_to_limit_refs(rules: dict) -> dict:
+    """
+    Move a `threshold` + `limit_ref` trigger on oil_temp_peak /
+    coolant_temp_peak / overboost_time to the rule-level `limit_refs`
+    field, in memory (the file itself is left as the pilot saved it until
+    next saved) — the same pattern as `upgrade_limit_refs`, one level up.
+    A rule set that already has `limit_refs` is left alone.
+    """
+    for topic_id in _LIMIT_REFS_TOPICS:
+        topic = (rules.get("rules") or {}).get(topic_id)
+        if not isinstance(topic, dict) or topic.get("limit_refs"):
+            continue
+        triggers = topic.get("triggers") or []
+        trig = next(
+            (t for t in triggers if isinstance(t, dict) and t.get("type") == "threshold" and t.get("limit_ref")),
+            None,
+        )
+        if trig is None:
+            continue
+        topic["limit_refs"] = [trig["limit_ref"]]
+        topic["triggers"] = [t for t in triggers if t is not trig]
+        warnings.warn(
+            f"Workspace rules/active.json had a 'threshold'+'limit_ref' trigger on '{topic_id}' — "
+            f"moved to the rule-level 'limit_refs' field (Spec 10 §4.1).",
+        )
     return rules
 
 

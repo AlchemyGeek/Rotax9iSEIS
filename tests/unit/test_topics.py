@@ -200,15 +200,18 @@ def test_takeoff_map_deviation_fires_insight():
     assert "above" in result["insights"][0]["text"]
 
 
-def test_oil_temp_peak_fires_insight_once():
-    # notebooks/04_flight_report.py had this loop duplicated before Stage 2
-    # (every triggered insight for this topic printed twice) — fixed as
-    # part of the extraction, verified against no golden report ever
-    # exercising this path (none of the 6 golden flights exceed 248°F).
+def test_oil_temp_peak_names_the_exceedance_but_raises_no_insight_of_its_own():
+    # Spec 10 §4.1 (Spec 09 §10.2, v0.13): the topic never emits its own
+    # threshold insight any more — TopicResult.limit_refs carries the
+    # reference (built in operations.py), this only names it in the
+    # analysis line when the flight has an unsuppressed event.
     b = {"mean": 200, "std": 10, "n": 20}
-    rule = {"type": "threshold", "limit": 248}
-    result = topics.oil_temp_peak(260, b, [rule])
-    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
+    om_limit = {"limit_value": 248}
+    result = topics.oil_temp_peak(260, b, [], om_limit=om_limit, limit_events=[{"start_utc": "x"}])
+    assert result["insights"] == []
+    assert "Exceeded OM limit of 248°F" in result["analysis"]
+    no_event_result = topics.oil_temp_peak(260, b, [], om_limit=om_limit, limit_events=[])
+    assert "Exceeded OM limit" not in no_event_result["analysis"]
 
 
 def test_oil_temp_peak_no_data():
@@ -217,12 +220,12 @@ def test_oil_temp_peak_no_data():
     assert result["insights"] == []
 
 
-def test_coolant_temp_peak_no_duplication():
-    # Unlike oil_temp_peak, this topic doesn't have the duplicate-loop bug.
+def test_coolant_temp_peak_names_the_exceedance_but_raises_no_insight_of_its_own():
     b = {"mean": 200, "std": 10, "n": 20}
-    rule = {"type": "threshold", "limit": 248}
-    result = topics.coolant_temp_peak(260, b, [rule])
-    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
+    om_limit = {"limit_value": 248}
+    result = topics.coolant_temp_peak(260, b, [], om_limit=om_limit, limit_events=[{"start_utc": "x"}])
+    assert result["insights"] == []
+    assert "Exceeded OM limit of 248°F" in result["analysis"]
 
 
 def test_limit_exceedances_none():

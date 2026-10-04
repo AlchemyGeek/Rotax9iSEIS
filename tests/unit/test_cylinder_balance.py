@@ -192,6 +192,83 @@ def test_cyl_deviation_flags_the_drifting_cylinder():
     assert set(topic["metric_ids"]) == {f"egt{n}_deviation" for n in range(1, 5)}
 
 
+# ── Phase B: D4 deviation message, D8 egt_spread fold-in ───────────────────
+
+def test_switch_names_the_hottest_cylinder_change_in_its_deviation_insight():
+    """Spec 08 v0.3 §10 acceptance 3, full: the cyl 4 -> cyl 2 switch not
+    only sets the flag (Phase A) but the fired deviation insight for the
+    now-hottest cylinder (2) names the change and the usual cylinder (4);
+    other cylinders' insights are untouched."""
+    fas = [_fa(i, 4, 40.0) for i in range(12)] + [_fa(12, 2, 22.0), _fa(13, 2, 25.0)]
+    fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
+    fa13 = fas[-1]
+    # hot_cyl_changed is set as a side effect of evaluate_insights (Phase A) —
+    # must call it before reading the flag, not after.
+    topic = next(t for t in evaluate_insights(fa13, fleet, _RULES).topics if t["topic_id"] == "egt_cyl_deviation")
+    assert fa13.hot_cyl_changed is True
+    by_cyl = {}
+    for ins in topic["insights"]:
+        cyl = next(e["metric_id"] for e in ins["evidence"])
+        by_cyl[cyl] = ins["message"]["text"]
+    assert "It is now the hottest cylinder (usually cylinder 4)." in by_cyl["egt2_deviation"]
+    for cyl, text in by_cyl.items():
+        if cyl != "egt2_deviation":
+            assert "hottest cylinder" not in text
+    # cylinder_rank itself still raises nothing (Phase A/D4).
+    assert _cylinder_rank_topics([fa13], fleet) == []
+
+
+def _fa_with_spread(i, hottest, margin, spread, devs=None):
+    fa = _fa(i, hottest, margin, devs)
+    fa.metrics["egt_spread_mean_f"] = {"id": "egt_spread_mean_f", "value": spread, "unit": "°F"}
+    return fa
+
+
+def test_cyl_deviation_and_spread_together_fold_into_one_insight():
+    """Spec 08 v0.3 §10 acceptance 5, first half: a flight where both an
+    egt_cyl_deviation trigger and egt_spread's baseline_deviation trigger
+    would fire produces one insight (the cylinder's, noting the spread)."""
+    base = {1: -10.0, 2: -12.0, 3: -8.0, 4: 30.0}
+    fas = [_fa_with_spread(i, 4, 38.0, 40.0 + (1.0 if i % 2 else -1.0),
+                           {n: v + (0.5 if i % 2 else -0.5) for n, v in base.items()})
+           for i in range(12)]
+    # Outlier flight: cyl 2 deviates (as in test_cyl_deviation_flags_the_drifting_cylinder)
+    # *and* spread is far outside the stable 40 ± 1°F baseline.
+    fas.append(_fa_with_spread(12, 4, 20.0, 90.0, {1: -10.0, 2: 15.0, 3: -8.0, 4: 30.0}))
+    fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
+    iset = evaluate_insights(fas[-1], fleet, _RULES)
+    cyl_topic = next(t for t in iset.topics if t["topic_id"] == "egt_cyl_deviation")
+    spread_topic = next(t for t in iset.topics if t["topic_id"] == "egt_spread")
+
+    spread_bd = [i for i in spread_topic["insights"] if i["trigger"] == "baseline_deviation"]
+    assert spread_bd == []  # folded into the cylinder insight, not emitted separately
+
+    cyl_bd = [i for i in cyl_topic["insights"] if i["trigger"] == "baseline_deviation"]
+    assert len(cyl_bd) == 1 and cyl_bd[0]["message"]["text"].startswith("Cyl 2:")
+    assert "EGT spread is also outside its usual range." in cyl_bd[0]["message"]["text"]
+
+
+def test_spread_alone_fires_its_own_insight_when_no_cylinder_trigger_fires():
+    """Spec 08 v0.3 §10 acceptance 5, second half: a divergence-only flight
+    (hottest +6°F, coolest -6°F — no single cylinder trigger) produces the
+    spread insight alone."""
+    base = {1: -2.0, 2: -1.0, 3: 1.0, 4: 2.0}
+    fas = [_fa_with_spread(i, 4, 4.0, 40.0 + (1.0 if i % 2 else -1.0),
+                           {n: v + (0.3 if i % 2 else -0.3) for n, v in base.items()})
+           for i in range(12)]
+    # No single cylinder is a std-dev outlier, but spread is far above baseline.
+    fas.append(_fa_with_spread(12, 4, 4.0, 95.0, {1: -2.2, 2: -1.1, 3: 1.1, 4: 2.2}))
+    fleet = update_fleet(fas, engine_config={"expected_hot_cylinder": 4})
+    iset = evaluate_insights(fas[-1], fleet, _RULES)
+    cyl_topic = next(t for t in iset.topics if t["topic_id"] == "egt_cyl_deviation")
+    spread_topic = next(t for t in iset.topics if t["topic_id"] == "egt_spread")
+
+    assert [i for i in cyl_topic["insights"] if i["trigger"] == "baseline_deviation"] == []
+    spread_bd = [i for i in spread_topic["insights"] if i["trigger"] == "baseline_deviation"]
+    assert len(spread_bd) == 1
+    assert "also outside its usual range" not in spread_bd[0]["message"]["text"]
+
+
 def test_egt4_elevation_and_cylinder_rank_emit_no_topic():
     """Spec 10 D3 (egt4_elevation, removed completely) and D4
     (cylinder_rank, disabled — context only)."""

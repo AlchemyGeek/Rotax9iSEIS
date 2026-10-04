@@ -665,18 +665,23 @@ class TestScanWithRealLogs:
         # no active.json yet — resolves to the shipped copy passed in
         assert ws.load_workspace_rules(ws_dir, shipped) == shipped
 
+        # Spec 10 §4.1 (v0.13): a copy saved with the v1.3-era threshold +
+        # limit_ref trigger is upgraded one step further — onto the
+        # rule-level limit_refs field, with no threshold trigger left.
         edited = {"version": "1.3", "rules": {"overboost_time": {"triggers": [
             {"type": "threshold", "limit_ref": "overboost", "severity": "watch"}]}}}
         ws.save_workspace_rules(ws_dir, edited)
-        assert ws.load_workspace_rules(ws_dir, shipped) == edited
+        assert ws.load_workspace_rules(ws_dir, shipped)["rules"]["overboost_time"] == {
+            "triggers": [], "limit_refs": ["overboost"]}
 
         # Spec 09 §10.2: a copy saved before rules v1.3 carries the limit's
-        # number; it's read back as a reference to the profile limit.
+        # number — upgraded in two steps: numeric -> limit_ref (legacy,
+        # Phase 1), then limit_ref -> limit_refs (Spec 10 §4.1, this phase).
         legacy = {"version": "1.1", "rules": {"overboost_time": {"triggers": [
             {"type": "threshold", "limit": 300, "unit": "s", "severity": "limit"}]}}}
         ws.save_workspace_rules(ws_dir, legacy)
-        assert ws.load_workspace_rules(ws_dir, shipped)["rules"]["overboost_time"]["triggers"] == [
-            {"type": "threshold", "severity": "limit", "limit_ref": "overboost"}]
+        assert ws.load_workspace_rules(ws_dir, shipped)["rules"]["overboost_time"] == {
+            "triggers": [], "limit_refs": ["overboost"]}
 
         ws.reset_workspace_rules(ws_dir)
         assert ws.load_workspace_rules(ws_dir, shipped) == shipped

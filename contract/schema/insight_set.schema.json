@@ -26,7 +26,20 @@
             "properties": { "text": { "type": "string" } }
           },
           "insights": { "type": "array", "items": { "$ref": "#/$defs/insight" } },
-          "metric_ids": { "type": "array", "items": { "type": "string" } }
+          "metric_ids": { "type": "array", "items": { "type": "string" } },
+          "limit_refs": {
+            "type": "array",
+            "description": "Spec 10 §4.1 (Spec 01 §8.5): the rule's limit_refs, each resolved to this flight's limit_exceedances insight for that limit, or null if none fired. Drives the mirrored badge (Spec 03 §5.2); never an insight of its own.",
+            "items": {
+              "type": "object",
+              "required": ["limit_id", "insight_id"],
+              "additionalProperties": false,
+              "properties": {
+                "limit_id": { "type": "string" },
+                "insight_id": { "type": ["string", "null"] }
+              }
+            }
+          }
         }
       }
     },
