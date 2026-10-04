@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.14 — for review (no code written)
+**Status:** Draft v0.15 — for review (§8.8 not yet implemented)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -24,6 +24,7 @@
 | 0.12 | Spec 08 (cylinder balance) lands: §8.2 EGT registry gains `egt1..4_deviation_f`, `egt_hottest_cyl`, `egt_hottest_margin_f`, `egt_rank_order` (the first list-valued metric — `MetricValue.value` may now be an integer array); `egt4_elevation_f` stays one minor version as a deprecated alias of `egt4_deviation_f`. §8.4 `FleetAnalysis` gains optional `cylinder_balance` and the four `egtN_deviation` fleet metrics (`oat_band`). §8.5 `cylinder_rank` is wired (it was the one unimplemented topic) and `egt_cyl_deviation` is new; `egt4_elevation` ships disabled. `update_fleet` takes an optional engine config for the profile's `expected_hot_cylinder` prior. |
 | 0.13 | §8.4: new **R8** — `baseline_deviation` compares a flight against the leave-one-out baseline **of its own weather band** for stratified metrics, falling back to the unstratified leave-one-out baseline when the flight has no band or its band has fewer than `n_min` other flights. Removes the seasonal false positives the unstratified comparison produced and makes insights agree with the stratified Trends view. `by_band.bands[*]` gains per-band `outliers`; insight `values` record which comparison was used. Acceptance criterion 8 (§12) is superseded: its counts are regenerated on the full log set. Decided in the Spec 09 discussion (Q8); Spec 09's filter monitor uses the same comparison rule. |
 | 0.14 | §6.4: documented, not designed — `fuel_press_psi` is the only signal the logs carry for fuel pump activity; the G3X CSV has no pump-selection or pump-running channel (`FPCM FAULT` is a fault flag, not a state indicator — confirmed against the full fleet's column set, which is identical across logs). Noted as a known gap, with a future pump-state inference model (predicting which pump(s) are running from the pressure signature) tracked as BACKLOG A7. Raised investigating the real fuel-pressure exceedances from BACKLOG G1. |
+| 0.15 | New **§8.8 Topic help**: a one-paragraph, pilot-facing explanation per topic, kept outside code in one markdown file shipped in the package (`slingology_eis/help/topics.md`), with placeholders for limit values, profile values, rule parameters and baseline config, resolved by the engine and returned as structured values so the UI formats them in the pilot's units. New operation `get_topic_help` (§7), CLI subcommand `explain` (§7.1), §9 topic modules declare their help entry, §12 acceptance 10. Requested in Spec 10 v0.5 (help text is part of admission). Also §8.5: `TopicResult.limit_refs` (each referenced limit resolved to this flight's `limit_exceedances` insight, for the mirrored badge — Spec 09 v0.13 §10.2, Spec 10 §4.1); the `topic_id` comment now defers to Spec 10's register and lists the eight visible topics. Planning numbers (fuel burned, cruise nm/gal, cruise fuel flow) stay in `FlightAnalysis.metrics` and are no longer topics (Spec 10 §4.2). |
 
 ---
 
@@ -175,6 +176,7 @@ All operations use one envelope, regardless of transport.
 | `analyze_ecu` | `FlightAnalysis[]` | `EcuAnalysis` | Runs, classification, lane-check pairing, co-active alerts. |
 | `render_report` | `InsightSet`, `FlightAnalysis`, format | text/markdown | Text report from structured data. |
 | `validate_rules` | `RuleSet` | diagnostics | Schema and semantic checks. |
+| `get_topic_help` | `topic_id[]` (optional — all if omitted), `EngineProfile`, `RuleSet`, `BaselineConfig` | `TopicHelp[]` | §8.8. Static per profile + rules + config, not per flight; the UI caches it. |
 
 **Workflows** compose operations and declare inputs/outputs so the UI can show what is stale:
 
@@ -206,6 +208,7 @@ The CLI is **retained** as a thin client of the engine. It is not the interface 
 | `import <paths>` | `import_and_update` (files or folders) | – |
 | `rules check <file>` / `rules try <file>` | `validate_rules` / `what_if_rules` (prints which insights change) | – |
 | `engines` | `list_engines` | – |
+| `explain [topic_id]` | `get_topic_help` (all topics if omitted) | – |
 | `export-bundle` | results bundle (Spec 02) | – |
 | `serve` | starts the local server and UI (path 2) | – |
 | `workspace list [--json]` | reads the registry (Spec 02 §5.2/§6.7) | – |
@@ -396,13 +399,15 @@ Evidence from the review (23 real flights in `fleet_metrics.csv`, |z| ≥ 2.0): 
 
 ```ts
 interface TopicResult {
-  topic_id: string;               // rule id: egt_spread, egt_cyl_deviation, cylinder_rank (Spec 08), oil_temp_peak,
-                                  // coolant_temp_peak, oil_coolant_ratio, overboost_time, cruise_efficiency,
-                                  // cruise_fuel_flow, map_at_takeoff, engine_ecu_inflight, flight_phase_mix,
-                                  // limit_exceedances, climb_thermal_rate
+  topic_id: string;               // rule id; the set is governed by Spec 10's register. Visible topics (v0.15):
+                                  // egt_spread, egt_cyl_deviation, oil_temp_peak, coolant_temp_peak,
+                                  // overboost_time, map_at_takeoff, engine_ecu_inflight, limit_exceedances
   analysis: { template: string; values: Record<string, number|string|null>; text: string };  // always present
   insight: Insight | null;                                                                    // conditional
   metric_ids: string[];
+  limit_refs?: { limit_id: string; insight_id: string | null }[];  // v0.15: the rule's limit_refs (Spec 09 §10.2), each
+                                  // resolved to this flight's limit_exceedances insight for that limit, or null if none
+                                  // fired. Drives the mirrored badge (Spec 03 §5.2); never an insight of its own.
 }
 ```
 
@@ -451,6 +456,48 @@ interface SeriesData {
 
 Downsampling uses a min/max-preserving envelope (so peaks such as max EGT or oil temperature are never averaged away) with `stride` reported. In-memory transport between worker and UI uses typed arrays (`NaN` = null); persistence and HTTP use JSON with explicit `null`. Rough sizing: 40 channels × 16,196 rows × 4 bytes ≈ 2.6 MB at full resolution for a 4.5-hour flight; a 10× reduced overview ≈ 260 kB.
 
+### 8.8 Topic help (new in v0.15)
+
+Every topic a pilot can see has a one-paragraph explanation — what it checks, what it compares against, why that matters, and what to do if it fires — shown behind a `?` on its card (Spec 03 §5.2). Whether a topic needs one, and when, is Spec 10's call (admission requires it); this section defines the format and how it's delivered.
+
+**Kept outside code, in one file.** All help text lives in a single markdown file, `slingology_eis/help/topics.md`, one `##` section per entry. The heading is the `topic_id` — or, for a non-topic entry such as the flight-summary line, a `help_id` (`flight_summary`). It is followed by `key: value` lines, a blank line, and exactly one paragraph. The file ships inside the package (declared as package data), because it's product content needed at runtime by the UI, the CLI and notebooks alike — not a design document — and one file is easier to review and edit as a whole.
+
+```markdown
+## oil_temp_peak
+title: Oil temperature peak
+applies_to: all                    # or a list of engine profile names, e.g. [914iS, 915iS, 916iS]
+last_reviewed: 2026-10-02
+
+One paragraph of plain text, with placeholders such as {limit:oil_temp_max}.
+```
+
+A section with a missing key, more than one paragraph, or a duplicate heading is a validation error.
+
+**Placeholders, not numbers.** The text never hard-codes a value that a profile, rule or setting controls — "248 °F" would be wrong in metric units, wrong on another engine profile, and wrong the day a threshold changes. Four namespaces:
+
+| Placeholder | Resolves to | Example |
+|---|---|---|
+| `{limit:<limit_id>}` | The entry's `limit_value` and `unit` from `limit_catalog()` | `{limit:oil_temp_max}` |
+| `{profile:<dotted.path>}` | A value in the engine profile; unit from the key's suffix (`_s` s, `_f` °F, `_c` °C, `_psi` psi, `_inhg` inHg, `_lph` L/h, `_pct` %, `rpm_` rpm). A key with no recognizable unit is a validation error, not a bare number | `{profile:overboost.time_limit_s}` |
+| `{rule:<rule_id>.<trigger_type>.<param>}` | A trigger parameter from the active `RuleSet` | `{rule:egt_cyl_deviation.baseline_deviation.n_min}` |
+| `{config:<key>}` | A `BaselineConfig` / analysis setting | `{config:outlier_z_threshold}` |
+
+**Returned structured, like analysis lines (§8.5).** The engine works in canonical units (§6.4); units are display-only (Spec 02 §6.6). So the engine doesn't render "248 °F" — it returns the template and the values, and the UI formats each value in the pilot's units:
+
+```ts
+interface TopicHelp {
+  id: string;                    // topic_id, or help_id for a non-topic entry
+  title: string;
+  template: string;              // the paragraph with placeholders intact
+  values: Record<string, { value: number | string; unit: string | null }>;  // keyed by the placeholder text
+  text: string;                  // canonical-unit rendering, for the CLI and plain-text use
+  applies: boolean;              // false when the active profile isn't in applies_to (the UI hides the ?)
+  last_reviewed: string;
+}
+```
+
+**Errors are caught at build time, not shown to pilots.** `get_topic_help` returns a diagnostic (`HELP_PLACEHOLDER_UNRESOLVED`, `HELP_MISSING`) rather than raising; acceptance 10 makes every one of them a test failure, so a shipped app never shows a raw `{limit:…}`.
+
 ## 9. Extension model (community)
 
 A **Topic** is the unit of extension. A topic module declares:
@@ -459,7 +506,8 @@ A **Topic** is the unit of extension. A topic module declares:
 - required channels and phases (so missing inputs yield `CHANNEL_MISSING` / `NO_PHASE`, not exceptions),
 - a per-flight compute function returning `MetricValue`s, events, and analysis-line values,
 - named conditions it contributes to the rule engine (today's hard-coded ones: `rank_changed`, `vs_om_expected`, `any_inflight`, `any_exceedance`),
-- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code.
+- optional **view hints** (which chart type and channels best explain it), so a new topic renders in the UI without UI code,
+- its **help entry** in `slingology_eis/help/topics.md` (§8.8) — required for any topic shown to pilots (Spec 10), so a community topic arrives with its own explanation.
 
 The rule engine is generic over the three existing trigger types (`threshold`, `baseline_deviation`, `trend`) plus registered conditions. Engine profiles and rule sets remain plain JSON. This section is an **interface sketch**: it will be frozen only after Migration Stage 2 shows what the extracted code actually needs.
 
@@ -495,6 +543,7 @@ The phase-detector fix (finding 9) is **not** part of these stages. It lands as 
 7. Adding a hypothetical topic requires no edits outside its own module, its rule entries, and (optionally) a view hint.
 8. `evaluate_insights` with leave-one-out membership reproduces the review's trigger counts on the 23 flights in `fleet_metrics.csv` (using the default `outlier_z_threshold` of 2.0, no per-metric overrides set, no `n_min` gating effect since every metric has n ≥ 12): EGT spread 2, EGT4 elevation 1, oil temp peak 1, coolant temp peak 1, oil/coolant ratio 2, cruise efficiency 1, cruise fuel flow 1, climb oil rise 2. **Superseded by R8 (v0.13)** for the stratified metrics: the counts are regenerated on the full log set with stratified comparison, reported per metric as band comparisons, fallbacks, and insights added/removed versus the unstratified rule. Climb oil rise (unstratified) must be unchanged.
 9. Scripts 01–04 produce output identical to the Stage 0 goldens after Stages 1–3; every §7 workflow is reachable via a `slingology-eis` subcommand whose `--json` output validates against the schemas.
+10. **Topic help (§8.8).** For every bundled engine profile and the default rule set: every topic the engine can emit has a help entry; every placeholder in every applicable entry resolves; `get_topic_help` returns no diagnostics; the rendered `text` contains no `{`. Runs everywhere (no log data needed).
 
 **Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the four genuine `IN_FLIGHT` runs) needs the raw log set, either shared in the project or run locally to produce golden outputs.
 

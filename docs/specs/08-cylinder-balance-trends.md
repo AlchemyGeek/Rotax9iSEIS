@@ -1,15 +1,16 @@
 # Spec 08 — Cylinder Balance Trends (Mini-Spec)
 
 **Project:** SlingologyEIS
-**Status:** v0.2 — implemented (engine 0.14.0); constants not yet tuned against real data
+**Status:** v0.3 — v0.2 implemented (engine 0.14.0); v0.3 insight changes (Spec 10 D3, D4, D8) not yet implemented
 **Suggested repo path:** `docs/specs/08-cylinder-balance-trends.md`
-**Builds on:** Spec 01 (engine contract, metric registry, insight rules), Spec 03 (Trends view), Spec 05 (frontend bootstrap)
+**Builds on:** Spec 01 (engine contract, metric registry, insight rules), Spec 03 (Trends view), Spec 05 (frontend bootstrap), Spec 10 (topic admission — this is the topic spec for `egt_cyl_deviation` and `cylinder_rank`, §9 there)
 **Revision history**
 
 | Version | Change |
 |---|---|
 | 0.1 | Initial mini-spec. |
 | 0.2 | Implemented. Decisions made during implementation are recorded in §11. |
+| 0.3 | Spec 10 audit decisions. **D4:** the `hot_cyl_changed` insight is retired — `egt_cyl_deviation` always fires first on any fault large enough to change the hottest cylinder (Spec 10 §6.1). The rank stays as context: the Trends chip and strip, the Flight view EGT line, and a sentence in `egt_cyl_deviation`'s insight when the hottest cylinder has changed (§6). **D8:** when a per-cylinder trigger fires, `egt_spread`'s baseline insight is folded into it (§6). **D3:** `egt4_elevation` is removed entirely; acceptance 1 and 5 rewritten (§10). |
 
 **Note on numbering:** This document is numbered 08. Number 06 stays reserved for the tabled "research mode" feature noted in Spec 05.
 
@@ -77,15 +78,13 @@ Register the numeric ones in `registry.py` (`egt` group, phase `CRUISE`). `egt_r
 
 ## 6. Insights
 
-Wire the existing `cylinder_rank` rule with a clarified condition, and add standard triggers to the new deviation metrics.
+*Rewritten in v0.3 (Spec 10 D4, D8). The v0.2 `hot_cyl_changed` warning is retired; the rank survives as context.*
 
 ```json
 "cylinder_rank": {
-  "enabled": true,
-  "triggers": [
-    { "type": "threshold", "condition": "hot_cyl_changed",
-      "margin_min_f": 15, "consecutive_flights": 2, "severity": "warning" }
-  ]
+  "enabled": false,
+  "_comment": "Retired as an insight (Spec 10 D4): egt_cyl_deviation fires first on the same event. Rank stays as context — see Spec 08 §6.",
+  "margin_min_f": 15, "consecutive_flights": 2
 },
 "egt_cyl_deviation": {
   "enabled": true,
@@ -97,12 +96,13 @@ Wire the existing `cylinder_rank` rule with a clarified condition, and add stand
 }
 ```
 
-- **`hot_cyl_changed`** fires when `egt_hottest_cyl ≠ established_hot_cyl` **and** `egt_hottest_margin_f ≥ margin_min_f` on this flight and the preceding `consecutive_flights − 1` flights. The margin guard suppresses flip-flopping between two near-equal cylinders; the consecutive guard suppresses one-off flights (unusual OAT, power setting).
-- Does not fire while `established_hot_cyl` has source "none"; if source is "prior", severity downgrades to `info` ("differs from the typical 916iS pattern", not an anomaly).
-- Insight text names the direction and plausible causes, e.g. *"Cylinder 2 ran hottest (+22 °F over cyl 4) for 2 flights; this aircraft's usual hottest is cyl 4. A cylinder rising is consistent with a lean injector; the previous hottest falling can indicate ignition/plug issues or a probe fault."*
+- **Hottest-cylinder change is context, not an insight.** The engine still computes, per flight, whether `egt_hottest_cyl ≠ established_hot_cyl` with `egt_hottest_margin_f ≥ margin_min_f` on this flight and the preceding `consecutive_flights − 1` flights (`hot_cyl_changed` becomes a flag on `FlightAnalysis`, no longer a rule condition). The `cylinder_rank` rule block keeps `margin_min_f` and `consecutive_flights` so the rule playground still edits them, but it has no triggers and emits nothing. The flag doesn't apply while `established_hot_cyl` has source "none"; with source "prior" it's shown as "differs from the typical 916iS pattern", never as an anomaly.
+- **Why retired (Spec 10 §6.1, D4).** With cylinder 4 leading by a median 39 °F, another cylinder can lead it by 15 °F only after a relative movement of about 55 °F, while `egt_cyl_deviation` flags about 10 °F per cylinder and its trend trigger catches drift. Any fault that changes the hottest cylinder has already raised a deviation insight; the rank adds a clearer description, not an earlier signal.
+- **The description moves into the deviation insight.** When an `egt_cyl_deviation` insight fires on a flight where the hottest-cylinder flag is set, its message adds one sentence naming the change and the usual cylinder, e.g. *"Cylinder 2 is 22 °F above its usual deviation; it is now the hottest cylinder (usually cylinder 4). A cylinder rising is consistent with a lean injector; the previous hottest falling can indicate ignition/plug issues or a probe fault."*
+- **`egt_spread` folds in (Spec 10 D8).** On a flight where any `egt_cyl_deviation` trigger fires, `egt_spread`'s `baseline_deviation` insight is not emitted separately; the cylinder insight adds that the spread is also outside its usual range. The spread still fires on its own when no cylinder trigger fires — a divergence across cylinders that no single cylinder explains — and its trend trigger is unchanged.
 - The per-cylinder deviation triggers catch gradual drift before the ranking actually flips.
 
-**New rule-engine features required** (neither exists today): `applies_to` (one rule block shared by several metric ids) and `"direction": "either"` for `trend` triggers (`topics.trend_triggered` currently matches only `increasing`/`decreasing` exactly). The alternative is four copies of the rule and two trend triggers each; `applies_to` is preferred so the rule playground edits all four cylinders at once.
+**Rule-engine features** (both implemented in v0.2): `applies_to` (one rule block shared by several metric ids) and `"direction": "either"` for `trend` triggers.
 
 ## 7. Trends view (web)
 
@@ -117,7 +117,7 @@ EGT group in `web/src/views/Trends.tsx` becomes:
 1. **Main panel** — four series, `egt1_deviation` … `egt4_deviation` vs. date/engine hours, one colour per cylinder, zero line emphasised. Baseline band (mean ± σ) for the selected cylinder on hover/select. Healthy engine: four roughly flat, parallel lines.
 2. **Hot-cylinder strip** — a thin categorical row under the main panel, one mark per flight coloured by `egt_hottest_cyl` (same cylinder colours), hollow when `egt_hottest_margin_f < MARGIN_MIN_F` (ambiguous). Changes of hottest cylinder are visible at a glance.
 3. **Header chip** — "Usual hottest: Cyl 4 (92 %, 34 flights, learned)" or "(prior: 916iS profile)".
-4. Flights that triggered `hot_cyl_changed` are marked on both panels; clicking navigates to the Flight view (existing `?flight=` behaviour).
+4. Flights with the hottest-cylinder flag set (§6) are marked on both panels — as context, not as insights; clicking navigates to the Flight view (existing `?flight=` behaviour).
 
 The Flight view's EGT topic card replaces the "Cyl 4 runs +N °F over 1–3" line with "Hottest: Cyl *n* (+M °F over next)", and notes when *n* differs from the established cylinder.
 
@@ -140,11 +140,13 @@ These are initial guesses; tune against the N117ZS dataset and record the result
 
 ## 10. Acceptance
 
-1. With the 916iS profile and the N117ZS logs, `established_hot_cyl` resolves to 4 (source "learned") and `egt4_deviation` baselines match the existing `egt4_elevation` baselines within rounding.
-2. A synthetic fleet where cylinder 2 is hottest learns cyl 2 and raises no `hot_cyl_changed` insight, even on the 916iS profile.
-3. A synthetic fleet that switches from cyl 4 to cyl 2 by ≥ 20 °F for two consecutive flights raises exactly one `hot_cyl_changed` warning; a single-flight switch, or a switch with < 15 °F margin, raises none.
-4. A 912iS workspace with no learned pattern produces no `hot_cyl_changed` insight and shows "Usual hottest: not yet established".
-5. Existing bundles containing only `egt4_elevation_f` still load and render.
+*Rewritten in v0.3.*
+
+1. With the 916iS profile and the N117ZS logs, `established_hot_cyl` resolves to 4 (source "learned"). `egt4_deviation` baselines are within rounding of the values Spec 10 Appendix A.1 records (`egt4_elevation` itself is removed, Spec 10 D3: no rule, registry entry, baseline key or UI reference remains).
+2. A synthetic fleet where cylinder 2 is hottest learns cyl 2 and sets no hottest-cylinder flag, even on the 916iS profile.
+3. A synthetic fleet that switches from cyl 4 to cyl 2 by ≥ 20 °F for two consecutive flights sets the hottest-cylinder flag on the second flight, raises **no** `cylinder_rank` insight, and — because the switch also moves cylinder 2's deviation — raises an `egt_cyl_deviation` insight whose message names cylinder 2 as now hottest and cylinder 4 as usual. A single-flight switch, or one with < 15 °F margin, sets no flag.
+4. A 912iS workspace with no learned pattern sets no flag and shows "Usual hottest: not yet established".
+5. A synthetic flight where both an `egt_cyl_deviation` trigger and `egt_spread`'s `baseline_deviation` trigger would fire produces one insight (the cylinder's, noting the spread); a synthetic divergence (hottest +6 °F, coolest −6 °F) that fires only the spread produces the spread insight alone (Spec 10 D8).
 6. Trends → EGT → cylinder balance renders the four-line panel, the hot-cylinder strip and the header chip from fixtures.
 
 ## 11. Implementation notes (v0.2)

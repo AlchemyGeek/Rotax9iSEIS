@@ -1,11 +1,11 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.3 — for review (no code written). Q1(a) and Q4 decided (§4.1, §4.2); overboost reporting moved to `limit_exceedances` (Spec 09 v0.12); §6's other findings are still proposals, none acted on until decided.
+**Status:** Draft v0.5 — for review (no code written). All open questions resolved; §6.2 outcomes decided (decision log §6.3, D1–D13). Implementation, the D6 limit diagnosis, and follow-up revisions to Specs 03, 08 and 09 are next.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
-**Audit data:** the project's `fleet_metrics.csv` snapshot — 50 sessions, 23–24 real flights with thermal/EGT data, 12 with cruise data, 2026-04-08 → 2026-06-18, 28.2–66.3 engine hours. Every number in §6 and Appendix A is to be re-run on the full local log set before v0.2 (§11, acceptance 3).
+**Audit data (v0.4):** full local log set, 2026-10-01 re-run (`reports/spec10_audit_2026-10-01.md`) — 107 logs → **50 admitted flights** (54 ground sessions skipped at admission, 3 merged into multi-file flights), 2026-04-08 → 2026-09-27, 28.2–115.0 engine hours, N117ZS. Computed with the app's own pipeline (`update_fleet`, `evaluate_insights`, leave-one-out baselines, default bands), with **no limit filters applied** — the topics' natural signal, not what the Flight view shows under saved filters. v0.1–v0.3 used an older 24-flight snapshot; Appendix A.2 records what changed.
 
 **Revision history**
 
@@ -14,6 +14,8 @@
 | 0.1 | Initial draft. Admission criteria, register schema, first audit of every current topic, coverage view, lifecycle, topic-spec template. |
 | 0.2 | **Q1(a) decided — Option A:** `limit_exceedances` owns every OM-limit event; a topic that references a limit shows it (analysis line, link, mirrored badge) but never emits a second insight for it (new §4.1). **Q4 decided — Option B:** the topic set is for the engine; planning numbers (cruise nm/gal, cruise fuel flow, fuel burned) move to a flight-summary line with no insights, and the power × DA fuel-flow model (BACKLOG A5) becomes a Research item (new §4.2). Register, audit, outcomes, coverage view and acceptance updated to match. The "verify overboost overlap" item is closed: overboost is not checked by `limit_exceedances` (`report_in_exceedances: false`), so `overboost_time` is its only reporter and there is no duplicate. Q1(b) stays open. |
 | 0.3 | **Overboost exception removed (Spec 09 v0.12).** Overboost is now the single owner of the OM 5-minute takeoff rule and is reported by `limit_exceedances` as an ordinary event (`report_in_exceedances: true`, blocks built with the 30 s merge gap); `rpm_continuous_max` is retired. The v0.2 reasoning that closed "verify overboost overlap" — overboost is not checked by `limit_exceedances`, so `overboost_time` is its single reporter — no longer holds. Overboost becomes an ordinary §4.1 case: `limit_exceedances` owns the event, and `overboost_time` references it (analysis line, link, mirrored badge) and keeps its close-call insight. §4.1, register, audit, outcome, coverage and acceptance 3 updated. |
+| 0.4 | **Audit re-run on the full log set** (50 flights, from 24): §6 and Appendix A rewritten from it. Findings that changed: oil/coolant peak noise was a sample artefact — SDs now 12.2 / 6.9 °F, matching the research paper, and discriminating unstratified; the old spread came mostly from flight **duration** (peak oil vs airborne time r = 0.65), not weather. `climb_thermal_rate`'s Research verdict confirmed with both proposed conditioners tested and found insufficient. The oil − coolant cruise-mean difference measured and found discriminating (supports the redefinition). `map_at_takeoff`'s config mismatch quantified: 1 firing at the coded 1.5 inHg vs 23 at the configured 20 hPa — new **Q7** (derive the tolerance from the model). `limit_exceedances` saturation found: `fuel_press_min` on 50/50 flights — new **Q8**. Q1(b) co-firing measured (2/2). CV noted as unusable for metrics centred near zero (supports Q3's leaning). Acceptance 5 marked met. **Also §6.2 decisions, round 1** (new §6.3 decision log). D1: `oil_coolant_ratio` **dropped** — topic, metric and baseline removed rather than redefined; the oil − coolant balance idea goes to §7 as candidate **C5**, Proposed, with the research questions it must answer first (is it used in industry, and what sourced mechanism stands behind it). D2: `climb_thermal_rate` **moved to Research** — rule disabled, no Flight view card or Trends chart; rise-rate metrics still computed for research with new predictors. D3: `egt4_elevation` and `flight_phase_mix` **removed completely** from code; kept in the register as history. D4: `cylinder_rank`'s `hot_cyl_changed` insight **retired** (A6 — `egt_cyl_deviation` always fires first); the rank stays as context on Trends and in `egt_cyl_deviation`'s message. D5 (resolves Q7): `map_at_takeoff` tolerance = 2 × the model's leave-one-out residual SD, condition renamed `vs_personal_model`, plus a fitted-range guard; provisional status closed. D6 (resolves Q8): saturating limits — the pilot keeps the existing tools (filter with note, change monitor; research later); encoding and phase/artifact gaps are ours to find and fix, enforced by three new acceptance tests (nominal flight, saturation with allowlist, fingerprint regressions). D7: peak-temperature baselines exclude flights below a measured minimum airborne time. D8 (resolves Q1(b)): `egt_spread`'s baseline trigger kept for its niche (cross-cylinder divergence), folded into `egt_cyl_deviation`'s insight whenever both fire. D9 (resolves Q2): new topic specs live at `docs/specs/topics/<topic_id>.md`, unnumbered; Spec 08 keeps its number. D10 (resolves Q3): A7's effect size is stated in the topic spec with its source and judged by the maintainer; no universal CV cut-off. D11 (resolves Q5): interim GitHub "Topic proposal" issue template with §10's fields; the non-technical route is designed with the community-sharing work, keeping the same proposal contents. D12 (resolves Q6): hybrid register — markdown stays authoritative; `docs/specs/topics/register.json` holds the test-checked fields and the saturation allowlist, with an agreement test. |
+| 0.5 | **D13 — topic help.** Every topic shown to pilots has a one-paragraph explanation behind a `?` on its card, kept outside code (Spec 01 §8.8: one file, `slingology_eis/help/topics.md`, a section per topic, placeholders for profile and rule values). Admission now requires it (§8.1), the topic-spec template gains a pilot-explanation item (§9), `register.json` records whether each topic has a help entry (§5), and acceptance 11 checks it. Draft paragraphs written for the eight visible topics and the flight-summary line. |
 
 ---
 
@@ -98,6 +100,8 @@ They can come back as a topic only through the lifecycle (§8), with a definitio
 
 ## 5. The register
 
+The register has two parts (D12). **This section is authoritative** for rationale, evidence and history. **`docs/specs/topics/register.json`** carries only what tests check — each `topic_id` with its status, topic-spec path and whether it has a help entry (D13), and the limit-saturation allowlist (D6) — and a test keeps the two in agreement on topic ids and statuses.
+
 ### 5.1 Entry schema
 
 One entry per topic, current or retired. Fields:
@@ -118,7 +122,7 @@ One entry per topic, current or retired. Fields:
 | Topic spec | Link, or "none — written before this spec" |
 | History | Admitted / changed / deprecated, with version and reason |
 
-### 5.2 Register (v0.1)
+### 5.2 Register (v0.4)
 
 Status is the **current** state. §6 gives the audit verdict and proposed status change for each.
 
@@ -126,96 +130,175 @@ Status is the **current** state. §6 gives the audit verdict and proposed status
 |---|---|---|---|---|
 | `egt_spread` | Are my cylinders burning evenly? | health | OM limit (EGT split, via `limit_exceedances`) · baseline · trend | Admitted |
 | `egt_cyl_deviation` | Is any one cylinder drifting from the others? | health | baseline · trend, per cylinder | Admitted (Spec 08) |
-| `cylinder_rank` | Has the usually-hottest cylinder changed? | health | classification (learned hottest cylinder) | Admitted (Spec 08) |
+| `cylinder_rank` | Has the usually-hottest cylinder changed? | health | classification (learned hottest cylinder) | Admitted (Spec 08) — insight **retired** (decided v0.4, D4); rank kept as context |
 | `oil_temp_peak` | Did oil get too hot, or hotter than usual? | health + operational | OM limit (referenced, §4.1) · baseline | Admitted |
 | `coolant_temp_peak` | Did coolant get too hot, or hotter than usual? | health | OM limit (referenced, §4.1) · baseline | Admitted |
-| `oil_coolant_ratio` | Has the oil-vs-coolant balance shifted? | health | baseline | Admitted |
+| `oil_coolant_ratio` | Has the oil-vs-coolant balance shifted? | health | baseline | **Dropped** (decided v0.4, D1) — to be removed; idea kept as candidate C5 (§7) |
 | `overboost_time` | Did I stay at takeoff power too long? | operational | OM limit (referenced, §4.1: 300 s above 5,500 rpm / 100 %) · close-call margin | Admitted |
 | `cruise_efficiency` | How far am I going per gallon in cruise? | planning (§4.2) | baseline · trend, DA band | Admitted — to leave the topic set (Q4) |
 | `cruise_fuel_flow` | Is cruise fuel burn normal? | planning (§4.2) | baseline, DA band | Admitted — to leave the topic set (Q4) |
-| `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT) | Admitted |
+| `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT); tolerance from model residuals (D5) | Admitted |
 | `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (cas.py) | Admitted |
 | `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all, overboost included since v0.3, §4.1) | Admitted — owner of limit events |
-| `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | Admitted |
-| `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); rule `enabled: false` |
-| `flight_phase_mix` | Was this flight's climb/cruise/descent split unusual? | — | — | Dropped as a topic in toolkit v0.10.0 (replaced by the "no cruise detected" header note) |
+| `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | **Research** (decided v0.4, D2) — rule disabled; metrics still computed |
+| `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); **Removed** (decided v0.4, D3) |
+| `flight_phase_mix` | Was this flight's climb/cruise/descent split unusual? | — | — | Dropped as a topic in toolkit v0.10.0 (replaced by the "no cruise detected" header note); leftover rule **Removed** (decided v0.4, D3) |
 
-## 6. Audit of the current topics (v0.1)
+## 6. Audit of the current topics (v0.4)
 
-Each topic was checked against A1–A7 using the code at `fee6577`, the research paper, and the data snapshot named in the header. ✓ passes · ◐ passes with a stated condition · ✗ fails.
+Each topic was checked against A1–A7 using the code at `fee6577`, the research paper, and the full-set re-run named in the header (numbers in Appendix A.1). ✓ passes · ◐ passes with a stated condition · ✗ fails.
 
 | `topic_id` | A1 | A2 | A3 | A4 | A5 | A6 | A7 | Verdict |
 |---|---|---|---|---|---|---|---|---|
-| `egt_spread` | ✓ | ✓ | ✓ | ✓ E1+E2 | ✓ | ◐ | ✓ | Keep; declare overlap |
+| `egt_spread` | ✓ | ✓ | ✓ | ✓ E1+E2 | ✓ | ✓ by D8 | ✓ | Keep; folds into cylinder insight when both fire (D8) |
 | `egt_cyl_deviation` | ✓ | ✓ | ✓ | ✓ E2+E3 | ✓ | ◐ | ✓ | Keep |
-| `cylinder_rank` | ✓ | ✓ | ✓ | ✓ E2 | ✓ | ✓ | n/a | Keep, provisional |
-| `oil_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ◐ | Keep; drop its limit insight (§4.1) |
-| `coolant_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ◐ | Keep; drop its limit insight (§4.1) |
-| `oil_coolant_ratio` | ✓ | ✓ | ✓ | ✗ E4 | ◐ | ✓ | ? | Redefine, then re-audit |
+| `cylinder_rank` | ✓ | ✓ | ✓ | ✓ E2 | ✓ | ✗ | n/a | **Retire insight**, keep as context (D4) |
+| `oil_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ✓ | Keep; drop its limit insight (§4.1) |
+| `coolant_temp_peak` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✗ → ✓ by §4.1 | ✓ | Keep; drop its limit insight (§4.1) |
+| `oil_coolant_ratio` | ✓ | ✓ | ✓ | ✗ E4 | ◐ | ✓ | ✗ ratio · ✓ ΔT | **Drop** (D1); idea → C5 |
 | `overboost_time` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | ✓ | n/a | Keep; references the `limit_exceedances` event, keeps the close call (§4.1, v0.3) |
 | `cruise_efficiency` | ✓ | ◐ | ✓ | ✗ | ◐ | ◐ | ◐ | Move to flight summary (§4.2) |
 | `cruise_fuel_flow` | ✓ | ◐ | ✓ | ✗ | ◐ | ✓ | ◐ | Move to flight summary (§4.2); A5 model to Research |
-| `map_at_takeoff` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | ◐ | Keep, provisional; fix config |
+| `map_at_takeoff` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | ✓ by D5 | Keep; tolerance from model + range guard (D5) |
 | `engine_ecu_inflight` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | n/a | Keep |
-| `limit_exceedances` | ✓ | ✓ | ✓ | ✓ E1 | ✓ | owner | n/a | Keep; owner of limit events |
-| `climb_thermal_rate` | ✓ | ✓ | ✓ | ✓ E2 | ◐ | ✓ | ✗ | Move to Research |
-| `egt4_elevation` | — | — | — | — | — | ✗ | — | Remove (overdue) |
-| `flight_phase_mix` | — | — | — | ✗ | ✗ | — | — | Remove leftover rule |
+| `limit_exceedances` | ✓ | ✓ | ✓ | ✓ E1 | ◐ | owner | n/a | Keep; owner of limit events; saturation per D6 |
+| `climb_thermal_rate` | ✓ | ✓ | ✓ | ✓ E2 | ◐ | ✓ | ✗ | **Research** (D2) |
+| `egt4_elevation` | — | — | — | — | — | ✗ | — | **Remove** (D3) |
+| `flight_phase_mix` | — | — | — | ✗ | ✗ | — | — | **Remove** leftover rule (D3) |
 
 ### 6.1 Findings, topic by topic
 
-**`egt_spread` — keep; declare overlap.** EGT split is an OM limit (392 °F above 3 L/h fuel flow, OM Chapter 2.1), checked as an exceedance by `limit_exceedances`; the topic's own triggers are baseline and trend. Mechanism: a widening spread within limits points to an injector or ignition imbalance (E2; research paper §6.1). Data: cruise mean 56.4 ± 5.1 °F, MDC ≈ 10 °F — discriminating. Trend +0.22 °F/hr, R² 0.30, below the 0.5 gate (E3, not yet confirmed). Overlap: spread (max − min) and `egt_cyl_deviation` respond to the same imbalance. Proposed ownership: `egt_spread` owns *overall balance against the OM split limit and its trend*; `egt_cyl_deviation` owns *attribution to a cylinder*. Whether `egt_spread`'s baseline-deviation trigger is still needed alongside four per-cylinder triggers is Q1(b).
+**`egt_spread` — keep; declare overlap.** EGT split is an OM limit (392 °F above 3 L/h fuel flow, OM Chapter 2.1), checked as an exceedance by `limit_exceedances`; the topic's own triggers are baseline and trend. Mechanism: a widening spread within limits points to an injector or ignition imbalance (E2; research paper §6.1). Data: cruise mean 59.3 ± 5.2 °F, MDC 10.4 °F — discriminating (mild OAT band: MDC 11.0, n = 40). Trend +0.22 °F/hr, R² 0.30 at the earlier count, below the 0.5 gate (E3, not yet confirmed). Overlap: spread (max − min) and `egt_cyl_deviation` respond to the same imbalance. Proposed ownership: `egt_spread` owns *overall balance against the OM split limit and its trend*; `egt_cyl_deviation` owns *attribution to a cylinder*. Whether `egt_spread`'s baseline-deviation trigger is still needed alongside four per-cylinder triggers is Q1(b). Re-run: it fired on 2/50 flights, and on both a per-cylinder deviation fired too (any per-cylinder: 7/50). No case yet of the spread trigger catching something the cylinder triggers missed — but two cases is too few to retire it.
 
-**`egt_cyl_deviation` — keep.** Admitted through Spec 08, which already reads as a topic spec. Cylinder 4 at +44.7 ± 5.3 °F, MDC ≈ 11 °F. Mechanism: lean cylinder runs hot (injector), cooler cylinder points to ignition or plug, erratic reading points to the probe (E2, Spec 08 §1).
+**Decision (D8, resolves Q1(b)):** keep the baseline trigger; the per-cylinder insight owns shared events. The spread has a niche the per-cylinder triggers can miss — a divergence across cylinders that no single cylinder explains (e.g. hottest +6 °F and coolest −6 °F: each cylinder's deviation moves about 8 °F, under its ~10 °F MDC, while the spread moves 12 °F, over its 10.4 °F MDC) — and it is the OM split-limit quantity. So: on any flight where an `egt_cyl_deviation` trigger fires, the spread's baseline insight is not emitted separately; the cylinder insight notes that the spread is also outside its usual range. The spread fires alone only in its niche. The trend trigger is unchanged. This satisfies A6 — one card per event — by the same rule as D4 and §4.1: the more specific signal owns the event.
 
-**`cylinder_rank` — keep, provisional.** Classification against the learned hottest cylinder, needing a ≥ 15 °F margin on 2 consecutive flights. The mechanism is sound (E2), but the positive case has never been seen: the hottest cylinder was stable on 23/23 flights. Provisional until a true positive, or a deliberate test (§8.1), shows the 15 °F / 2-flight rule fires when it should and not otherwise.
+**`egt_cyl_deviation` — keep.** Admitted through Spec 08, which already reads as a topic spec. Per-cylinder deviations, MDC 8–12 °F: cyl 1 −31.1 ± 5.4, cyl 2 −8.5 ± 5.8, cyl 3 −6.9 ± 4.1, cyl 4 +46.6 ± 4.9 °F. Fired 9 times across 50 flights. (Cyl 2 and 3 show CVs of 0.6–0.7 only because their means sit near zero — CV is meaningless there; MDC is the measure that matters, see Q3.) Mechanism: lean cylinder runs hot (injector), cooler cylinder points to ignition or plug, erratic reading points to the probe (E2, Spec 08 §1).
 
-**`oil_temp_peak`, `coolant_temp_peak` — keep; remove the duplicate.** OM limit 248 °F for both (E1). Since Spec 09 §10.2, each topic's threshold trigger fires *exactly when* `limit_exceedances` has an unsuppressed event for `oil_temp_max` / `coolant_temp_max` — so one exceedance produces two `limit`-severity insights. That fails A6. **Decided (§4.1):** `limit_exceedances` owns limit events; the peak topics keep their baseline triggers and *reference* the limit — analysis line, link, mirrored badge — but no longer emit a second limit insight. A7 needs a re-run: the snapshot's peak-temperature SDs (31 °F oil, 26 °F coolant) are much wider than the paper's (12 °F, 7 °F), probably because short or cold-day flights are in the snapshot. Both metrics are OAT-stratifiable; the re-run should report MDC within OAT bands.
+**`cylinder_rank` — insight retired, rank kept as context (decided v0.4, D4).** Classification against the learned hottest cylinder, needing a ≥ 15 °F margin on 2 consecutive flights. The mechanism is sound (E2), but the positive case has never been seen: the hottest cylinder was stable on 50/50 flights (cylinder 4, learned at 100 %), and `hot_cyl_changed` has never fired. The hottest-minus-next margin runs 14.0–48.4 °F (median 39.2); the minimum sits just under the 15 °F `margin_min_f`, so the threshold is close to, but has not met, real data.
+
+**A6 — fails: it overlaps `egt_cyl_deviation` and always fires second.** Spec 08's synthetic test shows the code works (a cyl 4 → cyl 2 switch raises exactly one warning), so the open question isn't correctness but contribution. With cylinder 4 leading by a median 39 °F, another cylinder can only lead it by 15 °F after a relative movement of about 55 °F; `egt_cyl_deviation` flags about 10 °F per cylinder against its own history, and its trend trigger catches gradual drift. Any fault that changes the hottest cylinder — a lean injector heating another cylinder, or an ignition fault cooling cylinder 4 — has therefore already raised a deviation insight. On engines whose cylinders run closer together the margin guard alone still demands more movement than the deviation MDC, so the ordering holds there too. What the rank adds is a clearer description, not an earlier signal.
+
+**Decision (D4):** retire the `hot_cyl_changed` insight; keep the rank as context.
+- The `cylinder_rank` rule is disabled (`enabled: false`, `_comment` pointing to this register); no Flight view card.
+- The learned hottest cylinder stays on the Trends header chip and the hottest-cylinder strip (Spec 08 §7).
+- When this flight's hottest cylinder differs from the learned one (by ≥ `margin_min_f`), `egt_cyl_deviation`'s insight says so in its message — e.g. "…cylinder 2 is now the hottest, usually cylinder 4" — so the wording moves to the signal that owns the event.
+- **Follow-up:** Spec 08 revision (§6 insights: `hot_cyl_changed` retired, message added to `egt_cyl_deviation`; §10 acceptance 3 rewritten to assert the message rather than a separate warning). Not made by this spec. Provisional until a true positive, or a deliberate test (§8.1), shows the 15 °F / 2-flight rule fires when it should and not otherwise.
+
+**`oil_temp_peak`, `coolant_temp_peak` — keep; remove the duplicate.** OM limit 248 °F for both (E1). Since Spec 09 §10.2, each topic's threshold trigger fires *exactly when* `limit_exceedances` has an unsuppressed event for `oil_temp_max` / `coolant_temp_max` — so one exceedance produces two `limit`-severity insights. That fails A6. **Decided (§4.1):** `limit_exceedances` owns limit events; the peak topics keep their baseline triggers and *reference* the limit — analysis line, link, mirrored badge — but no longer emit a second limit insight. **A7 — passes (v0.4).** On the full set the SDs are 12.2 °F oil and 6.9 °F coolant (MDC 24.4 / 13.8 °F), matching the research paper, without stratification; the mild OAT band barely changes them (11.8 / 6.8, n = 40). The old snapshot's 31 / 26 °F came mostly from **flight duration**, not weather: peak oil correlates with airborne time at r = 0.65 (coolant r = 0.36), and 13/50 flights are under 20 minutes airborne, never reaching thermal equilibrium. OAT bands can't yet do much regardless — the set is 40 mild / 6 cold / 1 warm / 0 hot.
+*Proposal (new):* because duration drives the peaks, a short flight's "lower than usual" peak is expected, not a finding. Either leave flights under a minimum airborne time out of the peak baselines, or condition the comparison on airborne duration.
+
+**Decision (D7):** minimum airborne time for the peak baselines. A flight below it neither feeds `oil_temp_peak` / `coolant_temp_peak` baselines nor is compared against them; its analysis line reads "too short to reach operating temperature — peak not compared with your usual." The threshold is measured, not chosen: the airborne time beyond which the peak no longer depends on duration (current data suggests about 20 minutes). The two-sided trigger stays for flights above it, where a low peak is informative. Short flights count for everything else, and `limit_exceedances` checks them against the OM limits as before. Modelling the peak against duration (more precise, needs more data) remains open to Research if this proves too coarse.
+*Duplicate check:* zero double-reports on real data — not because the defect is absent, but because neither limit has ever been exceeded (peaks well under 248 °F even at +2 SD). §4.1 still applies; acceptance 3 needs a synthetic exceedance to test it.
 *Gap:* the original topic 4 included "% time below the 194 °F/90 °C optimal band". The metric `oil_temp_below_optimal_pct` is computed (snapshot mean 91 %) but no topic surfaces it. It has an E1 basis (OM guidance on reaching operating temperature to drive off condensation) and a clear action. Listed as a candidate in §7.
 
-**`oil_coolant_ratio` — redefine, then re-audit.** Two problems.
+**`oil_coolant_ratio` — dropped (decided v0.4, D1).** Two problems.
 1. It is `oil_max_°F / coolant_max_°F` (`fleet.py`). A ratio of temperatures on an interval scale has no physical meaning: the same flight gives a different ratio in °C, and an equal rise in both temperatures moves the ratio. The two peaks can also occur at different moments.
 2. The mechanism — "a signature of thermal health" (research paper §6.5) — is unsourced (E4). Its very low CV (0.04) reflects the ratio compressing the data, not a stable signal.
 
-Proposal: redefine as a temperature **difference** (oil − coolant), measured simultaneously in a stable phase (cruise mean, or peak-time-aligned). State the mechanism: oil cooler effectiveness vs. coolant radiator effectiveness — a blocked oil cooler raises the difference, a coolant-side problem lowers it. Grade it E2 or demote to Research.
+Proposal: redefine as a temperature **difference** (oil − coolant), measured simultaneously in a stable phase. State the mechanism: oil cooler effectiveness vs. coolant radiator effectiveness — a blocked oil cooler raises the difference, a coolant-side problem lowers it. Grade it E2 or demote to Research.
 
-**`overboost_time` — keep.** OM: 5,500 rpm maximum continuous, 5,800 rpm takeoff limited to 5 minutes (E1). Time above 5,500 rpm or 100 % power is therefore the time-limited regime. Operational class, direct action (throttle back after takeoff). One exceedance in the snapshot (381 s, ATC delay), two flights ≥ 240 s. Since v0.3 (Spec 09 v0.12) a block past the limit is a `limit_exceedances` event; the topic references it (§4.1) and keeps what only it can report — the close call and the time-in-regime context. Overboost also replaced `rpm_continuous_max`, which raised a CAUTION on every takeoff because it had no time allowance.
+**Re-run (v0.4)** compared three forms on the same flights:
+
+| Form | n | Mean | SD | MDC | Fires at z = 2 |
+|---|---|---|---|---|---|
+| Current ratio | 50 | 1.11 | 0.04 | 0.08 | 1 / 50 |
+| **Cruise-phase mean of simultaneous (oil − coolant)** | 47 | 19.9 °F | 2.55 | **5.1 °F** | 3 / 47 |
+| Difference at the time of the oil peak | 50 | 23.5 °F | 6.59 | 13.2 °F | 1 / 50 |
+
+The cruise-phase mean difference is the one to use: a real, interpretable spread, a 5 °F detectable change, and a fire rate (~6 %) consistent with a 95 % band. The peak-time form is noisier because the two temperatures aren't in equilibrium at that instant. **A7 passes for the cruise-mean ΔT; A4 still needs an E2 source for the cooler-effectiveness mechanism before it can be admitted under the new definition.**
+
+**Decision (D1):** drop rather than redefine. A better measurement doesn't make a topic defensible on its own: whether the oil–coolant balance is an established health indicator — used by Rotax, by maintenance practice, or in engine-monitoring literature — is unknown, and admitting it ahead of that answer would repeat the original mistake with a better number. The topic, the `oil_coolant_ratio` metric and its baseline are removed. The idea, and the measurements above, are kept as candidate **C5** (§7) so the research can start from them.
+
+**`overboost_time` — keep.** OM: 5,500 rpm maximum continuous, 5,800 rpm takeoff limited to 5 minutes (E1). Time above 5,500 rpm or 100 % power is therefore the time-limited regime. Operational class, direct action (throttle back after takeoff). Full set: one exceedance (381 s, ATC delay) and one further close call (≥ 240 s) in 50 flights; mean longest block 71 s. Since v0.3 (Spec 09 v0.12) a block past the limit is a `limit_exceedances` event; the topic references it (§4.1) and keeps what only it can report — the close call and the time-in-regime context. Overboost also replaced `rpm_continuous_max`, which raised a CAUTION on every takeoff because it had no time allowance.
 
 **`cruise_efficiency` — move to the flight summary (§4.2).** nmpg integrates **ground speed** (`fuel.py`), so a headwind looks like an efficiency loss — the dominant term is wind, not the engine (fails A4 as a health topic). FADEC fuel flow is model-based, ±10 % (OM). A DA band reduces but doesn't remove the confounders: power setting, wind, weight. Its "decreasing — worth watching" trend implies engine degradation that the data can't support. **Decided (§4.2):** cruise nm/gal becomes a flight-summary number with no insights. A true-airspeed, matched-power redefinition is possible later through the lifecycle, but isn't proposed now.
 
 **`cruise_fuel_flow` — move to the flight summary (§4.2).** At a given power and DA the FADEC sets fuel flow from its own map, so the comparison only means something within a power band. Blended across power settings it mostly reports the pilot's choice of power. SD 0.5 gph (CV 0.08) looks discriminating but mixes power settings. **Decided (§4.2):** mean cruise fuel flow becomes a flight-summary number. The comparison within power-% × DA bands (BACKLOG A5's model) is entered as Research, with the caveat in §4.2 that on a FADEC engine it may mainly reflect the ECU's own map.
 
-**`map_at_takeoff` — keep, provisional; fix the config.** Mechanism: under-boost at full power points to turbo, wastegate or intake problems (E1 — OM reference MAP and air-supply guidance per BACKLOG A3; chapter to be cited in the topic spec). Data: empirical model R² 0.71, n 15 (E3). Two problems:
-1. `insight_rules.json` says `vs_om_expected` with `tolerance_hpa: 20`, but the code compares against the *personal model* with a hard-coded ±1.5 inHg (≈ 51 hPa). The configured tolerance is never read, and the condition name describes a comparison the code doesn't make.
-2. Nearly all departures are near sea level (KPAE), so the model's altitude term is barely constrained (BACKLOG A6).
+**`map_at_takeoff` — keep, provisional; fix the config.** Mechanism: under-boost at full power points to turbo, wastegate or intake problems (E1 — OM reference MAP and air-supply guidance per BACKLOG A3; chapter to be cited in the topic spec). Data: empirical model R² 0.75, n 48 (E3). Two problems:
+1. `insight_rules.json` says `vs_om_expected` with `tolerance_hpa: 20`, but the code compares against the *personal model* with a hard-coded ±1.5 inHg (≈ 51 hPa). The configured tolerance is never read, and the condition name describes a comparison the code doesn't make. Re-run: the coded 1.5 inHg fired on **1** of 48 flights; the configured 20 hPa (≈ 0.59 inHg) would have fired on **23** — nearly half of all flights. Neither number is justified by A7: the tolerance should come from the model's own residual scatter (Q7).
+2. Altitude diversity is thin: 5 of 48 departures above 2,000 ft pressure altitude (BACKLOG A6) — no longer zero, but the altitude term still rests on few points.
 
-Provisional until the rule reflects what's computed and the model has altitude diversity.
+**Decision (D5, resolves Q7):**
+- **Tolerance = z × the model's residual SD**, z = 2 as for every baseline, with residuals computed leave-one-out so a flight is never judged by a model it helped fit. The rule's config holds `z`, not a fixed number; the tolerance tightens as the model improves and adapts to each aircraft. The 20 hPa OM figure is a reference-condition check, not a tolerance for a statistical model, and is not used as one. Rough estimate from the audit counts: residual SD ≈ 0.6–0.9 inHg, so 2 SD ≈ 1.2–1.8 inHg — similar behaviour to today's coded 1.5 inHg, now justified; the exact value is measured at implementation.
+- **Condition renamed** from `vs_om_expected` to `vs_personal_model`, describing the comparison actually made. The OM reference MAP stays in the analysis line as context.
+- **Fitted-range guard:** if the flight's pressure altitude or OAT lies outside the range the model was fitted on, the analysis line says so and no insight is raised — an explicit statement instead of a silent extrapolation.
+- With the guard in place, thin altitude diversity (5 of 48 departures above 2,000 ft) limits *where* the topic can judge, not whether its judgments are sound. **Provisional status closed.**
 
-**`engine_ecu_inflight` — keep.** A classification anchor that separates expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN) from IN_FLIGHT events (E1 for the alert's meaning, E3 for the classification: 4 genuine in-flight events, CAN-dropout pattern at idle). Clear action: inspect the Display CAN and HIC connectors, pull the B.U.D.S. fault log.
+**`engine_ecu_inflight` — keep.** A classification anchor that separates expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN) from IN_FLIGHT events (E1 for the alert's meaning, E3 for the classification: 5 IN_FLIGHT events in 50 flights, CAN-dropout pattern at idle). Clear action: inspect the Display CAN and HIC connectors, pull the B.U.D.S. fault log.
 
 **`limit_exceedances` — keep; owner of limit events.** Every OM limit in the engine profile, with phase-aware suppression and duration thresholds (E1). Under A6 it is the **owner** of limit-exceedance signals; other topics defer to it (§4.1).
+*Saturation (new, v0.4):* with no filters applied it produced 187 flight-level insights across 50 flights, almost all from five limits — `fuel_press_min` on **50/50** flights, `rpm_continuous_max` 49/50, `fuel_press_max` 40/50, `rpm_idle_min` 25/50, `volts_min` 23/50. (`rpm_continuous_max` is the saturation case already fixed at the source: Spec 09 v0.12 retires it because it had no time allowance, so every takeoff breached it. The audit ran on code that still has it; Phase 6 is not yet implemented. Its 2026-10-01 numbers also predate overboost becoming a `limit_exceedances` event.) A limit that fires on every flight tells the pilot nothing about *this* flight (A5 in practice), whatever its OM basis. The remedy belongs to Spec 09 (filters, phase rules, durations) — and saved filters already do this in the Flight view — but the register must record it: see Q8.
 
-**`climb_thermal_rate` — move to Research.** The mechanism is sound (cooling capacity at high power and low airspeed, E2), and an earlier dataset showed the oil rise rate roughly tripling from normal to aggressive climb (E3). But it fails A7. Snapshot oil rise is 1.4 ± 4.1 °F/min (CV 2.9), so MDC ≈ 8 °F/min — larger than the difference it is meant to catch. The original design compared against "your average **for similar vertical speed**" (BACKLOG A2 #14). The code compares against all climbs regardless of VS bucket and of the oil temperature at the start of climb. Coolant rise is computed but unused. Proposal: Research status, conditioned on VS bucket and starting oil temperature; re-admit when MDC within that conditioning is below the effect size.
+**Decision (D6, resolves Q8).** A limit can saturate for three reasons, and they are not the pilot's problem in the same way:
 
-**`egt4_elevation` — remove.** Deprecated in engine 0.14.0 with a "one minor version" alias window (Spec 08 §4). The engine is now 0.21.0. Remove the rule, registry entry and baseline key.
+| Cause | Fingerprint in the data | Whose problem | Fix |
+|---|---|---|---|
+| 1 — limit encoded wrongly | Fires during a normal procedure the OM allows (e.g. every takeoff), with normal values | **Ours** — an EIS solution gap | Engine profile (Spec 09) |
+| 2 — phase or artifact gap | Fires at transitions (start, warm-up, shutdown, taxi); brief spikes or impossible values (0.0 V running, −0.6 psi); same position relative to a phase boundary every flight | **Ours** — an EIS solution gap | Phase rule (Spec 09) |
+| 3a — persistent, stable (sensor, calibration, installation) | Steady offset through steady operation, plausible values, no link to procedure | Pilot's aircraft | Filter with a note; change monitor watches for drift (Spec 09) |
+| 3b — anything else | Doesn't fit the above | Unexplained | Research (trends, correlations; future research module, Spec 06) |
 
-**`flight_phase_mix` — remove the leftover rule.** Dropped as a topic in v0.10.0. It describes mission profile, not the engine (fails A4/A5). Its rule is still in `insight_rules.json` with `enabled: true`, though nothing evaluates it — anyone reading the rules file, or editing rules in the playground, sees a live rule that can never fire. Remove it, or mark it `enabled: false` with a `_comment` pointing to this register.
+Causes 1 and 2 belong to our rules, so they would show on every aircraft using the same engine profile; cause 3 belongs to one airframe. **The pilot never classifies anything** — what they see is unchanged: limit events, filters with notes, the change monitor, and later the research module. We find and fix causes 1 and 2, and the test suite enforces it (acceptance 8–10): a nominal flight raises nothing, no limit saturates without a documented cause-3 allowlist entry, and fixed gaps stay fixed. A limit is never removed or demoted for firing often; the OM limit stays the OM limit.
+
+**First job:** make acceptance 8–10 pass for the four limits still saturating — `fuel_press_min`, `fuel_press_max`, `rpm_idle_min`, `volts_min` — starting by verifying the `fuel_press_min` count (50/50 in the audit, yet the KACV log in the project space has no `fuel_press_min` event under current rules; its sub-42 psi readings above 1,000 rpm are brief and sit in ENGINE_START, WARMUP, TAXI and LANDING_ROLL). Checked and ruled out: that logged fuel pressure is gauge pressure against a MAP-relative limit — on KACV it barely moves with MAP (−0.08 psi/inHg, where that mismatch would give about +0.49).
+
+**`climb_thermal_rate` — moved to Research (decided v0.4, D2).** The mechanism is sound (cooling capacity at high power and low airspeed, E2), and an earlier dataset showed the oil rise rate roughly tripling from normal to aggressive climb (E3). But it fails A7. Full set: oil rise 1.13 ± 3.25 °F/min, MDC 6.5 °F/min — larger than the difference it is meant to catch. The original design compared against "your average **for similar vertical speed**" (BACKLOG A2 #14). The code compares against all climbs regardless of VS bucket and of the oil temperature at the start of climb. Coolant rise is computed but unused. Proposal: Research status, conditioned on VS bucket and starting oil temperature; re-admit when MDC within that conditioning is below the effect size.
+
+**Re-run (v0.4) tested both conditioners — neither is enough:**
+
+| VS bucket | n | Oil rise | SD | MDC |
+|---|---|---|---|---|
+| gentle (200–500 fpm) | 46 | +0.12 °F/min | 1.59 | 3.2 |
+| normal (500–1,000 fpm) | 49 | +2.22 °F/min | 4.39 | 8.8 |
+| aggressive (≥ 1,000 fpm) | 47 | +6.17 °F/min | 7.40 | 14.8 |
+
+Bucketing confirms the physical effect (gentle → aggressive +6.1 °F/min) but within-bucket noise still exceeds it: aggressive climbs' own MDC is 14.8 °F/min. Start-of-climb oil temperature explains almost nothing (r = −0.18; residual SD 3.25 → 3.20). **Research verdict confirmed.** The remaining noise needs a predictor this data doesn't yet have — candidates for the Research stage: climb duration (short climbs give unstable rates), power %, OAT, or a rate taken over a fixed altitude band rather than a whole climb.
+
+**Decision (D2):** Research. Unlike D1, the mechanism is established (E2) — only the measurement fails — so the data keeps accumulating rather than being dropped. In practice:
+- the `climb_thermal_rate` rule is disabled (`enabled: false`, with a `_comment` pointing to this register), so no Flight view card and no insights;
+- the climb-rate chart comes off the Trends tab too, since Research means no casual user sees it (§8.1);
+- the rise-rate metrics (oil and coolant, overall and per VS bucket) stay computed and available in the CLI, notebooks and experiment workspaces;
+- re-admission goes through Candidate (§8.1): a conditioning that brings MDC below the gentle → aggressive effect (about 6 °F/min on current data), shown on the log set.
+
+**`egt4_elevation` — remove.** Deprecated in engine 0.14.0 with a "one minor version" alias window (Spec 08 §4). The engine is now 0.21.0. Remove the rule, registry entry and baseline key. **Decided (D3):** removed completely — rule, registry metric, baseline key, Trends reference and web fixtures (17 references at `8f7c82c`); workspaces drop the stale key on their next rebuild. The research paper's "EGT4 elevation" finding stays as history and is reconciled at the next edition (acceptance 7).
+
+**`flight_phase_mix` — remove the leftover rule.** Dropped as a topic in v0.10.0. It describes mission profile, not the engine (fails A4/A5). Its rule is still in `insight_rules.json` with `enabled: true`, though nothing evaluates it — anyone reading the rules file, or editing rules in the playground, sees a live rule that can never fire. Remove it, or mark it `enabled: false` with a `_comment` pointing to this register. **Decided (D3):** remove the rule entry (and its web fixture copy). The phase-minutes data behind the "no cruise detected" header note is unaffected.
 
 ### 6.2 Audit outcome
 
 | Outcome | Topics |
 |---|---|
-| Keep as is | `egt_cyl_deviation`, `engine_ecu_inflight`, `limit_exceedances` |
+| Keep as is | `egt_cyl_deviation`, `engine_ecu_inflight` |
+| Keep; saturation handled per D6 — our gaps fixed and test-enforced, pilot keeps existing tools | `limit_exceedances` |
 | Keep; reference the limit event, keep the close call (decided, §4.1, v0.3) | `overboost_time` |
-| Keep; drop the duplicate limit insight (decided, §4.1) | `oil_temp_peak`, `coolant_temp_peak` |
-| Keep; overlap to declare, trigger review pending Q1(b) | `egt_spread` |
-| Keep, provisional (named condition) | `cylinder_rank` (no positive case yet), `map_at_takeoff` (config mismatch, altitude diversity) |
-| Redefine before re-audit | `oil_coolant_ratio` |
+| Keep; drop the duplicate limit insight (decided, §4.1); minimum airborne time for baselines (decided, D7) | `oil_temp_peak`, `coolant_temp_peak` |
+| Keep; per-cylinder insight owns shared events (decided, D8) | `egt_spread` |
+| Keep; tolerance from the model, fitted-range guard (decided, D5) | `map_at_takeoff` |
+| Retire insight, keep as context (decided, D4) | `cylinder_rank` |
 | Leave the topic set → flight-summary line (decided, §4.2) | `cruise_efficiency`, `cruise_fuel_flow` |
-| Move to Research | `climb_thermal_rate`; plus the new A5 fuel-flow model (§4.2) |
-| Remove | `egt4_elevation`, `flight_phase_mix` (leftover rule) |
+| Research (decided, D2) | `climb_thermal_rate`; plus the new A5 fuel-flow model (§4.2) |
+| Remove (decided, D1, D3) | `egt4_elevation`, `flight_phase_mix` (leftover rule), `oil_coolant_ratio` |
 
 Once decided, each change becomes a BACKLOG item with this register as its reference. No change follows from this spec automatically.
+
+### 6.3 Decision log
+
+| # | Item | Decision | Date / version |
+|---|---|---|---|
+| D1 | `oil_coolant_ratio` | **Dropped.** Remove topic, metric and baseline. The oil − coolant balance becomes candidate C5 (Proposed) pending research into industry use and a sourced mechanism. | 2026-10-02, v0.4 |
+| D2 | `climb_thermal_rate` | **Research.** Disable the rule; remove the Flight view card and the Trends chart; keep the rise-rate metrics computed. Re-admit via Candidate when a conditioning brings MDC below the effect size. | 2026-10-02, v0.4 |
+| D3 | `egt4_elevation`, `flight_phase_mix` | **Removed completely.** `egt4_elevation`: rule, registry metric, baseline key, Trends reference, fixtures. `flight_phase_mix`: rule entry. Both stay in the register as history. | 2026-10-02, v0.4 |
+| D4 | `cylinder_rank` | **Insight retired** (fails A6: `egt_cyl_deviation` always fires first on the same event). Rule disabled; rank stays on Trends (chip, strip) and is named in `egt_cyl_deviation`'s message when it changes. Spec 08 revision to follow. | 2026-10-02, v0.4 |
+| D5 | `map_at_takeoff` (Q7) | **Tolerance = 2 × leave-one-out model residual SD**; config holds `z`; condition renamed `vs_personal_model`; insight suppressed (with a note) outside the model's fitted PA/OAT range. Provisional status closed. | 2026-10-02, v0.4 |
+| D6 | Limit saturation (Q8) | **Pilot: existing tools only** (filter with note, change monitor; research module later for unexplained cases). **Us: causes 1 and 2 are EIS solution gaps**, found and fixed by us and enforced by acceptance 8–10. First job: make those pass for `fuel_press_min`, `fuel_press_max`, `rpm_idle_min`, `volts_min`. | 2026-10-02, v0.4 |
+| D7 | Short flights in peak baselines | **Minimum airborne time** (measured; ~20 min suggested) for `oil_temp_peak` / `coolant_temp_peak` baselines: shorter flights neither feed nor are compared, with an explanatory analysis line. OM limits unaffected. | 2026-10-02, v0.4 |
+| D8 | `egt_spread` baseline trigger (Q1(b)) | **Kept** for its cross-cylinder-divergence niche; folded into `egt_cyl_deviation`'s insight on any flight where a per-cylinder trigger fires. Trend trigger unchanged. | 2026-10-02, v0.4 |
+| D9 | Topic spec location (Q2) | **`docs/specs/topics/<topic_id>.md`**, unnumbered; numbers reserved for platform specs; Spec 08 stays where it is. | 2026-10-02, v0.4 |
+| D10 | A7 effect size (Q3) | **The topic spec states the expected change and its source** (OM, literature, or an observed fault) against the measured MDC; the maintainer judges at Candidate → Admitted. No universal CV cut-off (CV is meaningless for metrics centred near zero). | 2026-10-02, v0.4 |
+| D11 | Community proposals (Q5) | **Interim GitHub "Topic proposal" issue template** with §10's fields, bundles attached. Non-technical route deferred to the community-sharing work; same contents required. | 2026-10-02, v0.4 |
+| D12 | Register format (Q6) | **Hybrid.** Markdown register authoritative for rationale and history; `docs/specs/topics/register.json` holds topic ids, statuses, topic-spec paths and the saturation allowlist; an agreement test prevents drift. | 2026-10-02, v0.4 |
+| D13 | Topic help | **Every visible topic has a one-paragraph explanation behind a `?`**, kept outside code in one package markdown file, `slingology_eis/help/topics.md`, with placeholders (Spec 01 §8.8); required for admission; flight-summary line included. Research and removed topics need none. | 2026-10-02, v0.5 |
 
 ## 7. Coverage view
 
@@ -226,18 +309,25 @@ Logged engine channels against the topics and limit checks that use them. A blan
 | `rpm` | `overboost_time` | idle min, takeoff max (5,800 rpm ceiling), overboost (5-minute rule) | — |
 | `power_pct` | `overboost_time` | overboost (5-minute rule) | — |
 | `map_inhg` | `map_at_takeoff` | MAP max | — |
-| `egt1–4_f` | `egt_spread`, `egt_cyl_deviation`, `cylinder_rank` | EGT max ×4, EGT split ×2 | — |
-| `oil_temp_f` | `oil_temp_peak`, `oil_coolant_ratio`, `climb_thermal_rate` | takeoff min, max, optimal-band low | Candidate **C1**: oil-temperature optimal band / condensation (metric exists, not surfaced) |
-| `coolant_temp_f` | `coolant_temp_peak`, `oil_coolant_ratio` | max | — |
+| `egt1–4_f` | `egt_spread`, `egt_cyl_deviation`; `cylinder_rank` (context only, D4) | EGT max ×4, EGT split ×2 | — |
+| `oil_temp_f` | `oil_temp_peak`; `climb_thermal_rate` (Research, D2) | takeoff min, max, optimal-band low | Candidate **C1**: oil-temperature optimal band / condensation (metric exists, not surfaced; 89.7 ± 13.3 % of airborne time below 194 °F across 50 flights) |
+| `coolant_temp_f` | `coolant_temp_peak` | max | Candidate **C5** (with `oil_temp_f`): oil–coolant temperature balance — see below |
 | `oil_press_psi` | — | min, max, cold max | Candidate **C2**: oil pressure vs. its own baseline at matched RPM and oil temperature — a classic bearing/pump wear observable, currently limits-only |
 | `fuel_flow_gph` | — (flight summary only, §4.2) | (conditions the EGT split limit) | A5 fuel-flow model in Research (§4.2) |
-| `fuel_press_psi` | — | min, max | Candidate **C3**: fuel pressure stability in flight (pump/regulator health), phase-aware for pump tests and tank switching |
+| `fuel_press_psi` | — | min, max | Candidate **C3**: fuel pressure stability in flight (pump/regulator health), phase-aware for pump tests and tank switching. Note: both fuel-pressure limits fire on most flights (D6 diagnosis pending) — a topic needs to establish what normal looks like on this installation first |
 | `main_volts`, `batt_amps` | — | volts min, max | Candidate **C4**: charging-system health (bus voltage and battery current under load). Note: the 9xiS ECU depends on electrical supply, which may make this a health topic rather than airframe-only. |
 | `fuel_qty_l/r_gal` | — | — | **Decided: no topic.** Tank senders are attitude-sensitive and used only as a plausibility check (research paper §6.2, toolkit 0.6.0). |
 | CAS string | `engine_ecu_inflight` | — | Other engine CAS alerts not yet classified — candidate for a later classification topic |
 | Not logged: throttle position, lane A/B status, injector pulse width, ignition advance, wastegate position, T_plenum | — | — | **Out of reach (A1).** ECO/POWER inference (BACKLOG A4) is the only route, and it's blocked on a validation flight. |
 
-C1–C4 enter the lifecycle (§8) as **Proposed**. None is admitted by being listed here.
+C1–C5 enter the lifecycle (§8) as **Proposed**. None is admitted by being listed here.
+
+**C5 — oil–coolant temperature balance (future exploration).** Successor to the dropped `oil_coolant_ratio` (D1). Hypothesis: on the 916iS the oil carries heat from the cylinder barrels, bearings and turbo to its own cooler, while the heads are liquid-cooled through the radiator, so a shift in the simultaneous oil − coolant difference could isolate a problem on one cooling path (oil-cooler blockage or airflow, turbo heat load, or the coolant side) before either temperature nears a limit. Before it can leave Proposed, research must answer:
+1. **Is it used?** Does Rotax (installation, maintenance or service documentation), engine-monitoring practice or the literature use the oil–coolant relationship — on Rotax or comparable liquid-cooled engines — as a health indicator? If not, why not?
+2. **What is the sourced mechanism (E2)?** What raises or lowers the difference, and what would a mechanic inspect in each case?
+3. **What does a fault look like?** Any documented case giving an effect size to set against A7.
+
+Starting data (v0.4 re-run): the cruise-phase mean of the simultaneous difference measured 19.9 ± 2.6 °F over 47 flights, minimum detectable change 5.1 °F, firing on ~6 % at z = 2. The peak-time difference (23.5 ± 6.6 °F) is too noisy; the old °F ratio is not a valid form.
 
 ## 8. Lifecycle
 
@@ -248,7 +338,7 @@ C1–C4 enter the lifecycle (§8) as **Proposed**. None is admitted by being lis
 | **Proposed** | A question worth asking | A written proposal (§10): question, class, mechanism hypothesis, channels (A1, A2, A4 at E4 or better) |
 | **Research** | Being measured | An experiment workspace (Spec 02 §5.1) or Explore mode (Spec 06), where the metric is computed but shown to no casual user |
 | **Candidate** | Measured and argued | Availability, SD and MDC measured (A1, A7); overlap check done (A6); mechanism at E1/E2 (A4); action named (A5) |
-| **Admitted** | Shown on every flight | Topic spec written (§9); rule defaults in `insight_rules.json`; tests against the project logs; register entry complete; maintainer approval |
+| **Admitted** | Shown on every flight | Topic spec written (§9); **help entry written** (D13, Spec 01 §8.8); rule defaults in `insight_rules.json`; tests against the project logs; register entry complete; maintainer approval |
 | **Admitted (provisional)** | Shown, with one named open condition | As Admitted, plus the condition and the evidence that would close it (e.g. "first true positive", "≥ 5 departures above 2,000 ft") |
 | **Deprecated** | Superseded or no longer passing | Register records the reason; rule `enabled: false` with a `_comment`; aliases kept for **one minor version** only |
 | **Removed** | Gone from code | After the one-minor-version window; register entry stays, as history |
@@ -282,12 +372,13 @@ Every topic admitted from now on has a topic spec. The minimum contents, which m
 8. **Action** — what the pilot or mechanic does.
 9. **UI** — where it appears (Flight view card, Trends group).
 10. **Acceptance** — tests against the project logs, including a positive and a negative case where the data has them.
+11. **Pilot explanation** — the one-paragraph help text (D13): what it checks, what it compares against, why it matters, what to do if it fires. Plain language, no values hard-coded (placeholders per Spec 01 §8.8). It is the topic's section in `slingology_eis/help/topics.md`; the topic spec says what it must convey, and the help entry is reviewed with the topic spec.
 
 **Spec 08 (cylinder balance)** is the first topic spec. It keeps its file and number — about 20 code comments cite "Spec 08 §N" — and is linked from the register for `egt_cyl_deviation` and `cylinder_rank`. It predates this template; items 2 (evidence grades), 5 (MDC) and 6 (overlap with `egt_spread`) would be added at its next revision.
 
 Topics admitted before this spec have no topic spec. They are grandfathered **only** in that sense: the register entry and §6's audit stand in for one until the topic next changes, when it gets a full topic spec.
 
-Where new topic specs live is Q2.
+**Where topic specs live (D9, resolves Q2):** `docs/specs/topics/<topic_id>.md`, unnumbered and named after the `topic_id` — the same id as the rule and the register entry. Numbers stay reserved for platform specs. Spec 08 keeps its number and location to avoid churning code references; the register links to it.
 
 ## 10. Proposals, including from the community
 
@@ -299,44 +390,70 @@ A proposal is the same whoever writes it — the maintainer after a research ses
 - which logged channels it would use (A1);
 - if possible, example flights showing the pattern — shared as an anonymized results bundle (Spec 02 §7), never raw logs, consistent with no service-side storage.
 
-How a non-technical owner submits one, and how bundles get shared, is deliberately not designed here (Q5). The point of fixing the proposal's contents now is that the bar doesn't change depending on how a proposal arrives.
+How a non-technical owner submits one, and how bundles get shared, is deliberately not designed here. The point of fixing the proposal's contents now is that the bar doesn't change depending on how a proposal arrives.
+
+**Interim route (D11, resolves Q5):** a "Topic proposal" issue template in the project's GitHub repository, with the fields above; example bundles are attached to the issue. The proper route for non-technical owners is designed with the community-sharing work, under one constraint: it carries exactly these contents, so the bar is the same whichever way a proposal arrives. Consistent with no service-side storage, neither route uploads raw logs anywhere.
 
 ## 11. Acceptance criteria for this spec
 
-1. Every `topic_id` in `insight_rules.json` and every topic emitted by `evaluate_insights` has a register entry. Nothing is emitted without one, and no rule exists without one.
+1. Every `topic_id` in `insight_rules.json` and every topic emitted by `evaluate_insights` has a register entry. Nothing is emitted without one, and no rule exists without one. Checked by a test against `register.json`, which a second test keeps in agreement with §5.2 on topic ids and statuses (D12).
 2. Every Admitted topic has an evidence grade of E1 or E2 for its mechanism, recorded in its entry.
 3. No OM-limit exceedance produces more than one insight on a flight (§4.1) — checked by a test against the project logs that includes a real exceedance (the 381 s overboost flight, `log_20260423_135821_KTOA.csv`: one `limit_exceedances` event and no `overboost_time` insight for it; and a synthetic oil/coolant exceedance).
 4. No planning number (§4.2) produces an insight.
-5. §6's audit numbers are re-run on the full local log set (Claude Code environment, 100+ logs), within the comparison scope each topic actually uses, and the A7 verdicts confirmed or revised. This is v0.2's main job.
+5. ✓ *Met in v0.4.* §6's audit numbers are re-run on the full local log set (Claude Code environment, 100+ logs), within the comparison scope each topic actually uses, and the A7 verdicts confirmed or revised. The re-run script stays outside the package; whether it becomes a committed audit tool for future re-audits (§8.2) is open.
 6. §6.2's outcomes have a decision recorded — accepted, rejected, or deferred — each with a BACKLOG reference.
 7. The research paper's analytics-modules section and this register agree on the topic list at the next paper edition.
+8. **Nominal-flight test (D6, causes 1–2).** A synthetic flight following normal OM procedures — start, warm-up, run-up, takeoff at 5,800 rpm for under 5 minutes, climb, cruise, descent, landing, shutdown, with ordinary start and shutdown transients — raises **zero** limit events on every engine profile it applies to. Needs no log data; runs everywhere.
+9. **Saturation test (D6).** On the full log set, every limit fires on at most half of admitted flights, unless it has an allowlist entry giving its cause-3 classification and the evidence (e.g. "`fuel_press_max` — steady +0.1–0.4 psi offset across all phases; sender reads high"). The allowlist lives in `register.json` (D12) — limit id, cause, evidence, register reference — so an exception can't be added without a recorded reason. Skips where the log set isn't present.
+10. **Fingerprint regression tests (D6, cause 2).** Each fixed cause-2 gap gets a test that keeps it fixed — at minimum: no limit event lies wholly within ENGINE_START, WARMUP or shutdown, and no event is built from physically impossible values (e.g. 0.0 V bus with the engine running).
+11. **Topic help (D13).** Every topic that produces a card on the Flight view — status Admitted in `register.json`, which excludes `cylinder_rank` (context only since D4) — has a help entry, and the flight-summary line has its own; Spec 01 acceptance 10 holds (all placeholders resolve for every applicable bundled profile). A Research, Deprecated or Removed topic needs none, and a help entry for a topic not in the register fails the agreement test.
 
 ## 12. Open questions
 
 | # | Question | Leaning |
 |---|---|---|
-| Q1 | (a) ~~When a topic threshold mirrors an OM limit, should it still emit its own insight?~~ (b) Does `egt_spread` need a baseline-deviation trigger alongside `egt_cyl_deviation`'s four? | (a) **Resolved v0.2 — Option A:** `limit_exceedances` owns every limit event; topics reference it with a mirrored badge and emit nothing for it. Overboost is the documented exception — single reporter, no duplicate. See §4.1. (b) Open. Keep the spread **trend** (it tracks the OM split limit); review the spread **baseline_deviation** once the re-run shows how often both fire on the same flight. |
-| Q2 | Where do new topic specs live: numbered in `docs/specs/` like platform specs, or `docs/specs/topics/<topic_id>.md`? | `docs/specs/topics/<topic_id>.md`, unnumbered. Numbers are for platform features; topics are one-per-question and may be many. Spec 08 keeps its number to avoid churning code references. |
-| Q3 | A7's bar compares MDC with "the change the mechanism implies". Who estimates that change, and how precisely? | The topic spec states it, with its source (OM, literature, or an observed fault in the data). The maintainer judges. No universal CV cut-off — a single number would be arbitrary across metrics as different as °F and seconds. |
+| Q1 | ~~(a) When a topic threshold mirrors an OM limit, should it still emit its own insight? (b) Does `egt_spread` need a baseline-deviation trigger alongside `egt_cyl_deviation`'s four?~~ | (a) **Resolved v0.2 — Option A** (§4.1). (b) **Resolved v0.4 (D8):** kept for its niche, folded into the cylinder insight when both fire. |
+| Q2 | ~~Where do new topic specs live?~~ | **Resolved v0.4 (D9):** `docs/specs/topics/<topic_id>.md`, unnumbered; Spec 08 keeps its number. See §9. |
+| Q3 | ~~Who estimates the change the mechanism implies, and how precisely?~~ | **Resolved v0.4 (D10):** the topic spec states it with its source; the maintainer judges; MDC is always reported. No universal CV cut-off — CV is meaningless for metrics centred near zero, and one number can't fit °F, psi and seconds. Applied already in D2 and D5. |
 | Q4 | ~~Do topics that are about fuel planning rather than the engine belong in the per-flight topic set?~~ | **Resolved v0.2 — Option B:** no. Cruise nm/gal, cruise fuel flow and fuel burned move to a flight-summary line with no insights; the power × DA fuel-flow model (BACKLOG A5) enters Research. See §4.2. |
-| Q5 | How does a non-technical owner submit a proposal and example bundles? | Deferred to the community-sharing work. Until then, proposals arrive via the project's GitHub (issue template with §10's fields). |
-| Q6 | Should the register stay in this markdown spec, or become a machine-readable file (e.g. `topics/register.json`) that the UI and tests can read — for example to enforce acceptance 1 automatically? | Markdown for v0.x, while the schema settles. Revisit when Spec 01 §9's topic interface is frozen; a register check in the test suite (acceptance 1) is worth having either way. |
+| Q5 | ~~How does a non-technical owner submit a proposal and example bundles?~~ | **Resolved v0.4 (D11):** interim GitHub issue template; the non-technical route comes with the community-sharing work, with the same contents. See §10. |
+| Q6 | ~~Should the register stay in markdown, or become machine-readable?~~ | **Resolved v0.4 (D12):** both — markdown authoritative, `register.json` for what tests check, with an agreement test. See §5. |
+| Q7 | ~~What should `map_at_takeoff`'s tolerance be?~~ | **Resolved v0.4 (D5):** 2 × the model's leave-one-out residual SD, with a fitted-range guard; the configured 20 hPa and the coded 1.5 inHg are both retired. See §6.1. |
+| Q8 | ~~How does the register treat a limit that fires on (nearly) every flight?~~ | **Resolved v0.4 (D6):** the pilot keeps the existing tools; encoding and phase/artifact gaps are ours, enforced by acceptance 8–10. See §6.1, `limit_exceedances`. |
 
-## Appendix A — Audit measurements (snapshot)
+## Appendix A — Audit measurements
 
-Source: `fleet_metrics.csv` in the project space (header). MDC = 2 × SD (z = 2.0). Comparison scope: all flights, unstratified — **not** the scope every topic uses, which is why acceptance 3 requires a re-run.
+### A.1 Full log set (v0.4)
 
-| Metric | Topic | n | Mean | SD | CV | MDC |
-|---|---|---|---|---|---|---|
-| `egt_spread_mean_f` | `egt_spread` | 23 | 56.4 °F | 5.1 | 0.09 | 10.3 °F |
-| `egt4_elevation_f` (= `egt4_deviation_f`) | `egt_cyl_deviation` | 23 | +44.7 °F | 5.3 | 0.12 | 10.5 °F |
-| `oil_temp_max_f` | `oil_temp_peak` | 24 | 196.9 °F | 31.5 | 0.16 | 63 °F |
-| `oil_temp_below_optimal_pct` | (C1 candidate) | 24 | 91.0 % | 12.0 | 0.13 | 24 pts |
-| `coolant_temp_max_f` | `coolant_temp_peak` | 24 | 175.8 °F | 25.7 | 0.15 | 51 °F |
-| `oil_coolant_ratio` | `oil_coolant_ratio` | 24 | 1.12 | 0.04 | 0.04 | 0.08 (see §6.1) |
-| `cruise_nmpg` | `cruise_efficiency` | 12 | 19.5 nm/gal | 2.1 | 0.11 | 4.1 nm/gal |
-| `cruise_fuel_flow_gph` | `cruise_fuel_flow` | 12 | 6.33 gph | 0.50 | 0.08 | 1.0 gph |
-| `climb_oil_rise_f_per_min` | `climb_thermal_rate` | 15 | 1.41 °F/min | 4.09 | 2.91 | 8.2 °F/min |
-| `climb_coolant_rise_f_per_min` | (unused) | 15 | −0.43 °F/min | 1.23 | 2.84 | 2.5 °F/min |
-| `egt_rank_stable` | `cylinder_rank` | 23 | stable 23/23 | — | — | — |
-| `overboost_max_block_s` | `overboost_time` | 50 sessions | 41 s | 70 | — | n/a (limit: 1 > 300 s, 2 ≥ 240 s) |
+Source: `reports/spec10_audit_2026-10-01.md` (header). 50 admitted flights. MDC = 2 × SD (z = 2.0); within-band MDC only where n ≥ 10. No limit filters applied.
+
+| Metric | Topic | Scope today | n | Mean | SD | MDC (all) | MDC (mild OAT / moderate DA) |
+|---|---|---|---|---|---|---|---|
+| `egt_spread_mean_f` | `egt_spread` | oat_band | 50 | 59.3 °F | 5.18 | 10.4 °F | 11.0 (n 40) |
+| `egt1_deviation_f` | `egt_cyl_deviation` | oat_band | 50 | −31.1 °F | 5.38 | 10.8 °F | — |
+| `egt2_deviation_f` | `egt_cyl_deviation` | oat_band | 50 | −8.5 °F | 5.81 | 11.6 °F | — |
+| `egt3_deviation_f` | `egt_cyl_deviation` | oat_band | 50 | −6.9 °F | 4.06 | 8.1 °F | — |
+| `egt4_deviation_f` | `egt_cyl_deviation` | oat_band | 50 | +46.6 °F | 4.88 | 9.8 °F | — |
+| `oil_temp_max_f` | `oil_temp_peak` | oat_band | 50 | 202.3 °F | 12.18 | 24.4 °F | 23.5 (n 40) |
+| `coolant_temp_max_f` | `coolant_temp_peak` | oat_band | 50 | 181.8 °F | 6.91 | 13.8 °F | 13.7 (n 40) |
+| `oil_coolant_ratio` | `oil_coolant_ratio` | oat_band | 50 | 1.11 | 0.04 | 0.08 | 0.08 (n 40) |
+| cruise-mean (oil − coolant) | (proposed redefinition) | — | 47 | 19.9 °F | 2.55 | 5.1 °F | — |
+| `oil_temp_below_optimal_pct` | (C1 candidate) | none | 50 | 89.7 % | 13.26 | 26.5 pts | — |
+| `cruise_nmpg` | (flight summary, §4.2) | da_band | 39 | 19.1 nm/gal | 1.49 | 3.0 | 3.0 (n 21) |
+| `cruise_fuel_flow_gph` | (flight summary, §4.2) | da_band | 39 | 6.39 gph | 0.53 | 1.1 | 1.0 (n 21) |
+| `climb_oil_rise_f_per_min` | `climb_thermal_rate` | none | 50 | 1.13 °F/min | 3.25 | 6.5 | by VS bucket: 3.2 / 8.8 / 14.8 |
+| `climb_coolant_rise_f_per_min` | (unused) | none | 50 | −0.64 °F/min | 1.28 | 2.6 | — |
+| `overboost_max_block_s` | `overboost_time` | none | 50 | 71.2 s | 57.6 | n/a (limit) | — |
+
+Other counts: hottest cylinder stable 50/50, `hot_cyl_changed` 0; MAP model n 48, R² 0.75, 5 departures above 2,000 ft; IN_FLIGHT ECU events 5; overboost > 300 s: 1, ≥ 240 s: 2. OAT bands: 40 mild / 6 cold / 1 warm / 0 hot.
+
+Insights fired across 50 flights (unfiltered): `limit_exceedances` 187, `egt_cyl_deviation` 9, `engine_ecu_inflight` 5, `climb_thermal_rate` 4, `coolant_temp_peak` 3, `cruise_efficiency` 3, `egt_spread` 2, `cruise_fuel_flow` 2, `overboost_time` 2, `map_at_takeoff` 1, `oil_coolant_ratio` 1, `oil_temp_peak` 1. Every rule id except `egt4_elevation` (disabled) and `flight_phase_mix` (enabled, never evaluated) was emitted; nothing was emitted without a rule.
+
+### A.2 What changed from the v0.1–v0.3 snapshot
+
+The v0.1–v0.3 audit used the project's `fleet_metrics.csv` snapshot: 23–24 flights, 2026-04-08 → 06-18, 28.2–66.3 hours. Against it, the full set:
+
+- doubled the sample (24 → 50 flights; the §8.2 re-audit trigger);
+- cut oil/coolant peak SD from 31.5 / 25.7 °F to 12.2 / 6.9 °F — the snapshot's spread was a duration artefact, not weather;
+- left every other A7 verdict unchanged in direction (EGT metrics discriminating; climb rate not; ratio uninformative);
+- quantified two findings the snapshot could only state: the MAP tolerance mismatch (1 vs 23) and limit saturation (fuel pressure on every flight).
