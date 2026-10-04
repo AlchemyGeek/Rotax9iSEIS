@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "rules": {
     "egt_spread": {
       "enabled": true,
@@ -107,14 +107,9 @@
       ]
     },
     "overboost_time": {
+      "_comment": "v0.12 (Spec 09 §6.4/§10.3): the threshold trigger is removed — a block past the limit is now an ordinary limit_exceedances event. This topic only reports the close call, which isn't rule-driven (no trigger needed for it).",
       "enabled": true,
-      "triggers": [
-        {
-          "type": "threshold",
-          "limit_ref": "overboost",
-          "severity": "limit"
-        }
-      ]
+      "triggers": []
     },
     "cruise_efficiency": {
       "enabled": true,

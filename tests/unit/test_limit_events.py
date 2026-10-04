@@ -72,6 +72,14 @@ def test_catalog_carries_overboost_close_call_and_stratification():
     cat = {lim["id"]: lim for lim in limit_catalog(load_engine_config("916iS"))}
     assert cat["overboost"]["limit_value"] == 300
     assert cat["overboost"]["close_call_margin_s"] == 60
+    # v0.12: overboost is an ordinary reported exceedance now (Spec 09 §6.4).
+    assert cat["overboost"]["param"] == "overboost"
+    assert cat["overboost"]["report_in_exceedances"] is True
+    assert cat["overboost"]["filter_policy"] == {"magnitude_modes": ["absolute", "percent"], "duration_allowed": False}
+    assert "rpm_continuous_max" not in cat
+    assert cat["rpm_takeoff_max"]["filter_policy"] == {
+        "magnitude_modes": ["absolute"], "duration_allowed": False, "max_band_abs": 30,
+    }
     assert cat["oil_temp_max"]["stratify_by"] == "oat_band"
     assert cat["map_max"]["stratify_by"] == "da_band"
     assert cat["fuel_press_max"]["stratify_by"] == "oat_band"  # explicit in the profile (Q7)
@@ -165,6 +173,61 @@ def test_merge_runs_respects_gap():
     assert merge_runs(times, runs, 0) == runs
 
 
+# ── Overboost as a limit event (§6.4, v0.12) ───────────────────────────────────
+
+_OB_CFG = {"id": "overboost", "rpm_threshold": 5500, "power_pct_threshold": 100,
+           "limit_s": 300, "close_call_margin_s": 60}
+
+
+def test_overboost_short_dip_forms_one_merged_block():
+    # 320 s over, a 10 s dip (under the 30 s gap), 50 s over again — one block.
+    values = [5600] * 320 + [5000] * 10 + [5600] * 50
+    from slingology_eis.limits import overboost_blocks
+    blocks = overboost_blocks(_frame(values, param="rpm"), _OB_CFG, gap_s=30)
+    assert len(blocks) == 1
+    assert blocks[0]["duration_s"] == 380
+
+
+def test_overboost_long_dip_forms_two_blocks():
+    # Same shape, but the dip is 35 s — over the 30 s gap, so two blocks.
+    values = [5600] * 320 + [5000] * 35 + [5600] * 50
+    from slingology_eis.limits import overboost_blocks
+    blocks = overboost_blocks(_frame(values, param="rpm"), _OB_CFG, gap_s=30)
+    assert len(blocks) == 2
+    assert blocks[0]["duration_s"] == 320 and blocks[1]["duration_s"] == 50
+
+
+def test_overboost_block_past_the_limit_is_a_limit_exceedances_event():
+    values = [5600] * 320  # one 320 s merged block, past the 300 s limit
+    events = check_exceedances(_frame(values, param="rpm"), {"exceedance_merge_gap_s": 30, "overboost": _OB_CFG})
+    assert len(events) == 1
+    e = events[0]
+    assert e.limit_id == "overboost" and e.param == "overboost"
+    assert e.observed_value == 320 and e.duration_s == 320
+    assert e.excess == pytest.approx(20.0)
+    assert e.severity == "WARNING"
+
+
+def test_overboost_block_under_the_limit_is_not_an_event():
+    values = [5600] * 299
+    events = check_exceedances(_frame(values, param="rpm"), {"overboost": _OB_CFG})
+    assert events == []
+
+
+def test_overboost_metric_and_event_agree_on_the_merged_block():
+    # The "metric and events must come from the same block definition"
+    # requirement: a dip under the gap makes phases.overboost_time()'s
+    # max block and the limit_exceedances event's duration match exactly.
+    from slingology_eis.phases import overboost_time
+    values = [5600] * 320 + [5000] * 10 + [5600] * 50
+    df = _frame(values, param="rpm")
+    cfg = {"exceedance_merge_gap_s": 30, "overboost": _OB_CFG}
+    events = [e for e in check_exceedances(df, cfg) if e.limit_id == "overboost"]
+    ob = overboost_time(df, engine_config=cfg)
+    assert len(events) == 1
+    assert ob["overboost_max_block_s"] == events[0].duration_s == 380
+
+
 # ── One insight per limit (§10.1), topic thresholds (§10.2) ───────────────────
 
 def _exc(limit_id, param, label, start_s, dur_s, observed, limit_value, limit_type="MAX", severity="CAUTION", unit="psi"):
@@ -174,7 +237,7 @@ def _exc(limit_id, param, label, start_s, dur_s, observed, limit_value, limit_ty
         "limit_id": limit_id, "event_id": f"{limit_id}@{start.isoformat()}", "excess": excess,
         "param": param, "label": label, "unit": unit, "severity": severity, "limit_type": limit_type,
         "limit_value": limit_value, "observed_value": observed, "start_utc": start.isoformat(),
-        "elapsed_s": float(start_s), "duration_s": float(dur_s), "time_limit_s": None, "note": "",
+        "elapsed_s": float(start_s), "duration_s": float(dur_s), "note": "",
     }
 
 
@@ -303,7 +366,7 @@ def test_shipped_rules_have_no_numeric_thresholds(rules):
     (60, 235, None),          # 916iS: close call from 300 - 60 = 240 s
     (60, 245, "Close call"),
     (40, 245, None),          # a narrower margin moves the close call to 260 s
-    (60, 310, "Exceeded"),
+    (60, 310, None),          # past the limit — limit_exceedances' job now, not a close call
 ])
 def test_overboost_close_call_follows_profile_margin(rules, margin, ob_max, expected):
     fa = _flight([], metrics={"overboost_max_block_s": {"id": "overboost_max_block_s", "value": ob_max},

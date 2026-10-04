@@ -53,7 +53,6 @@ class Limit:
     unit: str
     min_val: Optional[float] = None
     max_val: Optional[float] = None
-    time_limit_s: Optional[float] = None
     severity: str = "CAUTION"
     note: str = ""
     phases: Optional[list] = None
@@ -205,7 +204,6 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
             unit=entry.get("unit", ""),
             min_val=entry.get("min_val"),
             max_val=entry.get("max_val"),
-            time_limit_s=entry.get("time_limit_s"),
             severity=entry.get("severity", "CAUTION"),
             note=entry.get("note", ""),
             phases=entry.get("phases"),
@@ -227,7 +225,17 @@ OVERBOOST_ID = "overboost"
 
 
 def validate_limit_ids(engine_config: dict) -> None:
-    """Raise ValueError if any limit lacks an `id` or two limits share one."""
+    """
+    Raise ValueError if any limit lacks an `id`, two limits share one, or
+    a limit (or the `overboost` block) still declares the retired
+    `time_limit_s` field. `time_limit_s` suppressed an event shorter than
+    a minimum duration; its one real use (`rpm_takeoff_max`'s 5-minute
+    allowance) was wrong — the OM's 5-minute rule belongs to `overboost`,
+    not the 5,800 rpm ceiling — so v0.12 retires the field everywhere
+    (Spec 09 §6.7) rather than leave a stale profile free to keep the old,
+    incorrect meaning. `overboost`'s own former `time_limit_s` (the 300 s
+    block ceiling) is renamed `limit_s` for the same reason.
+    """
     seen: set[str] = set()
     ids = [(e.get("id"), e.get("label", "?")) for e in engine_config.get("limits", [])]
     spread = engine_config.get("egt_spread") or {}
@@ -242,6 +250,20 @@ def validate_limit_ids(engine_config: dict) -> None:
         if lid in seen:
             raise ValueError(f"Engine profile has duplicate limit id {lid!r} (Spec 09 §6.1).")
         seen.add(lid)
+
+    for entry in engine_config.get("limits", []):
+        if "time_limit_s" in entry:
+            raise ValueError(
+                f"Engine profile limit {entry.get('label', entry.get('id', '?'))!r} declares "
+                f"'time_limit_s', removed in v0.12 (Spec 09 §6.7) — no limit uses a duration-"
+                f"suppression gate any more; the OM 5-minute rule belongs to 'overboost'."
+            )
+    ob = engine_config.get("overboost")
+    if ob and "time_limit_s" in ob:
+        raise ValueError(
+            "Engine profile's 'overboost' block declares 'time_limit_s' — renamed 'limit_s' "
+            "in v0.12 (Spec 09 §6.4/§6.7)."
+        )
 
 
 # Spec 09 §6.5: default stratification band for each limit's per-flight
@@ -273,7 +295,7 @@ def limit_catalog(engine_config: dict) -> list[dict]:
     Every limit the profile defines — `limits` entries plus the two
     computed EGT split limits and the overboost limit — as plain dicts:
     {id, param, label, unit, limit_type, limit_value, severity,
-    time_limit_s, report_in_exceedances, stratify_by, filter_policy?}.
+    report_in_exceedances, stratify_by, filter_policy?}.
     One entry per side, so a limit with both min_val and max_val (none do
     today) would appear twice under the same id. Carried on
     FlightAnalysis.limits so insight evaluation can resolve a limit
@@ -287,7 +309,7 @@ def limit_catalog(engine_config: dict) -> list[dict]:
             entry = {
                 "id": lim.id, "param": lim.param, "label": lim.label, "unit": lim.unit,
                 "limit_type": limit_type, "limit_value": value, "severity": lim.severity,
-                "time_limit_s": lim.time_limit_s, "report_in_exceedances": lim.report_in_exceedances,
+                "report_in_exceedances": lim.report_in_exceedances,
                 "stratify_by": lim.stratify_by,
                 "min_rpm": lim.min_rpm,
             }
@@ -303,7 +325,7 @@ def limit_catalog(engine_config: dict) -> list[dict]:
             entry = {
                 "id": spread.get(id_key, default_id), "param": "egt_spread_f", "label": label, "unit": "°F",
                 "limit_type": "MAX", "limit_value": spread.get(limit_key, 392.0 if "high" in id_key else 932.0),
-                "severity": "WARNING", "time_limit_s": None, "report_in_exceedances": True,
+                "severity": "WARNING", "report_in_exceedances": True,
                 "stratify_by": spread.get("stratify_by", "oat_band"),
             }
             policy = spread.get("high_flow_filter_policy" if "high" in id_key else "low_flow_filter_policy")
@@ -313,11 +335,14 @@ def limit_catalog(engine_config: dict) -> list[dict]:
     ob = engine_config.get("overboost") or {}
     if ob:
         entry = {
-            "id": ob.get("id", OVERBOOST_ID), "param": "overboost_max_block_s",
+            "id": ob.get("id", OVERBOOST_ID), "param": "overboost",
             "label": "Overboost (max continuous block)", "unit": "s",
-            "limit_type": "MAX", "limit_value": ob.get("time_limit_s", 300),
-            # Spec 09 §6.4: the same OM 5-minute rule as takeoff RPM.
-            "severity": "WARNING", "time_limit_s": None, "report_in_exceedances": False,
+            "limit_type": "MAX", "limit_value": ob.get("limit_s", 300),
+            # Spec 09 v0.12 §6.4: overboost is the single owner of the OM
+            # 5-minute rule (retiring rpm_continuous_max), so it's now an
+            # ordinary reported exceedance rather than excluded from
+            # limit_exceedances.
+            "severity": "WARNING", "report_in_exceedances": True,
             "stratify_by": ob.get("stratify_by", "da_band"),
             "close_call_margin_s": ob.get("close_call_margin_s", 60),
         }
@@ -405,7 +430,6 @@ class ExceedanceEvent:
     started_at: pd.Timestamp
     ended_at: pd.Timestamp
     duration_s: float
-    time_limit_s: Optional[float]
     note: str
     limit_id: Optional[str] = None
     # Spec 09 §4: how far past the limit, in engine units — observed − limit
@@ -437,8 +461,8 @@ def check_exceedances(
 
     Readings that dip back within a limit for less than the profile's
     `exceedance_merge_gap_s` don't end an event (Spec 09 §6.2); the
-    `time_limit_s` / `min_duration_s` / `min_duration_by_phase` checks then
-    apply to the merged event.
+    `min_duration_s` / `min_duration_by_phase` checks then apply to the
+    merged event.
 
     Returns a list of ExceedanceEvent objects, sorted by start time.
     """
@@ -505,8 +529,64 @@ def check_exceedances(
             _accumulate_events(df, df["egt_spread_f"], mask, lim_obj, "MAX",
                                spread_limit_f, events, gap_s)
 
+    # ── Overboost: single owner of the OM 5-minute rule (Spec 09 §6.4, v0.12) ──
+    # Not an ordinary column-vs-threshold limit — the "value" being tested
+    # is a merged block's own duration, not a channel reading within it —
+    # so it doesn't go through _accumulate_events/_add_event; it shares
+    # only the run-finding/merging machinery those use.
+    ob_cfg = engine_config.get("overboost") or {}
+    if ob_cfg and "rpm" in df.columns:
+        ob_limit_s = ob_cfg.get("limit_s", 300)
+        lid = ob_cfg.get("id", OVERBOOST_ID)
+        for block in overboost_blocks(df, ob_cfg, gap_s):
+            if block["duration_s"] <= ob_limit_s:
+                continue
+            events.append(ExceedanceEvent(
+                param="overboost", label="Overboost (max continuous block)", unit="s",
+                severity="WARNING", limit_type="MAX", limit_value=ob_limit_s,
+                observed_value=block["duration_s"],
+                started_at=block["start_time"], ended_at=block["end_time"],
+                duration_s=block["duration_s"], note=ob_cfg.get("note", ""),
+                limit_id=lid, excess=round(block["duration_s"] - ob_limit_s, 4),
+            ))
+
     events.sort(key=lambda e: e.started_at)
     return events
+
+
+def overboost_blocks(df: pd.DataFrame, ob_cfg: dict, gap_s: float = 0.0) -> list[dict]:
+    """
+    Spec 09 §6.4 (v0.12): every merged block where the engine was in the
+    overboost regime (`rpm > rpm_threshold` OR `power_pct > power_pct_threshold`),
+    merged across gaps under `gap_s` seconds the same way check_exceedances()
+    merges every other limit's runs (find_runs/split_runs_at_time_gaps/
+    merge_runs) — so `overboost_max_block_s` (phases.overboost_time) and the
+    limit_exceedances events built from this list share one block
+    definition and can never disagree.
+
+    Returns every merged block (including ones that never reach the
+    configured limit — phases.overboost_time needs the full set for its
+    "longest block" metric), as
+    `{"start_idx", "end_idx", "start_time", "end_time", "duration_s"}`,
+    in order. Empty without an `rpm` channel or an `overboost` config.
+    """
+    if "rpm" not in df.columns or not ob_cfg:
+        return []
+    rpm_threshold = ob_cfg.get("rpm_threshold", 5500)
+    pwr_threshold = ob_cfg.get("power_pct_threshold", 100)
+    power_pct = df["power_pct"].fillna(0) if "power_pct" in df.columns else 0
+    mask = (df["rpm"].fillna(0) > rpm_threshold) | (power_pct > pwr_threshold)
+    runs = split_runs_at_time_gaps(df["datetime"], find_runs(mask))
+    blocks = []
+    for start_idx, end_idx in merge_runs(df["datetime"], runs, gap_s):
+        t_start = df["datetime"].iloc[start_idx]
+        t_end = df["datetime"].iloc[end_idx]
+        dur_s = (t_end - t_start).total_seconds() + 1
+        blocks.append({
+            "start_idx": start_idx, "end_idx": end_idx,
+            "start_time": t_start, "end_time": t_end, "duration_s": dur_s,
+        })
+    return blocks
 
 
 def find_runs(mask: pd.Series) -> list[tuple[int, int]]:
@@ -580,10 +660,6 @@ def _add_event(df, series, lim, limit_type, limit_value, start_idx, end_idx, eve
     t_end   = df["datetime"].iloc[end_idx]
     dur_s   = (t_end - t_start).total_seconds() + 1
 
-    # time_limit_s — takeoff RPM 5-min rule
-    if lim.time_limit_s is not None and dur_s <= lim.time_limit_s:
-        return
-
     # min_duration_by_phase — per-phase duration threshold
     if lim.min_duration_by_phase and "phase" in df.columns:
         phase_at_start = df["phase"].iloc[start_idx]
@@ -605,7 +681,7 @@ def _add_event(df, series, lim, limit_type, limit_value, start_idx, end_idx, eve
         severity=lim.severity, limit_type=limit_type,
         limit_value=limit_value, observed_value=float(obs),
         started_at=t_start, ended_at=t_end, duration_s=dur_s,
-        time_limit_s=lim.time_limit_s, note=lim.note,
+        note=lim.note,
         limit_id=lim.id, excess=round(excess, 4),
     ))
 
@@ -644,7 +720,7 @@ def limit_metric_ids(entry: dict) -> list[tuple[str, str, str]]:
     (`report_in_exceedances: false`) gets none.
     """
     lid = entry["id"]
-    if entry.get("param") == "overboost_max_block_s":
+    if entry.get("param") == "overboost":
         return [(f"lim_{lid}_block_s", f"limit_{lid}_block_s", "s")]
     if not entry.get("report_in_exceedances", True):
         return []
@@ -681,7 +757,7 @@ def per_limit_metrics(
         ids = limit_metric_ids(entry)
         if not ids:
             continue
-        if entry.get("param") == "overboost_max_block_s":
+        if entry.get("param") == "overboost":
             mid, _, unit = ids[0]
             mv = {"id": mid, "value": overboost_max_block_s, "unit": unit}
             if overboost_max_block_s is None:

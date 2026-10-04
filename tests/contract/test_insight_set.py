@@ -414,6 +414,14 @@ def test_topic_thresholds_match_limit_events(real_flight_analyses, real_fleet_an
                 continue
             fired = any(i["trigger"] == "threshold" for i in by_topic[topic_id]["insights"])
             assert fired == any(e["limit_id"] == limit_id for e in fa.exceedances), (fa.flight_id, topic_id)
+        # v0.12 (Spec 09 §6.4/§10.3): a block past the limit is an ordinary
+        # limit_exceedances event now, not an overboost_time insight —
+        # overboost_time only ever reports a close call for the same flight.
         ob_max = fa.metrics.get("overboost_max_block_s", {}).get("value")
-        exceeded = any("Exceeded" in i["message"]["text"] for i in by_topic["overboost_time"]["insights"])
-        assert exceeded == (ob_max is not None and ob_max > 300), fa.flight_id
+        ob_exceeded_event = any(e["limit_id"] == "overboost" for e in fa.exceedances)
+        assert ob_exceeded_event == (ob_max is not None and ob_max > 300), fa.flight_id
+        ob_time_insights = by_topic["overboost_time"]["insights"]
+        assert all("Close call" in i["message"]["text"] for i in ob_time_insights), fa.flight_id
+        if ob_exceeded_event:
+            lim_insights = [i for i in by_topic["limit_exceedances"]["insights"] if i.get("limit_id") == "overboost"]
+            assert len(lim_insights) == 1 and ob_time_insights == [], fa.flight_id

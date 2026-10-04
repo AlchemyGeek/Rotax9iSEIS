@@ -82,6 +82,7 @@ export function InsightCard({
   unit,
   limitType,
   filterAction,
+  secondaryAction,
   note,
   onSaveNote,
   onDeleteNote,
@@ -101,6 +102,13 @@ export function InsightCard({
   limitType?: "MIN" | "MAX";
   // Spec 09 §12.1: "Filter this limit…" / "Edit filter…" on limit cards.
   filterAction?: { label: string; onClick: () => void };
+  // A second, explicit destination alongside the default "View evidence"
+  // zoom — e.g. ENGINE ECU's "See in ECU page →", which jumps to and
+  // highlights the matching run there instead of zooming this flight's
+  // own chart (the primary click's job since evidence[0] became a
+  // series_window). Caller decides when this applies; this component
+  // just renders it next to filterAction.
+  secondaryAction?: { label: string; onClick: () => void };
   note?: string;
   onSaveNote?: (text: string) => void;
   onDeleteNote?: () => void;
@@ -175,9 +183,21 @@ export function InsightCard({
         {topicId.replace(/_/g, " ")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
-      {(jumpable || filterAction) && (
+      {(jumpable || filterAction || secondaryAction) && (
         <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
           {jumpable && <span>View evidence →</span>}
+          {secondaryAction && (
+            <span
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                secondaryAction.onClick();
+              }}
+              style={{ color: "var(--text-tertiary)", cursor: "pointer", textDecoration: "underline dotted" }}
+            >
+              {secondaryAction.label}
+            </span>
+          )}
           {filterAction && (
             <span
               onClick={(e) => {

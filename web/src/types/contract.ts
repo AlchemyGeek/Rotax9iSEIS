@@ -43,7 +43,6 @@ export interface ExceedanceEvent {
   start_utc: string | null;
   elapsed_s: number;
   duration_s: number;
-  time_limit_s: number | null;
   note?: string;
   // Spec 09 §11.1 — absent on analyses written before engine 0.17.
   limit_id?: string | null;
@@ -61,7 +60,6 @@ export interface LimitDef {
   limit_type: "MIN" | "MAX";
   limit_value: number;
   severity: string;
-  time_limit_s?: number | null;
   report_in_exceedances?: boolean;
   stratify_by?: string | null;
   filter_policy?: Record<string, unknown>;
@@ -103,7 +101,7 @@ export interface FlightAnalysis {
 export type Evidence =
   | { kind: "metric"; metric_id: string }
   | { kind: "baseline_point"; metric_id: string; flight_id: string }
-  | { kind: "series_window"; channels: string[]; start_s: number; end_s: number }
+  | { kind: "series_window"; channels: string[]; start_s: number; end_s: number; marker_start_s?: number; marker_end_s?: number }
   | { kind: "exceedance" | "ecu_run"; ref: string };
 
 // comparison (Spec 01 §8.4 v0.13, R8): only baseline_deviation insights

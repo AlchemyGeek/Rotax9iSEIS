@@ -103,6 +103,20 @@ def test_overboost_has_no_duration_condition():
     assert p["filterable"] and not p["duration_allowed"] and p["max_duration_s"] is None
 
 
+def test_magnitude_modes_and_duration_allowed_are_profile_driven_not_hardcoded():
+    # v0.12: these come from filter_policy now, not a hardcoded is_overboost
+    # special case — a limit whose param happens to be "overboost" but whose
+    # profile declares duration_allowed: true gets it, and an ordinary limit
+    # with no filter_policy still defaults to every mode / true.
+    fake_overboost = {**CAT["overboost"], "filter_policy": {"duration_allowed": True, "magnitude_modes": ["z"]}}
+    p = resolve_filter_policy(fake_overboost)
+    assert p["duration_allowed"] is True and p["magnitude_modes"] == ["z"]
+
+    no_policy = {**CAT["fuel_press_max"], "filter_policy": None}
+    p2 = resolve_filter_policy(no_policy)
+    assert p2["duration_allowed"] is True and p2["magnitude_modes"] == ["absolute", "percent", "z"]
+
+
 # ── Guardrails (§7.3, acceptance 8) ───────────────────────────────────────────
 
 @pytest.mark.parametrize("flt,code", [
@@ -114,6 +128,11 @@ def test_overboost_has_no_duration_condition():
     (_filter("fuel_press_max", {"mode": "absolute", "value": -1}), "FILTER_NOT_ALLOWED"),
     (_filter("overboost", {"mode": "absolute", "value": 10}), "FILTER_NOTE_REQUIRED"),         # WARNING, no note
     (_filter("fuel_press_max", {"mode": "z", "value": 2}), "FILTER_REFERENCE_LOW_N"),
+    # rpm_takeoff_max ceiling (§6.7, acceptance 18): absolute-only, no duration, 30 rpm cap.
+    (_filter("rpm_takeoff_max", {"mode": "absolute", "value": 40}, note="x"), "FILTER_NOT_ALLOWED"),  # cap is 30
+    (_filter("rpm_takeoff_max", {"mode": "z", "value": 2}, note="x"), "FILTER_NOT_ALLOWED"),
+    (_filter("rpm_takeoff_max", {"mode": "percent", "value": 1}, note="x"), "FILTER_NOT_ALLOWED"),
+    (_filter("rpm_takeoff_max", duration={"max_event_s": 10}, note="x"), "FILTER_NOT_ALLOWED"),
 ])
 def test_invalid_filters_are_diagnosed(flt, code):
     diags = validate_filter(flt, CAT, update_fleet([]))
@@ -129,6 +148,9 @@ def test_warning_filters_with_a_note_are_valid():
 def test_valid_filters_pass():
     assert validate_limit_filter(_filter("fuel_press_max", {"mode": "absolute", "value": 2.5}), CFG) == []
     assert validate_limit_filter(_filter("volts_max", duration={"max_event_s": 10}), CFG) == []
+    assert validate_limit_filter(
+        _filter("rpm_takeoff_max", {"mode": "absolute", "value": 20}, note="takeoff-setpoint jitter"), CFG
+    ) == []
 
 
 def test_invalid_filter_leaves_the_limit_unfiltered_even_if_hand_edited():
@@ -225,14 +247,26 @@ def test_breach_still_fires_the_topic_threshold():
 # ── Overboost (§6.4, §10.3, acceptance 9) ─────────────────────────────────────
 
 def _ob_flight(ob_max):
-    return _flight([], metrics={"overboost_max_block_s": {"id": "overboost_max_block_s", "value": ob_max},
-                                "overboost_total_s": {"id": "overboost_total_s", "value": ob_max}})
+    # v0.12: a block past the limit is an ordinary exceedance event now
+    # (Spec 09 §6.4) — metrics still drive the close call (overboost_time).
+    exceedances = []
+    if ob_max > 300:
+        exceedances = [_exc("overboost", "overboost", "Overboost (max continuous block)",
+                            0, ob_max, ob_max, 300.0, severity="WARNING", unit="s")]
+    return _flight(exceedances, metrics={"overboost_max_block_s": {"id": "overboost_max_block_s", "value": ob_max},
+                                         "overboost_total_s": {"id": "overboost_total_s", "value": ob_max}})
 
 
 def test_shipped_overboost_without_a_filter_is_unaffected():
     iset = evaluate_insights(_ob_flight(310), update_fleet([]), RULES, filters=[])
-    ins = next(t for t in iset.topics if t["topic_id"] == "overboost_time")["insights"]
-    assert len(ins) == 1 and "filter" not in ins[0] and "Exceeded" in ins[0]["message"]["text"]
+    ins = _limit_topic(iset)["insights"]
+    assert len(ins) == 1 and "filter" not in ins[0] and ins[0]["limit_id"] == "overboost"
+    assert "Overboost" in ins[0]["message"]["text"]
+    # The old threshold trigger is gone — overboost_time no longer reports
+    # the exceedance (limit_exceedances owns it), and 310 isn't a close
+    # call either (it's already past the limit).
+    ob_time = next(t for t in iset.topics if t["topic_id"] == "overboost_time")
+    assert ob_time["insights"] == []
 
 
 @pytest.mark.parametrize("ob_max,expected", [
@@ -243,16 +277,25 @@ def test_shipped_overboost_without_a_filter_is_unaffected():
 ])
 def test_overboost_band_shifts_limit_and_close_call(ob_max, expected):
     flt = _filter("overboost", {"mode": "absolute", "value": 20}, note="normal climb procedure")
-    ins = next(t for t in evaluate_insights(_ob_flight(ob_max), update_fleet([]), RULES, filters=[flt]).topics
-               if t["topic_id"] == "overboost_time")["insights"]
+    iset = evaluate_insights(_ob_flight(ob_max), update_fleet([]), RULES, filters=[flt])
     if expected is None:
-        assert ins == []
+        ob_time = next(t for t in iset.topics if t["topic_id"] == "overboost_time")
+        assert ob_time["insights"] == []
         return
     text, outcome = expected
+    if outcome is None:
+        # Close call: still overboost_time's job, under the limit.
+        ob_time = next(t for t in iset.topics if t["topic_id"] == "overboost_time")
+        assert len(ob_time["insights"]) == 1 and text in ob_time["insights"][0]["message"]["text"]
+        return
+    # Past the limit: limit_exceedances owns it, filtered by the band.
+    ins = _limit_topic(iset)["insights"]
     assert len(ins) == 1 and text in ins[0]["message"]["text"]
-    assert (ins[0].get("filter") or {}).get("outcome") == outcome
+    assert ins[0]["filter"]["outcome"] == outcome
     if outcome == "suppressed":
-        assert ins[0]["severity"] == "watch"
+        assert ins[0]["severity"] == "watch"  # WARNING limit (§10.1)
+    else:
+        assert ins[0]["severity"] == "limit"
 
 
 # ── z mode and the frozen baseline (§7.1, §8.1) ───────────────────────────────

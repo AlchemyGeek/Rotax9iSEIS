@@ -156,20 +156,29 @@ def test_cylinder_rank_no_data():
     assert "Insufficient" in result["analysis"]
 
 
-def test_overboost_exceeded():
-    result = topics.overboost(320, 320, 300, True)
-    assert result["insights"][0]["trigger"] == "threshold"
-    assert "Exceeded" in result["insights"][0]["text"]
+def test_overboost_past_the_limit_is_not_this_topics_job():
+    # Spec 09 v0.12 §10.3: a block past the limit is an ordinary
+    # limit_exceedances event now — this topic no longer reports it.
+    result = topics.overboost(320, 320, 300)
+    assert result["insights"] == []
 
 
 def test_overboost_close_call():
-    result = topics.overboost(250, 250, 300, False)
+    result = topics.overboost(250, 250, 300)
     assert "Close call" in result["insights"][0]["text"]
 
 
 def test_overboost_comfortable():
-    result = topics.overboost(100, 100, 300, False)
+    result = topics.overboost(100, 100, 300)
     assert result["insights"] == []
+
+
+def test_overboost_close_call_respects_explicit_threshold():
+    # close_call_s shifts with a filter band (operations.py resolves it);
+    # the topic itself just compares against whatever it's given.
+    assert topics.overboost(259, 259, 300, close_call_s=260)["insights"] == []
+    result = topics.overboost(260, 260, 300, close_call_s=260)
+    assert "Close call" in result["insights"][0]["text"]
 
 
 def test_takeoff_map_no_data():

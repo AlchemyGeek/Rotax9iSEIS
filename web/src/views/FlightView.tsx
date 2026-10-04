@@ -76,7 +76,7 @@ export function FlightView() {
   const navigate = useNavigate();
   const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
   const [visibleWindow, setVisibleWindow] = useState<[number, number]>([0, 0]);
-  const [highlight, setHighlight] = useState<{ start_s: number; end_s: number } | null>(null);
+  const [highlight, setHighlight] = useState<{ start_s: number; end_s: number; marker_s?: number } | null>(null);
 
   // Spec 07 §4/§6/§7 chart state — the picker/preset bar/timeline all
   // read from this rather than each other, so there is exactly one
@@ -674,7 +674,15 @@ export function FlightView() {
       if (ev.kind === "series_window") {
         setZoomWindow([ev.start_s, ev.end_s]);
         setVisibleWindow([ev.start_s, ev.end_s]);
-        setHighlight({ start_s: ev.start_s, end_s: ev.end_s });
+        // marker_start_s/end_s (optional): the event's own, unpadded
+        // bounds, when start_s/end_s have been widened for zoom context
+        // (e.g. ENGINE ECU — a brief alert would otherwise be invisible
+        // inside its own padding). Falls back to the window itself, same
+        // as before, when a producer doesn't set them.
+        const markerS = ev.marker_start_s !== undefined && ev.marker_end_s !== undefined
+          ? (ev.marker_start_s + ev.marker_end_s) / 2
+          : undefined;
+        setHighlight({ start_s: ev.start_s, end_s: ev.end_s, marker_s: markerS });
         document.getElementById("timeline")?.scrollIntoView({ behavior: "smooth", block: "center" });
 
         // Spec 07 §10/D8: enter the Insight chart state and show the
@@ -894,6 +902,11 @@ export function FlightView() {
                     filterAction={
                       limitId
                         ? { label: insight.filter ? "Edit filter…" : insight.filterable === false ? "Why can't I filter this?" : "Filter this limit…", onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id) }
+                        : undefined
+                    }
+                    secondaryAction={
+                      topicId === "engine_ecu_inflight" && insight.evidence.some((ev) => ev.kind === "ecu_run")
+                        ? { label: "See in ECU page →", onClick: () => handleEvidenceClick(insight, insight.evidence.findIndex((ev) => ev.kind === "ecu_run")) }
                         : undefined
                     }
                     note={existing?.note ?? insight.note}

@@ -60,3 +60,38 @@ def test_engine_limits_from_config_916is_nonempty():
     limits = engine_limits_from_config(config)
     assert len(limits) == len(config["limits"])
     assert len(limits) > 0
+
+
+# ── Spec 09 v0.12: retired time_limit_s, rpm_continuous_max ──────────────────
+
+@pytest.mark.parametrize("engine", ["912iS", "914iS", "915iS", "916iS"])
+def test_rpm_continuous_max_is_retired(engine):
+    config = load_engine_config(engine)
+    ids = {e["id"] for e in config["limits"]}
+    assert "rpm_continuous_max" not in ids
+
+
+def test_time_limit_s_on_an_ordinary_limit_fails_to_load():
+    config = {"limits": [
+        {"id": "rpm_max", "param": "rpm", "label": "RPM max", "unit": "rpm", "max_val": 5800, "time_limit_s": 300},
+    ]}
+    with pytest.raises(ValueError, match="time_limit_s"):
+        engine_limits_from_config(config)
+
+
+def test_time_limit_s_on_the_overboost_block_fails_to_load():
+    config = {
+        "limits": [],
+        "overboost": {"id": "overboost", "rpm_threshold": 5500, "time_limit_s": 300},
+    }
+    with pytest.raises(ValueError, match="time_limit_s"):
+        engine_limits_from_config(config)
+
+
+@pytest.mark.parametrize("engine", ["912iS", "914iS", "915iS", "916iS"])
+def test_shipped_profiles_have_no_time_limit_s(engine):
+    config = load_engine_config(engine)
+    assert all("time_limit_s" not in e for e in config["limits"])
+    assert "time_limit_s" not in (config.get("overboost") or {})
+    # Loads cleanly, which it wouldn't if any did.
+    engine_limits_from_config(config)

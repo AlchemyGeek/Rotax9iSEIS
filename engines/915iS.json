@@ -36,23 +36,18 @@
       "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
     },
     {
-      "id": "rpm_continuous_max",
-      "param": "rpm",
-      "label": "Max continuous RPM",
-      "unit": "rpm",
-      "max_val": 5500,
-      "severity": "CAUTION",
-      "note": "5,500 rpm is max continuous (99 kW); 5,800 rpm allowed for 5 min (104 kW take-off)"
-    },
-    {
       "id": "rpm_takeoff_max",
       "param": "rpm",
       "label": "Takeoff RPM (5-min limit)",
       "unit": "rpm",
       "max_val": 5800,
-      "time_limit_s": 300,
       "severity": "WARNING",
-      "note": "5,800 rpm permitted for maximum 5 minutes"
+      "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit",
+      "filter_policy": {
+        "magnitude_modes": ["absolute"],
+        "duration_allowed": false,
+        "max_band_abs": 30
+      }
     },
 
     {
@@ -243,8 +238,12 @@
     "close_call_margin_s": 60,
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
-    "time_limit_s": 300,
-    "note": "5-minute (300s) limit on operation at or above 5,800 rpm / 100% power"
+    "limit_s": 300,
+    "note": "Above 5,500 rpm or 100 % power for more than 5 minutes",
+    "filter_policy": {
+      "magnitude_modes": ["absolute", "percent"],
+      "duration_allowed": false
+    }
   },
 
   "eco_power_mode": {

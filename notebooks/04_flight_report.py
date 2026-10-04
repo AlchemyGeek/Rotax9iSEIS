@@ -172,12 +172,16 @@ def _main():
     render_topic(topics.cylinder_rank(rank_order, rank_stable, fleet_note))
 
     # ── OVERBOOST ─────────────────────────────────────────────────────────────
+    # v0.12: a block past the limit is an ordinary limit_exceedances event
+    # now (see the LIMITS section below) — this topic only ever reports the
+    # close call, no filters in this legacy report so no band shift.
     section("OVERBOOST")
     ob = overboost_time(df, engine_cfg)
     ob_total  = ob.get("overboost_total_s", 0)
     ob_max    = ob.get("overboost_max_block_s", 0)
     ob_limit  = ob.get("overboost_limit_s", 300)
-    render_topic(topics.overboost(ob_total, ob_max, ob_limit, ob.get("overboost_exceeded")))
+    ob_close_call_margin = engine_cfg.get("overboost", {}).get("close_call_margin_s", 60)
+    render_topic(topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_limit - ob_close_call_margin))
 
     # ── TAKEOFF MAP ───────────────────────────────────────────────────────────
     section("TAKEOFF MAP")

@@ -30,7 +30,7 @@ Z_STD_FLOOR_MIN = 0.1         # ...but at least 0.1 engine units
 DEFAULT_REVIEW_INTERVAL_H = {"CAUTION": 50, "WARNING": 25}
 
 MAGNITUDE_MODES = ("absolute", "percent", "z")
-OVERBOOST_PARAM = "overboost_max_block_s"
+OVERBOOST_PARAM = "overboost"
 
 
 def is_overboost(limit: dict) -> bool:
@@ -55,13 +55,22 @@ def resolve_filter_policy(limit: dict) -> dict:
     source, never one to annotate away. A limit may also declare optional
     caps (`max_band_abs`, `max_duration_s`).
 
+    `magnitude_modes` and `duration_allowed` (v0.12, §6.3) are likewise
+    profile-declared, defaulting to every mode / true when absent — these
+    replace the old hard-coded overboost special case: overboost and the
+    5,800 rpm ceiling now restrict themselves the same way any limit could
+    (§6.4, §6.7), via their own profile section's `filter_policy`.
+
     Returns {filterable, reason, severity, magnitude_modes,
     duration_allowed, max_band_abs, max_duration_s, note_required,
     review_interval_h}; `reason` explains a non-filterable limit.
     """
     raw = limit.get("filter_policy") or {}
     severity = limit.get("severity", "CAUTION")
-    duration_allowed = not is_overboost(limit)
+    duration_allowed = bool(raw.get("duration_allowed", True))
+    magnitude_modes = raw.get("magnitude_modes")
+    if magnitude_modes is None:
+        magnitude_modes = list(MAGNITUDE_MODES)
 
     filterable, reason = True, None
     if raw.get("filterable") is False:
@@ -72,7 +81,7 @@ def resolve_filter_policy(limit: dict) -> dict:
         "filterable": filterable,
         "reason": reason,
         "severity": severity,
-        "magnitude_modes": list(MAGNITUDE_MODES),
+        "magnitude_modes": magnitude_modes,
         "duration_allowed": duration_allowed,
         "max_band_abs": raw.get("max_band_abs"),
         "max_duration_s": raw.get("max_duration_s") if duration_allowed else None,

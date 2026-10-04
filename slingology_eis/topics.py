@@ -269,14 +269,17 @@ def cyl_deviation(cyls: list[dict]) -> dict:
     return {"analysis": analysis, "insights": insights}
 
 
-def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optional[float] = None,
-              filter_limit: Optional[float] = None, filter_text: str = "") -> dict:
+def overboost(ob_total, ob_max, ob_limit, close_call_s: Optional[float] = None) -> dict:
     """
-    `filter_limit` (Spec 09 §6.4/§10.3): with a filter on the overboost
-    limit, the effective limit (OM limit + band). A block past the OM
-    limit but within it is reported quietly (outcome "suppressed"); past it,
-    "beyond your filter" (outcome "breach"). The caller passes the close
-    call already shifted with the band.
+    Spec 09 v0.12 §10.3: a block past the limit is now an ordinary
+    `limit_exceedances` event (§6.4) — this topic no longer reports it
+    (no more `ob_exceeded`/filter suppression/breach here, all of that is
+    generic to every limit now). What's left is the close call: a block
+    under the limit but within `close_call_margin_s` of it is not an OM
+    exceedance, so only this topic can report it. `close_call_s` is
+    already shifted by any active filter band (the effective limit minus
+    the margin), so the close call still moves with the band even though
+    the exceedance itself no longer does anything special here.
     """
     if ob_max is None:
         return {"analysis": "Overboost data not available (no RPM channel).", "insights": []}
@@ -285,16 +288,7 @@ def overboost(ob_total, ob_max, ob_limit, ob_exceeded: bool, close_call_s: Optio
         f"OM limit: {ob_limit}s."
     )
     insights = []
-    if ob_exceeded and filter_limit is not None:
-        if ob_max <= filter_limit:
-            insights.append({"trigger": "threshold", "filter_outcome": "suppressed",
-                             "text": f"Longest block {ob_max}s, past the OM {ob_limit}s limit but within your filter ({filter_text})."})
-        else:
-            insights.append({"trigger": "threshold", "filter_outcome": "breach",
-                             "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s — beyond your filter ({filter_text})."})
-    elif ob_exceeded:
-        insights.append({"trigger": "threshold", "text": f"⚠ Exceeded OM {ob_limit}s limit by {ob_max - ob_limit}s."})
-    elif ob_max >= (close_call_s if close_call_s is not None else ob_limit - 60):
+    if ob_max < ob_limit and ob_max >= (close_call_s if close_call_s is not None else ob_limit - 60):
         insights.append({"trigger": "threshold", "text": f"⚠ Close call — {ob_limit - ob_max}s below the OM limit. "
                          f"Pull back to climb power promptly after takeoff."})
     return {"analysis": analysis, "insights": insights}
@@ -560,8 +554,16 @@ def limit_exceedance_groups(groups: list[dict]) -> dict:
         total += len(events)
         worst = max(events, key=lambda e: e.get("excess") if e.get("excess") is not None else
                     (e["observed_value"] if lim["limit_type"] == "MAX" else -e["observed_value"]))
-        time_above = sum(e["duration_s"] for e in events)
         unit = lim.get("unit", "")
+        # A duration-valued limit's own "value" IS a block length (Spec 09
+        # §6.4) — duration_s is the whole block, not time spent past the
+        # limit within it, so "past the limit" has to sum the excess
+        # instead or it overstates the overage (a 389 s block past a 300 s
+        # limit is 89 s over, not 389 s "past the limit").
+        if unit == "s":
+            time_above = sum(e.get("excess") or 0 for e in events)
+        else:
+            time_above = sum(e["duration_s"] for e in events)
         side = "min" if lim["limit_type"] == "MIN" else "max"
         count = f"{len(events)} event{'s' if len(events) != 1 else ''}"
         worst_text = f"worst {worst['observed_value']:.1f} {unit} ({side} {lim['limit_value']:.1f} {unit})"

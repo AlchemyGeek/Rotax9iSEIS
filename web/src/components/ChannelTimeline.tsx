@@ -32,7 +32,12 @@ interface Props {
   activeChannels: string[];
   colorFor: (id: string) => string;
   phases: Phase[];
-  highlight?: { start_s: number; end_s: number } | null;
+  // marker_s: a precise moment within the highlighted window, distinct
+  // from start_s/end_s — those are often padded for zoom context (Spec 09
+  // §12.1's series_window evidence), which for a brief event (an ENGINE
+  // ECU alert can be one row) leaves the outline box mostly padding with
+  // nothing marking where the event itself actually was.
+  highlight?: { start_s: number; end_s: number; marker_s?: number } | null;
   zoomWindow?: [number, number] | null;
   onZoomChange?: (start: number, end: number) => void;
 }
@@ -74,12 +79,20 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // here (targeting/timing issues that were hard to pin down), whereas
     // this goes through the same setOption() path that already renders
     // the chart correctly on every other change.
-    const fullEnd = Math.max(0, ...seriesDefs.flatMap(({ data }) => (data.length ? [data[data.length - 1][0] as number] : [])));
+    const dataEnd = Math.max(0, ...seriesDefs.flatMap(({ data }) => (data.length ? [data[data.length - 1][0] as number] : [])));
+    // An evidence window/marker can sit past a channel's last plotted
+    // sample — e.g. an ENGINE ECU event right at SHUTDOWN, where RPM/oil
+    // pressure have already gone to 0 or NaN and stopped being plotted a
+    // few seconds earlier. The axis has to extend to cover it, or a
+    // dataZoom percentage computed against dataEnd alone clips both the
+    // zoom window and the marker's coordinate off the renderable domain
+    // (ECharts doesn't draw a markPoint outside axis min/max).
+    const axisEnd = Math.max(dataEnd, zoomWindow?.[1] ?? 0, highlight?.end_s ?? 0, highlight?.marker_s ?? 0);
     let dzStart = 0;
     let dzEnd = 100;
-    if (zoomWindow && fullEnd > 0) {
-      dzStart = Math.max(0, Math.min(100, (zoomWindow[0] / fullEnd) * 100));
-      dzEnd = Math.max(0, Math.min(100, (zoomWindow[1] / fullEnd) * 100));
+    if (zoomWindow && axisEnd > 0) {
+      dzStart = Math.max(0, Math.min(100, (zoomWindow[0] / axisEnd) * 100));
+      dzEnd = Math.max(0, Math.min(100, (zoomWindow[1] / axisEnd) * 100));
     }
 
     // The chart's own background tint (Spec 03 v0.7 §5.2/§6.1) — what the
@@ -90,7 +103,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // shows only whatever's in the current window, so there's no separate
     // "clip to visible range" step to keep in sync on every zoom/pan —
     // it's the same mechanism that already draws the data correctly.
-    const phaseTintAreas = clipPhasesToWindow(phases, 0, fullEnd || 1).map((seg) => [
+    const phaseTintAreas = clipPhasesToWindow(phases, 0, dataEnd || 1).map((seg) => [
       { xAxis: seg.start_s, itemStyle: { color: phaseColorAlpha(seg.phase, 0.1) } },
       { xAxis: seg.end_s },
     ]);
@@ -101,13 +114,22 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // taxi stretch read as one uniform red wash, phase unreadable, even
     // though the right colors were technically still composited in). A
     // border marks the same window without ever competing with the tint.
-    const highlightArea = highlight
+    //
+    // marker_s (a precise moment within the window, e.g. an ENGINE ECU
+    // alert) replaces the box with a single dot instead — a padded zoom
+    // window drawn as a box around a one-row event reads as "something
+    // happened somewhere in here," when a dot at the exact point reads as
+    // "here."  Only the box OR the dot shows for one insight, never both.
+    const highlightArea = highlight && highlight.marker_s === undefined
       ? [
           { xAxis: highlight.start_s, itemStyle: { color: "transparent", borderColor: "rgba(229,72,77,0.9)", borderWidth: 1.5 } },
           { xAxis: highlight.end_s },
         ]
       : null;
     const markAreaData = [...phaseTintAreas, ...(highlightArea ? [highlightArea] : [])];
+    const markPointData = highlight?.marker_s !== undefined
+      ? [{ coord: [highlight.marker_s, 94] }]
+      : [];
 
     return {
       animation: false,
@@ -146,6 +168,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
       xAxis: {
         type: "value",
         min: 0,
+        max: axisEnd > 0 ? axisEnd : undefined,
         axisLabel: { formatter: (v: number) => `${Math.round(v / 60)}m`, color: colors.textTertiary, fontSize: 10, fontFamily: fontMono },
         axisLine: { lineStyle: { color: colors.border } },
         axisTick: { show: false },
@@ -177,6 +200,25 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
         lineStyle: { width: 1.8, color },
         color,
         markArea: i === 0 ? { silent: true, data: markAreaData } : undefined,
+        markPoint: i === 0 && markPointData.length
+          ? {
+              silent: true,
+              // Diamond, not circle — showSymbol on the line series below
+              // is off (no per-point markers), but zoomed charts elsewhere
+              // (Trends) do use circular points, so a different shape here
+              // reads as "this is a flagged moment," not just another data
+              // point that happened to get drawn bigger.
+              symbol: "diamond",
+              symbolSize: 12,
+              // A channel line can be this same red (e.g. Oil Temp's
+              // #e5484d is pixel-identical) and sit at the same normalized
+              // height the marker does — a fill-only shape vanishes into
+              // it. A white ring holds up regardless of what's underneath.
+              itemStyle: { color: "rgba(229,72,77,0.95)", borderColor: "#fff", borderWidth: 2 },
+              label: { show: false },
+              data: markPointData,
+            }
+          : undefined,
       })),
     } as EChartsOption;
   }, [active, series, colorFor, phases, highlight, zoomWindow]);

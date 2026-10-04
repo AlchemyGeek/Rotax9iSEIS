@@ -489,6 +489,13 @@ def overboost_time(
     Return overboost statistics for a flight.
     Thresholds read from engine config (overboost block) so the same
     function works correctly for any Rotax iS engine.
+
+    `overboost_max_block_s` is the longest *merged* block (Spec 09 §6.4,
+    v0.12) — the same `limits.overboost_blocks()` that
+    `limits.check_exceedances()` uses to build `limit_exceedances` events,
+    so the fleet metric and the events can never disagree about block
+    boundaries. `overboost_total_s` is unaffected by merging (a plain row
+    count of time in the regime).
     """
     if "rpm" not in df.columns:
         return {}
@@ -496,28 +503,24 @@ def overboost_time(
     if engine_config is None:
         from .limits import load_engine_config
         engine_config = load_engine_config()
+    from .limits import exceedance_merge_gap_s, overboost_blocks
 
     ob_cfg        = engine_config.get("overboost", {})
     rpm_threshold = ob_cfg.get("rpm_threshold", 5500)
     pwr_threshold = ob_cfg.get("power_pct_threshold", 100)
-    time_limit_s  = ob_cfg.get("time_limit_s", 300)
+    limit_s       = ob_cfg.get("limit_s", 300)
 
     power_pct = df["power_pct"].fillna(0) if "power_pct" in df.columns else 0
     ob_mask = (df["rpm"] > rpm_threshold) | (power_pct > pwr_threshold)
-    ob_rows = ob_mask.sum()
+    ob_rows = int(ob_mask.sum())
 
-    max_block = 0
-    block = 0
-    for val in ob_mask:
-        if val:
-            block += 1
-            max_block = max(max_block, block)
-        else:
-            block = 0
+    gap_s = exceedance_merge_gap_s(engine_config)
+    blocks = overboost_blocks(df, ob_cfg, gap_s)
+    max_block = max((b["duration_s"] for b in blocks), default=0)
 
     return {
-        "overboost_total_s":    int(ob_rows),
+        "overboost_total_s":    ob_rows,
         "overboost_max_block_s": int(max_block),
-        "overboost_limit_s":    time_limit_s,
-        "overboost_exceeded":   max_block > time_limit_s,
+        "overboost_limit_s":    limit_s,
+        "overboost_exceeded":   max_block > limit_s,
     }

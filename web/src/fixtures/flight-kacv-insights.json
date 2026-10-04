@@ -1,23 +1,84 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "05609af5b77a010d569b94634c379f9e86f0f0fcd7c804180ff78317c0272a1e",
-  "fleet_key": "a5e7477ef78b650859b6e3bc6ccfdd1e76e9d45bc49ae59b34045fafb17ea710",
-  "rules_hash": "80bab461cef45a5a3aca0ef1f99fef16b9c4cb73337adc1c6dfdc4de6ab21df5",
+  "analysis_key": "68f34ecedf0d67f12ecf038b52f893ae6754503ce1a4a1b671ccd9a280811ada",
+  "fleet_key": "40da4139c9c8211d165e2645dba63f8a54135fd73b3b4eeb546561ac81b01e4a",
+  "rules_hash": "9a51bb008ace9198d80c3a05626cbca59873cf53be6053b7e507844c8e963335",
+  "filters_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "topics": [
     {
       "topic_id": "egt_spread",
       "analysis": {
-        "text": "Cruise mean 53\u00b0F. Your average: 58\u00b0F \u00b1 5\u00b0F (36 flights). OM limit: 392\u00b0F."
+        "text": "Cruise mean 53\u00b0F. Your average: 59\u00b0F \u00b1 5\u00b0F (49 flights). OM limit: 392\u00b0F."
       },
       "insights": [],
       "metric_ids": [
-        "egt_spread_mean_f"
+        "egt_spread"
+      ]
+    },
+    {
+      "topic_id": "oil_temp_peak",
+      "analysis": {
+        "text": "Peak 213\u00b0F. Your average: 202\u00b0F \u00b1 12\u00b0F (49 flights). OM limit: 248\u00b0F."
+      },
+      "insights": [],
+      "metric_ids": [
+        "oil_temp_peak"
+      ]
+    },
+    {
+      "topic_id": "coolant_temp_peak",
+      "analysis": {
+        "text": "Peak 179\u00b0F. Your average: 182\u00b0F \u00b1 7\u00b0F (49 flights). OM limit: 248\u00b0F."
+      },
+      "insights": [],
+      "metric_ids": [
+        "coolant_temp_peak"
+      ]
+    },
+    {
+      "topic_id": "oil_coolant_ratio",
+      "analysis": {
+        "text": "Oil/coolant ratio this flight: 1.19. Your average: 1.11 \u00b1 0.04 (49 flights)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "oil_coolant_ratio"
+      ]
+    },
+    {
+      "topic_id": "cruise_efficiency",
+      "analysis": {
+        "text": "17.4 nm/gal this flight. Your average: 19.1 \u00b1 1.5 nm/gal (38 flights, DA-stratified)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "cruise_efficiency"
+      ]
+    },
+    {
+      "topic_id": "cruise_fuel_flow",
+      "analysis": {
+        "text": "6.9 gph this flight at cruise DA 8,175 ft (fleet avg 5,052 ft). Your average: 6.4 \u00b1 0.5 gph (38 flights, all altitudes blended)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "cruise_fuel_flow"
+      ]
+    },
+    {
+      "topic_id": "climb_thermal_rate",
+      "analysis": {
+        "text": "Oil temp rose -0.1\u00b0F/min during climb. Your average: 1.2 \u00b1 3.3\u00b0F/min (49 flights)."
+      },
+      "insights": [],
+      "metric_ids": [
+        "climb_thermal_rate"
       ]
     },
     {
       "topic_id": "egt_cyl_deviation",
       "analysis": {
-        "text": "Vs. mean of the other cylinders: Cyl 1 -14\u00b0F (avg -14), Cyl 2 -15\u00b0F (avg -17), Cyl 3 -12\u00b0F (avg -15), Cyl 4 +42\u00b0F (avg +46) (47 flights)."
+        "text": "Vs. mean of the other cylinders: Cyl 1 -28\u00b0F (avg -31), Cyl 2 -6\u00b0F (avg -9), Cyl 3 -9\u00b0F (avg -7), Cyl 4 +43\u00b0F (avg +47) (49 flights)."
       },
       "insights": [],
       "metric_ids": [
@@ -30,7 +91,7 @@
     {
       "topic_id": "cylinder_rank",
       "analysis": {
-        "text": "Hottest this flight: Cyl 4 (+40\u00b0F over next). Usual hottest for this aircraft: Cyl 4 (100% of 46 flights)."
+        "text": "Hottest this flight: Cyl 4 (+36\u00b0F over next). Usual hottest for this aircraft: Cyl 4 (100% of 47 flights)."
       },
       "insights": [],
       "metric_ids": [
@@ -41,91 +102,9 @@
       ]
     },
     {
-      "topic_id": "oil_temp_peak",
-      "analysis": {
-        "text": "Peak 213\u00b0F. Your average: 204\u00b0F \u00b1 13\u00b0F (36 flights). OM limit: 248\u00b0F."
-      },
-      "insights": [],
-      "metric_ids": [
-        "oil_temp_max_f"
-      ]
-    },
-    {
-      "topic_id": "coolant_temp_peak",
-      "analysis": {
-        "text": "Peak 179\u00b0F. Your average: 182\u00b0F \u00b1 8\u00b0F (36 flights). OM limit: 248\u00b0F."
-      },
-      "insights": [],
-      "metric_ids": [
-        "coolant_temp_max_f"
-      ]
-    },
-    {
-      "topic_id": "oil_coolant_ratio",
-      "analysis": {
-        "text": "Oil/coolant ratio this flight: 1.19. Your average: 1.12 \u00b1 0.04 (36 flights)."
-      },
-      "insights": [
-        {
-          "id": "2b1604ffa3e3b846",
-          "topic_id": "oil_coolant_ratio",
-          "rule_id": "oil_coolant_ratio.baseline_deviation",
-          "trigger": "baseline_deviation",
-          "severity": "watch",
-          "message": {
-            "text": "\u26a0 2.0 std devs above your personal average."
-          },
-          "evidence": [
-            {
-              "kind": "baseline_point",
-              "metric_id": "oil_coolant_ratio",
-              "flight_id": "584e022a47517397"
-            }
-          ],
-          "confidence": {
-            "level": "GOOD",
-            "n": 36
-          }
-        }
-      ],
-      "metric_ids": [
-        "oil_coolant_ratio"
-      ]
-    },
-    {
-      "topic_id": "cruise_efficiency",
-      "analysis": {
-        "text": "No cruise efficiency data for this flight."
-      },
-      "insights": [],
-      "metric_ids": [
-        "cruise_nmpg"
-      ]
-    },
-    {
-      "topic_id": "cruise_fuel_flow",
-      "analysis": {
-        "text": "No cruise fuel flow data for this flight."
-      },
-      "insights": [],
-      "metric_ids": [
-        "cruise_fuel_flow_gph"
-      ]
-    },
-    {
-      "topic_id": "climb_thermal_rate",
-      "analysis": {
-        "text": "Insufficient climb data for thermal rate \u2014 short or pattern-work flights don't contribute here."
-      },
-      "insights": [],
-      "metric_ids": [
-        "climb_oil_rise_f_per_min"
-      ]
-    },
-    {
       "topic_id": "overboost_time",
       "analysis": {
-        "text": "Max continuous block: 61s. Total this flight: 70s. OM limit: 300s."
+        "text": "Max continuous block: 67s. Total this flight: 70s. OM limit: 300s."
       },
       "insights": [],
       "metric_ids": [
@@ -136,7 +115,7 @@
     {
       "topic_id": "map_at_takeoff",
       "analysis": {
-        "text": "No takeoff MAP data available \u2014 flight may lack a TAKEOFF phase with RPM \u2265 5,500."
+        "text": "Observed MAP at takeoff: 44.2 inHg at -16 ft PA, 15\u00b0C. Model expected: 45.0 inHg (n=48, GOOD, R\u00b2=0.74)."
       },
       "insights": [],
       "metric_ids": [
@@ -199,13 +178,13 @@
           "filterable": true
         },
         {
-          "id": "a84c904cb60f0850",
+          "id": "710f14c90643af38",
           "topic_id": "limit_exceedances",
           "rule_id": "limit_exceedances.threshold",
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Max continuous RPM: 2 events, worst 5820.0 rpm (max 5500.0 rpm), 1 min 11 s past the limit."
+            "text": "\u26a0 [WARNING] Takeoff RPM (5-min limit): 2 events, worst 5820.0 rpm (max 5800.0 rpm), 2 s past the limit."
           },
           "evidence": [
             {
@@ -213,8 +192,8 @@
               "channels": [
                 "rpm"
               ],
-              "start_s": 1440.5,
-              "end_s": 1574.5
+              "start_s": 1492.0,
+              "end_s": 1523.0
             },
             {
               "kind": "series_window",
@@ -222,31 +201,31 @@
                 "rpm"
               ],
               "start_s": 8666.0,
-              "end_s": 8700.0
+              "end_s": 8697.0
             }
           ],
           "confidence": {
             "level": "VERY_LOW",
             "n": 0
           },
-          "limit_id": "rpm_continuous_max",
+          "limit_id": "rpm_takeoff_max",
           "events": [
             {
-              "event_id": "rpm_continuous_max@2026-04-23T20:30:50",
-              "start_utc": "2026-04-23T20:30:50",
-              "elapsed_s": 1474.0,
-              "duration_s": 67.0,
+              "event_id": "rpm_takeoff_max@2026-04-23T20:31:23",
+              "start_utc": "2026-04-23T20:31:23",
+              "elapsed_s": 1507.0,
+              "duration_s": 1.0,
               "observed_value": 5810.0,
-              "excess": 310.0,
+              "excess": 10.0,
               "suppressed_by": null
             },
             {
-              "event_id": "rpm_continuous_max@2026-04-23T22:30:57",
+              "event_id": "rpm_takeoff_max@2026-04-23T22:30:57",
               "start_utc": "2026-04-23T22:30:57",
               "elapsed_s": 8681.0,
-              "duration_s": 4.0,
+              "duration_s": 1.0,
               "observed_value": 5820.0,
-              "excess": 320.0,
+              "excess": 20.0,
               "suppressed_by": null
             }
           ],
@@ -432,33 +411,17 @@
       "metric_ids": []
     }
   ],
-  "header_warnings": [
-    {
-      "code": "PHASE_TAKEOFF_NOT_DETECTED",
-      "severity": "warn",
-      "scope": "flight",
-      "message": "Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
-      "refs": {
-        "airborne_rows": 14359
-      }
-    },
-    {
-      "code": "PHASE_NO_CRUISE",
-      "severity": "info",
-      "scope": "flight",
-      "message": "No CRUISE phase detected this flight."
-    }
-  ],
+  "header_warnings": [],
   "provenance": {
-    "engine_version": "0.11.0",
+    "engine_version": "0.22.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
-      "hash": "ea746a8acdcc7451a0dfe0e5476e2be58f8d8b969187c0461786712f67d4b880",
+      "hash": "dd1c4adb16bc1c126569f364d1c5cee339695dbc6db5c542055bf6dde8589a67",
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-    "rules_hash": "80bab461cef45a5a3aca0ef1f99fef16b9c4cb73337adc1c6dfdc4de6ab21df5",
+    "rules_hash": "9a51bb008ace9198d80c3a05626cbca59873cf53be6053b7e507844c8e963335",
     "source_keys": [
       "e6db755e9c40fa8c"
     ]

@@ -61,7 +61,7 @@ def _serialize_exceedance(e, t0) -> dict:
         "limit_value": e.limit_value, "observed_value": e.observed_value,
         "start_utc": start_utc,
         "elapsed_s": _elapsed_s(e.started_at, t0),
-        "duration_s": e.duration_s, "time_limit_s": e.time_limit_s,
+        "duration_s": e.duration_s,
         "note": e.note,
     }
 
@@ -1164,11 +1164,11 @@ def evaluate_insights(
     _emit_hot_cylinder(flight_analysis, fleet_analysis, r_data, _emit)
 
     # ── Topics with their own data source (no shared baseline pattern) ──────
+    # Spec 09 v0.12 §6.4/§10.3: a block past the limit is now an ordinary
+    # limit_exceedances event (below) — this topic only resolves the close
+    # call, whose threshold still shifts with any active filter band.
     ob_triggers = r_data.get("overboost_time", {}).get("triggers", [])
     ob_trigger = next((t for t in ob_triggers if t.get("type") == "threshold"), None)
-    # Spec 09 §6.4/§10.2: the limit and the close-call margin come from the
-    # profile's overboost section; the rule's own number only for a flight
-    # analysed before Spec 09 (no limit catalogue).
     ob_om = limits_by_id.get(_limit_ref("overboost_time", ob_trigger)) if limits_by_id else None
     if limits_by_id and ob_trigger is not None and ob_om is None:
         limit_diagnostics.append(Diagnostic(
@@ -1179,32 +1179,19 @@ def evaluate_insights(
         ).to_dict())
     if ob_om is not None:
         ob_limit = ob_om["limit_value"]
-        ob_close_call = ob_limit - ob_om.get("close_call_margin_s", 60)
+        ob_filter = valid_filters.get(ob_om["id"])
+        ob_band = (_filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
+                   if ob_filter is not None else 0.0)
+        ob_close_call = (ob_limit + ob_band) - ob_om.get("close_call_margin_s", 60)
     else:
         ob_limit = (ob_trigger or {}).get("limit", 300)
         ob_close_call = None
     ob_total = fm.get("overboost_total_s", {}).get("value")
     ob_max = fm.get("overboost_max_block_s", {}).get("value")
-    ob_exceeded = (ob_max is not None and ob_max > ob_limit)
-    # Spec 09 §6.4/§10.3: a filter band b moves the effective limit to
-    # limit + b and the close call with it.
-    ob_filter = valid_filters.get(ob_om["id"]) if ob_om is not None else None
-    ob_filter_limit, ob_filter_text = None, ""
-    if ob_filter is not None:
-        ob_band = _filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
-        ob_filter_limit = ob_limit + ob_band
-        ob_close_call = ob_filter_limit - ob_om.get("close_call_margin_s", 60)
-        ob_filter_text = _filters.band_text(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"]))
-    raw = topics.overboost(ob_total, ob_max, ob_limit, ob_exceeded, close_call_s=ob_close_call,
-                           filter_limit=ob_filter_limit, filter_text=ob_filter_text)
+    raw = topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_close_call)
     for ins in raw["insights"]:
         if ob_om is not None:
             ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
-        outcome = ins.pop("filter_outcome", None)
-        if outcome:
-            ins["filter"] = {"filter_id": ob_filter["id"], "outcome": outcome}
-            if outcome == "suppressed":
-                ins["severity"] = "watch"  # overboost is treated as WARNING (§6.4)
     _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
 
     map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
@@ -1230,14 +1217,45 @@ def evaluate_insights(
     ]
     raw = topics.engine_ecu_inflight(adapted_runs)
 
+    # analyze_inflight_pattern() (cas.py) rebuilds its own event dicts and
+    # drops elapsed_s along the way (it's also used fleet-wide, where one
+    # flight's elapsed time isn't meaningful) — look the run back up by its
+    # start_utc, which survives, to recover it for the series_window below.
+    _ecu_runs_by_start = {r["start_utc"]: r for r in flight_analysis.ecu_runs}
+
     def _ecu_insight(e: dict) -> dict:
         iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16]
+        run = _ecu_runs_by_start.get(e["start_time"]) or {}
+        elapsed_s = run.get("elapsed_s")
+        duration_s = run.get("duration_s") or e.get("duration_s") or 0
+        # Zoom to the moment on this flight's own chart, like every other
+        # insight (RPM + oil pressure — the pair a CAN-dropout/oil-NaN
+        # signature actually shows up in). The ecu_run reference stays as a
+        # second evidence entry so "See in ECU page" can still jump to and
+        # highlight the matching run there (ECU.tsx's runRefKey) — a
+        # deliberate second destination, not a replaced one.
+        evidence = []
+        if elapsed_s is not None:
+            pad = max(duration_s * 0.5, 15)
+            evidence.append({
+                "kind": "series_window",
+                "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
+                "start_s": max(0, elapsed_s - pad),
+                "end_s": elapsed_s + duration_s + pad,
+                # The event's own, unpadded bounds — a marker at the exact
+                # moment, distinct from the padded window above (padding is
+                # for zoom context; a one-row alert would otherwise be
+                # invisible inside its own ~30s of surrounding padding).
+                "marker_start_s": elapsed_s,
+                "marker_end_s": elapsed_s + max(duration_s, 1),
+            })
+        evidence.append({"kind": "ecu_run", "ref": str(e["start_time"])})
         d = {
             "id": iid,
             "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
             "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
             "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
-            "evidence": [{"kind": "ecu_run", "ref": str(e["start_time"])}],
+            "evidence": evidence,
             "confidence": _confidence(0),
         }
         if iid in notes_by_insight_id:

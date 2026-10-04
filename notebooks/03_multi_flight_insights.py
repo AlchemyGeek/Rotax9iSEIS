@@ -361,7 +361,7 @@ def main():
     engine_cfg  = load_engine_config()
     engine_name = engine_cfg.get("_metadata", {}).get("engine", "unknown engine")
     ob_cfg      = engine_cfg.get("overboost", {})
-    ob_limit_s  = ob_cfg.get("time_limit_s", 300)
+    ob_limit_s  = ob_cfg.get("limit_s", 300)
     ob_rpm      = ob_cfg.get("rpm_threshold", 5500)
     ob_close_s  = int(ob_limit_s * 0.8)   # "close call" = within 80% of the limit
 

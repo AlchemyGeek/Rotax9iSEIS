@@ -296,8 +296,11 @@ def test_reorder_user_presets_rejects_mismatched_set(registry_server):
 def test_get_default_rules(server):
     d = rpc(server, "get_default_rules", {})
     assert d["ok"]
-    # Spec 09 §10.2: the threshold follows the profile's overboost limit
-    assert d["result"]["rules"]["overboost_time"]["triggers"][0]["limit_ref"] == "overboost"
+    # Spec 09 §10.2: the threshold follows the profile's own limit
+    assert d["result"]["rules"]["oil_temp_peak"]["triggers"][0]["limit_ref"] == "oil_temp_max"
+    # v0.12 §10.3: overboost_time no longer has a threshold trigger of its
+    # own — a block past the limit is an ordinary limit_exceedances event.
+    assert d["result"]["rules"]["overboost_time"]["triggers"] == []
 
 
 def test_unknown_op_returns_envelope_error(server):
@@ -884,20 +887,20 @@ def test_get_save_reset_workspace_rules(registry_server):
 
     shipped = got["result"]["shipped_rules"]
     edited = json.loads(json.dumps(shipped))
-    edited["rules"]["overboost_time"]["triggers"][0]["severity"] = "watch"
+    edited["rules"]["oil_temp_peak"]["triggers"][1]["severity"] = "info"
 
     saved = rpc(registry_server, "save_workspace_rules", {"rules": edited})
     assert saved["ok"], saved
-    assert saved["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "watch"
+    assert saved["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "info"
 
     refetched = rpc(registry_server, "get_workspace_rules", {})
-    assert refetched["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "watch"
+    assert refetched["result"]["rules"]["rules"]["coolant_temp_peak"]["triggers"][0]["severity"] == "limit"
     # shipped_rules is untouched by the edit — always "what's shipped"
-    assert refetched["result"]["shipped_rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "limit"
+    assert refetched["result"]["shipped_rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "watch"
 
     reset = rpc(registry_server, "reset_workspace_rules", {})
     assert reset["ok"], reset
-    assert reset["result"]["rules"]["rules"]["overboost_time"]["triggers"][0]["severity"] == "limit"
+    assert reset["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][1]["severity"] == "watch"
 
 
 def test_workspace_rule_edit_changes_live_get_flight_and_list_flights(registry_server):
@@ -1231,6 +1234,33 @@ def test_get_flight_attaches_note_to_matching_insight(server):
     # an insight nobody annotated stays note-less
     others = [i for i in all_insights_again if i["id"] != target["id"]]
     assert all("note" not in i for i in others)
+
+
+def test_ecu_insight_zooms_the_flight_chart_and_keeps_the_ecu_page_link(server):
+    # An ENGINE ECU insight's evidence used to be ecu_run-only (navigate
+    # away with nothing to zoom to on this flight's own chart). It now
+    # leads with a series_window around the event — "View evidence" zooms
+    # here like every other insight — and keeps the ecu_run reference as a
+    # second entry so "See in ECU page" can still jump there and highlight
+    # the matching run.
+    alert_start, alert_end = _FLYING_PREAMBLE_LEN + 5, _FLYING_PREAMBLE_LEN + 25
+    log = _flying_log_bytes(
+        extra_header=",Oil Press (PSI),CAS Alert",
+        row_extra_fn=lambda i: f",2.0,{'ENGINE ECU / OIL PRESS' if alert_start <= i < alert_end else ''}",
+    )
+    b64 = base64.b64encode(log).decode()
+    imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_ECU2.csv"}]})
+    assert imp["ok"], imp
+    flight_id = imp["result"]["results"][0]["flight_id"]
+
+    got = rpc(server, "get_flight", {"flight_id": flight_id})
+    ecu_topic = next(t for t in got["result"]["insight_set"]["topics"] if t["topic_id"] == "engine_ecu_inflight")
+    assert ecu_topic["insights"], "fixture flight should produce an ECU insight"
+    evidence = ecu_topic["insights"][0]["evidence"]
+    assert evidence[0]["kind"] == "series_window"
+    assert evidence[0]["channels"] == ["rpm", "oil_press_psi"]
+    assert evidence[0]["start_s"] < evidence[0]["end_s"]
+    assert evidence[1]["kind"] == "ecu_run"
 
 
 def test_limit_filter_round_trip(registry_server):

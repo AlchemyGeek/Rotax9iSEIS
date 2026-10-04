@@ -8,7 +8,7 @@
   },
   "engine_family": "iS",
   "fadec": true,
-  "turbocharged": true,
+  "turbocharged": false,
   "cylinders": 4,
   "_expected_hot_cylinder_note": "Spec 08 §3: prior for the usual hottest cylinder until an aircraft's own is learned; a display hint, never a limit. No turbo, so no expected pattern.",
   "expected_hot_cylinder": null,
@@ -31,23 +31,18 @@
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {
-      "id": "rpm_continuous_max",
-      "param": "rpm",
-      "label": "Max continuous RPM",
-      "unit": "rpm",
-      "max_val": 5500,
-      "severity": "CAUTION",
-      "note": "PLACEHOLDER \u2014 verify against OM"
-    },
-    {
       "id": "rpm_takeoff_max",
       "param": "rpm",
       "label": "Takeoff RPM (5-min limit)",
       "unit": "rpm",
       "max_val": 5800,
-      "time_limit_s": 300,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "PLACEHOLDER \u2014 verify against OM",
+      "filter_policy": {
+        "magnitude_modes": ["absolute"],
+        "duration_allowed": false,
+        "max_band_abs": 30
+      }
     },
     {
       "id": "oil_press_min",
@@ -186,8 +181,12 @@
     "close_call_margin_s": 60,
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
-    "time_limit_s": 300,
-    "note": "PLACEHOLDER \u2014 verify against OM"
+    "limit_s": 300,
+    "note": "PLACEHOLDER \u2014 verify against OM",
+    "filter_policy": {
+      "magnitude_modes": ["absolute", "percent"],
+      "duration_allowed": false
+    }
   },
   "eco_power_mode": {
     "throttle_position_threshold_pct": 97,
