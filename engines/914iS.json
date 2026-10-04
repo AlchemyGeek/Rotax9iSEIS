@@ -28,6 +28,8 @@
       "severity": "CAUTION",
       "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
       "exceedance_merge_gap_s": 0,
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance.",
+      "min_rpm": 1000,
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {
