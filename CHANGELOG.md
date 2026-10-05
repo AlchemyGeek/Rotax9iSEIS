@@ -25,6 +25,9 @@ which also squashed the filter chart for this limit.
 - **Filter charts:** a limit none of your flights has gone past (e.g. fuel pressure minimum)
   shows "nothing to chart" instead of two empty charts. The charts' Y axes show units, and the
   filter row's "from flight" link is gone (Edit works in place).
+- **Reference flights are shaded only while a filter is drifting**, with a line under the drift
+  reason saying what the shaded area is. Otherwise every flight is one colour (red if beyond
+  the filter).
 - Existing workspaces re-analyse their flights on the next scan (engine version change).
 
 **Limit filters: no hidden floors; a plain "not advisable" note instead.**
