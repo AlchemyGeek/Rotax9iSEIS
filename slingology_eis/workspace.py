@@ -730,6 +730,7 @@ def load_workspace_rules(ws_dir: Path, shipped_rules: dict) -> dict:
         rules = upgrade_limit_refs(rules)
         rules = upgrade_to_limit_refs(rules)
         rules = upgrade_phase_a_rules(rules)
+        rules = upgrade_map_condition(rules)
         return rules
     return shipped_rules
 
@@ -851,6 +852,30 @@ def upgrade_phase_a_rules(rules: dict) -> dict:
             "forced to disabled (Research status, Spec 10 D2).",
         )
 
+    return rules
+
+
+def upgrade_map_condition(rules: dict) -> dict:
+    """
+    Spec 10 §6.1/D5 (rules v1.7): map_at_takeoff's threshold trigger used
+    to be `condition: "vs_om_expected"` with a fixed `tolerance_hpa`; now
+    it's `condition: "vs_personal_model"` with a `z` multiplier on the
+    leave-one-out fit's residual standard error. Upgraded in memory (the
+    file itself is left as the pilot saved it until next saved) — the
+    same pattern as upgrade_limit_refs, one trigger field over.
+    """
+    topic = (rules.get("rules") or {}).get("map_at_takeoff")
+    if not isinstance(topic, dict):
+        return rules
+    for trig in topic.get("triggers") or []:
+        if isinstance(trig, dict) and trig.get("condition") == "vs_om_expected":
+            trig.pop("tolerance_hpa", None)
+            trig["condition"] = "vs_personal_model"
+            trig.setdefault("z", 2.0)
+            warnings.warn(
+                "Workspace rules/active.json had map_at_takeoff's 'vs_om_expected'+'tolerance_hpa' "
+                "trigger — upgraded to 'vs_personal_model'+'z' (Spec 10 §6.1/D5).",
+            )
     return rules
 
 

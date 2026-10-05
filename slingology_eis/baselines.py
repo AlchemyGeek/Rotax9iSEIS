@@ -133,48 +133,82 @@ def build_baselines(metrics: pd.DataFrame, engine_name: str) -> dict:
     }
 
 
+def fit_takeoff_map(rows: list[dict]) -> dict:
+    """
+    Fit MAP = f(pressure_alt_ft, oat_c) by least squares on `rows` (each
+    {"pressure_alt_ft", "oat_c", "map_inhg"}). Returns {n} alone below
+    the 5-flight minimum; otherwise also {coefficients, r_squared,
+    residual_se, pa_range, oat_range} — residual_se is sqrt(SSE / (n -
+    3)), pa_range/oat_range the (min, max) of the fitted rows' inputs.
+
+    Shared by the all-flights model (build_takeoff_map_model, for
+    Trends) and each flight's leave-one-out fit (Spec 10 D5,
+    operations.evaluate_insights) so both use identical regression
+    code and a flight is never part of the model it's judged by.
+    """
+    n = len(rows)
+    if n < 5:
+        return {"n": n}
+    pa = np.array([r["pressure_alt_ft"] for r in rows])
+    oat = np.array([r["oat_c"] for r in rows])
+    y = np.array([r["map_inhg"] for r in rows])
+    X = np.column_stack([np.ones(n), pa, oat])
+    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    y_pred = X @ coeffs
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    p = 3
+    residual_se = (ss_res / (n - p)) ** 0.5 if n > p else None
+    return {
+        "n": n,
+        "coefficients": {
+            "intercept": round(float(coeffs[0]), 4),
+            "pressure_alt_ft": round(float(coeffs[1]), 6),
+            "oat_c": round(float(coeffs[2]), 4),
+        },
+        "r_squared": round(r2, 4),
+        "residual_se": round(residual_se, 4) if residual_se is not None else None,
+        "pa_range": (float(pa.min()), float(pa.max())),
+        "oat_range": (float(oat.min()), float(oat.max())),
+    }
+
+
 def build_takeoff_map_model(metrics: pd.DataFrame) -> dict:
     """
-    Fit (or describe insufficient data for) the takeoff MAP linear
-    regression model: MAP = f(pressure_alt_ft, oat_c). Returns a dict in
-    the models.json "takeoff_map" entry shape.
+    Fit (or describe insufficient data for) the all-flights takeoff MAP
+    linear regression model. Returns a dict in the models.json
+    "takeoff_map" entry shape — this is the fleet-wide fit shown on
+    Trends; evaluate_insights fits its own leave-one-out model per
+    flight from `raw` (Spec 10 D5), not from this fit.
     """
     map_df = metrics[["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c",
-                      "engine_hours", "date"]].dropna()
-    map_model = {"n": len(map_df), "confidence": confidence_label(len(map_df))}
+                      "engine_hours", "date", "source_file"]].dropna()
+    rows = [
+        {"pressure_alt_ft": row["takeoff_pressure_alt_ft"], "oat_c": row["takeoff_oat_c"],
+         "map_inhg": row["takeoff_map_inhg"]}
+        for _, row in map_df.iterrows()
+    ]
+    fit = fit_takeoff_map(rows)
+    map_model = {"n": fit["n"], "confidence": confidence_label(fit["n"])}
 
-    if len(map_df) >= 5:
-        from numpy.linalg import lstsq as _lstsq
-        X = np.column_stack([
-            np.ones(len(map_df)),
-            map_df["takeoff_pressure_alt_ft"].values,
-            map_df["takeoff_oat_c"].values,
-        ])
-        y = map_df["takeoff_map_inhg"].values
-        coeffs, _, _, _ = _lstsq(X, y, rcond=None)
-        y_pred = X @ coeffs
-        ss_res = float(np.sum((y - y_pred) ** 2))
-        ss_tot = float(np.sum((y - y.mean()) ** 2))
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    if fit["n"] >= 5:
         map_model.update({
             "type": "linear_regression",
             "features": ["pressure_alt_ft", "oat_c"],
             "target": "map_inhg",
-            "coefficients": {
-                "intercept": round(float(coeffs[0]), 4),
-                "pressure_alt_ft": round(float(coeffs[1]), 6),
-                "oat_c": round(float(coeffs[2]), 4),
-            },
-            "r_squared": round(r2, 4),
+            "coefficients": fit["coefficients"],
+            "r_squared": fit["r_squared"],
         })
     else:
         map_model["note"] = (
             f"Still collecting data — need 5 minimum for first model fit "
-            f"(have {len(map_df)})"
+            f"(have {fit['n']})"
         )
 
     map_model["raw"] = [
         {
+            "flight_id": row["source_file"],
             "date": str(row["date"]),
             "engine_hours": row["engine_hours"],
             "map_inhg": row["takeoff_map_inhg"],

@@ -1,8 +1,8 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "78c3faff52399a9687ac5cdd1c6ac3007bd632e57b84ba7ccef7a3044e006077",
+  "analysis_key": "d8bf6b7c5e1cef70012429e81d50b7be2c866964fbd14e1758506a5a524cea89",
   "fleet_key": "40da4139c9c8211d165e2645dba63f8a54135fd73b3b4eeb546561ac81b01e4a",
-  "rules_hash": "0526b90539e857804a31b7e0e06ec4ab6f912855beb0ee88dbbdfc51002942ed",
+  "rules_hash": "eb06ef32b2dc11f8e9181b2c24509f75fad443bb496a2ef26017286c33d694cf",
   "filters_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
   "topics": [
     {
@@ -80,7 +80,7 @@
     {
       "topic_id": "map_at_takeoff",
       "analysis": {
-        "text": "Observed MAP at takeoff: 44.2 inHg at -16 ft PA, 15\u00b0C. Model expected: 45.0 inHg (n=48, GOOD, R\u00b2=0.74)."
+        "text": "Observed MAP at takeoff: 44.2 inHg at -16 ft PA, 15\u00b0C. Model expected: 45.0 inHg (n=47, GOOD, R\u00b2=0.74)."
       },
       "insights": [],
       "metric_ids": [
@@ -378,7 +378,7 @@
   ],
   "header_warnings": [],
   "provenance": {
-    "engine_version": "0.25.0",
+    "engine_version": "0.26.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
@@ -386,7 +386,7 @@
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-    "rules_hash": "0526b90539e857804a31b7e0e06ec4ab6f912855beb0ee88dbbdfc51002942ed",
+    "rules_hash": "eb06ef32b2dc11f8e9181b2c24509f75fad443bb496a2ef26017286c33d694cf",
     "source_keys": [
       "e6db755e9c40fa8c"
     ]

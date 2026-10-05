@@ -227,6 +227,25 @@ def test_leave_one_out_baseline_excludes_only_matching_flight_id():
     assert result["mean"] == 20.0  # mean of 10, 30
 
 
+def test_leave_one_out_map_fit_excludes_only_the_judged_flight():
+    # Spec 10 D5: a flight is never part of the model it's judged by.
+    from slingology_eis.operations import _leave_one_out_map_fit
+    points = [
+        {"flight_id": f"f{i}", "pressure_alt_ft": float(i * 100), "oat_c": 15.0, "map_inhg": 44.0 + i * 0.1}
+        for i in range(8)
+    ]
+    held_out = points[3]
+    fit_excluding = _leave_one_out_map_fit(points, held_out["flight_id"])
+    assert fit_excluding["n"] == 7
+
+    # Fitting on all 8 (including the held-out point) gives a different n,
+    # proving the exclusion actually happened rather than being a no-op.
+    from slingology_eis.baselines import fit_takeoff_map
+    fit_including = fit_takeoff_map(points)
+    assert fit_including["n"] == 8
+    assert fit_excluding["n"] != fit_including["n"]
+
+
 # ── BASELINE_LOW_N gating (R2) — synthetic, since no local metric has n<10 ──
 
 def test_evaluate_insights_low_n_suppresses_insight_and_adds_warning():

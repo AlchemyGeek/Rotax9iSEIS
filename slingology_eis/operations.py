@@ -734,6 +734,11 @@ def update_fleet(
             "r_squared": map_model["r_squared"],
             "confidence": _confidence(map_model["n"]),
             "capture": "RPM>=5500 during TAKEOFF_ROLL",
+            # Spec 10 D5: every flight's own (pressure_alt_ft, oat_c,
+            # map_inhg), so evaluate_insights can fit its own leave-one-out
+            # model per flight rather than judging a flight against a fit
+            # that includes itself.
+            "points": map_model["raw"],
         })
     else:
         quality.append(Diagnostic(
@@ -787,6 +792,15 @@ def _leave_one_out_baseline(points: list[dict], flight_id: str) -> dict:
     mean = sum(values) / n
     std = (sum((v - mean) ** 2 for v in values) / (n - 1)) ** 0.5 if n > 1 else 0.0
     return {"mean": round(mean, 4), "std": round(std, 4), "n": n}
+
+
+def _leave_one_out_map_fit(points: list[dict], flight_id: str) -> dict:
+    """The takeoff-MAP regression fit on every other flight's point
+    (Spec 10 D5) — same exclusion pattern as _leave_one_out_baseline,
+    but for the regression model rather than a mean/std."""
+    from .baselines import fit_takeoff_map
+    others = [p for p in points if p["flight_id"] != flight_id]
+    return fit_takeoff_map(others)
 
 
 def _topic_baseline(fleet_metric: Optional[dict], flight_id: str, n_min: int = 10) -> dict:
@@ -1204,15 +1218,18 @@ def evaluate_insights(
     _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
 
     map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
-    map_model_dict = {
-        "n": map_model["n"], "confidence": map_model["confidence"].get("level", ""),
-        "r_squared": map_model["r_squared"], "coefficients": map_model["coefficients"],
-    } if map_model else {"n": 0, "confidence": "", "coefficients": {}}
+    map_points = (map_model or {}).get("points", [])
+    map_loo_fit = _leave_one_out_map_fit(map_points, flight_id)
+    map_trigger = next(
+        (t for t in r_data.get("map_at_takeoff", {}).get("triggers", []) if t.get("type") == "threshold"),
+        {},
+    )
+    map_z = map_trigger.get("z", 2.0)
     raw = topics.takeoff_map(
         fm.get("takeoff_map_inhg", {}).get("value"),
         fm.get("takeoff_pressure_alt_ft", {}).get("value"),
         fm.get("takeoff_oat_c", {}).get("value"),
-        map_model_dict,
+        map_loo_fit, z=map_z,
     )
     _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0)
 

@@ -1,5 +1,5 @@
 {
-  "version": "1.6",
+  "version": "1.7",
   "rules": {
     "egt_spread": {
       "enabled": true,
@@ -71,12 +71,13 @@
       "triggers": []
     },
     "map_at_takeoff": {
+      "_comment": "v0.14 (Spec 10 §6.1/D5): the model is fitted leave-one-out per flight, and the tolerance is z times that fit's residual standard error, not a fixed inHg band — z default 2.0. A flight whose pressure altitude or OAT falls outside the range the model was fitted on gets no insight at all (fitted-range guard); the analysis line says why.",
       "enabled": true,
       "triggers": [
         {
           "type": "threshold",
-          "condition": "vs_om_expected",
-          "tolerance_hpa": 20,
+          "condition": "vs_personal_model",
+          "z": 2.0,
           "severity": "warning"
         }
       ]

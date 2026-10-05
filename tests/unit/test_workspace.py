@@ -264,6 +264,26 @@ def test_upgrade_is_quiet_on_an_already_current_rule_set(tmp_path):
         ws.upgrade_phase_a_rules(current)  # must not warn
 
 
+def test_upgrade_map_condition_renames_to_vs_personal_model_with_z():
+    old = {"rules": {"map_at_takeoff": {"enabled": True, "triggers": [
+        {"type": "threshold", "condition": "vs_om_expected", "tolerance_hpa": 20, "severity": "warning"},
+    ]}}}
+    with pytest.warns(UserWarning, match="map_at_takeoff"):
+        out = ws.upgrade_map_condition(old)
+    trig = out["rules"]["map_at_takeoff"]["triggers"][0]
+    assert trig["condition"] == "vs_personal_model"
+    assert trig["z"] == 2.0
+    assert "tolerance_hpa" not in trig
+
+
+def test_upgrade_map_condition_is_quiet_on_an_already_current_rule_set():
+    import json as _json
+    current = _json.loads((Path(__file__).resolve().parent.parent.parent / "insight_rules.json").read_text())
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ws.upgrade_map_condition(current)  # must not warn
+
+
 def test_load_workspace_rules_applies_the_upgrade(tmp_path):
     registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
     manifest = ws.create_workspace(registry_path, root, "rules-upgrade", "916iS")

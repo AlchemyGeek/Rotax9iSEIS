@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .cas import analyze_inflight_pattern
+from .fleet import confidence_label
 
 
 # ── Shared rule-evaluation helpers (moved from notebook 04) ──────────────────
@@ -210,15 +211,23 @@ def overboost(ob_total, ob_max, ob_limit, close_call_s: Optional[float] = None) 
     return {"analysis": analysis, "insights": insights}
 
 
-def takeoff_map(obs_map, obs_pa, obs_oat, map_model: dict) -> dict:
+def takeoff_map(obs_map, obs_pa, obs_oat, model_fit: dict, z: float = 2.0) -> dict:
+    """
+    Spec 10 D5: `model_fit` is this flight's own leave-one-out fit (the
+    regression fitted on every OTHER flight — operations._leave_one_out_
+    map_fit), not a fit that includes this flight. The tolerance is
+    `z` times that fit's residual standard error, not a fixed inHg
+    band. A flight whose pressure altitude or OAT falls outside the
+    range the model was fitted on gets no insight — the comparison
+    isn't meaningful there, so the analysis line says why instead.
+    """
     if obs_map is None:
         return {
             "analysis": "No takeoff MAP data available — "
                         "flight may lack a TAKEOFF phase with RPM ≥ 5,500.",
             "insights": [],
         }
-    n_model = map_model.get("n", 0)
-    conf = map_model.get("confidence", "")
+    n_model = model_fit.get("n", 0)
     pa_str = f"{obs_pa:,.0f} ft PA" if obs_pa is not None else "unknown PA"
     oat_str = f"{obs_oat:.0f}°C" if obs_oat is not None else "unknown OAT"
     insights = []
@@ -231,21 +240,39 @@ def takeoff_map(obs_map, obs_pa, obs_oat, map_model: dict) -> dict:
         )
         return {"analysis": analysis, "insights": insights}
 
-    exp_map = predict_takeoff_map(map_model, obs_pa, obs_oat) \
+    pa_range = model_fit.get("pa_range")
+    oat_range = model_fit.get("oat_range")
+    outside_range = (
+        (pa_range is not None and obs_pa is not None and not (pa_range[0] <= obs_pa <= pa_range[1]))
+        or (oat_range is not None and obs_oat is not None and not (oat_range[0] <= obs_oat <= oat_range[1]))
+    )
+    if outside_range:
+        analysis = (
+            f"Observed MAP at takeoff: {obs_map:.1f} inHg at {pa_str}, {oat_str}. "
+            f"This takeoff was outside the range of elevations or temperatures "
+            f"your personal model has seen (n={n_model}), so it wasn't compared."
+        )
+        return {"analysis": analysis, "insights": insights}
+
+    exp_map = predict_takeoff_map(model_fit, obs_pa, obs_oat) \
         if obs_pa is not None and obs_oat is not None else None
-    r2 = map_model.get("r_squared", 0)
+    r2 = model_fit.get("r_squared", 0)
+    se = model_fit.get("residual_se")
     if exp_map is not None:
         delta = obs_map - exp_map
+        conf = confidence_label(n_model).split(" ")[0]
         analysis = (
             f"Observed MAP at takeoff: {obs_map:.1f} inHg at {pa_str}, {oat_str}. "
             f"Model expected: {exp_map:.1f} inHg "
-            f"(n={n_model}, {conf.split(' ')[0]}, R²={r2:.2f})."
+            f"(n={n_model}, {conf}, R²={r2:.2f})."
         )
-        if abs(delta) >= 1.5:
+        if se is not None and abs(delta) >= z * se:
             direction = "below" if delta < 0 else "above"
+            tolerance = z * se
+            reason = "possible turbo underperformance, monitor trend." if delta < 0 else "verify sensor."
             insights.append({"trigger": "threshold", "text": (
-                f"⚠ {abs(delta):.1f} inHg {direction} model — "
-                f"{'possible turbo underperformance, monitor trend.' if delta < 0 else 'above model — verify sensor.'}"
+                f"⚠ {abs(delta):.2f} inHg {direction} model "
+                f"(your takeoffs normally vary within ±{tolerance:.2f} inHg) — {reason}"
             )})
     else:
         analysis = (

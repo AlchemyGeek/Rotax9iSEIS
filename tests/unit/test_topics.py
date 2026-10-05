@@ -187,17 +187,68 @@ def test_takeoff_map_no_data():
 
 
 def test_takeoff_map_still_collecting():
-    result = topics.takeoff_map(45.0, 1000, 20, {"n": 3, "confidence": "LOW"})
+    result = topics.takeoff_map(45.0, 1000, 20, {"n": 3})
     assert "Still collecting" in result["analysis"]
 
 
+def _loo_model(**overrides):
+    model = {"n": 10, "r_squared": 0.8, "residual_se": 1.0,
+             "coefficients": {"intercept": 40, "pressure_alt_ft": 0.0, "oat_c": 0.0},
+             "pa_range": (0, 5000), "oat_range": (-10, 40)}
+    model.update(overrides)
+    return model
+
+
 def test_takeoff_map_deviation_fires_insight():
-    model = {"n": 10, "confidence": "GOOD", "r_squared": 0.8,
-             "coefficients": {"intercept": 40, "pressure_alt_ft": 0.0, "oat_c": 0.0}}
-    result = topics.takeoff_map(45.0, 1000, 20, model)
-    # expected == 40, observed == 45 -> delta 5, above threshold
+    # expected == 40, observed == 45 -> delta 5, residual_se 1.0, z default
+    # 2.0 -> fires (5 >= 2.0)
+    result = topics.takeoff_map(45.0, 1000, 20, _loo_model())
     assert result["insights"]
-    assert "above" in result["insights"][0]["text"]
+    text = result["insights"][0]["text"]
+    assert "above" in text
+    # residual and tolerance (z * residual_se) shown at two decimals
+    assert "5.00 inHg above model" in text
+    assert "within ±2.00 inHg" in text
+    assert "verify sensor." in text
+
+
+def test_takeoff_map_deviation_below_names_turbo_underperformance():
+    # expected == 40, observed == 35 -> delta -5, fires below
+    result = topics.takeoff_map(35.0, 1000, 20, _loo_model())
+    text = result["insights"][0]["text"]
+    assert "5.00 inHg below model" in text
+    assert "within ±2.00 inHg" in text
+    assert "possible turbo underperformance, monitor trend." in text
+
+
+def test_takeoff_map_just_under_z_times_se_does_not_fire():
+    # delta 1.9, z*se == 2.0 -> below threshold
+    result = topics.takeoff_map(41.9, 1000, 20, _loo_model())
+    assert result["insights"] == []
+    assert "Model expected" in result["analysis"]
+
+
+def test_takeoff_map_just_over_z_times_se_fires():
+    # delta 2.1, z*se == 2.0 -> above threshold
+    result = topics.takeoff_map(42.1, 1000, 20, _loo_model())
+    assert result["insights"]
+
+
+def test_takeoff_map_outside_fitted_range_gives_no_insight():
+    # pa 1000 is within [0, 5000], oat 50 is outside [-10, 40]
+    result = topics.takeoff_map(45.0, 1000, 50, _loo_model())
+    assert result["insights"] == []
+    # Spec 10 D5 / Spec 03 §5.2: the "not compared" line names both why
+    # (outside the range the model has seen) and the consequence
+    # (wasn't compared) — not just one or the other.
+    assert ("This takeoff was outside the range of elevations or temperatures "
+            "your personal model has seen (n=10), so it wasn't compared.") in result["analysis"]
+
+
+def test_takeoff_map_within_fitted_range_is_compared_normally():
+    result = topics.takeoff_map(40.0, 1000, 20, _loo_model())
+    assert "wasn't compared" not in result["analysis"]
+    assert "Model expected" in result["analysis"]
 
 
 def test_oil_temp_peak_names_the_exceedance_but_raises_no_insight_of_its_own():

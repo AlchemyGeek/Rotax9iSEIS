@@ -520,7 +520,7 @@ export function Baselines() {
                         <label style={{ fontSize: 12, color: "var(--text-secondary)" }}>Condition</label>
                         <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                           {trig.condition}
-                          {trig.tolerance_hpa !== undefined && ` (±${trig.tolerance_hpa} hPa)`}
+                          {trig.z !== undefined && ` (z=${trig.z})`}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>structural — not editable here</div>
                       </>

@@ -183,7 +183,9 @@ export interface RuleTrigger {
   limit_ref?: string;
   unit?: string;
   condition?: string;
-  tolerance_hpa?: number;
+  // map_at_takeoff's vs_personal_model condition (Spec 10 D5): z times
+  // the leave-one-out fit's residual standard error, not a fixed band.
+  z?: number;
   n_min?: number;
   // "either" (Spec 08 §6) fires on a clear trend in both directions.
   direction?: TrendDirection;
