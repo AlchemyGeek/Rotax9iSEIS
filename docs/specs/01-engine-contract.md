@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.15 — for review (§8.8 not yet implemented)
+**Status:** Draft v0.16 — for review (§8.8 not yet implemented)
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -25,6 +25,7 @@
 | 0.13 | §8.4: new **R8** — `baseline_deviation` compares a flight against the leave-one-out baseline **of its own weather band** for stratified metrics, falling back to the unstratified leave-one-out baseline when the flight has no band or its band has fewer than `n_min` other flights. Removes the seasonal false positives the unstratified comparison produced and makes insights agree with the stratified Trends view. `by_band.bands[*]` gains per-band `outliers`; insight `values` record which comparison was used. Acceptance criterion 8 (§12) is superseded: its counts are regenerated on the full log set. Decided in the Spec 09 discussion (Q8); Spec 09's filter monitor uses the same comparison rule. |
 | 0.14 | §6.4: documented, not designed — `fuel_press_psi` is the only signal the logs carry for fuel pump activity; the G3X CSV has no pump-selection or pump-running channel (`FPCM FAULT` is a fault flag, not a state indicator — confirmed against the full fleet's column set, which is identical across logs). Noted as a known gap, with a future pump-state inference model (predicting which pump(s) are running from the pressure signature) tracked as BACKLOG A7. Raised investigating the real fuel-pressure exceedances from BACKLOG G1. |
 | 0.15 | New **§8.8 Topic help**: a one-paragraph, pilot-facing explanation per topic, kept outside code in one markdown file shipped in the package (`slingology_eis/help/topics.md`), with placeholders for limit values, profile values, rule parameters and baseline config, resolved by the engine and returned as structured values so the UI formats them in the pilot's units. New operation `get_topic_help` (§7), CLI subcommand `explain` (§7.1), §9 topic modules declare their help entry, §12 acceptance 10. Requested in Spec 10 v0.5 (help text is part of admission). Also §8.5: `TopicResult.limit_refs` (each referenced limit resolved to this flight's `limit_exceedances` insight, for the mirrored badge — Spec 09 v0.13 §10.2, Spec 10 §4.1); the `topic_id` comment now defers to Spec 10's register and lists the eight visible topics. Planning numbers (fuel burned, cruise nm/gal, cruise fuel flow) stay in `FlightAnalysis.metrics` and are no longer topics (Spec 10 §4.2). |
+| 0.16 | §8.8: `TopicHelp.validated` — whether the topic is validated on the active engine profile (Spec 10 v0.7 §8.1, from `register.json`); `false` drives the "not yet validated on this engine" note (Spec 03 §5.2). |
 
 ---
 
@@ -492,6 +493,7 @@ interface TopicHelp {
   values: Record<string, { value: number | string; unit: string | null }>;  // keyed by the placeholder text
   text: string;                  // canonical-unit rendering, for the CLI and plain-text use
   applies: boolean;              // false when the active profile isn't in applies_to (the UI hides the ?)
+  validated: boolean;            // v0.16: Admitted (not Unverified) for the active engine profile in Spec 10's register
   last_reviewed: string;
 }
 ```
