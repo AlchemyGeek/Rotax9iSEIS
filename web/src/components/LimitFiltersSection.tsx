@@ -261,6 +261,13 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                   <li key={i}>{r}</li>
                 ))}
                 {h.drift_details && h.drift_details.length > 0 && (
+                  <li style={{ listStyle: "none", marginLeft: -18, color: "var(--text-tertiary)" }}>
+                    The shaded area on the charts below marks the {h.reference?.flight_ids.length ?? filter.reference.flight_ids.length} reference
+                    flights (grey): what was normal when you set this filter, last changed its limits or re-baselined it. Drift
+                    compares your recent flights with them. If the new behaviour is expected, Re-baseline makes your latest flights the reference.
+                  </li>
+                )}
+                {h.drift_details && h.drift_details.length > 0 && (
                   <li style={{ listStyle: "none", marginLeft: -18 }}>
                     <span title={driftDetailText(h.drift_details)} style={{ fontSize: 11, color: "var(--text-tertiary)", cursor: "help", textDecoration: "underline dotted" }}>
                       How was this decided?

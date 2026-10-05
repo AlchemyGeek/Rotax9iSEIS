@@ -19,23 +19,28 @@ function chartOption({
   unit,
   band,
   byWeather,
+  showReference,
 }: {
   series: Series;
   field: "peak_excess" | "block_s" | "time_above_pct";
   unit: string;
   band?: number | null;
   byWeather: boolean;
+  showReference: boolean;
 }): EChartsOption {
   const pts = series.filter((s) => s[field] !== null && s[field] !== undefined && s.engine_hours !== null);
-  const ref = pts.filter((s) => s.in_reference).map((s) => s.engine_hours as number);
-  // Default: grey = reference, teal = flights since, red = beyond the
-  // filter. Coloured by weather, breaches keep a red ring instead.
+  // The reference span covers every reference flight, plotted or not — a
+  // reference flight without an exceedance has no magnitude point.
+  const ref = showReference ? series.filter((s) => s.in_reference && s.engine_hours !== null).map((s) => s.engine_hours as number) : [];
+  // Default: teal = flights, red = beyond the filter; while the filter is
+  // drifting, its reference flights are grey and shaded (what drift is
+  // measured against). Coloured by weather, breaches keep a red ring.
   const pointStyle = (s: Series[number]) => {
     if (byWeather) {
       const fill = s.band ? bandColor(s.band) : colors.textTertiary;
       return s.breaches > 0 ? { color: fill, borderColor: colors.severityLimit, borderWidth: 2 } : { color: fill };
     }
-    return { color: s.breaches > 0 ? colors.severityLimit : s.in_reference ? colors.textTertiary : colors.accent };
+    return { color: s.breaches > 0 ? colors.severityLimit : showReference && s.in_reference ? colors.textTertiary : colors.accent };
   };
   return {
     animation: false,
@@ -53,7 +58,7 @@ function chartOption({
           `${s.date ?? ""} · ${s.engine_hours?.toFixed(1)} h`,
           `${v.toFixed(field === "time_above_pct" ? 1 : 2)} ${unit}`,
           s.band ? `band: ${bandLabel(s.band)}` : "",
-          s.in_reference ? "reference flight" : "",
+          showReference && s.in_reference ? "reference flight" : "",
           s.breaches ? `${s.breaches} beyond the filter` : s.events ? `${s.events} event(s), all within the filter` : "",
         ].filter(Boolean).join("<br/>");
       },
@@ -113,8 +118,9 @@ const WEATHER_TOGGLE_LABEL: Record<string, string> = {
 
 // Spec 09 §12.2: a filter's two small charts over flights — how far past
 // the limit each flight went (with the filter band drawn) and how much of
-// it was spent past the limit. Grey: the reference flights the filter
-// compares against (shaded); teal: flights since; red: beyond the filter.
+// it was spent past the limit. Teal: flights; red: beyond the filter.
+// While the filter is drifting, the reference flights it compares against
+// are grey and shaded.
 // For a weather-sensitive limit, an optional colouring by weather band
 // (the Trends view's stratified colours) shows why a flight that looks
 // high can still be normal for its conditions.
@@ -133,6 +139,9 @@ export function FilterHealthCharts({
   const isOverboost = health.limit_id === "overboost";
   const magField = isOverboost ? "block_s" : "peak_excess";
   const band = health.resolved_band?.value;
+  // The reference flights only matter to the pilot when the filter is
+  // drifting away from them, so they're shaded only then.
+  const showReference = Boolean(health.drift_details?.length);
   const bands = useMemo(
     () =>
       [...new Set(health.series.map((s) => s.band).filter((b): b is string => Boolean(b)))].sort(
@@ -148,12 +157,13 @@ export function FilterHealthCharts({
         unit: isOverboost ? "s" : unit,
         band: isOverboost && band !== null && band !== undefined ? limitValue + band : band,
         byWeather,
+        showReference,
       }),
-    [health, magField, isOverboost, unit, band, limitValue, byWeather],
+    [health, magField, isOverboost, unit, band, limitValue, byWeather, showReference],
   );
   const pctOption = useMemo(
-    () => chartOption({ series: health.series, field: "time_above_pct", unit: "%", byWeather }),
-    [health, byWeather],
+    () => chartOption({ series: health.series, field: "time_above_pct", unit: "%", byWeather, showReference }),
+    [health, byWeather, showReference],
   );
   const legendStyle: React.CSSProperties = { fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" };
   // A limit none of the flights went past has no magnitudes to plot, and
@@ -196,13 +206,15 @@ export function FilterHealthCharts({
           </>
         ) : (
           <>
-            <span>
-              <Dot color={colors.textTertiary} />
-              reference flights (shaded)
-            </span>
+            {showReference && (
+              <span>
+                <Dot color={colors.textTertiary} />
+                reference flights (shaded)
+              </span>
+            )}
             <span>
               <Dot color={colors.accent} />
-              flights since
+              {showReference ? "other flights" : "flights"}
             </span>
             <span>
               <Dot color={colors.severityLimit} />
