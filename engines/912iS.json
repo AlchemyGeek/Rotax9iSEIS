@@ -28,8 +28,11 @@
       "severity": "CAUTION",
       "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
       "exceedance_merge_gap_s": 0,
+      "min_duration_s": 30,
       "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance.",
       "min_rpm": 1000,
+      "_requires_reached_since_start_note": "Spec 10 D16: the idle minimum applies only after rpm has reached min_val at least once since engine start, so spool-up isn't an idle exceedance.",
+      "requires_reached_since_start": true,
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {
@@ -55,6 +58,8 @@
       "severity": "WARNING",
       "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
       "filter_policy": { "filterable": false, "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading." },
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same physics as volts_min/fuel_press_min/rpm_idle_min: with the engine stopped the oil pump isn't turning and the reading falls to 0 psi, which is not a fault.",
+      "min_rpm": 1000,
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {
@@ -154,6 +159,8 @@
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same gate as fuel_press_min and rpm_idle_min: with the engine stopped (master or avionics off at shutdown) the bus reads 0.0 V, which is not a fault.",
+      "min_rpm": 1000,
       "note": "PLACEHOLDER \u2014 verify against OM"
     },
     {

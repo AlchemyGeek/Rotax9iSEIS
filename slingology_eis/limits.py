@@ -72,6 +72,12 @@ class Limit:
     # minimum), where phase labels alone can't be trusted at the end of a
     # log. None = no RPM gate.
     min_rpm: Optional[float] = None
+    # Spec 10 D16: check this limit only after its own threshold has been
+    # reached at least once since the start of the flight — for limits
+    # whose minimum describes a state the engine reaches during spool-up,
+    # not from the first sample (rpm_idle_min: the OM's 1,800 rpm idle
+    # minimum doesn't apply until the engine has actually idled there once).
+    requires_reached_since_start: bool = False
 
 
 # ── Engine config loader ──────────────────────────────────────────────────────
@@ -215,6 +221,7 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
             stratify_by=resolve_stratify_by(entry),
             merge_gap_s=entry.get("exceedance_merge_gap_s"),
             min_rpm=entry.get("min_rpm"),
+            requires_reached_since_start=entry.get("requires_reached_since_start", False),
         ))
     return limits
 
@@ -489,6 +496,20 @@ def check_exceedances(
         # (a missing RPM reading counts as not running).
         if lim.min_rpm is not None and "rpm" in working_df.columns:
             working_df = working_df[working_df["rpm"].fillna(0) >= lim.min_rpm]
+        # Idle-established gate (Spec 10 D16) — the limit applies only
+        # after its own threshold has been reached at least once since
+        # the start of the flight (e.g. rpm reaching 1,800 at least once
+        # before idle-minimum checking begins), so spool-up before the
+        # engine has ever gotten there isn't an exceedance. A phase
+        # exclusion can't do this: spool-up mostly falls in WARMUP, and
+        # excluding WARMUP would also hide a real low warm-up idle.
+        if lim.requires_reached_since_start and lim.param in working_df.columns:
+            threshold = lim.min_val if lim.min_val is not None else lim.max_val
+            if threshold is not None:
+                reached = (working_df[lim.param] >= threshold) if lim.min_val is not None \
+                    else (working_df[lim.param] <= threshold)
+                reached_idx = working_df.index[reached.fillna(False)]
+                working_df = working_df.loc[reached_idx[0]:] if len(reached_idx) else working_df.iloc[0:0]
 
         series = working_df[lim.param]
         if series.isna().all():

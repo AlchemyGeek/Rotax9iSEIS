@@ -35,7 +35,9 @@
       "min_duration_s": 30,
       "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance — same gate as fuel_press_min. A real low idle stays well above 1,000 rpm.",
       "min_rpm": 1000,
-      "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
+      "_requires_reached_since_start_note": "Spec 10 D16: the idle minimum applies only after rpm has reached 1,800 at least once since engine start, so spool-up isn't an idle exceedance. A phase exclusion can't do this — most of spool-up falls in WARMUP, and excluding WARMUP would also hide a real low warm-up idle.",
+      "requires_reached_since_start": true,
+      "note": "Engine must idle at or above 1,800 rpm — the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
     },
     {
       "id": "rpm_takeoff_max",
@@ -209,6 +211,8 @@
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same gate as fuel_press_min and rpm_idle_min: with the engine stopped (master or avionics off at shutdown) the bus reads 0.0 V, which is not a fault.",
+      "min_rpm": 1000,
       "note": "Below ~12V indicates alternator failure or excessive load"
     },
     {

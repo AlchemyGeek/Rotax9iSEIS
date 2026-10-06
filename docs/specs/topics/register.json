@@ -1,0 +1,127 @@
+{
+  "version": "1.0",
+  "_comment": "Spec 10 v0.7 §5 (D12). topics[]: one entry per rule id in insight_rules.json, plus every topic retired or removed per §5.2 (kept as history). status is per engine profile, taken from §5.2's 'Status today' column (916iS) plus §8.1's rule that every other profile is Unverified for a topic that is Admitted on 916iS and applies to it, or 'n/a' where the topic doesn't apply (map_at_takeoff on the non-turbo 912iS). A topic whose §5.2 status is not Admitted (Research, or gone from code) carries that same status on every profile, since that state isn't a per-engine validation fact. topic_spec is null except where §9 names one (Spec 08, for egt_cyl_deviation and cylinder_rank). help is Phase E's concern (not checked until then) but recorded now: true only for an Admitted topic that currently produces its own Flight-view card (TopicResult) — cylinder_rank is Admitted but retired as an insight (D4) and emits no TopicResult of its own, so it needs none.",
+  "topics": [
+    {
+      "topic_id": "egt_spread",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "egt_cyl_deviation",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": "docs/specs/08-cylinder-balance-trends.md",
+      "help": true
+    },
+    {
+      "topic_id": "cylinder_rank",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": "docs/specs/08-cylinder-balance-trends.md",
+      "help": false,
+      "_help_note": "Admitted, but its insight was retired (D4) and it emits no TopicResult of its own — rank shows only as context on egt_cyl_deviation's card."
+    },
+    {
+      "topic_id": "oil_temp_peak",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "coolant_temp_peak",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "oil_coolant_ratio",
+      "status": { "916iS": "Removed", "915iS": "Removed", "914iS": "Removed", "912iS": "Removed" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Dropped (decided v0.4, D1); removed from insight_rules.json in Spec 10 Phase A. Idea kept as candidate C5 (§7)."
+    },
+    {
+      "topic_id": "overboost_time",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "cruise_efficiency",
+      "status": { "916iS": "Removed", "915iS": "Removed", "914iS": "Removed", "912iS": "Removed" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Left the topic set (Q4), moved to the flight-summary line; removed from insight_rules.json in Spec 10 Phase A."
+    },
+    {
+      "topic_id": "cruise_fuel_flow",
+      "status": { "916iS": "Removed", "915iS": "Removed", "914iS": "Removed", "912iS": "Removed" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Left the topic set (Q4), moved to the flight-summary line; removed from insight_rules.json in Spec 10 Phase A."
+    },
+    {
+      "topic_id": "map_at_takeoff",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "n/a" },
+      "topic_spec": null,
+      "help": true,
+      "_status_note": "n/a on the 912iS — not turbocharged, no boost to check."
+    },
+    {
+      "topic_id": "engine_ecu_inflight",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "limit_exceedances",
+      "status": { "916iS": "Admitted", "915iS": "Unverified", "914iS": "Unverified", "912iS": "Unverified" },
+      "topic_spec": null,
+      "help": true
+    },
+    {
+      "topic_id": "climb_thermal_rate",
+      "status": { "916iS": "Research", "915iS": "Research", "914iS": "Research", "912iS": "Research" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Research (decided v0.4, D2) — fails A7; rule disabled, metrics still computed."
+    },
+    {
+      "topic_id": "egt4_elevation",
+      "status": { "916iS": "Removed", "915iS": "Removed", "914iS": "Removed", "912iS": "Removed" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Deprecated in engine 0.14.0 (Spec 08); removed (decided v0.4, D3) — superseded by egt_cyl_deviation cylinder 4."
+    },
+    {
+      "topic_id": "flight_phase_mix",
+      "status": { "916iS": "Removed", "915iS": "Removed", "914iS": "Removed", "912iS": "Removed" },
+      "topic_spec": null,
+      "help": false,
+      "history": "Dropped as a topic in toolkit v0.10.0 (replaced by the \"no cruise detected\" header note); leftover rule removed (decided v0.4, D3)."
+    }
+  ],
+  "allowlist": [
+    {
+      "limit_id": "fuel_press_max",
+      "aircraft": "N117ZS",
+      "cause": "3a",
+      "evidence": "Steady +0.9–1.6 psi offset through CLIMB/CRUISE/DESCENT, consistent flight to flight, plausible values; confirm sender calibration vs regulator pressure with a mechanic.",
+      "register_ref": "D15"
+    },
+    {
+      "limit_id": "rpm_idle_min",
+      "aircraft": "N117ZS",
+      "cause": "3a",
+      "evidence": "Ground idle consistently ~1,770–1,780 rpm, 20–30 rpm below the OM minimum; worth checking the idle throttle-position setting with a Rotax service centre.",
+      "register_ref": "D16"
+    },
+    {
+      "limit_id": "rpm_takeoff_max",
+      "aircraft": "N117ZS",
+      "cause": "3a",
+      "evidence": "Prop-governor overshoot on power application; every reading above 5,800 rpm is formally an exceedance of the maximum rpm limit, and whether action is required is for the Maintenance Manual Line to say; a 40–90 rpm power-up overshoot is worth mentioning to whoever maintains the propeller governor.",
+      "register_ref": "D17"
+    }
+  ]
+}

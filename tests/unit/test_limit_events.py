@@ -557,3 +557,96 @@ def test_fuel_pressure_minimum_is_rpm_gated_in_the_profiles():
     for engine in ("915iS", "916iS"):
         lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "fuel_press_min")
         assert lim["min_rpm"] == 1000
+
+
+# ── Idle-established gate (Spec 10 D16) ─────────────────────────────────────
+
+def test_requires_reached_since_start_excludes_spool_up_but_not_a_later_dip():
+    lim = {"id": "rpm_idle_min", "param": "rpm", "label": "Idle RPM minimum", "unit": "rpm",
+           "min_val": 1800.0, "severity": "CAUTION", "min_duration_s": 30, "min_rpm": 1000,
+           "requires_reached_since_start": True}
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=170, freq="1s"),
+        # 0-39s: spool-up, steady at 1700 for 40 s — well under 1,800, and
+        # long enough that, ungated, it alone would be a reportable event;
+        # 40-109s: reaches and holds 1,800 (idle established); 110-169s: a
+        # later 60 s dip to 1750 (idle is established by then, so this IS
+        # a real exceedance).
+        "rpm": [1700.0] * 40 + [1800.0] * 70 + [1750.0] * 60,
+    })
+    events = check_exceedances(df, _cfg(0, [lim]))
+    assert [(e.observed_value, e.duration_s) for e in events] == [(1750.0, 60.0)]
+    # the same series, ungated, also flags the pre-idle-established dip
+    ungated = {k: v for k, v in lim.items() if k != "requires_reached_since_start"}
+    ungated_events = check_exceedances(df, _cfg(0, [ungated]))
+    assert sorted(e.observed_value for e in ungated_events) == [1700.0, 1750.0]
+
+
+def test_requires_reached_since_start_flags_nothing_if_threshold_never_reached():
+    lim = {"id": "rpm_idle_min", "param": "rpm", "label": "Idle RPM minimum", "unit": "rpm",
+           "min_val": 1800.0, "severity": "CAUTION", "min_duration_s": 10, "min_rpm": 1000,
+           "requires_reached_since_start": True}
+    n = 60
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        "rpm": [1700.0] * n,  # never reaches 1,800
+    })
+    assert check_exceedances(df, _cfg(0, [lim])) == []
+
+
+def test_rpm_idle_min_is_idle_established_in_the_profiles():
+    for engine in ("912iS", "914iS", "915iS", "916iS"):
+        lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "rpm_idle_min")
+        assert lim.get("min_rpm") == 1000
+
+
+def test_kfcm_spool_up_raises_no_rpm_idle_min_event_but_a_later_low_idle_still_does():
+    """Spec 10 D16 fingerprint regression: the exact KFCM pattern (spool-up
+    climbing through sub-1,800 rpm right after start) raises nothing, but
+    a synthetic flight that idles at 1,750 rpm for 60 s *after* reaching
+    1,800 still does — the gate is about timing, not magnitude."""
+    cfg = load_engine_config("916iS")
+    lim = next(l for l in engine_limits_from_config(cfg) if l.id == "rpm_idle_min")
+    assert lim.requires_reached_since_start is True
+    n = 100
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        "rpm": list(np.linspace(1080, 1800, 35)) + [1800.0] * 5 + [1750.0] * 60,
+    })
+    events = check_exceedances(df, cfg)
+    idle_events = [e for e in events if e.limit_id == "rpm_idle_min"]
+    assert len(idle_events) == 1
+    assert idle_events[0].duration_s == 60.0
+
+
+def test_volts_min_is_rpm_gated_in_the_profiles():
+    for engine in ("912iS", "914iS", "915iS", "916iS"):
+        lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "volts_min")
+        assert lim.get("min_rpm") == 1000
+
+
+def test_volts_min_engine_running_event_still_fires():
+    # Spec 09 acceptance 23: a bus drop with the engine running must still
+    # raise an event — the gate excludes rpm < min_rpm, nothing else.
+    lim = {"id": "volts_min", "param": "main_volts", "label": "Bus voltage minimum", "unit": "V",
+           "min_val": 11.5, "severity": "CAUTION", "min_rpm": 1000, "min_duration_s": 10}
+    n = 120
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        "rpm": [5000.0] * n,
+        "main_volts": [13.0] * 30 + [11.0] * 60 + [13.0] * 30,
+    })
+    events = check_exceedances(df, _cfg(30, [lim]))
+    assert [(e.observed_value, e.duration_s) for e in events] == [(11.0, 60.0)]
+
+
+def test_volts_min_zero_at_shutdown_with_engine_stopped_raises_nothing():
+    lim = {"id": "volts_min", "param": "main_volts", "label": "Bus voltage minimum", "unit": "V",
+           "min_val": 11.5, "severity": "CAUTION", "min_rpm": 1000}
+    n = 80
+    df = pd.DataFrame({
+        "datetime": pd.date_range("2026-01-01 12:00:00", periods=n, freq="1s"),
+        "rpm": [5000.0] * 60 + [float("nan")] * 20,
+        "main_volts": [13.0] * 60 + [0.0] * 20,
+    })
+    assert check_exceedances(df, _cfg(30, [lim])) == []

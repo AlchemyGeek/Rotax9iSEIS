@@ -1,6 +1,6 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "d8bf6b7c5e1cef70012429e81d50b7be2c866964fbd14e1758506a5a524cea89",
+  "analysis_key": "539dd637673be3b39ee0adca4372cc34351f7368f5cd000ae5f5a139fdc5bc2b",
   "source_keys": [
     "e6db755e9c40fa8c"
   ],
@@ -488,12 +488,13 @@
     },
     "lim_volts_min_peak_excess": {
       "id": "lim_volts_min_peak_excess",
-      "value": 11.5,
-      "unit": "V"
+      "value": null,
+      "unit": "V",
+      "missing": "NOT_APPLICABLE"
     },
     "lim_volts_min_time_above_pct": {
       "id": "lim_volts_min_time_above_pct",
-      "value": 0.3873,
+      "value": 0.0,
       "unit": "%"
     },
     "lim_volts_max_peak_excess": {
@@ -550,7 +551,7 @@
       "start_utc": "2026-04-23T20:09:56",
       "elapsed_s": 220.0,
       "duration_s": 40.0,
-      "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
+      "note": "Engine must idle at or above 1,800 rpm \u2014 the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
     },
     {
       "limit_id": "rpm_takeoff_max",
@@ -695,22 +696,6 @@
       "elapsed_s": 8681.0,
       "duration_s": 1.0,
       "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit"
-    },
-    {
-      "limit_id": "volts_min",
-      "event_id": "volts_min@2026-04-24T00:35:10",
-      "excess": 11.5,
-      "param": "main_volts",
-      "label": "Bus voltage minimum",
-      "unit": "V",
-      "severity": "CAUTION",
-      "limit_type": "MIN",
-      "limit_value": 11.5,
-      "observed_value": 0.0,
-      "start_utc": "2026-04-24T00:35:10",
-      "elapsed_s": 16134.0,
-      "duration_s": 62.0,
-      "note": "Below ~12V indicates alternator failure or excessive load"
     }
   ],
   "cas_events": [
@@ -1030,11 +1015,11 @@
   ],
   "quality": [],
   "provenance": {
-    "engine_version": "0.26.0",
+    "engine_version": "0.27.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
-      "hash": "9292ae07038f5ddd6da16e1e4f080a45455d003ac1667d2a0e5e8b77759fceb8",
+      "hash": "0d2e357c73484a63b46b6e8fc93f033952ba2de5e818f39d869cfc604cc0689b",
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
@@ -1294,7 +1279,7 @@
       "severity": "CAUTION",
       "report_in_exceedances": true,
       "stratify_by": null,
-      "min_rpm": null
+      "min_rpm": 1000
     },
     {
       "id": "volts_max",
