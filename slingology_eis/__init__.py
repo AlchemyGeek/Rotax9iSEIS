@@ -15,12 +15,14 @@ baselines   : Personal-baseline computation shared by the fleet and contract lay
 topics      : The 14 analytics topics — one Analysis line + conditional Insight(s) each
 registry    : Metric/topic registries backing the engine contract
 contract    : Provenance, Diagnostic, and the shared diagnostic catalog
-operations  : The engine contract's four operations — analyze_flight, analyze_ecu,
-              update_fleet, evaluate_insights — and their typed result objects
+operations  : The engine contract's five operations — analyze_flight, analyze_ecu,
+              update_fleet, evaluate_insights, get_topic_help — and their typed
+              result objects
+help        : topics.md parser, placeholder resolution, TopicHelp (Spec 01 §8.8)
 rules       : validate_rules / what_if_rules for insight_rules.json
 serialize   : NaN-safe JSON serialization for contract result objects
 cli         : The `slingology-eis` command-line adapter
 """
 
-__version__ = "0.27.0"
+__version__ = "0.28.0"
 __author__  = "Slingology EIS Research"

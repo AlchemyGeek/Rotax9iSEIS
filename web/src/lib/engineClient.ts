@@ -1,5 +1,6 @@
 import type {
   ActiveWorkspace,
+  AircraftSummary,
   Annotation,
   AnnotationRef,
   AppSettings,
@@ -25,6 +26,7 @@ import type {
   RuleSet,
   ScanProgress,
   ScanResult,
+  TopicHelpResult,
   WhatIfResult,
   WorkspaceManifest,
   WorkspaceRegistryEntry,
@@ -136,6 +138,13 @@ export interface EngineClient {
   saveAppSettings(settings: AppSettings): Promise<AppSettings>;
   getWorkspaceSettings(): Promise<WorkspaceSettings>;
   saveWorkspaceSettings(settings: WorkspaceSettings): Promise<WorkspaceSettings>;
+
+  // Spec 01 §8.8 / Spec 03 §5.2 — fetched once per engine profile and
+  // rule set and cached by the caller, not per flight.
+  getTopicHelp(topicIds?: string[]): Promise<TopicHelpResult>;
+
+  // Spec 02 v0.8 §5.6/§6.6
+  getAircraftSummary(): Promise<AircraftSummary>;
 
   // Spec 03 §5.5 rule playground — one editor, two documents
   // (rules/active.json + BaselineConfig), plus the live per-flight diff.
@@ -407,6 +416,14 @@ export class LocalServerClient implements EngineClient {
 
   saveWorkspaceSettings(settings: WorkspaceSettings) {
     return this.rpc<WorkspaceSettings>("save_workspace_settings", { settings });
+  }
+
+  getTopicHelp(topicIds?: string[]) {
+    return this.rpc<TopicHelpResult>("get_topic_help", { topic_ids: topicIds });
+  }
+
+  getAircraftSummary() {
+    return this.rpc<AircraftSummary>("get_aircraft_summary", {});
   }
 
   getWorkspaceRules() {

@@ -222,6 +222,33 @@ export interface RuleSet {
   rules: Record<string, RuleTopic>;
 }
 
+// Spec 01 §8.8: topic help. `values` is keyed by the literal placeholder
+// text ("{limit:oil_temp_max}") so the UI can re-format each value in the
+// pilot's units (Spec 02 §6.6) without re-parsing `template`.
+export interface TopicHelp {
+  id: string;
+  title: string;
+  template: string;
+  values: Record<string, { value: number | string; unit: string | null }>;
+  text: string;
+  applies: boolean;
+  validated: boolean;
+  last_reviewed: string;
+}
+
+export interface TopicHelpResult {
+  topics: TopicHelp[];
+  diagnostics: Diagnostic[];
+}
+
+// Spec 02 v0.8 §5.6/§6.6: distinct aircraft across admitted flights,
+// after aircraft_aliases grouping.
+export interface AircraftSummary {
+  idents: string[];
+  raw_idents: string[];
+  aliases: string[][];
+}
+
 export interface WorkspaceRulesResult {
   rules: RuleSet;
   shipped_rules: RuleSet;
@@ -502,6 +529,9 @@ export interface WorkspaceSettings {
   anonymize_by_default: boolean;
   active_engine_profile: string;
   last_view?: { kind: string; flight_id?: string };
+  // Spec 02 v0.8 §5.6/§6.6: groups of aircraft_ident values the pilot
+  // confirmed are one aircraft, e.g. [["N117ZS", "N117Z"]].
+  aircraft_aliases?: string[][];
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

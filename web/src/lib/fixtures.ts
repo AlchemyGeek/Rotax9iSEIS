@@ -14,7 +14,11 @@ import flightsTableRaw from "../fixtures/flights-table.json";
 import ksffAnalysisRaw from "../fixtures/flight-ksff-analysis.json";
 import ksffInsightsRaw from "../fixtures/flight-ksff-insights.json";
 import insightRulesRaw from "../fixtures/insight-rules.json";
+import topicHelpRaw from "../fixtures/topic-help.json";
+import topicHelp912isRaw from "../fixtures/topic-help-912is.json";
+import aircraftSummaryRaw from "../fixtures/aircraft-summary.json";
 import type {
+  AircraftSummary,
   AnnotationStore,
   AppSettings,
   EcuAnalysis,
@@ -26,6 +30,7 @@ import type {
   RuleOverboostFixture,
   RuleSet,
   SeriesFixture,
+  TopicHelpResult,
   TopicResult,
   WorkspaceManifest,
   WorkspaceRegistry,
@@ -66,6 +71,14 @@ export const workspaceSettings = workspaceSettingsRaw as WorkspaceSettings;
 export const workspaceRegistry = workspaceRegistryRaw as WorkspaceRegistry;
 export const workspaceManifest = workspaceManifestRaw as WorkspaceManifest;
 export const flightsTable = flightsTableRaw as FlightsTableFixture;
+
+// Spec 01 §8.8 topic help, generated from the real engine (get_topic_help)
+// against the shipped insight_rules.json — 916iS (the usual fixture
+// engine) and 912iS (non-turbo, so map_at_takeoff.applies is false, and
+// nothing is Admitted so every topic.validated is false).
+export const topicHelp = topicHelpRaw as unknown as TopicHelpResult;
+export const topicHelp912iS = topicHelp912isRaw as unknown as TopicHelpResult;
+export const aircraftSummary = aircraftSummaryRaw as AircraftSummary;
 
 // FlightAnalysis.source_keys is a content hash, not a filename (Spec 05 §9
 // contract-fit finding) — this fixture-only lookup fills the gap for

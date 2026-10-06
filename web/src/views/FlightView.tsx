@@ -13,6 +13,9 @@ import { PhaseMinimap } from "../components/PhaseMinimap";
 import { PhaseFilter } from "../components/PhaseFilter";
 import { fixtureFlightById, flightAnalysis as fixtureFlight, insightSet as fixtureInsights, kacvSeries, sourceFilename } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
+import { useTopicHelp } from "../lib/topicHelp";
+import { useAircraftSummary } from "../lib/aircraftSummary";
+import { TopicHelpButton, UnverifiedTag } from "../components/TopicHelpButton";
 import { toSeriesFixture } from "../lib/series";
 import { assignChannelColors } from "../lib/channels";
 import { useChartSession } from "../lib/chartSession";
@@ -59,6 +62,14 @@ function sameSlotSet(a: string[], b: string[]): boolean {
 
 const FALLBACK_OVERVIEW_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
 
+// Spec 02 §5.6 / Spec 03 §5.2: cards whose comparison comes from history
+// (baseline, trend or model) carry the mixed-aircraft note in a blended
+// workspace; OM-limit and classification cards don't, since nothing
+// about them blends across aircraft.
+const HISTORY_DERIVED_TOPICS = new Set([
+  "egt_spread", "egt_cyl_deviation", "oil_temp_peak", "coolant_temp_peak", "map_at_takeoff",
+]);
+
 function expandSlotsWith(slots: string[], groups: SlotGroupEntry[]): string[] {
   return slots.flatMap((id) => groups.find((sg) => sg.id === id)?.members ?? [id]);
 }
@@ -103,6 +114,7 @@ export function FlightView() {
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [unitsSystem, setUnitsSystem] = useState<"imperial" | "metric">("imperial");
 
   // Skipped-log preview only (mode === "skipped") — why it was excluded,
   // plus Include-button state. No insights/analysis section renders in
@@ -181,6 +193,7 @@ export function FlightView() {
         setFilename(filename);
         setSkippedInfo(exclusionsResult.entries.find((e) => e.filename === filename) ?? null);
         setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
+        setUnitsSystem(appSettings.units ?? "imperial");
 
         setChannelRegistry(registryResult.channels);
         setSlotGroups(registryResult.slot_groups);
@@ -264,6 +277,7 @@ export function FlightView() {
         setFilename(got.source_filename ?? "unknown source file");
         setUsingFixture(false);
         setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
+        setUnitsSystem(appSettings.units ?? "imperial");
 
         setChannelRegistry(registryResult.channels);
         setSlotGroups(registryResult.slot_groups);
@@ -651,11 +665,18 @@ export function FlightView() {
   const hasPhaseWarning = flightAnalysis.quality.some((q) => q.code === "PHASE_TAKEOFF_NOT_DETECTED");
   const fullEnd = flightAnalysis.phases.at(-1)?.end_s ?? 0;
 
+  // Spec 01 §8.8 / Spec 03 §5.2: fetched once per engine profile + rule
+  // set, cached (useTopicHelp), not per flight.
+  const engineProfileId = flightAnalysis.provenance.engine_profile.id;
+  const topicHelpKey = `${flightAnalysis.provenance.engine_profile.hash}:${insightSet.rules_hash}`;
+  const topicHelpById = useTopicHelp(topicHelpKey, usingFixture);
+  const aircraftSummary = useAircraftSummary(usingFixture);
+  const isMixedAircraft = (aircraftSummary?.idents.length ?? 0) > 1;
+
   // Flight-summary line (Spec 03 §5.2, Spec 10 §4.2 / Q4): fuel burned,
   // cruise nm/gal, mean cruise fuel flow — planning numbers, not topics,
   // so no severity token and no insight/card. The nm/gal and fuel-flow
   // figures need a cruise phase; fuel burned (FADEC total) doesn't.
-  // No `?` yet (Phase E).
   const fuelBurned = flightAnalysis.metrics.fadec_gallons?.value;
   const cruiseNmpg = flightAnalysis.metrics.cruise_nmpg?.value;
   const cruiseFuelFlow = flightAnalysis.metrics.cruise_fuel_flow_gph?.value;
@@ -663,10 +684,13 @@ export function FlightView() {
   const cruiseValueText = (value: unknown, suffix: string) =>
     typeof value === "number" ? `${value.toFixed(1)} ${suffix}` : `— (${noCruiseReason ?? "no cruise detected"})`;
   const flightSummaryLine = (
-    <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6 }}>
-      Fuel burned: {typeof fuelBurned === "number" ? `${fuelBurned.toFixed(1)} gal` : "—"}
-      {"  ·  "}Cruise: {cruiseValueText(cruiseNmpg, "nm/gal")}
-      {"  ·  "}Cruise fuel flow: {cruiseValueText(cruiseFuelFlow, "gal/hr")}
+    <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", alignItems: "center" }}>
+      <span>
+        Fuel burned: {typeof fuelBurned === "number" ? `${fuelBurned.toFixed(1)} gal` : "—"}
+        {"  ·  "}Cruise: {cruiseValueText(cruiseNmpg, "nm/gal")}
+        {"  ·  "}Cruise fuel flow: {cruiseValueText(cruiseFuelFlow, "gal/hr")}
+      </span>
+      <TopicHelpButton help={topicHelpById["flight_summary"]} engine={engineProfileId} units={unitsSystem} />
     </div>
   );
 
@@ -1167,10 +1191,28 @@ export function FlightView() {
                         style={{ display: "block", background: "var(--panel)", borderRadius: 10, padding: "13px 15px", cursor: clickable ? "pointer" : "default" }}
                       >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{t.topic_id.replace(/_/g, " ")}</span>
+                          <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                              {topicHelpById[t.topic_id]?.title ?? t.topic_id.replace(/_/g, " ")}
+                            </span>
+                            <TopicHelpButton help={topicHelpById[t.topic_id]} engine={engineProfileId} units={unitsSystem} />
+                            {topicHelpById[t.topic_id] && !topicHelpById[t.topic_id].validated && (
+                              <span style={{ marginLeft: 6 }}>
+                                <UnverifiedTag engine={engineProfileId} />
+                              </span>
+                            )}
+                          </span>
                           {topInsight && <SeverityBadge severity={topInsight.severity} size="sm" />}
                         </div>
                         <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>{t.analysis.text}</div>
+                        {isMixedAircraft && HISTORY_DERIVED_TOPICS.has(t.topic_id) && (
+                          <div
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/flights"); }}
+                            style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, cursor: "pointer" }}
+                          >
+                            Compared with all {aircraftSummary!.idents.length} aircraft in this workspace.
+                          </div>
+                        )}
                       </Wrapper>
                     );
                   })}

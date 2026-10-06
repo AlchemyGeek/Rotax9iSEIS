@@ -1452,3 +1452,80 @@ class InsightSet:
             "header_warnings": self.header_warnings,
             "provenance": self.provenance,
         }
+
+
+def get_topic_help(
+    topic_ids: Optional[list[str]],
+    engine_profile_id: str,
+    engine_config: dict,
+    rules: dict,
+    baseline_config: Optional[dict] = None,
+) -> tuple[list["help.TopicHelp"], list[dict]]:
+    """
+    Spec 01 §8.8: the fifth engine-contract operation. Never raises — a
+    broken help entry becomes a HELP_MISSING/HELP_PLACEHOLDER_UNRESOLVED
+    diagnostic, not an exception, so a content regression can't crash the
+    server, the CLI or a notebook (acceptance 10 is what catches it, in
+    CI, before it ships).
+    """
+    from . import help as _help
+
+    baseline_config = baseline_config or {"outlier_z_threshold": 2.0}
+    diagnostics: list[dict] = []
+
+    try:
+        entries = _help.load_help_entries()
+    except Exception as e:
+        diagnostics.append(Diagnostic(
+            code="HELP_MISSING", severity="error", scope="file",
+            message=f"topics.md failed to parse: {e}", refs={},
+        ).to_dict())
+        return [], diagnostics
+
+    register = _help.load_register()
+    register_by_id = {t["topic_id"]: t for t in (register or {}).get("topics", [])}
+
+    ids = topic_ids if topic_ids is not None else list(entries.keys())
+    results: list[_help.TopicHelp] = []
+    for topic_id in ids:
+        entry = entries.get(topic_id)
+        if entry is None:
+            diagnostics.append(Diagnostic(
+                code="HELP_MISSING", severity="warn", scope="topic",
+                message=f"{topic_id}: no help entry in topics.md", refs={"topic_id": topic_id},
+            ).to_dict())
+            continue
+
+        applies = entry.applies_to == "all" or engine_profile_id in entry.applies_to
+        reg_entry = register_by_id.get(topic_id)
+        # A non-topic entry (flight_summary) has no register status to be
+        # "unvalidated" against — vacuously validated, so the UI never
+        # shows an unverified tag on it.
+        validated = True if reg_entry is None else \
+            reg_entry.get("status", {}).get(engine_profile_id) == "Admitted"
+
+        try:
+            values, text, unresolved = _help.resolve_template(
+                entry.template, engine_config=engine_config, rules=rules, baseline_config=baseline_config,
+            )
+        except Exception as e:
+            diagnostics.append(Diagnostic(
+                code="HELP_PLACEHOLDER_UNRESOLVED", severity="error", scope="topic",
+                message=f"{topic_id}: {e}", refs={"topic_id": topic_id},
+            ).to_dict())
+            continue
+
+        for placeholder in unresolved:
+            diagnostics.append(Diagnostic(
+                code="HELP_PLACEHOLDER_UNRESOLVED", severity="warn", scope="topic",
+                message=f"{topic_id}: placeholder {placeholder!r} did not resolve",
+                refs={"topic_id": topic_id, "placeholder": placeholder},
+            ).to_dict())
+
+        results.append(_help.TopicHelp(
+            id=entry.id, title=entry.title, template=entry.template,
+            values=values, text=text, applies=applies, validated=validated,
+            last_reviewed=entry.last_reviewed,
+        ))
+
+    return results, diagnostics

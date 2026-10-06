@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
+import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
@@ -523,6 +524,7 @@ export function Flights() {
             {filterAttention} limit filter{filterAttention === 1 ? " is" : "s are"} breached or drifting — review on the Notes page →
           </div>
         )}
+        <MixedAircraftNotice usingFixture={usingFixture} />
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>

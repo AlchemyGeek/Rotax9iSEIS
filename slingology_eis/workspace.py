@@ -350,6 +350,10 @@ class WorkspaceSettings:
     anonymize_by_default: bool = False
     active_engine_profile: str = ""
     last_view: Optional[dict] = None
+    # Spec 02 v0.8 §5.6/§6.6: groups of aircraft_ident values the pilot
+    # has confirmed are one aircraft, e.g. [["N117ZS", "N117Z"]]. Default
+    # none — an older workspace's settings.json simply lacks the key.
+    aircraft_aliases: list[list[str]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = {
@@ -358,6 +362,8 @@ class WorkspaceSettings:
         }
         if self.last_view is not None:
             d["last_view"] = self.last_view
+        if self.aircraft_aliases:
+            d["aircraft_aliases"] = self.aircraft_aliases
         return d
 
     @classmethod
@@ -366,6 +372,7 @@ class WorkspaceSettings:
             anonymize_by_default=d.get("anonymize_by_default", False),
             active_engine_profile=d.get("active_engine_profile", ""),
             last_view=d.get("last_view"),
+            aircraft_aliases=d.get("aircraft_aliases") or [],
         )
 
 

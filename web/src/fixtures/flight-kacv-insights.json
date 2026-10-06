@@ -1,6 +1,6 @@
 {
   "flight_id": "584e022a47517397",
-  "analysis_key": "539dd637673be3b39ee0adca4372cc34351f7368f5cd000ae5f5a139fdc5bc2b",
+  "analysis_key": "3893840e05173057a748d6f872e58ea845435b02bfbd3df9312604666cf602cb",
   "fleet_key": "40da4139c9c8211d165e2645dba63f8a54135fd73b3b4eeb546561ac81b01e4a",
   "rules_hash": "eb06ef32b2dc11f8e9181b2c24509f75fad443bb496a2ef26017286c33d694cf",
   "filters_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -341,7 +341,7 @@
   ],
   "header_warnings": [],
   "provenance": {
-    "engine_version": "0.27.0",
+    "engine_version": "0.28.0",
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",

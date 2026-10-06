@@ -57,6 +57,7 @@ from .operations import (
     analyze_ecu,
     analyze_flight,
     evaluate_insights,
+    get_topic_help,
     update_fleet,
 )
 from .phases import AIRBORNE_PHASES, detect_phases, phase_summary
@@ -1231,6 +1232,52 @@ def op_reorder_user_presets(params: dict, ctx: dict) -> Any:
     return {"presets": settings.chart_presets}
 
 
+def op_get_topic_help(params: dict, ctx: dict) -> Any:
+    """Spec 01 §8.8. Fetched once per engine profile and rule set and
+    cached client-side (Spec 03 §5.2) — not a per-flight call."""
+    engine_cfg, engine_name = _current_engine(ctx)
+    rules = _resolve_rules(ctx) if ctx.get("active_workspace_id") else _default_rules()
+    results, diagnostics = get_topic_help(
+        params.get("topic_ids"), engine_name, engine_cfg, rules, params.get("baseline_config"),
+    )
+    return {"topics": [r.to_dict() for r in results], "diagnostics": diagnostics}
+
+
+def op_get_aircraft_summary(params: dict, ctx: dict) -> Any:
+    """
+    Spec 02 v0.8 §5.6/§6.6: the distinct aircraft_ident values across
+    admitted flights (Tier 2 — baseline membership, the scope that
+    actually gets blended), grouped by the pilot's aircraft_aliases.
+    `idents` is the canonical (post-alias) list the notice counts;
+    `raw_idents` is pre-alias, for the "ungroup" UI to show what each
+    group actually contains.
+    """
+    _require_active(ctx)
+    settings = ws.load_workspace_settings(ctx["workspace_dir"])
+    selection = ws.load_selection(ctx["workspace_dir"])
+    excluded_ids = {e["flight_id"] for e in selection.excluded}
+    all_fas = _load_workspace_flights(ctx["workspace_dir"])
+    included = [fa for fa in all_fas if fa.flight_id not in excluded_ids]
+
+    raw_idents = sorted({
+        fa.header.get("aircraft", {}).get("ident")
+        for fa in included
+        if fa.header.get("aircraft", {}).get("ident")
+    })
+    alias_of: dict[str, str] = {}
+    for group in settings.aircraft_aliases:
+        canonical = group[0]
+        for ident in group:
+            alias_of[ident] = canonical
+    canonical_idents = sorted({alias_of.get(i, i) for i in raw_idents})
+
+    return {
+        "idents": canonical_idents,
+        "raw_idents": raw_idents,
+        "aliases": settings.aircraft_aliases,
+    }
+
+
 def op_get_workspace_settings(params: dict, ctx: dict) -> Any:
     return ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
 
@@ -1303,6 +1350,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "reorder_user_presets": op_reorder_user_presets,
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
+    "get_topic_help": op_get_topic_help,
+    "get_aircraft_summary": op_get_aircraft_summary,
 }
 
 

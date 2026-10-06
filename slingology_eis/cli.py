@@ -34,6 +34,7 @@ from .operations import (
     analyze_ecu,
     analyze_flight,
     evaluate_insights,
+    get_topic_help,
     update_fleet,
 )
 from .rules import validate_rules, what_if_rules
@@ -320,6 +321,32 @@ def cmd_engines(args) -> int:
     else:
         for r in results:
             print(f"{r['id']:<10} {r['engine']:<20} {r['source_status']}")
+    return 0
+
+
+def cmd_explain(args) -> int:
+    engine_name = _resolve_engine_name(args.engine)
+    engine_cfg = load_engine_config(engine_name)
+    rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    topic_ids = [args.topic_id] if args.topic_id else None
+    results, diagnostics = get_topic_help(topic_ids, engine_name, engine_cfg, rules)
+
+    if args.json:
+        _print_json({"topics": [r.to_dict() for r in results], "diagnostics": diagnostics})
+        return 0
+
+    if args.topic_id and not results:
+        raise CliOperationError(f"No help entry for topic '{args.topic_id}'")
+    for d in diagnostics:
+        print(f"# {d['code']}: {d['message']}", file=sys.stderr)
+    for r in results:
+        if not r.applies:
+            continue
+        print(f"## {r.title}")
+        print(r.text)
+        if not r.validated:
+            print(f"(Not yet validated on the {engine_name})")
+        print()
     return 0
 
 
@@ -716,6 +743,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("name")
     p.add_argument("--tail-number", metavar="IDENT", help="Primary tail number (informational only, Spec 02 §5.6)")
     p.set_defaults(func=cmd_workspace_create)
+
+    p = sub.add_parser("explain", parents=[common], help="Plain-text topic help (Spec 01 §8.8)")
+    p.add_argument("topic_id", nargs="?", help="Topic id to explain (default: every applicable topic)")
+    p.set_defaults(func=cmd_explain)
 
     p = sub.add_parser("export-bundle", parents=[common], help="Export a results bundle (not yet implemented)")
     p.set_defaults(func=cmd_export_bundle)

@@ -41,6 +41,9 @@ DIAGNOSTIC_CATALOG = (
     "FILTER_REFERENCE_LOW_N",
     "FILTER_MULTIPLE_FOR_LIMIT",
     "PRESET_INVALID",
+    # Spec 01 §8.8 (topic help)
+    "HELP_PLACEHOLDER_UNRESOLVED",
+    "HELP_MISSING",
 )
 
 Severity = str    # "info" | "warn" | "error"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { EChartsOption } from "echarts";
 import { NavShell } from "../components/NavShell";
+import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
 import { EChartBase } from "../components/EChartBase";
 import { fleetAnalysis as fixtureFleet, flightAnalysis as fixtureFlight } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
@@ -343,6 +344,7 @@ export function Trends() {
       </div>
 
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px" }}>
+        <MixedAircraftNotice usingFixture={usingFixture} />
         {showCylinderBalance ? (
           <CylinderBalance
             fleet={fleet}
