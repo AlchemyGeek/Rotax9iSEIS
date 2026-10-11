@@ -1,39 +1,42 @@
 {
   "_metadata": {
     "engine": "Rotax 912iS",
-    "variant": "912iS Series",
-    "om_reference": "PLACEHOLDER \u2014 not yet verified against official OM",
-    "source_status": "PLACEHOLDER",
-    "notes": "Values are estimates from publicly available Rotax 915iS specifications. MUST be verified against the official Operators Manual before use in a real aircraft. Do not rely on these limits for operational decisions."
+    "variant": "912 i Series (912 iS, 912 iS Sport, 912 iSc Sport)",
+    "om_reference": "OM-912 i Series, Edition 2 / Rev. 2, September 01 2025",
+    "om_chapter": "Chapter 2.1 Operating Limits (pages 2-2 to 2-4); warm-up Chapter 3.5; cold-start oil pressure Chapter 4.17",
+    "source_status": "VERIFIED",
+    "notes": "All limit values sourced directly from the Operators Manual except bus voltage (not an OM limit), fuel_press_max phase durations (operational suppression inherited from the 916iS profile, not an OM value) and phase_detection (derived). Naturally aspirated: no manifold pressure limit and no EGT split limit exist in this OM, so there is no map_max limit and no egt_spread block — do not add them. The 'overboost' block is kept only because the limit checker reads it for the 5-minute take-off RPM rule; the name is a misnomer for this engine. Do not modify without updating om_reference."
   },
+
   "engine_family": "iS",
   "fadec": true,
   "turbocharged": false,
   "cylinders": 4,
   "_expected_hot_cylinder_note": "Spec 08 §3: prior for the usual hottest cylinder until an aircraft's own is learned; a display hint, never a limit. No turbo, so no expected pattern.",
   "expected_hot_cylinder": null,
-  "rated_power_kw": 73,
+  "rated_power_kw": 73.5,
   "rated_power_hp": 100,
   "rated_rpm": 5800,
+  "_rated_power_note": "Take-off 73.5 kW (100 hp) at 5,800 rpm for all three variants. Max continuous differs by variant: 912 iS 69 kW (93 hp), 912 iS Sport / iSc Sport 72 kW (97 hp), all at 5,500 rpm (OM 2.1 Performance table).",
+
   "_exceedance_merge_gap_s_note": "Spec 09 §6.2: an exceedance event ends only after the reading has stayed within the limit this many seconds; shorter dips are absorbed into the event.",
   "exceedance_merge_gap_s": 30,
 
   "limits": [
+
     {
       "id": "rpm_idle_min",
       "param": "rpm",
       "label": "Idle RPM minimum",
       "unit": "rpm",
-      "min_val": 1800,
+      "min_val": 1400,
       "severity": "CAUTION",
-      "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
+      "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events.",
       "exceedance_merge_gap_s": 0,
       "min_duration_s": 30,
-      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance.",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance — same gate as fuel_press_min. Note the 912iS idle floor (1,400) is much closer to this gate than the 916iS (1,800).",
       "min_rpm": 1000,
-      "_requires_reached_since_start_note": "Spec 10 D16: the idle minimum applies only after rpm has reached min_val at least once since engine start, so spool-up isn't an idle exceedance.",
-      "requires_reached_since_start": true,
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Idle speed min. 1,400 rpm (OM 2.1 Engine speed). Short dips are normal variation."
     },
     {
       "id": "rpm_takeoff_max",
@@ -42,13 +45,10 @@
       "unit": "rpm",
       "max_val": 5800,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM",
-      "filter_policy": {
-        "magnitude_modes": ["absolute"],
-        "duration_allowed": false,
-        "max_band_abs": 30
-      }
+      "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit",
+      "filter_policy": { "magnitude_modes": ["absolute"], "duration_allowed": false, "max_band_abs": 30 }
     },
+
     {
       "id": "oil_press_min",
       "param": "oil_press_psi",
@@ -58,100 +58,151 @@
       "severity": "WARNING",
       "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
       "filter_policy": { "filterable": false, "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading." },
-      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same physics as volts_min/fuel_press_min/rpm_idle_min: with the engine stopped the oil pump isn't turning and the reading falls to 0 psi, which is not a fault.",
+      "phases": ["CLIMB", "CRUISE", "DESCENT"],
+      "note": "Normal 2.0 to 5.0 bar (29 to 73 psi) above 3,500 rpm (OM 2.1 Oil pressure). Phase-filtered — pre-flight and engine start readings excluded."
+    },
+    {
+      "id": "oil_press_min_low_rpm",
+      "param": "oil_press_psi",
+      "label": "Oil pressure min (<3500 rpm)",
+      "unit": "psi",
+      "min_val": 12.0,
+      "severity": "WARNING",
+      "_filter_policy_note": "Same reasoning as oil_press_min.",
+      "filter_policy": { "filterable": false, "reason": "0.8 bar is the absolute floor at any running speed. A reading below it with the engine running is always reported." },
+      "_min_rpm_note": "Checked only with the engine running (at or above 1,000 rpm) so pre-start / post-shutdown zeros aren't events. Applies at every running speed — above 3,500 rpm oil_press_min (29 psi) is the tighter limit.",
       "min_rpm": 1000,
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "min_duration_s": 5,
+      "note": "Min. 0.8 bar (12 psi) below 3,500 rpm (OM 2.1 Oil pressure). Absolute floor for a running engine."
     },
     {
       "id": "oil_press_max",
       "param": "oil_press_psi",
-      "label": "Oil pressure max",
+      "label": "Oil pressure max (>3500 rpm)",
       "unit": "psi",
-      "max_val": 72.5,
+      "max_val": 73.0,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Normal 2.0 to 5.0 bar (29 to 73 psi) above 3,500 rpm (OM 2.1 Oil pressure)"
     },
+    {
+      "id": "oil_press_cold_max",
+      "param": "oil_press_psi",
+      "label": "Oil pressure max (cold start)",
+      "unit": "psi",
+      "max_val": 102.0,
+      "severity": "CAUTION",
+      "note": "Max. 7 bar (102 psi), for a short period admissible at cold start (OM 2.1 Oil pressure; OM 4.17 'up to around 7 bar (101.5 psi) does not indicate a malfunction')"
+    },
+
     {
       "id": "oil_temp_takeoff_min",
       "param": "oil_temp_f",
       "label": "Oil temp minimum (takeoff)",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "min_val": 122.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "phases": ["TAKEOFF", "CLIMB", "CRUISE"],
+      "note": "Oil temperature min. 50°C (OM 2.1 prints 120°F; 50°C = 122°F, and OM 3.5 warm-up gives 50°C / 122°F). Warm up until oil reaches 50°C before run-up. Phase-filtered — pre-flight readings excluded."
     },
     {
       "id": "oil_temp_max",
       "param": "oil_temp_f",
       "label": "Oil temp maximum",
-      "unit": "\u00b0F",
-      "max_val": 248.0,
+      "unit": "°F",
+      "max_val": 266.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 130°C / 266°F (OM 2.1 Oil temperature). Note: higher than the 915/916 limit of 120°C."
     },
     {
       "id": "oil_temp_optimal_low",
       "param": "oil_temp_f",
-      "label": "Oil temp optimal band (low)",
-      "unit": "\u00b0F",
+      "label": "Oil temp normal band (low)",
+      "unit": "°F",
       "min_val": 194.0,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "report_in_exceedances": false,
+      "note": "Normal operating temperature approx. 90 to 110°C (OM 2.1 prints 190 to 230°F; 90°C = 194°F). Reported in oil temp analysis section, not exceedances."
     },
+
     {
       "id": "coolant_temp_max",
       "param": "coolant_temp_f",
       "label": "Coolant temp maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "max_val": 248.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 120°C / 248°F (OM 2.1 Coolant temperature)"
     },
+
     {
       "id": "egt1_max",
       "param": "egt1_f",
       "label": "EGT1 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 950°C / 1,742°F (OM 2.1 Exhaust gas temperature)"
     },
     {
       "id": "egt2_max",
       "param": "egt2_f",
       "label": "EGT2 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 950°C / 1,742°F (OM 2.1 Exhaust gas temperature)"
     },
     {
       "id": "egt3_max",
       "param": "egt3_f",
       "label": "EGT3 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 950°C / 1,742°F (OM 2.1 Exhaust gas temperature)"
     },
     {
       "id": "egt4_max",
       "param": "egt4_f",
       "label": "EGT4 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "max_val": 1742.0,
       "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Max. 950°C / 1,742°F (OM 2.1 Exhaust gas temperature)"
+    },
+
+    {
+      "id": "fuel_press_min",
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "min_val": 40.61,
+      "severity": "WARNING",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm: with the engine stopped the fuel pumps are off and the reading falls to 0 psi. RPM gate rather than phase list because phase labels can't be relied on at the end of a log (Spec 09 §16).",
+      "min_rpm": 1000,
+      "min_duration_s": 10,
+      "note": "Fuel pressure at fuel rail min. 2.8 bar / 40.61 psi (OM 2.1 Fuel pressure). Exceedance down to 2.5 bar / 36 psi acceptable for max. 3 sec after a power setting change."
     },
     {
-      "id": "map_max",
-      "param": "map_inhg",
-      "label": "Manifold pressure maximum",
-      "unit": "inHg",
-      "max_val": 38.5,
-      "severity": "WARNING",
-      "note": "PLACEHOLDER \u2014 verify against OM. 915iS max boost approximately 1,600 hPa."
+      "id": "fuel_press_max",
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure maximum",
+      "unit": "psi",
+      "max_val": 46.41,
+      "severity": "CAUTION",
+      "stratify_by": "oat_band",
+      "_min_duration_by_phase_note": "Operational suppression carried over from the 916iS profile (pump tests in taxi, tank switching in cruise) — not an OM value. The OM itself tolerates only 3 sec after a power change; these durations are deliberately looser. Review against real 912iS logs when available.",
+      "min_duration_by_phase": {
+        "TAXI": null,
+        "TAKEOFF": null,
+        "CLIMB": 10,
+        "CRUISE": 30,
+        "DESCENT": 10,
+        "LANDING": null
+      },
+      "note": "Fuel pressure at fuel rail max. 3.2 bar / 46.41 psi (OM 2.1 Fuel pressure). Exceedance up to 3.5 bar / 51 psi acceptable for max. 3 sec after a power setting change."
     },
+
     {
       "id": "volts_min",
       "param": "main_volts",
@@ -159,9 +210,7 @@
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
-      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same gate as fuel_press_min and rpm_idle_min: with the engine stopped (master or avionics off at shutdown) the bus reads 0.0 V, which is not a fault.",
-      "min_rpm": 1000,
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Not an OM limit. Below ~12V indicates alternator failure or excessive load."
     },
     {
       "id": "volts_max",
@@ -170,44 +219,31 @@
       "unit": "V",
       "max_val": 14.5,
       "severity": "CAUTION",
-      "note": "PLACEHOLDER \u2014 verify against OM"
+      "note": "Not an OM limit. Above 14.5V indicates voltage regulator fault."
     }
   ],
-  "egt_spread": {
-    "high_flow_limit_id": "egt_split_high_flow",
-    "low_flow_limit_id": "egt_split_low_flow",
-    "note": "PLACEHOLDER \u2014 verify thresholds against OM",
-    "high_flow_threshold_lph": 3.0,
-    "high_flow_spread_limit_f": 392.0,
-    "high_flow_spread_limit_c": 200.0,
-    "high_flow_note": "PLACEHOLDER \u2014 EGT split limit at fuel flow > 3 L/hr",
-    "low_flow_spread_limit_f": 932.0,
-    "low_flow_spread_limit_c": 500.0,
-    "low_flow_note": "PLACEHOLDER \u2014 EGT split limit at fuel flow < 3 L/hr"
-  },
+
+  "_egt_spread_note": "Intentionally absent: OM-912 i Series Chapter 2.1 defines no EGT split / cylinder-difference limit (unlike OM-915/916). The EGT split checker must not run for this engine — see limits.py egt_spread defaults.",
+
   "overboost": {
     "id": "overboost",
     "close_call_margin_s": 60,
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
     "limit_s": 300,
-    "note": "PLACEHOLDER \u2014 verify against OM",
-    "filter_policy": {
-      "magnitude_modes": ["absolute", "percent"],
-      "duration_allowed": false
-    }
+    "note": "Naturally aspirated engine — no boost. Block retained only because it is the single owner of the OM 5-minute take-off rule: 5,800 rpm / 100% power for max. 5 min (OM 2.1 Engine speed).",
+    "filter_policy": { "magnitude_modes": ["absolute", "percent"], "duration_allowed": false }
   },
-  "eco_power_mode": {
-    "throttle_position_threshold_pct": 97,
-    "note": "PLACEHOLDER \u2014 verify against OM"
-  },
+
+  "_eco_power_mode_note": "Intentionally absent: the 912iS ECU has ECO and POWER modes but OM-912 i Series Ed.2 Rev.2 states no throttle-position threshold for the switch-over, so none is configured.",
+
   "phase_detection": {
-    "idle_rpm_min": 1800,
+    "idle_rpm_min": 1400,
     "runup_rpm_min": 3000,
     "runup_rpm_max": 5000,
     "takeoff_rpm_min": 4500,
     "overboost_rpm_threshold": 5500,
     "lane_check_max_duration_s": 15,
-    "note": "PLACEHOLDER \u2014 derived from limit values above"
+    "note": "Values derived from operating limits above — not separately sourced. idle_rpm_min follows the OM idle floor (1,400). OM 3.5/3.6: warm-up at ~2,000 then 2,500 rpm; ignition check at 4,000 rpm; fuel pump check at 2,000 rpm (OM 3.7)."
   }
 }
