@@ -135,6 +135,22 @@ def test_list_engines(server):
     assert any(e["id"] == "916iS" for e in d["result"])
 
 
+def test_get_engine_limits(server):
+    """Spec 14 §5 Engine tab — the active (legacy-mode default) engine's
+    profile metadata and full limit catalog, phase-aware suppression
+    fields included for limits that declare them, plus the static
+    stratification band edges."""
+    d = rpc(server, "get_engine_limits", {})
+    assert d["ok"], d
+    result = d["result"]
+    assert result["engine"]["source_status"] in ("VERIFIED", "PLACEHOLDER", "UNKNOWN")
+    assert len(result["limits"]) > 10
+    rpm_idle = next(lim for lim in result["limits"] if lim["id"] == "rpm_idle_min")
+    assert rpm_idle["requires_reached_since_start"] is True
+    assert result["band_edges"]["da_band"][0] == {"min": -2000, "max": 2000, "name": "low"}
+    assert result["band_edges"]["oat_band"][0] == {"min": -40, "max": 5, "name": "cold"}
+
+
 def test_get_channel_registry(server):
     d = rpc(server, "get_channel_registry", {})
     assert d["ok"], d
@@ -485,6 +501,45 @@ def test_app_and_workspace_settings_round_trip(registry_server):
     assert saved["ok"], saved
     got = rpc(registry_server, "get_workspace_settings", {})
     assert got["result"]["anonymize_by_default"] is True
+
+
+def test_settings_changelog_records_changes_across_tabs(registry_server):
+    """Spec 14 §5 acceptance 2 — one shared changelog, newest first, with
+    an entry per changed field whichever of the three Settings tabs it
+    came from (here: App via save_workspace_settings, Reference & Models
+    via save_baseline_config)."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+
+    rpc(registry_server, "save_workspace_settings", {"settings": {
+        "anonymize_by_default": True, "active_engine_profile": "916iS",
+    }})
+    rpc(registry_server, "save_baseline_config", {
+        "baseline_config": {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 3.0},
+    })
+
+    got = rpc(registry_server, "get_settings_changelog", {})
+    assert got["ok"], got
+    entries = got["result"]["entries"]
+    assert len(entries) >= 2
+    # Newest first.
+    assert entries[0]["at"] >= entries[-1]["at"]
+    z_entry = next(e for e in entries if e["setting"] == "outlier_z_threshold")
+    assert z_entry["tab"] == "reference"
+    assert z_entry["before"] == 2.0
+    assert z_entry["after"] == 3.0
+    assert z_entry["source"] == "user"
+    anon_entry = next(e for e in entries if e["setting"] == "anonymize_by_default")
+    assert anon_entry["tab"] == "app"
+    assert anon_entry["before"] is False
+    assert anon_entry["after"] is True
+
+    # A save with nothing actually different logs nothing new.
+    before_count = len(entries)
+    rpc(registry_server, "save_baseline_config", {
+        "baseline_config": {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 3.0},
+    })
+    got2 = rpc(registry_server, "get_settings_changelog", {})["result"]["entries"]
+    assert len(got2) == before_count
 
 
 def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):

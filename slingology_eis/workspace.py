@@ -39,7 +39,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from . import __version__
 from . import exclusions as _exclusions
@@ -1685,6 +1685,45 @@ def migrate_limit_annotations(ws_dir: Path, old: FlightAnalysis, fresh: FlightAn
         store["annotations"] = sorted(kept, key=lambda a: a.get("created_at", ""))
         _write_json(ws_dir / "annotations.json", store)
     return moved
+
+
+# ── Settings changelog (Spec 14 §5) ──────────────────────────────────────────
+# settings_changelog.json, next to annotations.json: one entry per changed
+# field across Settings' three tabs (Engine/Reference & Models/App) — "what
+# changed in your analysis settings", one list rather than three. App-level
+# settings aren't workspace-scoped (AppSettings lives in the registry), but
+# the changelog entry is still attached to whichever workspace was active
+# when the change was made, since that's where a pilot would look for it.
+
+_SETTINGS_CHANGELOG_VERSION = "1"
+
+
+def load_settings_changelog(ws_dir: Path) -> dict:
+    f = ws_dir / "settings_changelog.json"
+    if not f.exists():
+        return {"version": _SETTINGS_CHANGELOG_VERSION, "entries": []}
+    return json.loads(f.read_text())
+
+
+def append_settings_changelog(ws_dir: Path, tab: str, setting: str, before: Any, after: Any, source: str = "user") -> dict:
+    store = load_settings_changelog(ws_dir)
+    entry = {
+        "id": _new_id("chg"), "at": _now(), "tab": tab,
+        "setting": setting, "before": before, "after": after, "source": source,
+    }
+    store["entries"].append(entry)
+    _write_json(ws_dir / "settings_changelog.json", store)
+    return entry
+
+
+def diff_and_log_settings(ws_dir: Path, tab: str, before: dict, after: dict, source: str = "user", skip: tuple = ()) -> None:
+    """One changelog entry per top-level field that actually changed —
+    a shallow dict diff is the right grain for these flat documents (one
+    entry per setting, not one per save click)."""
+    for key, new_val in after.items():
+        if key in skip or before.get(key) == new_val:
+            continue
+        append_settings_changelog(ws_dir, tab, key, before.get(key), new_val, source)
 
 
 # ── Limit filters (Spec 09 §9) ──────────────────────────────────────────────

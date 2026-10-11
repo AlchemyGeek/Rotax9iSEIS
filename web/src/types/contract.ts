@@ -64,6 +64,21 @@ export interface LimitDef {
   stratify_by?: string | null;
   filter_policy?: Record<string, unknown>;
   close_call_margin_s?: number;
+  min_rpm?: number | null;
+  // Spec 14 §5 Engine tab — phase-aware suppression, read-only display only.
+  phases?: string[] | null;
+  min_duration_s?: number | null;
+  min_duration_by_phase?: Record<string, number> | null;
+  requires_reached_since_start?: boolean;
+  note?: string;
+}
+
+// Spec 14 §5 Engine tab.
+export interface EngineLimitsResult {
+  engine: { id: string; engine: string; variant?: string | null; om_reference?: string | null; source_status: string };
+  limits: LimitDef[];
+  // Spec 14 §5.1 Stratification panel — research-paper §9 constants.
+  band_edges: { da_band: { min: number; max: number; name: string }[]; oat_band: { min: number; max: number; name: string }[] };
 }
 
 export interface Provenance {
@@ -518,7 +533,11 @@ export interface FleetAnalysis {
   flight_ids: string[];
   excluded: { flight_id: string; reason: string }[];
   metrics: Record<string, FleetMetric>;
-  models: { id: string; n: number; r_squared: number; [key: string]: unknown }[];
+  models: {
+    id: string; n: number; r_squared: number;
+    residual_se?: number | null; confidence?: { level: string; n: number }; capture?: string;
+    [key: string]: unknown;
+  }[];
   quality: Diagnostic[];
   provenance: FleetProvenance;
   // Optional: fleet results written before Spec 08 don't carry it.
@@ -705,6 +724,18 @@ export interface WorkspaceSettings {
   // this is the one place already round-tripped through the local
   // server scoped to exactly one workspace.
   trends_detail_strips?: Record<string, boolean>;
+}
+
+// Spec 14 §5 — one shared changelog across Settings' Engine/Reference &
+// Models/App tabs, one entry per changed field.
+export interface SettingsChangelogEntry {
+  id: string;
+  at: string;
+  tab: "engine" | "reference" | "app";
+  setting: string;
+  before: unknown;
+  after: unknown;
+  source: string;
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

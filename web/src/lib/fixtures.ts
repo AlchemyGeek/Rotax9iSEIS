@@ -23,6 +23,7 @@ import type {
   AnnotationStore,
   AppSettings,
   EcuAnalysis,
+  EngineLimitsResult,
   FleetAnalysis,
   FlightAnalysis,
   FlightsTableFixture,
@@ -53,6 +54,38 @@ import type {
 export const flightAnalysis = flightAnalysisRaw as FlightAnalysis;
 export const insightSet = insightSetRaw as InsightSet;
 export const fleetAnalysis = fleetAnalysisRaw as FleetAnalysis;
+
+// Spec 14 §5 Engine tab — derived from the same real flight's limit
+// catalog rather than a dedicated fixture file, so there's one source
+// of truth for sample-mode limit data. (This flight predates the
+// phase-aware-suppression fields added for the Engine tab, so those
+// show as absent in sample mode — the live server has them.)
+export const engineLimits: EngineLimitsResult = {
+  engine: {
+    id: flightAnalysis.provenance.engine_profile.id,
+    engine: `Rotax ${flightAnalysis.provenance.engine_profile.id}`,
+    variant: null,
+    om_reference: null,
+    source_status: flightAnalysis.provenance.engine_profile.source_status,
+  },
+  limits: flightAnalysis.limits ?? [],
+  // Mirrors slingology_eis/fleet.py's DA_BANDS/OAT_BANDS (research paper
+  // §9) — sample-mode only; the live RPC is the source of truth.
+  band_edges: {
+    da_band: [
+      { min: -2000, max: 2000, name: "low" },
+      { min: 2000, max: 5000, name: "moderate" },
+      { min: 5000, max: 9000, name: "high" },
+      { min: 9000, max: 20000, name: "very_high" },
+    ],
+    oat_band: [
+      { min: -40, max: 5, name: "cold" },
+      { min: 5, max: 20, name: "mild" },
+      { min: 20, max: 30, name: "warm" },
+      { min: 30, max: 55, name: "hot" },
+    ],
+  },
+};
 // Spec 12 (Session B): build_trends_panels' output for the same fleet,
 // real-engine-generated like fleetAnalysis above — not hand-authored.
 export const trendsPanels = (trendsPanelsRaw as { panels: TrendsPanel[] }).panels;

@@ -322,6 +322,19 @@ def limit_catalog(engine_config: dict) -> list[dict]:
             }
             if lim.filter_policy is not None:
                 entry["filter_policy"] = lim.filter_policy
+            # Spec 14 §5 Engine tab — phase-aware suppression, read-only
+            # display only; these are already-declared profile fields
+            # (engine_limits_from_config above), not new computation.
+            if lim.phases is not None:
+                entry["phases"] = lim.phases
+            if lim.min_duration_s is not None:
+                entry["min_duration_s"] = lim.min_duration_s
+            if lim.min_duration_by_phase is not None:
+                entry["min_duration_by_phase"] = lim.min_duration_by_phase
+            if lim.requires_reached_since_start:
+                entry["requires_reached_since_start"] = True
+            if lim.note:
+                entry["note"] = lim.note
             out.append(entry)
     spread = engine_config.get("egt_spread") or {}
     if spread:

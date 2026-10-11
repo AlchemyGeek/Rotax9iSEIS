@@ -27,7 +27,7 @@ function App() {
               URL redirects rather than 404ing for anyone with it bookmarked.
               Baselines.tsx itself still exists (import removed here) so its
               rule playground stays testable until Spec 14 step 5 removes it. */}
-          <Route path="/baselines" element={<Navigate to="/settings" replace />} />
+          <Route path="/baselines" element={<Navigate to="/settings?tab=reference" replace />} />
           <Route path="/ecu" element={<ECU />} />
           <Route path="/annotations" element={<Navigate to="/journal" replace />} />
           <Route path="/journal" element={<Annotations />} />

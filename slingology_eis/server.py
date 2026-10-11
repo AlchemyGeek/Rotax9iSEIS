@@ -46,6 +46,7 @@ from .channels import CHANNEL_REGISTRY, MAX_CHART_SLOTS, SLOT_GROUPS
 from .cli import _REPO_ROOT, _write_workspace, resolve_logs_dir, resolve_workspace_dir
 from .presets import validate_chart_preset
 from .contract import content_hash
+from .fleet import DA_BANDS, OAT_BANDS
 from .limits import _resolve_engine_name, limit_catalog, load_engine_config, resolve_min_flight_duration_min
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
@@ -259,8 +260,10 @@ def op_save_baseline_config(params: dict, ctx: dict) -> Any:
     if rules affected FleetMetric (they don't)."""
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
+    before = ws.load_selection(workspace_dir).baseline_config or {}
     ws.update_baseline_config(workspace_dir, params["baseline_config"])
     fleet = ws.rebuild_fleet(workspace_dir)
+    ws.diff_and_log_settings(workspace_dir, "reference", before, params["baseline_config"])
     return fleet.to_dict()
 
 
@@ -313,6 +316,31 @@ def op_list_engines(params: dict, ctx: dict) -> Any:
             "source_status": meta.get("source_status", "UNKNOWN"), "hash": content_hash(cfg),
         })
     return results
+
+
+def op_get_engine_limits(params: dict, ctx: dict) -> Any:
+    """Spec 14 §5 Engine tab — the active workspace's engine profile and
+    its OM limit catalog, read-only (phase-aware suppression included
+    for display; no engine-overrides support yet, Q1)."""
+    engine_cfg, engine_name = _current_engine(ctx)
+    meta = engine_cfg.get("_metadata", {})
+    return {
+        "engine": {
+            "id": engine_name,
+            "engine": meta.get("engine", engine_name),
+            "variant": meta.get("variant"),
+            "om_reference": meta.get("om_reference"),
+            "source_status": meta.get("source_status", "UNKNOWN"),
+        },
+        "limits": limit_catalog(engine_cfg),
+        # Spec 14 §5.1 Stratification panel — research-paper §9 constants
+        # (fleet.py DA_BANDS/OAT_BANDS), read-only; not engine-specific but
+        # bundled here so Settings loads them in the same round trip.
+        "band_edges": {
+            "da_band": [{"min": lo, "max": hi, "name": name} for lo, hi, name in DA_BANDS],
+            "oat_band": [{"min": lo, "max": hi, "name": name} for lo, hi, name in OAT_BANDS],
+        },
+    }
 
 
 def op_get_channel_registry(params: dict, ctx: dict) -> Any:
@@ -1182,8 +1210,14 @@ def op_get_app_settings(params: dict, ctx: dict) -> Any:
 
 
 def op_save_app_settings(params: dict, ctx: dict) -> Any:
+    before = ws.load_app_settings(ctx["registry_path"]).to_dict()
     settings = ws.AppSettings.from_dict(params["settings"])
     ws.save_app_settings(ctx["registry_path"], settings)
+    # AppSettings is registry-level, not per-workspace (Spec 02 §6.6), but
+    # the changelog it feeds (Spec 14 §5) is read per-workspace — attach
+    # to whichever workspace is active, if any.
+    if ctx.get("active_workspace_id"):
+        ws.diff_and_log_settings(ctx["workspace_dir"], "app", before, settings.to_dict(), skip=("chart_presets",))
     return settings.to_dict()
 
 
@@ -1323,9 +1357,17 @@ def op_get_workspace_settings(params: dict, ctx: dict) -> Any:
     return ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
 
 
+def op_get_settings_changelog(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    store = ws.load_settings_changelog(ctx["workspace_dir"])
+    return {"entries": sorted(store["entries"], key=lambda e: e["at"], reverse=True)}
+
+
 def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
+    before = ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
     settings = ws.WorkspaceSettings.from_dict(params["settings"])
     ws.save_workspace_settings(ctx["workspace_dir"], settings)
+    ws.diff_and_log_settings(ctx["workspace_dir"], "app", before, settings.to_dict(), skip=("trends_detail_strips",))
     return settings.to_dict()
 
 
@@ -1337,6 +1379,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "save_baseline_config": op_save_baseline_config,
     "what_if_rules": op_what_if_rules,
     "list_engines": op_list_engines,
+    "get_engine_limits": op_get_engine_limits,
     "get_channel_registry": op_get_channel_registry,
     "ingest_log": op_ingest_log,
     "analyze_flight": op_analyze_flight,
@@ -1396,6 +1439,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "reorder_user_presets": op_reorder_user_presets,
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
+    "get_settings_changelog": op_get_settings_changelog,
     "get_topic_help": op_get_topic_help,
     "get_aircraft_summary": op_get_aircraft_summary,
 }

@@ -11,7 +11,9 @@ import type {
   CopyFiltersResult,
   Diagnostic,
   EcuAnalysis,
+  EngineLimitsResult,
   ExclusionsResult,
+  SettingsChangelogEntry,
   FleetAnalysis,
   FilterHealth,
   FilterListEntry,
@@ -73,6 +75,8 @@ export interface SeriesResult {
 
 export interface EngineClient {
   listEngines(): Promise<{ id: string; engine: string; source_status: string; hash: string }[]>;
+  getEngineLimits(): Promise<EngineLimitsResult>;
+  getSettingsChangelog(): Promise<{ entries: SettingsChangelogEntry[] }>;
   getDefaultRules(): Promise<RuleSet>;
   ingestLog(file: UploadFile): Promise<IngestResult>;
   analyzeFlight(file: UploadFile, engine?: string): Promise<FlightAnalysis>;
@@ -215,6 +219,14 @@ export class LocalServerClient implements EngineClient {
 
   listEngines() {
     return this.rpc<{ id: string; engine: string; source_status: string; hash: string }[]>("list_engines", {});
+  }
+
+  getEngineLimits() {
+    return this.rpc<EngineLimitsResult>("get_engine_limits", {});
+  }
+
+  getSettingsChangelog() {
+    return this.rpc<{ entries: SettingsChangelogEntry[] }>("get_settings_changelog", {});
   }
 
   getDefaultRules() {

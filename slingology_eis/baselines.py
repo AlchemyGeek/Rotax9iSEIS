@@ -199,6 +199,9 @@ def build_takeoff_map_model(metrics: pd.DataFrame) -> dict:
             "target": "map_inhg",
             "coefficients": fit["coefficients"],
             "r_squared": fit["r_squared"],
+            # Spec 14 §5.1 Models panel — already computed by fit_takeoff_map,
+            # just not previously returned for display.
+            "residual_se": fit["residual_se"],
         })
     else:
         map_model["note"] = (

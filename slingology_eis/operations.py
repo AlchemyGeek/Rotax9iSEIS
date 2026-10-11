@@ -971,6 +971,7 @@ def update_fleet(
             "coefficients": map_model["coefficients"],
             "n": map_model["n"],
             "r_squared": map_model["r_squared"],
+            "residual_se": map_model.get("residual_se"),
             "confidence": _confidence(map_model["n"]),
             "capture": "RPM>=5500 during TAKEOFF_ROLL",
             # Spec 10 D5: every flight's own (pressure_alt_ft, oat_c,

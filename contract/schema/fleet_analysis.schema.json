@@ -278,6 +278,7 @@
         "coefficients": { "type": "object", "additionalProperties": { "type": "number" } },
         "n": { "type": "integer" },
         "r_squared": { "type": ["number", "null"] },
+        "residual_se": { "type": ["number", "null"], "description": "Spec 14 §5.1 — leave-one-out-consistent residual SE from the same fit, for the Reference & Models panel." },
         "confidence": { "$ref": "#/$defs/confidence" },
         "capture": { "type": "string" }
       }
