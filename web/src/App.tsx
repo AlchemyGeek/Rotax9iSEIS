@@ -3,7 +3,7 @@ import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { Trends } from "./views/Trends";
 import { ECU } from "./views/ECU";
-import { Annotations } from "./views/Annotations";
+import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
 import { ChartSessionProvider } from "./lib/chartSession";
 
@@ -30,7 +30,7 @@ function App() {
           <Route path="/baselines" element={<Navigate to="/settings?tab=reference" replace />} />
           <Route path="/ecu" element={<ECU />} />
           <Route path="/annotations" element={<Navigate to="/journal" replace />} />
-          <Route path="/journal" element={<Annotations />} />
+          <Route path="/journal" element={<Journal />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </ChartSessionProvider>

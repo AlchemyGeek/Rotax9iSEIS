@@ -818,3 +818,39 @@ class TestScanWithRealLogs:
         sources = ws.load_sources(ws_dir, fid)
         assert len(sources.imports) == 2
         assert {i.filename for i in sources.imports} == {_LOG_A.name, "variant_export.csv"}
+
+
+def test_journal_backfills_entries_for_records_predating_the_journal(tmp_path):
+    """Spec 14 Appendix A step 3 — "existing filters, annotations ...
+    must appear with no data migration visible to the user." Simulated
+    here by writing a filter, an annotation and a pinned reference
+    directly (as a workspace from before journal.json existed would have
+    them), bypassing server.py's save-time journal hooks entirely, then
+    confirming backfill_journal_from_existing finds and records all
+    three on first read — dated at each record's own creation time, not
+    "now" — and does nothing on a second call."""
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "journal-backfill", "916iS")
+    ws_dir = root / manifest.id
+
+    flt = ws.save_filter(ws_dir, {"limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "x"})
+    ann = ws.save_annotation(ws_dir, "fl_1", {"kind": "insight", "insight_id": "abc"}, "pre-existing note")
+    ws.set_reference(ws_dir, "egt_spread", ["fl_1", "fl_2"], label="pre-existing pin")
+
+    assert ws.load_journal(ws_dir)["entries"] == []  # nothing yet — no hook ran
+
+    ws.backfill_journal_from_existing(ws_dir)
+    entries = ws.load_journal(ws_dir)["entries"]
+    assert len(entries) == 3
+    by_kind = {e["kind"]: e for e in entries}
+    assert by_kind["limit_filter"]["ref_id"] == flt["id"]
+    assert by_kind["limit_filter"]["at"] == flt["created_at"]
+    assert by_kind["annotation"]["ref_id"] == ann["id"]
+    assert by_kind["annotation"]["at"] == ann["created_at"]
+    assert by_kind["reference_pin"]["ref_id"] == "egt_spread"
+    assert by_kind["reference_pin"]["effect"] == "n=2"
+    assert all(e["status"] == "open" for e in entries)
+
+    # Idempotent — a second backfill doesn't duplicate.
+    ws.backfill_journal_from_existing(ws_dir)
+    assert len(ws.load_journal(ws_dir)["entries"]) == 3

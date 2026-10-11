@@ -21,6 +21,7 @@ import type {
   FilterProposal,
   FleetSelectionResult,
   FlightAnalysis,
+  JournalEntry,
   LimitFilter,
   LimitFilterDraft,
   FlightTableRow,
@@ -77,6 +78,7 @@ export interface EngineClient {
   listEngines(): Promise<{ id: string; engine: string; source_status: string; hash: string }[]>;
   getEngineLimits(): Promise<EngineLimitsResult>;
   getSettingsChangelog(): Promise<{ entries: SettingsChangelogEntry[] }>;
+  getJournal(): Promise<{ entries: JournalEntry[] }>;
   getDefaultRules(): Promise<RuleSet>;
   ingestLog(file: UploadFile): Promise<IngestResult>;
   analyzeFlight(file: UploadFile, engine?: string): Promise<FlightAnalysis>;
@@ -227,6 +229,10 @@ export class LocalServerClient implements EngineClient {
 
   getSettingsChangelog() {
     return this.rpc<{ entries: SettingsChangelogEntry[] }>("get_settings_changelog", {});
+  }
+
+  getJournal() {
+    return this.rpc<{ entries: JournalEntry[] }>("get_journal", {});
   }
 
   getDefaultRules() {

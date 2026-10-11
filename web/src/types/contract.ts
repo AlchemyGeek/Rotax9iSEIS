@@ -738,6 +738,26 @@ export interface SettingsChangelogEntry {
   source: string;
 }
 
+// Spec 14 §6 — Journal's own record of decisions, open until reversed
+// (closed, never removed — §6.4).
+export type JournalEntryKind =
+  | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit"
+  | "exclusion" | "reference_pin" | "annotation";
+
+export interface JournalEntry {
+  id: string;
+  kind: JournalEntryKind;
+  what: string;
+  where?: Record<string, unknown> | null;
+  at: string;
+  reason?: string | null;
+  note?: string | null;
+  effect?: string | null;
+  status: "open" | "closed";
+  closed_at?: string | null;
+  ref_id?: string | null;
+}
+
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────
 // a UI-level projection combining FlightAnalysis, FlightSources (Spec 02
 // §6.2), and FleetSelection (§6.3) into one row. A real host would build

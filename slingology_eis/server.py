@@ -674,14 +674,24 @@ def op_set_reference(params: dict, ctx: dict) -> Any:
     BaselineConfig, not a rebuilt fleet — same shape as op_exclude_flight,
     since the pin only changes what the *next* update_fleet call does."""
     _require_active(ctx)
-    selection = ws.set_reference(
-        ctx["workspace_dir"], params["metric_id"], params["flight_ids"], params.get("label"))
+    workspace_dir = ctx["workspace_dir"]
+    metric_id = params["metric_id"]
+    is_new_pin = not ws.has_open_journal_entry(workspace_dir, kind="reference_pin", ref_id=metric_id)
+    selection = ws.set_reference(workspace_dir, metric_id, params["flight_ids"], params.get("label"))
+    if is_new_pin:
+        ref = selection.baseline_config.get("pinned_references", {}).get(metric_id, {})
+        ws.append_journal_entry(
+            workspace_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
+            note=params.get("label"), effect=f"n={len(ref.get('flight_ids', []))}", ref_id=metric_id,
+        )
     return selection.baseline_config
 
 
 def op_clear_reference(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
-    selection = ws.clear_reference(ctx["workspace_dir"], params["metric_id"])
+    workspace_dir = ctx["workspace_dir"]
+    selection = ws.clear_reference(workspace_dir, params["metric_id"])
+    ws.close_journal_entry(workspace_dir, kind="reference_pin", ref_id=params["metric_id"])
     return selection.baseline_config
 
 
@@ -917,11 +927,23 @@ def op_save_filter(params: dict, ctx: dict) -> Any:
     if diags:
         raise RpcError("INVALID_FILTER", " ".join(d["message"] for d in diags))
     hours = _latest_engine_hours(_load_workspace_flights(workspace_dir)) if existing is None else None
-    return ws.save_filter(workspace_dir, fields, reference_flight_ids=new_reference, engine_hours=hours)
+    saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=new_reference, engine_hours=hours)
+    if existing is None:
+        ws.append_journal_entry(
+            workspace_dir, kind="limit_filter", what=f"Filter: {lim['label'] if lim else saved['limit_id']}",
+            where={"limit_id": saved["limit_id"]}, note=saved.get("note"),
+            ref_id=saved["id"],
+        )
+    return saved
 
 
 def op_delete_filter(params: dict, ctx: dict) -> Any:
-    return {"deleted": ws.delete_filter(ctx["workspace_dir"], params["id"])}
+    workspace_dir = ctx["workspace_dir"]
+    flt = ws.get_filter(workspace_dir, params["id"])
+    deleted = ws.delete_filter(workspace_dir, params["id"])
+    if deleted and flt is not None:
+        ws.close_journal_entry(workspace_dir, kind="limit_filter", ref_id=params["id"])
+    return {"deleted": deleted}
 
 
 def op_filter_health(params: dict, ctx: dict) -> Any:
@@ -1019,14 +1041,27 @@ def op_list_annotations(params: dict, ctx: dict) -> Any:
 
 
 def op_save_annotation(params: dict, ctx: dict) -> Any:
-    return ws.save_annotation(
-        ctx["workspace_dir"], params["flight_id"], params["ref"], params["note"],
+    workspace_dir = ctx["workspace_dir"]
+    is_new = not params.get("id")
+    saved = ws.save_annotation(
+        workspace_dir, params["flight_id"], params["ref"], params["note"],
         annotation_id=params.get("id"),
     )
+    if is_new:
+        ws.append_journal_entry(
+            workspace_dir, kind="annotation", what=saved["note"][:80],
+            where={"flight_id": saved["flight_id"], "ref": saved["ref"]},
+            ref_id=saved["id"],
+        )
+    return saved
 
 
 def op_delete_annotation(params: dict, ctx: dict) -> Any:
-    return {"deleted": ws.delete_annotation(ctx["workspace_dir"], params["id"])}
+    workspace_dir = ctx["workspace_dir"]
+    deleted = ws.delete_annotation(workspace_dir, params["id"])
+    if deleted:
+        ws.close_journal_entry(workspace_dir, kind="annotation", ref_id=params["id"])
+    return {"deleted": deleted}
 
 
 def op_remove_missing_flight(params: dict, ctx: dict) -> Any:
@@ -1363,6 +1398,14 @@ def op_get_settings_changelog(params: dict, ctx: dict) -> Any:
     return {"entries": sorted(store["entries"], key=lambda e: e["at"], reverse=True)}
 
 
+def op_get_journal(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    ws.backfill_journal_from_existing(workspace_dir)
+    store = ws.load_journal(workspace_dir)
+    return {"entries": sorted(store["entries"], key=lambda e: e["at"], reverse=True)}
+
+
 def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
     before = ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
     settings = ws.WorkspaceSettings.from_dict(params["settings"])
@@ -1440,6 +1483,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
     "get_settings_changelog": op_get_settings_changelog,
+    "get_journal": op_get_journal,
     "get_topic_help": op_get_topic_help,
     "get_aircraft_summary": op_get_aircraft_summary,
 }

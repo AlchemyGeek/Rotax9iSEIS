@@ -542,6 +542,65 @@ def test_settings_changelog_records_changes_across_tabs(registry_server):
     assert len(got2) == before_count
 
 
+def test_journal_records_and_closes_entries_across_kinds(registry_server):
+    """Spec 14 §6 — Journal is its own record of decisions, created
+    alongside the real action and closed (not removed) on reversal,
+    across the three kinds with real data today: a limit filter, a
+    reference pin, and an annotation."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    log = _flying_log_bytes(extra_header=",Fuel Press (PSI)",
+                            row_extra_fn=lambda i: ",47.0" if i > _FLYING_PREAMBLE_LEN + 300 else ",44.0")
+    imported = rpc(registry_server, "import_files", {"files": [{
+        "content_base64": base64.b64encode(log).decode(), "filename": "log_20260101_120000_TEST.csv",
+    }]})
+    flight_id = imported["result"]["results"][0]["flight_id"]
+
+    # Limit filter: created -> open entry; deleted -> closed, kept.
+    saved_filter = rpc(registry_server, "save_filter", {"filter": {
+        "limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "sender reads high",
+    }})["result"]
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    filter_entry = next(e for e in entries if e["kind"] == "limit_filter" and e["ref_id"] == saved_filter["id"])
+    assert filter_entry["status"] == "open" and filter_entry["closed_at"] is None
+    assert filter_entry["note"] == "sender reads high"
+
+    rpc(registry_server, "delete_filter", {"id": saved_filter["id"]})
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    filter_entry = next(e for e in entries if e["id"] == filter_entry["id"])
+    assert filter_entry["status"] == "closed" and filter_entry["closed_at"] is not None
+
+    # Annotation: created -> open entry; deleted -> closed, kept.
+    ann = rpc(registry_server, "save_annotation", {
+        "flight_id": flight_id, "ref": {"kind": "flight"}, "note": "checking density altitude tolerance",
+    })["result"]
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    ann_entry = next(e for e in entries if e["kind"] == "annotation" and e["ref_id"] == ann["id"])
+    assert ann_entry["status"] == "open"
+    rpc(registry_server, "delete_annotation", {"id": ann["id"]})
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    assert next(e for e in entries if e["id"] == ann_entry["id"])["status"] == "closed"
+
+    # Reference pin: set -> open entry with a counted n; cleared -> closed.
+    rpc(registry_server, "set_reference", {"metric_id": "egt_spread", "flight_ids": [flight_id], "label": "after oil change"})
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    pin_entry = next(e for e in entries if e["kind"] == "reference_pin" and e["ref_id"] == "egt_spread")
+    assert pin_entry["status"] == "open" and pin_entry["effect"] == "n=1"
+    rpc(registry_server, "clear_reference", {"metric_id": "egt_spread"})
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    assert next(e for e in entries if e["id"] == pin_entry["id"])["status"] == "closed"
+
+    # Newest first.
+    assert entries[0]["at"] >= entries[-1]["at"]
+
+    # Re-pinning the same metric after a clear doesn't reuse the closed
+    # entry — it's a new decision, with its own open entry.
+    rpc(registry_server, "set_reference", {"metric_id": "egt_spread", "flight_ids": [flight_id]})
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    open_pins = [e for e in entries if e["kind"] == "reference_pin" and e["ref_id"] == "egt_spread" and e["status"] == "open"]
+    assert len(open_pins) == 1
+    assert open_pins[0]["id"] != pin_entry["id"]
+
+
 def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):
     """
     The Flights tab's "Skipped" list (Spec 02 §5.11.5):

@@ -1726,6 +1726,100 @@ def diff_and_log_settings(ws_dir: Path, tab: str, before: dict, after: dict, sou
         append_settings_changelog(ws_dir, tab, key, before.get(key), new_val, source)
 
 
+# ── Journal (Spec 14 §6) ──────────────────────────────────────────────────
+# journal.json, next to annotations.json: Journal's own record of every
+# decision (§3) — created alongside the action that makes it (a filter
+# saved, a reference pinned, a note added) and, on reversal, closed
+# in place rather than removed (§6.4 "nothing is deleted"). This is
+# deliberately a record Journal owns outright, independent of whatever
+# the underlying store (filters.json, FleetSelection.pinned_references,
+# annotations.json — each owned by its own spec) does on removal; Spec
+# 09 filters are hard-deleted from filters.json by design (§9), for
+# example, but the decision to have created and later removed one still
+# belongs in Journal's own history.
+
+_JOURNAL_VERSION = "1"
+
+
+def load_journal(ws_dir: Path) -> dict:
+    f = ws_dir / "journal.json"
+    if not f.exists():
+        return {"version": _JOURNAL_VERSION, "entries": []}
+    return json.loads(f.read_text())
+
+
+def append_journal_entry(
+    ws_dir: Path, *, kind: str, what: str, where: Optional[dict] = None,
+    reason: Optional[str] = None, note: Optional[str] = None,
+    effect: Optional[str] = None, ref_id: Optional[str] = None, at: Optional[str] = None,
+) -> dict:
+    store = load_journal(ws_dir)
+    entry = {
+        "id": _new_id("jnl"), "kind": kind, "what": what, "where": where,
+        "at": at or _now(), "reason": reason, "note": note, "effect": effect,
+        "status": "open", "closed_at": None, "ref_id": ref_id,
+    }
+    store["entries"].append(entry)
+    _write_json(ws_dir / "journal.json", store)
+    return entry
+
+
+def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optional[str] = None) -> Optional[dict]:
+    """Closes the most recent open entry of `kind` for `ref_id` — struck
+    through in the UI, kept in the list, never removed (§6.4)."""
+    store = load_journal(ws_dir)
+    for entry in reversed(store["entries"]):
+        if entry["kind"] == kind and entry["ref_id"] == ref_id and entry["status"] == "open":
+            entry["status"] = "closed"
+            entry["closed_at"] = _now()
+            if effect is not None:
+                entry["effect"] = effect
+            _write_json(ws_dir / "journal.json", store)
+            return entry
+    return None
+
+
+def has_open_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> bool:
+    store = load_journal(ws_dir)
+    return any(e["kind"] == kind and e["ref_id"] == ref_id and e["status"] == "open" for e in store["entries"])
+
+
+def backfill_journal_from_existing(ws_dir: Path) -> None:
+    """
+    Spec 14 Appendix A step 3: "existing filters, annotations ... must
+    appear with no data migration visible to the user." journal.json
+    only started being written to going forward (this session); a
+    filter, annotation or pin created before that has no journal entry
+    at all. Called once per get_journal — idempotent (has_open_journal_
+    entry skips anything already backfilled) and silent: one journal
+    entry per live record that's missing one, dated at the record's own
+    original timestamp rather than "now", so it sorts into its real
+    place in the newest-first list instead of jumping to the top.
+    """
+    for f in load_filters(ws_dir)["filters"]:
+        if not has_open_journal_entry(ws_dir, kind="limit_filter", ref_id=f["id"]):
+            append_journal_entry(
+                ws_dir, kind="limit_filter", what=f"Filter: {f['limit_id']}",
+                where={"limit_id": f["limit_id"]}, note=f.get("note"), ref_id=f["id"],
+                at=f.get("created_at"),
+            )
+    for a in load_annotations(ws_dir)["annotations"]:
+        if not has_open_journal_entry(ws_dir, kind="annotation", ref_id=a["id"]):
+            append_journal_entry(
+                ws_dir, kind="annotation", what=a["note"][:80],
+                where={"flight_id": a["flight_id"], "ref": a["ref"]}, ref_id=a["id"],
+                at=a.get("created_at"),
+            )
+    pinned = (load_selection(ws_dir).baseline_config or {}).get("pinned_references") or {}
+    for metric_id, ref in pinned.items():
+        if not has_open_journal_entry(ws_dir, kind="reference_pin", ref_id=metric_id):
+            append_journal_entry(
+                ws_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
+                note=ref.get("label"), effect=f"n={len(ref.get('flight_ids', []))}", ref_id=metric_id,
+                at=ref.get("set_at"),
+            )
+
+
 # ── Limit filters (Spec 09 §9) ──────────────────────────────────────────────
 # filters.json, next to annotations.json: the pilot's filters on OM limits.
 # Validation is the engine's (filters.validate_filter); this layer stores
