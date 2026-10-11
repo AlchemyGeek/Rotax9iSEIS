@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { getEngineClient } from "../lib/engineClient";
 import {
@@ -25,7 +24,6 @@ const LEGACY_MANIFEST: WorkspaceManifest = {
 // app-level settings, workspace-level settings, bundle export/import, and
 // the storage persistence nudge.
 export function Settings() {
-  const navigate = useNavigate();
   const [appSettings, setAppSettings] = useState<AppSettings>(fixtureAppSettings);
   const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>(fixtureWorkspaceSettings);
   const [manifest, setManifest] = useState<WorkspaceManifest>(fixtureManifest);
@@ -223,9 +221,9 @@ export function Settings() {
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, marginBottom: 10 }}>
               <span style={{ color: "var(--text-secondary)" }}>Engine overrides</span>
-              <a href="#" onClick={(e) => { e.preventDefault(); navigate("/baselines"); }} style={{ fontSize: 12 }}>
-                None active — edit in Baselines →
-              </a>
+              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }} title="Spec 14 §10 Q1 — no profile has needed an override yet; the shipped profile is read-only until engine_overrides.json is designed">
+                None
+              </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
               <span style={{ color: "var(--text-secondary)" }}>Anonymize by default</span>

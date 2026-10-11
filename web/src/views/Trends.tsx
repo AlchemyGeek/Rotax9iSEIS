@@ -208,7 +208,7 @@ export function Trends() {
         <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {usingFixture && "sample data — "}
           {fleet.flight_ids.length} flights &middot; {engineId} &middot;{" "}
-          {fleet.provenance.baseline_config.membership.replace(/_/g, "-")} baseline
+          {fleet.provenance.baseline_config.membership.replace(/_/g, "-")} reference
           {loading && " · loading…"}
         </span>
       }

@@ -282,7 +282,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
             <button
               key={n}
               onClick={() => onFocus(focus === n ? null : n)}
-              title="show this cylinder's baseline band"
+              title="show this cylinder's reference band"
               style={{
                 display: "flex",
                 alignItems: "center",

@@ -2,7 +2,6 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { Trends } from "./views/Trends";
-import { Baselines } from "./views/Baselines";
 import { ECU } from "./views/ECU";
 import { Annotations } from "./views/Annotations";
 import { Settings } from "./views/Settings";
@@ -24,9 +23,14 @@ function App() {
           <Route path="/flights/:flightId" element={<FlightView />} />
           <Route path="/skipped/:filenameParam" element={<FlightView />} />
           <Route path="/trends" element={<Trends />} />
-          <Route path="/baselines" element={<Baselines />} />
+          {/* Spec 14 §4/step 1: Baselines is no longer a destination — the
+              URL redirects rather than 404ing for anyone with it bookmarked.
+              Baselines.tsx itself still exists (import removed here) so its
+              rule playground stays testable until Spec 14 step 5 removes it. */}
+          <Route path="/baselines" element={<Navigate to="/settings" replace />} />
           <Route path="/ecu" element={<ECU />} />
-          <Route path="/annotations" element={<Annotations />} />
+          <Route path="/annotations" element={<Navigate to="/journal" replace />} />
+          <Route path="/journal" element={<Annotations />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </ChartSessionProvider>

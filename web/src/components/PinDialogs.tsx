@@ -79,7 +79,7 @@ function dateSpanOf(s: Selection): string | null {
 export function pinExplanation(n: number, hours: number, dateSpan: string | null): string {
   const dates = dateSpan ? `, ${dateSpan}` : "";
   return `The ${n} flight${n === 1 ? "" : "s"} in view (${hours.toFixed(1)} h${dates}) become this `
-    + "metric's baseline and stay fixed. Flights outside this span are no longer used for this metric. New "
+    + "metric's reference and stay fixed. Flights outside this span are no longer used for this metric. New "
     + "flights are compared against these flights until you unpin.";
 }
 
@@ -104,7 +104,7 @@ export function PinConfirmDialog({ metricLabel, zoomSelection, windowSelection, 
   const selection = mode === "zoom" ? zoomSelection : windowSelection;
 
   return (
-    <DialogShell title={`Pin baseline: ${metricLabel}`} onCancel={onCancel}>
+    <DialogShell title={`Pin reference: ${metricLabel}`} onCancel={onCancel}>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
         {mode === "zoom" && isFullHistory ? (
           <p style={{ margin: "0 0 8px" }}>
@@ -115,7 +115,7 @@ export function PinConfirmDialog({ metricLabel, zoomSelection, windowSelection, 
         )}
         {selection.n < SMALL_BASELINE_THRESHOLD && (
           <p style={{ margin: "0 0 8px", color: "var(--severity-warning)" }}>
-            A baseline of {selection.n} flight{selection.n === 1 ? "" : "s"} makes comparisons noisier than your full history.
+            A reference of {selection.n} flight{selection.n === 1 ? "" : "s"} makes comparisons noisier than your full history.
           </p>
         )}
         <p style={{ margin: "0 0 8px" }}>Useful after maintenance or a change you want to measure from.</p>
@@ -140,7 +140,7 @@ export function PinConfirmDialog({ metricLabel, zoomSelection, windowSelection, 
       </label>
       <div style={BUTTON_ROW}>
         <button style={CANCEL_BUTTON} onClick={onCancel}>Cancel</button>
-        <button style={CONFIRM_BUTTON} onClick={() => onConfirm(selection, label.trim() || undefined)}>Pin baseline</button>
+        <button style={CONFIRM_BUTTON} onClick={() => onConfirm(selection, label.trim() || undefined)}>Pin reference</button>
       </div>
     </DialogShell>
   );
@@ -166,14 +166,14 @@ export function UnpinConfirmDialog({ metricLabel, preview, onConfirm, onCancel }
         : "This metric will no longer appear in the change summary.";
   }
   return (
-    <DialogShell title={`Unpin baseline: ${metricLabel}`} onCancel={onCancel}>
+    <DialogShell title={`Unpin reference: ${metricLabel}`} onCancel={onCancel}>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-        <p style={{ margin: "0 0 8px" }}>The baseline will again include all earlier flights and grow as you fly. Shift-history events recorded while pinned are unaffected.</p>
+        <p style={{ margin: "0 0 8px" }}>The reference will again include all earlier flights and grow as you fly. Shift-history events recorded while pinned are unaffected.</p>
         <p style={{ margin: "0 0 8px", fontWeight: 600, color: "var(--text-primary)" }}>{line}</p>
       </div>
       <div style={BUTTON_ROW}>
         <button style={CANCEL_BUTTON} onClick={onCancel}>Cancel</button>
-        <button style={CONFIRM_BUTTON} onClick={onConfirm} disabled={!preview}>Unpin baseline</button>
+        <button style={CONFIRM_BUTTON} onClick={onConfirm} disabled={!preview}>Unpin reference</button>
       </div>
     </DialogShell>
   );

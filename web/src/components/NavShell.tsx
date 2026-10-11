@@ -27,7 +27,7 @@ const NAV_LINK_STYLE = ({ isActive }: { isActive: boolean }) => ({
 // (Spec 03 §4) — permanent in the nav because switching workspaces is
 // something a pilot managing more than one aircraft does routinely, not
 // configuration set once. Live-first with a fixture fallback, same
-// convention as FlightView/Trends/Baselines: a genuinely empty registry
+// convention as FlightView/Trends/Settings: a genuinely empty registry
 // (server reachable, zero workspaces created yet) is real data and shown
 // as-is, not covered up with the fixture — only an actual connection
 // failure falls back to it.
@@ -69,7 +69,7 @@ function WorkspaceSwitcher() {
   const others = workspaces.filter((w) => w.id !== active?.id);
 
   // A full reload after switching/creating is a deliberately blunt
-  // guarantee: every already-mounted view (Flights, Trends, Baselines...)
+  // guarantee: every already-mounted view (Flights, Trends, Settings...)
   // refetches under the new active workspace, with no cross-component
   // state store to keep in sync — there isn't one today, and building
   // one just for this would be a much bigger change than this pass.
@@ -298,14 +298,11 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
                 </span>
               )}
             </NavLink>
-            <NavLink to="/baselines" style={NAV_LINK_STYLE}>
-              Baselines
-            </NavLink>
             <NavLink to="/ecu" style={NAV_LINK_STYLE}>
               ECU
             </NavLink>
-            <NavLink to="/annotations" style={NAV_LINK_STYLE}>
-              Notes
+            <NavLink to="/journal" style={NAV_LINK_STYLE}>
+              Journal
               {filterAttention > 0 && (
                 <span
                   title={`${filterAttention} limit filter${filterAttention === 1 ? "" : "s"} breached or drifting`}

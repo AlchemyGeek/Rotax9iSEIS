@@ -106,7 +106,7 @@ function pinnedShift(overrides: Partial<Shift["reference"]> = {}): Shift {
 }
 
 describe("TrendsPanelStrip pinned state", () => {
-  it("shows the baseline-pinned badge in the header and still renders the full shift detail", () => {
+  it("shows the reference-pinned badge in the header and still renders the full shift detail", () => {
     const metric = baseMetric({
       baseline: { n: 14, mean: 25, std: 5, min: 15, max: 50, confidence: { level: "GOOD", n: 14 } },
       shift: pinnedShift(),
@@ -119,13 +119,13 @@ describe("TrendsPanelStrip pinned state", () => {
         onUnpinReference={() => {}}
       />,
     );
-    expect(screen.getByText(/baseline pinned · after oil change/)).toBeTruthy();
+    expect(screen.getByText(/reference pinned · after oil change/)).toBeTruthy();
     // Full detail, not just the badge (unlike every other readiness kind).
     expect(screen.getByText(/shift_z 15.00/)).toBeTruthy();
-    expect(screen.getByText("Unpin baseline")).toBeTruthy();
+    expect(screen.getByText("Unpin reference")).toBeTruthy();
   });
 
-  it("draws a hard-bordered pinned baseline, a neutral gap, and a pin marker", () => {
+  it("draws a hard-bordered pinned reference, a neutral gap, and a pin marker", () => {
     const metric = baseMetric({ shift: pinnedShift() });
     render(
       <TrendsPanelStrip
@@ -137,17 +137,17 @@ describe("TrendsPanelStrip pinned state", () => {
     const series = lastOption!.series as any[];
     const bordered = series.find((s) => s.markArea?.itemStyle?.borderColor);
     expect(bordered).toBeTruthy();
-    // Gap: baseline ends at hour 11, recent starts at hour 40 — a real gap.
+    // Gap: reference ends at hour 11, recent starts at hour 40 — a real gap.
     const gap = series.find((s) => s.markArea && !s.markArea.itemStyle?.borderColor && s.markArea.data[0][0].xAxis === 11);
     expect(gap).toBeTruthy();
     expect(gap.markArea.data[0][1].xAxis).toBe(40);
-    const marker = series.find((s) => s.markLine?.label?.formatter?.includes("baseline pinned"));
+    const marker = series.find((s) => s.markLine?.label?.formatter?.includes("reference pinned"));
     expect(marker).toBeTruthy();
     expect(marker.markLine.label.formatter).toContain("12 flights");
     expect(marker.markLine.label.formatter).toContain("after oil change");
   });
 
-  it("draws no gap region when the pinned baseline and recent window are adjacent", () => {
+  it("draws no gap region when the pinned reference and recent window are adjacent", () => {
     const metric = baseMetric({ shift: pinnedShift({ hours_to: 40 }) }); // recent also starts at 40 — no gap
     render(
       <TrendsPanelStrip
@@ -161,7 +161,7 @@ describe("TrendsPanelStrip pinned state", () => {
     expect(gap).toBeFalsy();
   });
 
-  it("draws the pinned baseline at its true x-extent regardless of the current zoom (R10.4)", () => {
+  it("draws the pinned reference at its true x-extent regardless of the current zoom (R10.4)", () => {
     // Pinned span is hours 0-11; zoom out to hours 0-100 (wider than
     // any real data) — the pinned region's own coordinates must not
     // move or clip, since markArea data is absolute, not zoom-relative.
@@ -193,14 +193,14 @@ describe("TrendsPanelStrip pinned state", () => {
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const series = lastOption!.series as any[];
-    const marker = series.find((s) => s.markLine?.label?.formatter?.includes("baseline pinned"));
+    const marker = series.find((s) => s.markLine?.label?.formatter?.includes("reference pinned"));
     // Locale-dependent order (en-US: "Oct 12"), but UTC-forced so it
     // never shifts a day relative to the ISO date regardless of the
     // environment's local timezone.
     expect(marker.markLine.label.formatter).toMatch(/Oct 12/);
   });
 
-  it("draws a muted not-used region over every flight older than the pinned baseline (v0.6 §5.7.1 item 1)", () => {
+  it("draws a muted not-used region over every flight older than the pinned reference (v0.6 §5.7.1 item 1)", () => {
     const metric = baseMetric({
       points: [
         { flight_id: "old1", date: "2025-12-01", x: -20, value: 1 },
@@ -262,12 +262,12 @@ describe("TrendsPanelStrip pinned state", () => {
         onPinReference={onPinReference} zoomRange={{ start: 40, end: 51 }}
       />,
     );
-    fireEvent.click(screen.getByText("Pin baseline to these flights"));
+    fireEvent.click(screen.getByText("Pin reference to these flights"));
     expect(screen.getByText(/The 12 flights in view/)).toBeTruthy();
     expect(screen.getByText(/2026-09-01/)).toBeTruthy();
     expect(screen.queryByText(/makes comparisons noisier/)).toBeNull();
     fireEvent.change(screen.getByPlaceholderText(/after oil change/), { target: { value: "my label" } });
-    fireEvent.click(screen.getByText("Pin baseline"));
+    fireEvent.click(screen.getByText("Pin reference"));
     expect(onPinReference).toHaveBeenCalledWith(metric.points.slice(1).map((p) => p.flight_id), "my label");
   });
 
@@ -284,16 +284,16 @@ describe("TrendsPanelStrip pinned state", () => {
         onPinReference={() => {}} zoomRange={{ start: 40, end: 51 }}
       />,
     );
-    fireEvent.click(screen.getByText("Pin baseline to these flights"));
+    fireEvent.click(screen.getByText("Pin reference to these flights"));
     expect(screen.queryByText(/makes comparisons noisier/)).toBeNull();
     fireEvent.click(screen.getByText("Use the recent window instead"));
     expect(screen.getByText(/The 6 flights in view/)).toBeTruthy();
-    expect(screen.getByText(/A baseline of 6 flights makes comparisons noisier/)).toBeTruthy();
+    expect(screen.getByText(/A reference of 6 flights makes comparisons noisier/)).toBeTruthy();
     fireEvent.click(screen.getByText("Use the flights in view instead"));
     expect(screen.queryByText(/makes comparisons noisier/)).toBeNull();
   });
 
-  it("disables Pin baseline to these flights below n_min in the zoomed view, with the count shown", () => {
+  it("disables Pin reference to these flights below n_min in the zoomed view, with the count shown", () => {
     const metric = metricForPinTests(12);
     render(
       <TrendsPanelStrip
@@ -302,7 +302,7 @@ describe("TrendsPanelStrip pinned state", () => {
         onPinReference={() => {}} zoomRange={{ start: 40, end: 43 }} // 4 flights in view
       />,
     );
-    const button = screen.getByText("Pin baseline to these flights") as HTMLButtonElement;
+    const button = screen.getByText("Pin reference to these flights") as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.title).toMatch(/4 in view/);
   });
@@ -316,7 +316,7 @@ describe("TrendsPanelStrip pinned state", () => {
         onPinReference={() => {}} // zoomRange omitted entirely: unzoomed = full history
       />,
     );
-    fireEvent.click(screen.getByText("Pin baseline to these flights"));
+    fireEvent.click(screen.getByText("Pin reference to these flights"));
     expect(screen.getByText(/All 13 flights are selected/)).toBeTruthy();
     // Switching to the recent window (a real sub-selection) drops the notice.
     fireEvent.click(screen.getByText("Use the recent window instead"));
@@ -335,14 +335,14 @@ describe("TrendsPanelStrip pinned state", () => {
         onUnpinReference={onUnpinReference} onPreviewUnpin={onPreviewUnpin}
       />,
     );
-    fireEvent.click(screen.getByText("Unpin baseline"));
+    fireEvent.click(screen.getByText("Unpin reference"));
     expect(onPreviewUnpin).toHaveBeenCalled();
     expect(screen.getByText("Checking…")).toBeTruthy();
     await waitFor(() => screen.getByText(/no longer appear in the change summary/));
-    expect(screen.getByText(/baseline will again include all earlier flights/)).toBeTruthy();
-    // Two "Unpin baseline"s on screen now (the strip's trigger, and
+    expect(screen.getByText(/reference will again include all earlier flights/)).toBeTruthy();
+    // Two "Unpin reference"s on screen now (the strip's trigger, and
     // the dialog's own confirm button) — scope to the dialog.
-    fireEvent.click(within(screen.getByRole("dialog")).getByText("Unpin baseline"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("Unpin reference"));
     expect(onUnpinReference).toHaveBeenCalled();
   });
 });

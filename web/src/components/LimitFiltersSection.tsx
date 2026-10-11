@@ -39,7 +39,7 @@ function driftDetailText(details: NonNullable<FilterHealth["drift_details"]>): s
       return (
         `${d.metric.replace(/_/g, " ")}: compared with ${cmp} (n=${d.comparison?.n}), typical ${d.typical?.toFixed(2)} ± ${(d.std ?? 0).toFixed(2)}. ` +
         `${above}; drifting above ${d.z_threshold} ` +
-        `on 2 flights in a row (set per metric in Baselines → Limit filter drift).`
+        `on 2 flights in a row (set per metric in Settings → Reference & Models).`
       );
     })
     .join("\n\n");
@@ -66,12 +66,12 @@ function formatDate(iso: string | undefined): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-// Spec 09 §2, for pilots: shown behind "How filters differ from baselines".
+// Spec 09 §2, for pilots: shown behind "How filters differ from your reference".
 function FiltersExplainer() {
   return (
     <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55, background: "var(--bg)", borderRadius: 8, padding: "10px 12px" }}>
       <p style={{ margin: "0 0 6px" }}>
-        <strong>Your baseline</strong> is the tool's memory of what is normal for your engine. It learns from every flight and tells you
+        <strong>Your reference</strong> is the tool's memory of what is normal for your engine. It learns from every flight and tells you
         when a flight is unusual <em>for your aircraft</em>, even if nothing went past an OM limit.
       </p>
       <p style={{ margin: "0 0 6px" }}>
@@ -80,8 +80,8 @@ function FiltersExplainer() {
         limit's normal severity, marked “beyond your filter”.
       </p>
       <p style={{ margin: "0 0 6px" }}>
-        A filter never switches the baseline off: a flight that is unusually hot for your engine still gets a “watch” insight. And unlike the
-        baseline, a filter doesn't keep learning — one that did would slowly accept a problem that is getting worse.
+        A filter never switches the reference off: a flight that is unusually hot for your engine still gets a “watch” insight. And unlike the
+        reference, a filter doesn't keep learning — one that did would slowly accept a problem that is getting worse.
       </p>
       <p style={{ margin: 0 }}>
         For temperature-sensitive limits (such as oil, coolant and EGT temperatures, and fuel pressure), each new flight is
@@ -231,7 +231,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
           {entries.length} filter{entries.length === 1 ? "" : "s"}
         </span>
         <span onClick={() => setExplain((v) => !v)} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>
-          How filters differ from baselines {explain ? "▾" : "▸"}
+          How filters differ from your reference {explain ? "▾" : "▸"}
         </span>
         <CopyFilters onCopied={() => void refresh()} />
       </div>
@@ -258,7 +258,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 href="#"
                 onClick={(e) => { e.preventDefault(); navigate(`/trends?panel=limit:${filter.limit_id}`); }}
                 style={{ marginLeft: "auto", fontSize: 11 }}
-                title="See this limit's panel on Trends — the filter band and its baseline shift"
+                title="See this limit's panel on Trends — the filter band and its reference shift"
               >
                 View on Trends →
               </a>
@@ -271,8 +271,8 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 {h.drift_details && h.drift_details.length > 0 && (
                   <li style={{ listStyle: "none", marginLeft: -18, color: "var(--text-tertiary)" }}>
                     The shaded area on the charts below marks the {h.reference?.flight_ids.length ?? filter.reference.flight_ids.length} reference
-                    flights (grey): what was normal when you set this filter, last changed its limits or re-baselined it. Drift
-                    compares your recent flights with them. If the new behaviour is expected, Re-baseline makes your latest flights the reference.
+                    flights (grey): what was normal when you set this filter, last changed its limits or reset its reference. Drift
+                    compares your recent flights with them. If the new behaviour is expected, Reset reference makes your latest flights the reference.
                   </li>
                 )}
                 {h.drift_details && h.drift_details.length > 0 && (
@@ -312,7 +312,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
               <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
                 {[
                   ["Edit", () => setEditing(editing === filter.id ? null : filter.id)],
-                  ["Re-baseline", () => act(() => client.rebaselineFilter(filter.id))],
+                  ["Reset reference", () => act(() => client.rebaselineFilter(filter.id))],
                   ["Mark reviewed", () => act(() => client.reviewFilter(filter.id))],
                   ["History", () => setHistoryOpen(historyOpen === filter.id ? null : filter.id)],
                   ["Remove", () => act(() => client.deleteFilter(filter.id))],
@@ -321,10 +321,10 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                     key={label as string}
                     onClick={onClick as () => void}
                     title={
-                      label === "Re-baseline"
+                      label === "Reset reference"
                         ? "Accept how the engine behaves now: the filter's reference becomes the most recent flights"
                         : label === "Mark reviewed"
-                          ? "Clears Breached and Review due; Drifting clears only when it stops or you re-baseline"
+                          ? "Clears Breached and Review due; Drifting clears only when it stops or you reset the reference"
                           : undefined
                     }
                     style={{ cursor: "pointer", color: "var(--text-secondary)" }}

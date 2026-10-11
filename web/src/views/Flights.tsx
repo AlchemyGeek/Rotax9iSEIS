@@ -286,7 +286,7 @@ export function Flights() {
     }
   }
 
-  // Deleting a workspace is permanent (every flight, exclusion, baseline,
+  // Deleting a workspace is permanent (every flight, exclusion, reference,
   // and rule override in it) — the typed "DELETE" is the only gate, no
   // second modal, matching how deliberately blunt the rest of this app's
   // destructive confirmations are (see bulkConfirming above). A full
@@ -579,7 +579,7 @@ export function Flights() {
               )}
             </div>
             <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              {summary.total} flights &middot; {summary.inBaselines} in baselines
+              {summary.total} flights &middot; {summary.inBaselines} in reference
               {summary.missing > 0 && ` · ${summary.missing} missing`}
               {summary.otherAircraft > 0 && ` · ${summary.otherAircraft} other aircraft`}
             </div>
@@ -629,7 +629,7 @@ export function Flights() {
               Delete workspace "{manifest.name}"?
             </div>
             <div style={{ color: "var(--text-secondary)" }}>
-              This permanently removes every flight, exclusion, baseline, and rule override in this workspace. This cannot be undone.
+              This permanently removes every flight, exclusion, reference, and rule override in this workspace. This cannot be undone.
               Your original log files are not touched — this only deletes what SlingologyEIS derived from them, not the source CSVs on disk.
               Type <span className="mono" style={{ fontWeight: 600 }}>DELETE</span> to confirm.
             </div>
@@ -928,7 +928,7 @@ export function Flights() {
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>Date / route</th>
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>Duration, engine hours</th>
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>Insights</th>
-                    <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>In baselines</th>
+                    <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>In reference</th>
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>Status</th>
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}>Source</th>
                     <th style={{ color: "var(--text-tertiary)", fontWeight: 500 }}></th>
@@ -981,14 +981,14 @@ export function Flights() {
                             </button>
                           </span>
                         ) : row.excluded_reason ? (
-                          <a href="#" onClick={(e) => { e.preventDefault(); handleInclude(row.flight_id); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }} title="click to re-include in baselines">
+                          <a href="#" onClick={(e) => { e.preventDefault(); handleInclude(row.flight_id); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }} title="click to re-include in reference">
                             excluded — {row.excluded_reason}
                           </a>
                         ) : row.in_baselines ? (
                           <span
                             onClick={() => setExcludingId(row.flight_id)}
                             style={{ color: "var(--success)", cursor: "pointer" }}
-                            title="click to exclude from baselines"
+                            title="click to exclude from reference"
                           >
                             &#10003;
                           </span>

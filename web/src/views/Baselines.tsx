@@ -341,12 +341,12 @@ export function Baselines() {
         </div>
 
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "0 8px 8px" }}>
-          PINNED BASELINES
+          PINNED REFERENCES
         </div>
         <div style={{ padding: "10px 12px", background: "var(--panel)", borderRadius: 8, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
           {Object.keys(draftBaselineConfig.pinned_references ?? {}).length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              None — every metric's baseline is rolling. Pin one from its panel on Trends.
+              None — every metric's reference is rolling. Pin one from its panel on Trends.
             </div>
           ) : (
             Object.entries(draftBaselineConfig.pinned_references ?? {}).map(([metricId, ref]) => (
@@ -367,7 +367,7 @@ export function Baselines() {
                   }}
                   style={{ fontSize: 11 }}
                 >
-                  unpin baseline
+                  unpin reference
                 </a>
               </div>
             ))

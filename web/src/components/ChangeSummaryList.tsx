@@ -57,7 +57,7 @@ export function ChangeSummaryList({ fleet, panels, onOpenPanel, onOpenFlights }:
         if (shift.bend?.fires) qualifiers.push("and the rate of change has shifted");
         if (level.om_margin) qualifiers.push("within the OM margin");
         if (level.filter_edge) qualifiers.push("at the edge of your filter band");
-        if (shift.reference.kind === "pinned") qualifiers.push(`since ${shift.reference.label ?? "pinned baseline"}`);
+        if (shift.reference.kind === "pinned") qualifiers.push(`since ${shift.reference.label ?? "pinned reference"}`);
         const allFlightIds = row.members
           ? row.members.flatMap((m) => fleet.metrics[m]?.shift?.recent.flight_ids ?? [])
           : shift.recent.flight_ids;

@@ -19,7 +19,7 @@ export function readinessText(r: Readiness): string {
     case "no_events": return "never exceeded";
     case "rare": return `${r.count ?? 0} exceedance${r.count === 1 ? "" : "s"}`;
     case "insufficient": return "conditions not comparable yet";
-    case "pinned": return `baseline pinned · ${r.label ?? "pinned baseline"}`;
+    case "pinned": return `reference pinned · ${r.label ?? "pinned reference"}`;
     default: return r.kind;
   }
 }
@@ -30,7 +30,7 @@ export function readinessText(r: Readiness): string {
 // line across the recent window; the recent window shaded differently;
 // the OM limit and filter-band-edge lines where they exist; the OM
 // margin line (dashed, fainter, labelled with the fraction); a stratify
-// toggle; "Pin baseline to these flights"/"Unpin baseline". Generalizes
+// toggle; "Pin reference to these flights"/"Unpin reference". Generalizes
 // FilterHealthCharts.tsx's reference-shading approach (Spec 09 §12.2)
 // to every fleet metric, not just filtered limits.
 
@@ -42,13 +42,13 @@ function withUnit(v: number, unit: string): string {
 const RECENT_WINDOW_FILL = "rgba(79,195,176,0.07)";
 const REFERENCE_FILL = "rgba(174,183,191,0.10)";
 // Spec 12 §5.7.1 item 1 (v0.9, Session G — R10.4): one "not used" fill
-// for every eligible flight outside the pinned baseline, on either
+// for every eligible flight outside the pinned reference, on either
 // side — older than it, or between it and the recent window once the
 // window has moved past (D-1, retained). Session E/F's separate "gap"
 // style is retired; both cases read the same now.
 const NOT_USED_FILL = "rgba(174,183,191,0.015)";
 
-// "baseline pinned · 40 flights · 12 Oct" (item 1's own example) — the
+// "reference pinned · 40 flights · 12 Oct" (item 1's own example) — the
 // pin marker's date, short like the rest of this chart's axis labels;
 // client-side formatting of Shift.reference.set_at, same precedent as
 // PastChanges.tsx's own date slicing.
@@ -199,7 +199,7 @@ export function TrendsPanelStrip({
               data: [[{ xAxis: ref.hours_to }, { xAxis: recent.hours_from }]],
             });
           }
-          // The pin marker, at the baseline's right boundary — n,
+          // The pin marker, at the reference's right boundary — n,
           // hours span and the label/date (item 1's own example text).
           const hours = (ref.hours_to - ref.hours_from).toFixed(1);
           const when = ref.label ?? (ref.set_at ? formatPinDate(ref.set_at) : "pinned");
@@ -207,7 +207,7 @@ export function TrendsPanelStrip({
             silent: true, symbol: "none",
             lineStyle: { color: colors.accent, type: "solid", width: 1.5 },
             label: {
-              formatter: `baseline pinned · ${ref.n} flight${ref.n === 1 ? "" : "s"} (${hours} h) · ${when}`,
+              formatter: `reference pinned · ${ref.n} flight${ref.n === 1 ? "" : "s"} (${hours} h) · ${when}`,
               position: "insideStartTop", color: colors.accent, fontFamily: fontSans, fontSize: 10,
             },
             data: [{ xAxis: ref.hours_to }],
@@ -356,7 +356,7 @@ export function TrendsPanelStrip({
   // Same conditions the chart itself uses to decide whether to draw a
   // not-used region (R10.4/D-1) — recomputed here only for the
   // legend, so it names exactly what's on screen. Both the "older
-  // than the baseline" and "between the baseline and the window"
+  // than the reference" and "between the reference and the window"
   // cases share one legend entry now (v0.9).
   const hasNotUsed = pinned && shift != null && (
     Math.min(...metric.points.map((p) => p.x).filter((x): x is number => x != null)) < shift.reference.hours_from
@@ -408,7 +408,7 @@ export function TrendsPanelStrip({
         <div style={{ display: "flex", gap: 14, padding: "4px 2px 0", flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>&#9679; flight</span>
           <span style={{ fontSize: 10, color: "var(--severity-limit)" }}>&#9679; outlier</span>
-          <span style={{ fontSize: 10, color: "var(--accent)" }}>▦ {pinned ? "pinned baseline (±1σ)" : "reference (±1σ)"}</span>
+          <span style={{ fontSize: 10, color: "var(--accent)" }}>▦ {pinned ? "reference pinned (±1σ)" : "reference (±1σ)"}</span>
           <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>▦ recent window</span>
           {/* §5.7.1 item 1 (v0.6): the legend/caption names every
               region actually on screen, not just the two rolling ones. */}
@@ -459,7 +459,7 @@ export function TrendsPanelStrip({
               {bend?.fires && <span>⟲ rate of change has shifted (bend)</span>}
               {level?.om_margin && <span style={{ color: "var(--severity-warning)" }}>⚠ within {Math.round((1 - omMarginFraction) * 100)}% of the OM limit</span>}
               {level?.filter_edge && <span style={{ color: "var(--severity-watch)" }}>⚠ at the edge of your filter band</span>}
-              {pinned && <span>📌 since {shift.reference.label ?? (shift.reference.set_at ? formatPinDate(shift.reference.set_at) : "pinned baseline")}</span>}
+              {pinned && <span>📌 since {shift.reference.label ?? (shift.reference.set_at ? formatPinDate(shift.reference.set_at) : "pinned reference")}</span>}
             </div>
             {(onPinReference || onUnpinReference) && (
               <div style={{ marginTop: 10 }}>
@@ -473,7 +473,7 @@ export function TrendsPanelStrip({
                     disabled={pinBusy}
                     style={pinButtonStyle}
                   >
-                    Unpin baseline
+                    Unpin reference
                   </button>
                 ) : (
                   <button
@@ -486,7 +486,7 @@ export function TrendsPanelStrip({
                         : `Pin the ${zoomSelection.n} flight${zoomSelection.n === 1 ? "" : "s"} in view`
                     }
                   >
-                    Pin baseline to these flights
+                    Pin reference to these flights
                   </button>
                 )}
               </div>
