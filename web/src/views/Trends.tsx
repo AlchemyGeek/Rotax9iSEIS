@@ -1,303 +1,206 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { EChartsOption } from "echarts";
 import { NavShell } from "../components/NavShell";
 import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
-import { EChartBase } from "../components/EChartBase";
-import { fleetAnalysis as fixtureFleet, flightAnalysis as fixtureFlight } from "../lib/fixtures";
-import { getEngineClient } from "../lib/engineClient";
 import { CylinderBalance } from "../components/CylinderBalance";
+import { TrendsPanelStrip, readinessText } from "../components/TrendsPanelStrip";
+import { EventStrip } from "../components/EventStrip";
+import { NeverExceededGroup } from "../components/NeverExceededGroup";
+import { ChangeSummaryList } from "../components/ChangeSummaryList";
+import { PastChanges } from "../components/PastChanges";
 import { cylinderFocusFor, hasCylinderBalance } from "../lib/cylinders";
-import { colors, fontMono, fontSans } from "../theme/colors";
-import type { FleetAnalysis } from "../types/contract";
-import { bandColor, bandLabel } from "../lib/bands";
+import { metricLabel, panelLabel, unitFor } from "../lib/trendsUnits";
+import { computeTiers, panelHasDetailStrips } from "../lib/trendsTiers";
+import { fleetAnalysis as fixtureFleet, flightAnalysis as fixtureFlight, trendsPanels as fixturePanels } from "../lib/fixtures";
+import { getEngineClient } from "../lib/engineClient";
+import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
+import type { FleetAnalysis, TrendsPanel } from "../types/contract";
 
 const client = getEngineClient();
-
-const GROUPS: { label: string; metrics: string[] }[] = [
-  // cylinder_balance is a composite view over egt1..4_deviation (Spec 08 §7),
-  // not a fleet metric of its own.
-  { label: "EGT", metrics: ["egt_spread", "cylinder_balance"] },
-  // cruise_efficiency/cruise_fuel_flow raise no insight (Spec 10 Q4) but
-  // stay here as context — fuel burned/nm-per-gal/fuel flow are still
-  // worth seeing over time, just not worth an alert.
-  { label: "FUEL", metrics: ["cruise_efficiency", "cruise_fuel_flow"] },
-  // climb_thermal_rate is Research status (Spec 10 D2) — no Trends chart
-  // for a topic that's not shown to casual users.
-  { label: "THERMAL", metrics: ["oil_temp_peak", "coolant_temp_peak"] },
-  { label: "BOOST", metrics: ["overboost_time"] },
-  { label: "OTHER", metrics: ["cruise_da_ft", "takeoff_map_inhg"] },
-];
-
-function labelFor(id: string) {
-  return id.replace(/_/g, " ");
-}
 
 export function Trends() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const selected = params.get("metric") ?? "egt_spread";
   const highlightFlight = params.get("flight");
+  // Legacy evidence-link param (Spec 08 egtN_deviation links): still
+  // resolves to the cylinder panel, focused on that cylinder.
+  const cylFocusParam = cylinderFocusFor(params.get("metric") ?? "");
 
   const [fleet, setFleet] = useState<FleetAnalysis>(fixtureFleet);
+  const [panels, setPanels] = useState<TrendsPanel[]>(fixturePanels);
   const [engineId, setEngineId] = useState(fixtureFlight.provenance.engine_profile.id);
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [pinBusy, setPinBusy] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState<string | null>(null);
+  // Spec 12 §8.4/§8.3 (Session F) — per-panel "Show detail strips",
+  // replacing Session C's page-level researcher toggle; loaded from
+  // and saved to workspace settings (see report for app- vs.
+  // workspace-settings decision), keyed by panel id.
+  const [detailStrips, setDetailStrips] = useState<Record<string, boolean>>({});
+  // §5.7/R10.1 (Session G) — one zoom range per panel, shared by every
+  // strip inside it (so "visible" means the same thing regardless of
+  // which strip the pilot actually dragged); null = unzoomed. Not
+  // persisted — a zoom is a within-visit selection tool, not settings.
+  const [zoomRanges, setZoomRanges] = useState<Record<string, { start: number; end: number } | null>>({});
+
+  // `rebuild`: set_reference/clear_reference/delete_shift_event write
+  // straight to the workspace's stored files but don't themselves
+  // recompute the fleet — get_fleet reads the last-built cache, which
+  // wouldn't yet reflect the edit. Pin/unpin/delete force a rebuild so
+  // the pilot sees the effect of what they just did immediately; the
+  // initial page load uses the cheap cached read.
+  async function load(rebuild = false) {
+    setLoading(true);
+    try {
+      // Sequenced, not Promise.all'd, when rebuilding: get_trends_panels
+      // reads the same on-disk fleet cache rebuildFleet() just wrote, so
+      // it has to run after that write lands, not race it.
+      const liveFleet = rebuild ? await client.rebuildFleet() : await client.getFleet();
+      const liveTrends = await client.getTrendsPanels();
+      if (liveFleet.flight_ids.length === 0) throw new Error("empty workspace");
+      setFleet(liveFleet);
+      setPanels(liveTrends.panels);
+      setUsingFixture(false);
+      try {
+        const firstFlight = await client.getFlight(liveFleet.flight_ids[0]);
+        setEngineId(firstFlight.flight_analysis.provenance.engine_profile.id);
+      } catch {
+        // keep whatever engineId was already set
+      }
+      // Detail-strips state only needs a fresh read on the initial
+      // load — a pin/unpin-triggered rebuild() shouldn't stomp on a
+      // toggle flipped locally in between.
+      if (!rebuild) {
+        try {
+          const settings = await client.getWorkspaceSettings();
+          setDetailStrips(settings.trends_detail_strips ?? {});
+        } catch {
+          // keep whatever was already set (fixture mode: none)
+        }
+      }
+    } catch {
+      setFleet(fixtureFleet);
+      setPanels(fixturePanels);
+      setUsingFixture(true);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      try {
-        const liveFleet = await client.getFleet();
-        if (cancelled) return;
-        if (liveFleet.flight_ids.length === 0) throw new Error("empty workspace");
-        setFleet(liveFleet);
-        setUsingFixture(false);
-        try {
-          const firstFlight = await client.getFlight(liveFleet.flight_ids[0]);
-          if (!cancelled) setEngineId(firstFlight.flight_analysis.provenance.engine_profile.id);
-        } catch {
-          // keep whatever engineId was already set
-        }
-      } catch {
-        if (!cancelled) {
-          setFleet(fixtureFleet);
-          setUsingFixture(true);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
     load();
-    return () => {
-      cancelled = true;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // egt{n}_deviation links (insight evidence) land on the cylinder
-  // balance view, focused on that cylinder.
-  const cylFocusParam = cylinderFocusFor(selected);
-  const showCylinderBalance = cylFocusParam !== undefined && hasCylinderBalance(fleet);
-  const metric = showCylinderBalance ? undefined : fleet.metrics[selected];
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Only the x-axis (engine hours) is wheel/pinch-zoomable. An
-  // independent y-zoom, anchored wherever the cursor happens to be
-  // rather than where the data actually is, kept framing empty space —
-  // the y-axis instead auto-refits to whatever points are currently
-  // visible on x, so "zooming in" always means "focus on the data."
-  const [xWindow, setXWindow] = useState<[number, number] | null>(null);
-  // Y has no independent wheel-zoom (that's the bug above), but is still
-  // drag-pannable, same as x — once the user manually nudges it, that
-  // wins over the auto-fit until they switch metrics.
-  const [yWindow, setYWindow] = useState<[number, number] | null>(null);
-  // Off by default even for a stratifiable metric (Spec 03 §5.3 v0.10) —
-  // a casual pilot reads the unstratified chart first, never required to
-  // understand DA/OAT banding to see it.
-  const [stratified, setStratified] = useState(false);
+  // flightIds is part of the callback's shared shape (ChangeSummaryList/
+  // PastChanges also pass it) but unused here — the recent-window region
+  // is already shaded from the metric's own shift data, not re-derived
+  // from the clicked row's flight list.
+  function openPanel(panel: string, _flightIds: string[]) {
+    setExpanded((prev) => new Set(prev).add(panel));
+    // Give the panel a tick to mount/expand before scrolling to it.
+    setTimeout(() => panelRefs.current[panel]?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  // Deep links (Spec 12 §9.4): ?panel=X[&flight=Y] opens a panel directly;
+  // ?metric=X[&flight=Y] (Spec 03 §5.2's existing evidence-link shape,
+  // e.g. baseline_point / FlightView.tsx) resolves to whichever panel
+  // contains that metric — egtN_deviation keeps its special cylinder-
+  // focus behaviour, everything else is a plain lookup against the
+  // engine-built panel list, never a hand-maintained map here.
   useEffect(() => {
-    setXWindow(null);
-    setYWindow(null);
-    setStratified(false);
-  }, [selected]);
-
-  const showStratified = stratified && !!metric?.by_band;
-
-  const option = useMemo<EChartsOption | null>(() => {
-    if (!metric) return null;
-    // Spec 01 R8 / Spec 03 §5.3 v0.11: with stratification on, rings come
-    // from each band's own outliers (against that band's own baseline),
-    // not the all-flights ones — baseline_deviation now compares a flight
-    // within its band too, so this is the view that actually agrees with
-    // the insights for a stratified metric.
-    const outlierSource = showStratified && metric.by_band
-      ? Object.values(metric.by_band.bands).flatMap((stats) => stats.outliers ?? [])
-      : metric.outliers;
-    const outlierIds = new Set(outlierSource.map((o) => o.flight_id));
-    const band = metric.baseline;
-    const points = metric.points.map((p) => [p.x, p.value, p.flight_id, p.date]);
-
-    let yMin: number;
-    let yMax: number;
-    if (yWindow) {
-      // User has manually panned y — that wins over the auto-fit until
-      // they switch metrics (see the effect resetting yWindow above).
-      [yMin, yMax] = yWindow;
-    } else {
-      const visiblePoints = xWindow ? points.filter((p) => (p[0] as number) >= xWindow[0] && (p[0] as number) <= xWindow[1]) : points;
-      const valuesInView = (visiblePoints.length ? visiblePoints : points).map((p) => p[1] as number);
-      yMin = Math.min(...valuesInView);
-      yMax = Math.max(...valuesInView);
-      const pad = (yMax - yMin) * 0.15 || Math.abs(yMax) * 0.1 || 1;
-      yMin -= pad;
-      yMax += pad;
+    const panel = params.get("panel");
+    const metricParam = params.get("metric");
+    if (panel) {
+      openPanel(panel, []);
+    } else if (cylFocusParam !== undefined && hasCylinderBalance(fleet)) {
+      openPanel("cylinder_balance", []);
+    } else if (metricParam) {
+      const owner = panels.find((p) => p.metrics.some((m) => m.metric_id === metricParam));
+      if (owner) openPanel(owner.panel, []);
     }
-    yMin = Number(yMin.toFixed(2));
-    yMax = Number(yMax.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleet, panels]);
 
-    return {
-      animation: false,
-      grid: { left: 56, right: 24, top: 24, bottom: 40 },
-      // The current x-window is baked back into the option explicitly
-      // (startValue/endValue) rather than left implicit — every pan/zoom
-      // event triggers a rebuild (since y needs to refit), and setOption
-      // replaces the dataZoom component wholesale; without this, each
-      // rebuild would silently reset the zoom to full range, fighting
-      // the user's own drag (same bug hit and fixed on the Flight view
-      // timeline — see EChartBase/ChannelTimeline history).
-      //
-      // filterMode "none" on both: the axes' own extents stay pinned to
-      // the *full* dataset regardless of either window, so there's
-      // always slack outside the current view for a drag to pan into —
-      // like x already has, since it never sets an explicit min/max
-      // either. Without this, the y-axis's auto-scale would shrink to
-      // whatever's currently in the x-window (same values the window
-      // itself is drawn from), leaving no room for a vertical drag to
-      // go anywhere.
-      dataZoom: [
-        // Explicit, stable ids — EChartBase uses these to tell which
-        // axis a given dataZoom event actually moved, so an x-only wheel
-        // zoom doesn't get misread as a y-pan (see EChartBase.tsx).
-        { id: "dzX", type: "inside", xAxisIndex: 0, filterMode: "none", ...(xWindow ? { startValue: xWindow[0], endValue: xWindow[1] } : {}) },
-        // Pan-only: no zoomOnMouseWheel, so wheel/pinch stays x-only (the
-        // fix above). Dragging still moves both axes together, same as
-        // grabbing and sliding the whole view.
-        { id: "dzY", type: "inside", yAxisIndex: 0, filterMode: "none", zoomOnMouseWheel: false, moveOnMouseMove: true, startValue: yMin, endValue: yMax },
-      ],
-      tooltip: {
-        trigger: "item",
-        backgroundColor: colors.panelControl,
-        borderColor: colors.border,
-        textStyle: { color: colors.textPrimary, fontSize: 11, fontFamily: fontSans },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        formatter: (p: any) => `${p.data[3]} &middot; ${p.data[1]}<br/>engine hrs ${p.data[0]}`,
-      },
-      xAxis: {
-        type: "value",
-        name: "engine hours →",
-        nameLocation: "end",
-        nameTextStyle: { fontSize: 10, color: colors.textTertiary, fontFamily: fontSans },
-        axisLabel: { fontSize: 10, color: colors.textTertiary, fontFamily: fontMono },
-        axisLine: { lineStyle: { color: colors.border } },
-        splitLine: { show: false },
-      },
-      yAxis: {
-        type: "value",
-        // No explicit min/max — same as x, the axis auto-scales to the
-        // full dataset and the dataZoom window (above) governs what's
-        // actually in view. Pinning min/max here to the current window
-        // used to make the axis *equal* the view, leaving a pan nowhere
-        // to go (and reintroducing the unrounded-float-as-a-literal-tick
-        // bug from before, since it forced that exact float as a tick).
-        axisLabel: { fontSize: 10, color: colors.textTertiary, fontFamily: fontMono },
-        axisLine: { show: false },
-        splitLine: { lineStyle: { color: colors.panelControl } },
-      },
-      series: showStratified
-        ? // Stratified (Spec 03 §5.3 v0.10): re-groups the same points and
-          // baseline data already fetched — no re-fetch. One baseline
-          // region + one scatter per band actually present for this
-          // metric (never a fixed 4), plus a neutral series for any point
-          // whose own band came back empty (never hidden, just ungrouped).
-          [
-            ...Object.entries(metric.by_band!.bands).flatMap(([name, stats]) => {
-              const c = bandColor(name);
-              return [
-                {
-                  type: "line" as const,
-                  data: [],
-                  markArea: {
-                    silent: true,
-                    itemStyle: { color: `${c}1A` },
-                    data:
-                      stats.mean != null && stats.std != null
-                        ? [[{ yAxis: stats.mean - stats.std }, { yAxis: stats.mean + stats.std }]]
-                        : [],
-                  },
-                  markLine: {
-                    silent: true,
-                    symbol: "none",
-                    lineStyle: { color: c, type: "dashed", opacity: 0.7 },
-                    label: { show: false },
-                    data: stats.mean != null ? [{ yAxis: stats.mean }] : [],
-                  },
-                },
-                {
-                  type: "scatter" as const,
-                  name: bandLabel(name),
-                  symbolSize: (val: [number, number, string]) => {
-                    if (val[2] === highlightFlight) return 14;
-                    return outlierIds.has(val[2]) ? 9 : 7;
-                  },
-                  data: metric.points.filter((p) => p.band === name).map((p) => [p.x, p.value, p.flight_id, p.date]),
-                  itemStyle: {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    color: (p: any) => {
-                      if (p.data[2] === highlightFlight) return colors.accent;
-                      return outlierIds.has(p.data[2]) ? colors.severityLimit : c;
-                    },
-                  },
-                },
-              ];
-            }),
-            {
-              type: "scatter",
-              name: "unbanded",
-              symbolSize: (val: [number, number, string]) => (outlierIds.has(val[2]) ? 9 : 7),
-              data: metric.points.filter((p) => !p.band).map((p) => [p.x, p.value, p.flight_id, p.date]),
-              itemStyle: {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                color: (p: any) => (outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textTertiary),
-                opacity: 0.5,
-              },
-            },
-          ]
-        : [
-            {
-              type: "line",
-              data: [],
-              markArea: {
-                silent: true,
-                itemStyle: { color: "rgba(79,195,176,0.10)" },
-                data: band.mean != null && band.std != null ? [[{ yAxis: band.mean - band.std }, { yAxis: band.mean + band.std }]] : [],
-              },
-              markLine: {
-                silent: true,
-                symbol: "none",
-                lineStyle: { color: colors.accent, type: "dashed", opacity: 0.6 },
-                label: {
-                  formatter: "{c}",
-                  color: colors.accent,
-                  fontFamily: fontMono,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  backgroundColor: colors.panelControl,
-                  padding: [3, 6],
-                  borderRadius: 4,
-                },
-                data: band.mean != null ? [{ yAxis: band.mean }] : [],
-              },
-            },
-            {
-              type: "scatter",
-              symbolSize: (val: [number, number, string]) => {
-                if (val[2] === highlightFlight) return 14;
-                return outlierIds.has(val[2]) ? 9 : 7;
-              },
-              data: points,
-              itemStyle: {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                color: (p: any) => {
-                  if (p.data[2] === highlightFlight) return colors.accent;
-                  return outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textSecondary;
-                },
-              },
-            },
-          ],
-    } as EChartsOption;
-  }, [metric, highlightFlight, xWindow, yWindow, showStratified]);
+  function openFlights(flightIds: string[]) {
+    navigate(`/flights?ids=${flightIds.join(",")}`);
+  }
 
-  const model = fleet.models.find((m) => m.id === "takeoff_map" && selected === "takeoff_map_inhg");
+  async function pinReference(metricId: string, flightIds: string[], label?: string) {
+    setPinBusy(metricId);
+    try {
+      await client.setReference(metricId, flightIds, label);
+      notifyShiftHistoryChanged();
+      await load(true);
+    } finally {
+      setPinBusy(null);
+    }
+  }
+
+  async function unpinReference(metricId: string) {
+    setPinBusy(metricId);
+    try {
+      await client.clearReference(metricId);
+      notifyShiftHistoryChanged();
+      await load(true);
+    } finally {
+      setPinBusy(null);
+    }
+  }
+
+  async function deleteEvent(eventId: string) {
+    setDeleteBusy(eventId);
+    try {
+      await client.deleteShiftEvent(eventId);
+      notifyShiftHistoryChanged();
+      await load(true);
+    } finally {
+      setDeleteBusy(null);
+    }
+  }
+
+  async function toggleDetailStrips(panelId: string) {
+    const next = { ...detailStrips, [panelId]: !detailStrips[panelId] };
+    setDetailStrips(next);
+    if (usingFixture) return;
+    try {
+      const settings = await client.getWorkspaceSettings();
+      await client.saveWorkspaceSettings({ ...settings, trends_detail_strips: next });
+    } catch {
+      // Fixture/offline mode, or no live server — the toggle still
+      // works for this session, just doesn't persist.
+    }
+  }
+
+  const omMarginFraction = fleet.provenance.baseline_config.om_margin_fraction ?? 0.25;
+  const takeoffMapModel = fleet.models.find((m) => m.id === "takeoff_map");
+
+  const renderedPanels = useMemo(
+    () =>
+      panels.filter((p) => p.panel !== "cylinder_balance" || hasCylinderBalance(fleet)),
+    [panels, fleet],
+  );
+
+  // Spec 12 §9.1 (Session F) — three tiers: qualifying, trendable
+  // nothing-to-report, and never-exceeded (collapsed, not panels).
+  const { tier1, tier2, tier3 } = useMemo(() => computeTiers(renderedPanels, fleet), [renderedPanels, fleet]);
+
+  // Tier 1 panels open expanded by default ("the panel a summary row
+  // links to opens expanded", §9.1) — re-derived whenever the tier 1
+  // set changes, but a panel the pilot has since collapsed by hand
+  // stays collapsed (expanded is otherwise user-owned state).
+  useEffect(() => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const p of tier1) next.add(p.panel);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tier1.map((p) => p.panel).join(",")]);
 
   return (
     <NavShell
@@ -310,193 +213,171 @@ export function Trends() {
         </span>
       }
     >
-      <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--border)", overflowY: "auto", padding: "18px 14px" }}>
-        {GROUPS.map((g) => (
-          <div key={g.label} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "0 8px 8px" }}>
-              {g.label}
-            </div>
-            {g.metrics
-              .filter((id) => (id === "cylinder_balance" ? hasCylinderBalance(fleet) : fleet.metrics[id]))
-              .map((id) => {
-                const active = id === selected || (id === "cylinder_balance" && showCylinderBalance);
-                return (
-                <div
-                  key={id}
-                  onClick={() => setParams({ metric: id })}
-                  style={{
-                    padding: "9px 12px",
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    marginBottom: 2,
-                    background: active ? "var(--accent-15)" : "transparent",
-                    color: active ? "var(--accent)" : "var(--text-secondary)",
-                    fontSize: 13,
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  {labelFor(id)}
-                </div>
-                );
-              })}
-          </div>
-        ))}
-      </div>
-
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px" }}>
         <MixedAircraftNotice usingFixture={usingFixture} />
-        {showCylinderBalance ? (
-          <CylinderBalance
+        <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>Trends</h1>
+        <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 16 }}>
+          What has changed recently, compared against your own history.
+        </div>
+
+        <ChangeSummaryList fleet={fleet} panels={panels} onOpenPanel={openPanel} onOpenFlights={openFlights} />
+        <PastChanges events={fleet.shift_history} onOpenPanel={openPanel} onDelete={deleteEvent} busyId={deleteBusy} />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
+          {tier1.map((panel) => renderPanel(panel))}
+          {tier2.map((panel) => renderPanel(panel))}
+          <NeverExceededGroup
+            panels={tier3}
             fleet={fleet}
-            engineId={engineId}
-            focusCyl={cylFocusParam ?? null}
-            onFocus={(cyl) => {
-              const next: Record<string, string> = { metric: cyl == null ? "cylinder_balance" : `egt${cyl}_deviation` };
-              if (highlightFlight) next.flight = highlightFlight;
-              setParams(next);
-            }}
             highlightFlight={highlightFlight}
             onOpenFlight={(id) => navigate(`/flights/${id}`)}
           />
-        ) : !metric ? (
-          <div style={{ color: "var(--text-tertiary)" }}>No fleet data for this metric.</div>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-              <h1 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>{labelFor(selected)}</h1>
-              <span className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                n=
-                <a
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const ids = metric.points.map((p) => p.flight_id).join(",");
-                    navigate(`/flights?ids=${ids}`);
-                  }}
-                  title="the flights this baseline is built on"
-                >
-                  {metric.baseline.n}
-                </a>
-                {" "}&middot; mean {metric.baseline.mean} &middot; std {metric.baseline.std} &middot; confidence:{" "}
-                {metric.baseline.confidence.level}
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 18 }}>
-              Baseline band is leave-one-out — each flight is compared to the fleet excluding itself.
-            </div>
-
-            <div style={{ background: "var(--panel)", borderRadius: 12, padding: "24px 20px 16px" }}>
-              {option && (
-                <EChartBase
-                  option={option}
-                  height={380}
-                  onZoom={(s, e) => setXWindow([s, e])}
-                  onZoomY={(s, e) => setYWindow([s, e])}
-                />
-              )}
-              <div style={{ display: "flex", gap: 18, padding: "4px 4px 0", flexWrap: "wrap" }}>
-                {showStratified && metric.by_band ? (
-                  <>
-                    {Object.keys(metric.by_band.bands).map((name) => (
-                      <span key={name} style={{ fontSize: 11, color: bandColor(name) }}>
-                        &#9679; {bandLabel(name)}
-                      </span>
-                    ))}
-                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>&#9679; unbanded</span>
-                    <span style={{ fontSize: 11, color: "var(--severity-limit)" }}>&#9679; outlier</span>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>&#9679; fleet flight</span>
-                    <span style={{ fontSize: 11, color: "var(--accent)" }}>&#9678; linked flight</span>
-                    <span style={{ fontSize: 11, color: "var(--severity-limit)" }}>&#9679; outlier</span>
-                    <span
-                      style={{ fontSize: 11, color: "var(--accent)", cursor: highlightFlight ? "pointer" : "default" }}
-                      onClick={() => highlightFlight && navigate(`/flights/${highlightFlight}`)}
-                    >
-                      ▨ baseline band (leave-one-out, ±1&sigma;)
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: metric.by_band ? "repeat(3, minmax(0,1fr))" : "repeat(2, minmax(0,1fr))", gap: 12, marginTop: 16 }}>
-              <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Trend</div>
-                {metric.trend ? (
-                  <>
-                    <div style={{ fontSize: 14, fontWeight: 600, textTransform: "capitalize" }}>{metric.trend.direction}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                      slope {metric.trend.slope} &middot; R&sup2; {metric.trend.r_squared} &middot; confidence: {metric.trend.confidence.level}
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Not enough data yet.</div>
-                )}
-              </div>
-              <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Outliers this fleet</div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{metric.outliers.length} flight(s)</div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>cross the z-score threshold</div>
-              </div>
-              {/* Spec 03 §5.3 v0.10: hidden entirely (not grayed out) when
-                  this metric has no band_kind at all — nothing to offer,
-                  not a disabled control. */}
-              {metric.by_band && (
-                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Stratify by {bandLabel(metric.by_band.band_kind)}</span>
-                    <input
-                      type="checkbox"
-                      checked={stratified}
-                      onChange={(e) => setStratified(e.target.checked)}
-                      title={`split the baseline into its ${Object.keys(metric.by_band.bands).length} band(s)`}
-                    />
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{stratified ? "on" : "off"}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                    {stratified
-                      ? `${Object.keys(metric.by_band.bands).length} band(s) shown below`
-                      : "single fleet-wide baseline shown"}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {showStratified && metric.by_band && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Object.keys(metric.by_band.bands).length, 4)}, minmax(0,1fr))`, gap: 12 }}>
-                  {Object.entries(metric.by_band.bands).map(([name, stats]) => (
-                    <div key={name} style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", borderTop: `3px solid ${bandColor(name)}` }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", marginBottom: 6 }}>{bandLabel(name)}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                        n={stats.n} &middot; mean {stats.mean ?? "—"} &middot; std {stats.std ?? "—"}
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>confidence: {stats.confidence.level}</div>
-                      {stats.trend && (
-                        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, textTransform: "capitalize" }}>
-                          trend: {stats.trend.direction}
-                          {stats.trend.slope != null ? ` (R² ${stats.trend.r_squared})` : ""}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {model && (
-              <div style={{ background: "var(--panel)", borderRadius: 10, padding: "14px 16px", marginTop: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Model: {model.id}</div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  n={String(model.n)} &middot; R&sup2;={String(model.r_squared)}
-                </div>
-              </div>
-            )}
-          </>
-        )}
+        </div>
       </div>
     </NavShell>
   );
+
+  // Tier 1/2 share one rendering path — a panel's tier only decides
+  // *where* it sits in the list, not how it's drawn (§9.1: "the panel
+  // a summary row links to opens expanded" is the one tier-1-specific
+  // behaviour, handled by the effect above that seeds `expanded`).
+  function renderPanel(panel: TrendsPanel) {
+    const isOpen = expanded.has(panel.panel);
+    // Spec 12 §9.3 (Session C): "a collapsed panel whose every
+    // metric carries a badge... shows the panel-level summary" —
+    // computed here so it's visible whether the panel is open
+    // or collapsed, not just inside each strip.
+    const shownMetrics = panel.metrics.filter((m) => panel.panel !== "cylinder_balance" || m.metric_id === "egt_spread");
+    const badges = shownMetrics.map((m) => fleet.metrics[m.metric_id]?.readiness).filter((r): r is NonNullable<typeof r> => !!r);
+    const allBadged = shownMetrics.length > 0 && badges.length === shownMetrics.length;
+    const panelBadgeSummary = allBadged
+      ? Array.from(new Set(badges.map((b) => readinessText(b)))).join(" · ")
+      : null;
+    const showDetailStripsHere = !!detailStrips[panel.panel];
+    const hasDetailStrips = panelHasDetailStrips(panel, fleet);
+    // §5.7/R10.1 (Session G) — shared across every strip in this panel.
+    const zoomRange = zoomRanges[panel.panel] ?? null;
+    const onZoomChange = (start: number, end: number) =>
+      setZoomRanges((prev) => ({ ...prev, [panel.panel]: { start, end } }));
+    return (
+      <div key={panel.panel} ref={(el) => { panelRefs.current[panel.panel] = el; }} style={{ background: "var(--panel)", borderRadius: 14, overflow: "hidden" }}>
+        <div
+          onClick={() => setExpanded((prev) => {
+            const next = new Set(prev);
+            if (next.has(panel.panel)) next.delete(panel.panel);
+            else next.add(panel.panel);
+            return next;
+          })}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer" }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 700 }}>
+            {panelLabel(panel.panel)}
+            {panel.panel === "fuel" && (
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", border: "1px solid var(--border)", borderRadius: 999, padding: "1px 6px" }}>
+                planning
+              </span>
+            )}
+            {panel.filtered && (
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--accent)" }}>filtered</span>
+            )}
+            {panelBadgeSummary && (
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", border: "1px solid var(--border)", borderRadius: 999, padding: "1px 6px" }}>
+                {panelBadgeSummary}
+              </span>
+            )}
+          </span>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* §8.3/§8.4 (Session F): per-panel detail-strips affordance,
+                replacing the page-level researcher toggle — only where
+                there's a fit or time_above_pct to actually show. */}
+            {hasDetailStrips && (
+              <label
+                onClick={(e) => e.stopPropagation()}
+                title="Shows the whole-history trend line and, for a limit panel, time-above-limit %"
+                style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 10, color: "var(--text-tertiary)" }}
+              >
+                <input type="checkbox" checked={showDetailStripsHere} onChange={() => toggleDetailStrips(panel.panel)} />
+                Show detail strips
+              </label>
+            )}
+            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{isOpen ? "▾" : "▸"}</span>
+          </span>
+        </div>
+        {isOpen && (
+          <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {panel.panel === "cylinder_balance" && (
+              <CylinderBalance
+                fleet={fleet}
+                engineId={engineId}
+                focusCyl={cylFocusParam ?? null}
+                onFocus={(cyl) => setParams((prev) => {
+                  const next = new URLSearchParams(prev);
+                  if (cyl == null) next.delete("metric"); else next.set("metric", `egt${cyl}_deviation`);
+                  return next;
+                })}
+                highlightFlight={highlightFlight}
+                onOpenFlight={(id) => navigate(`/flights/${id}`)}
+              />
+            )}
+            {panel.metrics
+              .filter((m) => panel.panel !== "cylinder_balance" || m.metric_id === "egt_spread")
+              // §8.4 (Session F): time_above_pct is out of the default
+              // view, behind this panel's own detail-strips toggle.
+              .filter((m) => showDetailStripsHere || !m.metric_id.endsWith("_time_above_pct"))
+              .map((m, i) => {
+                const metric = fleet.metrics[m.metric_id];
+                if (!metric) return null;
+                const shift = metric.shift;
+                return (
+                  <div key={m.metric_id}>
+                    {/* §8.4: one event strip per panel, ahead of
+                        its first metric — every sibling carries
+                        the same frequency/events (Pass 3), so
+                        showing it again per metric would repeat
+                        it 2-3x. */}
+                    {i === 0 && metric.events && metric.frequency && (
+                      <EventStrip
+                        events={metric.events}
+                        frequency={metric.frequency}
+                        highlightFlight={highlightFlight}
+                        onOpenFlight={(id) => navigate(`/flights/${id}`)}
+                      />
+                    )}
+                    <TrendsPanelStrip
+                      metricId={m.metric_id}
+                      metric={metric}
+                      label={metricLabel(m.metric_id)}
+                      // Spec 12 §11.7 (Session C): per-limit
+                      // metrics (and overboost_time) now carry
+                      // their real unit from the engine profile;
+                      // unitFor()'s guesses are the fallback for
+                      // everything else.
+                      unit={metric.unit ?? unitFor(m.metric_id)}
+                      omMarginFraction={omMarginFraction}
+                      muted={m.metric_id.endsWith("_time_above_pct")}
+                      showDetailStrips={showDetailStripsHere}
+                      zoomRange={zoomRange}
+                      onZoomChange={onZoomChange}
+                      highlightFlight={highlightFlight}
+                      onOpenFlight={(id) => navigate(`/flights/${id}`)}
+                      onOpenFlights={openFlights}
+                      onPinReference={shift ? (flightIds, lbl) => pinReference(m.metric_id, flightIds, lbl) : undefined}
+                      onUnpinReference={shift?.reference.kind === "pinned" ? () => unpinReference(m.metric_id) : undefined}
+                      onPreviewUnpin={() => client.previewClearReference(m.metric_id)}
+                      pinBusy={pinBusy === m.metric_id}
+                    />
+                    {panel.panel === "boost_power" && m.metric_id === "takeoff_map_residual_inhg" && takeoffMapModel && (
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                        takeoff-MAP model: n={String(takeoffMapModel.n)} &middot; R&sup2;={String(takeoffMapModel.r_squared)}
+                        {takeoffMapModel.note ? ` · ${String(takeoffMapModel.note)}` : ""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
+    );
+  }
 }

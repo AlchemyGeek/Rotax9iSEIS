@@ -44,6 +44,11 @@ DIAGNOSTIC_CATALOG = (
     # Spec 01 §8.8 (topic help)
     "HELP_PLACEHOLDER_UNRESOLVED",
     "HELP_MISSING",
+    # Spec 12 §11.4 (change statistic)
+    "RECENT_WINDOW_CAPPED",
+    "RECENT_WINDOW_LOW_N",
+    "REFERENCE_LOW_N",
+    "SHIFT_COMPARISON_INSUFFICIENT",
 )
 
 Severity = str    # "info" | "warn" | "error"

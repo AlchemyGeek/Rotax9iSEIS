@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.16 — for review (§8.8 not yet implemented)
+**Status:** Draft v0.18 — for review
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -26,6 +26,8 @@
 | 0.14 | §6.4: documented, not designed — `fuel_press_psi` is the only signal the logs carry for fuel pump activity; the G3X CSV has no pump-selection or pump-running channel (`FPCM FAULT` is a fault flag, not a state indicator — confirmed against the full fleet's column set, which is identical across logs). Noted as a known gap, with a future pump-state inference model (predicting which pump(s) are running from the pressure signature) tracked as BACKLOG A7. Raised investigating the real fuel-pressure exceedances from BACKLOG G1. |
 | 0.15 | New **§8.8 Topic help**: a one-paragraph, pilot-facing explanation per topic, kept outside code in one markdown file shipped in the package (`slingology_eis/help/topics.md`), with placeholders for limit values, profile values, rule parameters and baseline config, resolved by the engine and returned as structured values so the UI formats them in the pilot's units. New operation `get_topic_help` (§7), CLI subcommand `explain` (§7.1), §9 topic modules declare their help entry, §12 acceptance 10. Requested in Spec 10 v0.5 (help text is part of admission). Also §8.5: `TopicResult.limit_refs` (each referenced limit resolved to this flight's `limit_exceedances` insight, for the mirrored badge — Spec 09 v0.13 §10.2, Spec 10 §4.1); the `topic_id` comment now defers to Spec 10's register and lists the eight visible topics. Planning numbers (fuel burned, cruise nm/gal, cruise fuel flow) stay in `FlightAnalysis.metrics` and are no longer topics (Spec 10 §4.2). |
 | 0.16 | §8.8: `TopicHelp.validated` — whether the topic is validated on the active engine profile (Spec 10 v0.7 §8.1, from `register.json`); `false` drives the "not yet validated on this engine" note (Spec 03 §5.2). |
+| 0.17 | Spec 12 lands: §8.4 `BaselineConfig` gains `recent_window_hours`/`recent_window_min_flights`/`recent_window_max_flights`/`om_margin_fraction`/`pinned_references`; `MetricFleet` gains `shift?`; `FleetAnalysis` gains `change_summary`/`shift_history` (full `Shift`/`ShiftEvent` shapes defined in Spec 12 §11.2/§6, not duplicated here). §7 `update_fleet` takes an optional `LimitFilter[]` and computes the change statistic; new operations `set_reference`/`clear_reference`/`delete_shift_event`. §8.1 diagnostic catalog gains `RECENT_WINDOW_CAPPED`/`RECENT_WINDOW_LOW_N`/`REFERENCE_LOW_N`/`SHIFT_COMPARISON_INSUFFICIENT`. |
+| 0.18 | Spec 12 Phase 6 lands: §8.4 `MetricFleet` gains `unit?`, `frequency?`, `events?`, `readiness?` — a per-limit metric's unit from the engine profile; event frequency (the primary limit-panel signal) and its per-flight event ticks; the fixed readiness-badge classification (`filtered`/`building`/`no_recent`/`no_events`/`rare`/`insufficient`), computed engine-side so no UI infers one from raw numbers. Full `Frequency`/`Readiness`/`EventTick` shapes defined in Spec 12 §11.7, not duplicated here. `ShiftEvent.kind` gains `"frequency"` (Spec 12 §6/§11.7). |
 
 ---
 
@@ -172,7 +174,9 @@ All operations use one envelope, regardless of transport.
 | `ingest_log` | `LogSource`, `IngestOptions` | `IngestResult` | Parse, normalize, classify (flight / ground / duplicate). Cheap; no analytics. |
 | `analyze_flight` | `LogSource`, `EngineProfile`, `AnalysisParams` | `FlightAnalysis` | Full per-flight pipeline. Raw frame is discarded on return. |
 | `get_series` | `LogSource`, `flight_id`, channels, window, resolution | `SeriesData` | Re-parses on demand for full-resolution zoom (avoids holding frames). |
-| `update_fleet` | `FlightAnalysis[]`, `FleetSelection`, `BaselineConfig` | `FleetAnalysis` | Metrics table, baselines, trends, outliers, models. No raw data. |
+| `update_fleet` | `FlightAnalysis[]`, `FleetSelection`, `BaselineConfig`, `LimitFilter[]` | `FleetAnalysis` | Metrics table, baselines, trends, outliers, models, and (Spec 12 §5/§7) `shift` per metric, `change_summary`, append/close of `shift_history`. No raw data. |
+| `set_reference` / `clear_reference` | `metric_id`, `flight_ids?`, `label?` | `BaselineConfig` | Spec 12 §5.7/§11.3 — pin/unpin a metric's shift reference. |
+| `delete_shift_event` | `event_id` | `{ shift_history: ShiftEvent[] }` | Spec 12 §6/§11.3 — the one exception to the history's append-only rule. |
 | `evaluate_insights` | `FlightAnalysis`, `FleetAnalysis`, `RuleSet` | `InsightSet` | Pure and fast; the **rule playground** re-runs only this. |
 | `analyze_ecu` | `FlightAnalysis[]` | `EcuAnalysis` | Runs, classification, lane-check pairing, co-active alerts. |
 | `render_report` | `InsightSet`, `FlightAnalysis`, format | text/markdown | Text report from structured data. |
@@ -252,7 +256,7 @@ interface Diagnostic {
 }
 ```
 
-Diagnostic catalog (v0.1): `INGEST_UNKNOWN_FORMAT`, `INGEST_GROUND_SESSION`, `INGEST_DUPLICATE_OF`, `INGEST_MULTI_POWER_CYCLE`, `INGEST_MISSING_CHANNEL`, `INGEST_SIGNAL_GAP`, `PHASE_TAKEOFF_NOT_DETECTED`, `PHASE_NO_CLIMB`, `PHASE_NO_CRUISE`, `BASELINE_LOW_N`, `MODEL_INSUFFICIENT_DATA`, `ENGINE_PLACEHOLDER_CONFIG`. Added in v0.4: `ENGINE_CUSTOM_OVERRIDE`.
+Diagnostic catalog (v0.1): `INGEST_UNKNOWN_FORMAT`, `INGEST_GROUND_SESSION`, `INGEST_DUPLICATE_OF`, `INGEST_MULTI_POWER_CYCLE`, `INGEST_MISSING_CHANNEL`, `INGEST_SIGNAL_GAP`, `PHASE_TAKEOFF_NOT_DETECTED`, `PHASE_NO_CLIMB`, `PHASE_NO_CRUISE`, `BASELINE_LOW_N`, `MODEL_INSUFFICIENT_DATA`, `ENGINE_PLACEHOLDER_CONFIG`. Added in v0.4: `ENGINE_CUSTOM_OVERRIDE`. Added by Spec 12 §11.4 (full catalog, including Spec 09/Spec 10's own additions, is `contract.py`'s `DIAGNOSTIC_CATALOG` — this list is illustrative, not re-synced release to release): `RECENT_WINDOW_CAPPED`, `RECENT_WINDOW_LOW_N`, `REFERENCE_LOW_N`, `SHIFT_COMPARISON_INSUFFICIENT`.
 
 **Phase cross-check (new, informational).** `PHASE_TAKEOFF_NOT_DETECTED` is raised when airborne time (from altitude/speed) exceeds a small threshold but no `TAKEOFF_ROLL`/`CLIMB` phase was labelled. It does not change the detector; it makes finding 9 visible in the UI and in fleet quality summaries. The provided KACV log is the acceptance case (§12).
 
@@ -316,15 +320,24 @@ interface MetricFleet { metric_id: string; baseline: Baseline; trend: Trend;
                                     bands: Record<string, Baseline & { trend?: Trend;
                                                                        outliers: { flight_id: string; z_score: number }[] }> };  // per-band outliers: R8
                         points: { flight_id: string; date: string; x: number|null; value: number; band?: string }[];
-                        outliers: { flight_id: string; z_score: number }[] }   // computed against the ALL-FLIGHTS baseline (`baseline` above), not leave-one-out — see note below
+                        outliers: { flight_id: string; z_score: number }[];   // computed against the ALL-FLIGHTS baseline (`baseline` above), not leave-one-out — see note below
+                        shift?: Shift;   // Spec 12 §5/§11.2 — absent below n_min or with no recent window; full shape in Spec 12, not repeated here
+                        unit?: string;        // Spec 12 §11.7 — per-limit metrics (and overboost_time) only
+                        frequency?: Frequency; // Spec 12 §5.8/§11.7 — per-limit metrics (and overboost_time) only
+                        events?: EventTick[];  // Spec 12 §8.4/§11.7 — one tick per eligible flight, same metrics as frequency
+                        readiness?: Readiness }  // Spec 12 §9.3/§11.7 — present instead of a normal shift/trend read wherever one of the fixed badges applies
 interface Model    { id: "takeoff_map"; kind: "linear_regression"; features: string[];
                      coefficients: Record<string, number>; n: number; r_squared: number|null;
                      confidence: Baseline["confidence"]; capture: string }  // capture: e.g. "RPM>=5500 during TAKEOFF_ROLL"
 interface FleetAnalysis { fleet_key: string; flight_ids: string[]; excluded: {flight_id:string; reason:string}[];
                           metrics: Record<string, MetricFleet>; models: Model[];
                           quality: Diagnostic[]; provenance: Provenance;
-                          cylinder_balance?: CylinderBalance }  // Spec 08 §5; absent in pre-Spec-08 results
+                          cylinder_balance?: CylinderBalance;  // Spec 08 §5; absent in pre-Spec-08 results
+                          change_summary: { metric_id: string; rank: number; panel?: string; members?: string[] }[];  // Spec 12 §7/§7.1/§11.2
+                          shift_history: ShiftEvent[] }        // Spec 12 §6/§11.2, loaded from fleet/shift_history.json (Spec 02 §6.3)
 ```
+
+`Shift`, `ShiftEvent`, `Frequency`, `Readiness` and `EventTick` are defined in full in Spec 12 §11.2/§6/§11.7 — not retyped here to avoid two sources of truth; this contract only records that `MetricFleet`/`FleetAnalysis` carry them and where to look. `takeoff_map_residual_inhg` (Spec 12 §11.6) is an ordinary fleet metric like any other — no new `MetricFleet` shape for it.
 
 `confidence.level` is a **structured enum**; the human sentence ("MODERATE (n=15 …)") is a renderer concern. The `points` array replaces the `raw` blocks in `baselines.json` and is what the trend charts draw.
 
@@ -386,6 +399,12 @@ interface BaselineConfig {
   band_kind_by_metric: Record<string, "oat_band" | "da_band" | null>;   // real values above, not empty
   outlier_z_threshold: number;                              // global default: 2.0
   outlier_z_threshold_overrides?: Record<string, number>;    // metric_id -> override, sparse
+  // Spec 12 §11.1 — the change statistic's window/margin, edited in Baselines & Models (§8.3/Spec 03 §5.5).
+  recent_window_hours: number;            // default 10
+  recent_window_min_flights: number;      // default 5
+  recent_window_max_flights: number;      // default 15
+  om_margin_fraction: number;             // default 0.25
+  pinned_references?: Record<string, { flight_ids: string[]; set_at: string; label?: string }>;  // Spec 12 §5.7, sparse
 }
 ```
 

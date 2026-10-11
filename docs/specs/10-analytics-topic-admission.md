@@ -1,7 +1,7 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.7 — for review. Decisions D1–D17 in §6.3, all closed (D7 revised in v0.7). Implemented: Phase A (topic set) and Phase B (insight ownership); Phase C (D5) in progress; Phases D and E next.
+**Status:** Draft v0.9 — for review. Decisions D1–D17 in §6.3, all closed (D7 revised in v0.7). Implemented: Phases A–D; Phase E (topic help) in progress.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
@@ -18,6 +18,8 @@
 | 0.5 | **D13 — topic help.** Every topic shown to pilots has a one-paragraph explanation behind a `?` on its card, kept outside code (Spec 01 §8.8: one file, `slingology_eis/help/topics.md`, a section per topic, placeholders for profile and rule values). Admission now requires it (§8.1), the topic-spec template gains a pilot-explanation item (§9), `register.json` records whether each topic has a help entry (§5), and acceptance 11 checks it. Draft paragraphs written for the eight visible topics and the flight-summary line. |
 | 0.6 | **D6 diagnosis results** (`reports/spec10_d6_limit_diagnosis_2026-10-03.md`, D14–D17; fixes specified in Spec 09 v0.14 §6.8). `fuel_press_min`'s 50/50 predated commit 2632d01's engine-running gate — resolved before diagnosis (cause 2). D14 `volts_min`: cause 2, engine-running gate. D15 `fuel_press_max`: cause 3a, allowlist entry plus pilot filter; profile keeps 46 psi. D16 `rpm_idle_min`: cause 1 (plus one artifact), re-encode from the OM's idle wording — pending. D17 `rpm_takeoff_max`: classified 3a (prop-governor overshoot), keep Spec 09 v0.12's filter design, plus a resolution tolerance if quantized — pending the OM transient-overspeed check. New principle recorded: a limit fix must trace to the OM, Rotax documentation or sensor physics, never to clearing acceptance 9. |
 | 0.7 | **Two-layer framing** added to §1 (engine profile + aircraft model). **D16 and D17 closed** (OM states idle as a minimum; no OM transient overspeed; 10 rpm resolution justifies no tolerance — details in Spec 09 v0.15 §6.8). **D5:** fitted-range guard kept as min–max, accepting that under leave-one-out each axis's extreme flight is never judged (4/48 on current data). **D7 revised:** the Phase C measurement found no airborne time beyond which peaks stop depending on duration (oil r ≈ 0.6 at every candidate threshold, coolant no pattern, no flights under 10 min), so no threshold is applied; predicting the peak from flight length moves to Research. **Single-aircraft evidence made explicit:** E3 grades state engine type and aircraft count (§4), topic status is recorded per engine profile with an *Unverified* status for engines without validating data (§5.1, §8.1), and a re-audit is triggered by data from a new aircraft or engine type (§8.2). |
+| 0.8 | §9 item 11: help text must be **aircraft-neutral** — written for any aircraft with the engine, with no findings from one aircraft's data, no non-OM numbers, causes stated as possibilities. Applied to the drafts (`engine_ecu_inflight`'s single-aircraft sentence removed; the ±10 % fuel-flow figure, not OM-cited, removed). |
+| 0.9 | **Spec 12 adds a `trends` field** (§5.1, §5.2) — panel, role, worsening direction and phrasing for the Trends change page (Spec 12 §8.1). Declaration lives at `docs/specs/topics/register.json` (alongside `status`/`topic_spec`/`help`, D12's existing hybrid register — not a new document), one `trends` object per topic entry, `null` where a topic has no scalar fleet metric for a panel to draw (`cylinder_rank`, `engine_ecu_inflight`, `limit_exceedances`) or the metric it would use doesn't exist yet (`map_at_takeoff`, pending the takeoff-MAP residual). `update_fleet` reads it (via `slingology_eis.operations.resolve_worsening_direction`) for the change statistic's worsening direction (Spec 12 R1.6/R3.3); `operations.build_trends_panels` exposes panel layout to callers without a frontend metric list. §5.2's table gains a **Trends panel** column with the same values. |
 
 ---
 
@@ -135,23 +137,23 @@ One entry per topic, current or retired. Fields:
 
 Status is the **current** state, **for the 916iS**. §6 gives the audit verdict and proposed status change for each. On the 912iS, 914iS and 915iS profiles every topic that applies to that engine is **Unverified** (§8.1): no logs from those engines have been analysed. `map_at_takeoff` doesn't apply to the non-turbo 912iS.
 
-| `topic_id` | Question | Class | Anchors | Status today |
-|---|---|---|---|---|
-| `egt_spread` | Are my cylinders burning evenly? | health | OM limit (EGT split, via `limit_exceedances`) · baseline · trend | Admitted |
-| `egt_cyl_deviation` | Is any one cylinder drifting from the others? | health | baseline · trend, per cylinder | Admitted (Spec 08) |
-| `cylinder_rank` | Has the usually-hottest cylinder changed? | health | classification (learned hottest cylinder) | Admitted (Spec 08) — insight **retired** (decided v0.4, D4); rank kept as context |
-| `oil_temp_peak` | Did oil get too hot, or hotter than usual? | health + operational | OM limit (referenced, §4.1) · baseline | Admitted |
-| `coolant_temp_peak` | Did coolant get too hot, or hotter than usual? | health | OM limit (referenced, §4.1) · baseline | Admitted |
-| `oil_coolant_ratio` | Has the oil-vs-coolant balance shifted? | health | baseline | **Dropped** (decided v0.4, D1) — to be removed; idea kept as candidate C5 (§7) |
-| `overboost_time` | Did I stay at takeoff power too long? | operational | OM limit (referenced, §4.1: 300 s above 5,500 rpm / 100 %) · close-call margin | Admitted |
-| `cruise_efficiency` | How far am I going per gallon in cruise? | planning (§4.2) | baseline · trend, DA band | Admitted — to leave the topic set (Q4) |
-| `cruise_fuel_flow` | Is cruise fuel burn normal? | planning (§4.2) | baseline, DA band | Admitted — to leave the topic set (Q4) |
-| `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT); tolerance from model residuals (D5) | Admitted |
-| `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (cas.py) | Admitted |
-| `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all, overboost included since v0.3, §4.1) | Admitted — owner of limit events |
-| `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | **Research** (decided v0.4, D2) — rule disabled; metrics still computed |
-| `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); **Removed** (decided v0.4, D3) |
-| `flight_phase_mix` | Was this flight's climb/cruise/descent split unusual? | — | — | Dropped as a topic in toolkit v0.10.0 (replaced by the "no cruise detected" header note); leftover rule **Removed** (decided v0.4, D3) |
+| `topic_id` | Question | Class | Anchors | Status today | Trends panel |
+|---|---|---|---|---|---|
+| `egt_spread` | Are my cylinders burning evenly? | health | OM limit (EGT split, via `limit_exceedances`) · baseline · trend | Admitted | `cylinder_balance` |
+| `egt_cyl_deviation` | Is any one cylinder drifting from the others? | health | baseline · trend, per cylinder | Admitted (Spec 08) | `cylinder_balance` |
+| `cylinder_rank` | Has the usually-hottest cylinder changed? | health | classification (learned hottest cylinder) | Admitted (Spec 08) — insight **retired** (decided v0.4, D4); rank kept as context | null — no scalar fleet metric |
+| `oil_temp_peak` | Did oil get too hot, or hotter than usual? | health + operational | OM limit (referenced, §4.1) · baseline | Admitted | `thermal` |
+| `coolant_temp_peak` | Did coolant get too hot, or hotter than usual? | health | OM limit (referenced, §4.1) · baseline | Admitted | `thermal` |
+| `oil_coolant_ratio` | Has the oil-vs-coolant balance shifted? | health | baseline | **Dropped** (decided v0.4, D1) — to be removed; idea kept as candidate C5 (§7) | `thermal` (context) |
+| `overboost_time` | Did I stay at takeoff power too long? | operational | OM limit (referenced, §4.1: 300 s above 5,500 rpm / 100 %) · close-call margin | Admitted | `boost_power` |
+| `cruise_efficiency` | How far am I going per gallon in cruise? | planning (§4.2) | baseline · trend, DA band | Admitted — to leave the topic set (Q4) | `fuel` |
+| `cruise_fuel_flow` | Is cruise fuel burn normal? | planning (§4.2) | baseline, DA band | Admitted — to leave the topic set (Q4) | `fuel` |
+| `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT); tolerance from model residuals (D5) | Admitted | null — pending the takeoff-MAP residual fleet metric (Spec 12 §8.2, not yet built) |
+| `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (cas.py) | Admitted | null — not a baselined scalar |
+| `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all, overboost included since v0.3, §4.1) | Admitted — owner of limit events | null — limit panels are generated per limit, not declared |
+| `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | **Research** (decided v0.4, D2) — rule disabled; metrics still computed | `thermal` (context) |
+| `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); **Removed** (decided v0.4, D3) | null |
+| `flight_phase_mix` | Was this flight's climb/cruise/descent split unusual? | — | — | Dropped as a topic in toolkit v0.10.0 (replaced by the "no cruise detected" header note); leftover rule **Removed** (decided v0.4, D3) | null |
 
 ## 6. Audit of the current topics (v0.4)
 
@@ -400,7 +402,7 @@ Every topic admitted from now on has a topic spec. The minimum contents, which m
 8. **Action** — what the pilot or mechanic does.
 9. **UI** — where it appears (Flight view card, Trends group).
 10. **Acceptance** — tests against the project logs, including a positive and a negative case where the data has them.
-11. **Pilot explanation** — the one-paragraph help text (D13): what it checks, what it compares against, why it matters, what to do if it fires. Plain language, no values hard-coded (placeholders per Spec 01 §8.8). It is the topic's section in `slingology_eis/help/topics.md`; the topic spec says what it must convey, and the help entry is reviewed with the topic spec.
+11. **Pilot explanation** — the one-paragraph help text (D13): what it checks, what it compares against, why it matters, what to do if it fires. Plain language, no values hard-coded (placeholders per Spec 01 §8.8), and **aircraft-neutral** (v0.8): every reader is a different owner, so the text states no finding from a particular aircraft's data (patterns seen, typical values, how often something happens), cites no number that isn't the OM's or a placeholder, and gives causes as possibilities, not as what usually turns out to be the case. It is the topic's section in `slingology_eis/help/topics.md`; the topic spec says what it must convey, and the help entry is reviewed with the topic spec.
 
 **Spec 08 (cylinder balance)** is the first topic spec. It keeps its file and number — about 20 code comments cite "Spec 08 §N" — and is linked from the register for `egt_cyl_deviation` and `cylinder_rank`. It predates this template; items 2 (evidence grades), 5 (MDC) and 6 (overlap with `egt_spread`) would be added at its next revision.
 

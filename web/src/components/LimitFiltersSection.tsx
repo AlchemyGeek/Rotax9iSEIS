@@ -254,6 +254,14 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 </span>
               )}
               {!valid && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: "var(--severity-limit)" }}>NOT APPLIED</span>}
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); navigate(`/trends?panel=limit:${filter.limit_id}`); }}
+                style={{ marginLeft: "auto", fontSize: 11 }}
+                title="See this limit's panel on Trends — the filter band and its baseline shift"
+              >
+                View on Trends →
+              </a>
             </div>
             {h && h.reasons.length > 0 && (
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>

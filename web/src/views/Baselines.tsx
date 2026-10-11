@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { readinessText } from "../components/TrendsPanelStrip";
+import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { fleetAnalysis as fixtureFleet, insightRules as fixtureRules } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
-import type { BaselineConfig, FilterListEntry, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TrendDirection, WhatIfResult } from "../types/contract";
+import type { BaselineConfig, FilterListEntry, FleetAnalysis, Insight, InsightSet, InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TrendDirection, UnpinPreview, WhatIfResult } from "../types/contract";
 
 const client = getEngineClient();
 
@@ -104,6 +106,11 @@ export function Baselines() {
   const [applying, setApplying] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Spec 12 §5.7.1 items 3/5 (Session D) — Unpin here goes through the
+  // same confirmation/preview as the strip's own, for one consistent
+  // behaviour regardless of where it's triggered from.
+  const [unpinTarget, setUnpinTarget] = useState<string | null>(null);
+  const [unpinPreview, setUnpinPreview] = useState<UnpinPreview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,7 +229,10 @@ export function Baselines() {
       const res = await client.resetWorkspaceRules();
       setResolvedRules(res.rules);
       setDraftRules(clone(res.rules));
-      const defaultBaseline: BaselineConfig = { membership: "leave_one_out", band_kind_by_metric: {}, outlier_z_threshold: 2.0 };
+      const defaultBaseline: BaselineConfig = {
+        membership: "leave_one_out", band_kind_by_metric: {}, outlier_z_threshold: 2.0,
+        recent_window_hours: 10, recent_window_min_flights: 5, recent_window_max_flights: 15, om_margin_fraction: 0.25,
+      };
       const newFleet = await client.saveBaselineConfig(defaultBaseline);
       setFleet(newFleet);
       setDraftBaselineConfig(clone(defaultBaseline));
@@ -306,6 +316,65 @@ export function Baselines() {
         </div>
 
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "0 8px 8px" }}>
+          TRENDS CHANGE WINDOW
+        </div>
+        <div style={{ padding: "10px 12px", background: "var(--panel)", borderRadius: 8, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)" }}>
+            Recent window (hours)
+            {numberInput(draftBaselineConfig.recent_window_hours, (v) => setDraftBaselineConfig((p) => ({ ...p, recent_window_hours: v })), { min: 1 })}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)" }}>
+            Min flights in window
+            {numberInput(draftBaselineConfig.recent_window_min_flights, (v) => setDraftBaselineConfig((p) => ({ ...p, recent_window_min_flights: v })), { min: 1 })}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)" }}>
+            Max flights in window
+            {numberInput(draftBaselineConfig.recent_window_max_flights, (v) => setDraftBaselineConfig((p) => ({ ...p, recent_window_max_flights: v })), { min: 1 })}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)" }}>
+            OM margin fraction
+            {numberInput(draftBaselineConfig.om_margin_fraction, (v) => setDraftBaselineConfig((p) => ({ ...p, om_margin_fraction: v })), { step: 0.05, min: 0, max: 1 })}
+          </label>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }} title="Spec 12 §5.1/§5.5 — how Trends' change summary sizes its recent window and draws the OM margin line. Defaults: 10h / 5 / 15 / 0.25.">
+            Defaults: 10h &middot; 5 &middot; 15 &middot; 0.25
+          </div>
+        </div>
+
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "0 8px 8px" }}>
+          PINNED BASELINES
+        </div>
+        <div style={{ padding: "10px 12px", background: "var(--panel)", borderRadius: 8, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          {Object.keys(draftBaselineConfig.pinned_references ?? {}).length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+              None — every metric's baseline is rolling. Pin one from its panel on Trends.
+            </div>
+          ) : (
+            Object.entries(draftBaselineConfig.pinned_references ?? {}).map(([metricId, ref]) => (
+              <div key={metricId} style={{ fontSize: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {metricId}
+                  {ref.label ? ` (${ref.label})` : ""}
+                  <span style={{ color: "var(--text-tertiary)" }}> &middot; n={ref.flight_ids.length}, set {ref.set_at.slice(0, 10)}</span>
+                </span>
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (usingFixture) return;
+                    setUnpinTarget(metricId);
+                    setUnpinPreview(null);
+                    client.previewClearReference(metricId).then(setUnpinPreview);
+                  }}
+                  style={{ fontSize: 11 }}
+                >
+                  unpin baseline
+                </a>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "0 8px 8px" }}>
           RULES {usingFixture && <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>(sample)</span>}
         </div>
         {topicIds.map((id) => {
@@ -350,10 +419,18 @@ export function Baselines() {
                 return kinds.map(([kind, label]) => {
                   const key = `limit_${filter.limit_id}_${kind}`;
                   const own = draftBaselineConfig.outlier_z_threshold_overrides?.[key];
+                  // Spec 12 §9.3 (Session C): a badge wherever a metric
+                  // is named, not just on its Trends strip.
+                  const readiness = fleet.metrics[key]?.readiness;
                   return (
                     <div key={key} style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 3 }}>
                       <span style={{ color: "var(--text-secondary)" }}>
                         {limit?.label ?? filter.limit_id}: {label}
+                        {readiness && (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-tertiary)", border: "1px solid var(--border)", borderRadius: 999, padding: "1px 6px" }}>
+                            {readinessText(readiness)}
+                          </span>
+                        )}
                       </span>
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <input
@@ -659,6 +736,23 @@ export function Baselines() {
           </>
         )}
       </div>
+      {unpinTarget && (
+        <UnpinConfirmDialog
+          metricLabel={unpinTarget}
+          preview={unpinPreview}
+          onCancel={() => setUnpinTarget(null)}
+          onConfirm={async () => {
+            const metricId = unpinTarget;
+            setUnpinTarget(null);
+            const updated = await client.clearReference(metricId);
+            // Merge only pinned_references — unpin is an immediate,
+            // already-applied action, not part of the draft/Apply
+            // flow, so it shouldn't discard any other unsaved edit.
+            setDraftBaselineConfig((prev) => ({ ...prev, pinned_references: updated.pinned_references }));
+            setFleet((f) => ({ ...f, provenance: { ...f.provenance, baseline_config: { ...f.provenance.baseline_config, pinned_references: updated.pinned_references } } }));
+          }}
+        />
+      )}
     </NavShell>
   );
 }

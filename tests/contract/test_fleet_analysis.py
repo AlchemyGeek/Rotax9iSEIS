@@ -157,25 +157,26 @@ def test_filter_monitor_replay_fuel_pressure(real_flight_analyses):
     Review due once 50 engine hours have passed since the filter was set;
     Drifting on the one flight where 10 of the last 10 monitored flights
     had events vs 70% of the reference. Pinned to flights up to
-    2026-09-27 so new logs don't move it."""
+    2026-09-27 so new logs don't move it. Runs on the Spec 12 R1.1 replay
+    harness (tests/replay.py) — assertions unchanged from before Spec 12."""
     if not real_flight_analyses:
         pytest.skip("no local flight logs")
     from slingology_eis.filters import evaluate_filter_health, select_reference
     from slingology_eis.limits import limit_catalog, load_engine_config
 
+    from ..replay import chronological, replay
+
     cfg = load_engine_config("916iS")
     lim = next(l for l in limit_catalog(cfg) if l["id"] == "fuel_press_max")
-    fas = sorted((fa for fa in real_flight_analyses if fa.header["date"] <= "2026-09-27"),
-                 key=lambda fa: (fa.header.get("engine_hours_start") or 0, fa.header["date"]))
+    fas = chronological(real_flight_analyses, pinned_to_date="2026-09-27")
     k = 20
     flt = {"id": "f", "limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 4.0},
            "note": "", "created_at": "x", "history": [],
            "reference": {"flight_ids": select_reference(update_fleet(fas[:k]), lim)},
            "created_engine_hours": fas[k - 1].header.get("engine_hours_end")}
-    statuses = []
-    for m in range(k + 1, len(fas) + 1):
-        h = evaluate_filter_health(fas[:m], update_fleet(fas[:m]), [flt], cfg)[0]
-        statuses.append(h["status"])
+    fleets = replay(fas, pinned_to_date="2026-09-27", start=k + 1)
+    statuses = [evaluate_filter_health(fas[:m], fleet, [flt], cfg)[0]["status"]
+                for m, fleet in zip(range(k + 1, len(fas) + 1), fleets)]
     assert "breached" not in statuses
     first_due = statuses.index("review_due")
     assert set(statuses[:first_due]) == {"stable"}

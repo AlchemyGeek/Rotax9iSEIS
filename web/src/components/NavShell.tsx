@@ -4,6 +4,7 @@ import { getEngineClient } from "../lib/engineClient";
 import { appSettings as fixtureAppSettings, workspaceRegistry as fixtureWorkspaceRegistry } from "../lib/fixtures";
 import type { WorkspaceRegistryEntry } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
+import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
 
 const client = getEngineClient();
 
@@ -256,6 +257,7 @@ function WorkspaceSwitcher() {
 
 export function NavShell({ right, children }: { right?: ReactNode; children: ReactNode }) {
   const filterAttention = useFilterAttention();
+  const shiftHistoryAttention = useShiftHistoryAttention();
   return (
     <div
       style={{
@@ -287,6 +289,14 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
             </NavLink>
             <NavLink to="/trends" style={NAV_LINK_STYLE}>
               Trends
+              {shiftHistoryAttention > 0 && (
+                <span
+                  title={`${shiftHistoryAttention} open change${shiftHistoryAttention === 1 ? "" : "s"}`}
+                  style={{ marginLeft: 6, minWidth: 16, height: 16, borderRadius: 8, padding: "0 4px", background: "var(--text-tertiary)", color: "var(--bg)", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                >
+                  {shiftHistoryAttention}
+                </span>
+              )}
             </NavLink>
             <NavLink to="/baselines" style={NAV_LINK_STYLE}>
               Baselines

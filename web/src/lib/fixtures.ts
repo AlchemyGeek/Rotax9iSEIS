@@ -17,6 +17,7 @@ import insightRulesRaw from "../fixtures/insight-rules.json";
 import topicHelpRaw from "../fixtures/topic-help.json";
 import topicHelp912isRaw from "../fixtures/topic-help-912is.json";
 import aircraftSummaryRaw from "../fixtures/aircraft-summary.json";
+import trendsPanelsRaw from "../fixtures/trends-panels.json";
 import type {
   AircraftSummary,
   AnnotationStore,
@@ -32,6 +33,7 @@ import type {
   SeriesFixture,
   TopicHelpResult,
   TopicResult,
+  TrendsPanel,
   WorkspaceManifest,
   WorkspaceRegistry,
   WorkspaceSettings,
@@ -51,6 +53,9 @@ import type {
 export const flightAnalysis = flightAnalysisRaw as FlightAnalysis;
 export const insightSet = insightSetRaw as InsightSet;
 export const fleetAnalysis = fleetAnalysisRaw as FleetAnalysis;
+// Spec 12 (Session B): build_trends_panels' output for the same fleet,
+// real-engine-generated like fleetAnalysis above — not hand-authored.
+export const trendsPanels = (trendsPanelsRaw as { panels: TrendsPanel[] }).panels;
 export const ruleOverboost = ruleOverboostRaw as RuleOverboostFixture;
 // The real shipped insight_rules.json, mirrored here (Spec 03 §5.5's
 // "reset to shipped defaults" comparison baseline in fixture mode too —

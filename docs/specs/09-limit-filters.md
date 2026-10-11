@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.15 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 (Trends group) remains a follow-up
+**Status:** v0.17 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -25,6 +25,8 @@
 | 0.13 | **Spec 10 alignment (Phase 7 proposed).** Spec 10 §4.1 now applies to the oil and coolant topics too: `oil_temp_peak` and `coolant_temp_peak` lose their `threshold` triggers. All three topics that reference a limit declare it in a new rule-level **`limit_refs`** field, which drives the mirrored badge and the analysis line but never emits an insight (§10.2, §10.3, §12.1); rules version bumped. Limit saturation (Spec 10 D6) is handled by tests on our side, not by pilots: profile and phase-rule changes must keep Spec 10 acceptance 8–10 green (§14, items 21–22). |
 | 0.14 | Rules versions for Phase 7 no longer hard-coded: Phases 6 and 7 and Spec 10's Phase A each bump `insight_rules.json` to the next version at implementation, in the order they land. **Spec 10 D6 diagnosis applied (§6.8).** D14: `volts_min` gets the engine-running gate (`min_rpm`), removing shutdown 0.0 V readings. D15: `fuel_press_max` keeps the OM 46 psi; its steady offset on N117ZS is cause 3a (pilot filter; Spec 10 allowlist). D16: `rpm_idle_min` to be re-encoded from the OM's exact idle wording, plus an engine-running gate for the pre-start artifact — pending the OM lookup. D17: `rpm_takeoff_max` keeps v0.12's hard ceiling and pilot magnitude filter (prop-governor overshoot treated as cause 3a), plus a resolution tolerance if rpm is quantized — pending the OM transient-overspeed check; the six flights above 5,830 rpm reviewed individually (acceptance 18). `fuel_press_min`'s saturation was already fixed by the §6.6 gate. Phase 7 extended. |
 | 0.15 | **D16 and D17 decided (§6.8).** `rpm_idle_min`: the OM states 1,800 rpm as a true minimum; the `min_rpm: 1000` gate (commit b6fbaba) stays; a new **idle-established** condition removes start-up spool-up; N117ZS's steady 20–30 rpm low idle is cause 3a (allowlist); the profile note's "normal governor variation" replaced by the actual rationale for `min_duration_s`. `rpm_takeoff_max`: no OM transient allowance and no resolution tolerance (10 rpm steps mean any reading above 5,800 is a real exceedance); hard ceiling, pilot filter ≤ +30 rpm, allowlist entry citing the Maintenance Manual Line. Mirrored-badge wording aligned with the contract: the mirrored outcome is `suppressed` or `breach` (§10.2, §12.1, acceptance 21). |
+| 0.16 | **Q5 resolved (Spec 12 §8.2).** The per-limit metrics get Trends panels after all — generated per limit (filtered, or at least one exceedance), not declared per topic, so limits that have never fired produce no panel. |
+| 0.17 | **Spec 12 Phase 6.** §5: the stale "hidden from the Trends view until the follow-up" note corrected now that Spec 12 §8.4 draws them; overboost's "has an event" rule (`block_s > limit_value`, not `> 0`) written down, since `block_s` is a continuous block length present on nearly every flight. §8.2: `frequency_delta` is confirmed shared with Spec 12 §5.8's event frequency (same constant and "has an event" rule, different recent/reference windows — Notes' fixed `frequency_window` vs. Trends' own recent window). |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -85,7 +87,7 @@ This section is written for pilots, not developers. It can be reused in the READ
 - New insights from the per-limit baseline metrics (§5). They are baselined and charted, but no rule in `insight_rules.json` triggers on them. Their only consumer in this spec is the filter monitor.
 - Changing OM limit values. `engine_overrides.json` (Spec 02) remains a separate, undesigned idea. A filter never changes the displayed limit.
 - Shutdown artifacts (e.g. KACV's −0.6 psi fuel pressure and 0.0 V bus at 00:35). These are a phase-suppression gap to be investigated separately, not something to filter.
-- A Trends-view group for the per-limit metrics (follow-up, §15).
+- A Trends-view group for the per-limit metrics — built in Spec 12 (§8.4's limit panels), not here.
 
 ## 4. Concepts
 
@@ -120,8 +122,8 @@ For `overboost`, `peak_excess` is replaced by `limit_overboost_block_s`, the lon
 - `BASELINE_LOW_N` fleet diagnostics are not emitted for these metrics; the filter monitor reports its own (`FILTER_REFERENCE_LOW_N`).
 - Registered in the metric registry and added to `BASELINE_METRIC_DEFS`, generated from the engine profile rather than hand-listed. Their stratification band comes from the limit's `stratify_by` (§6.5).
 - `update_fleet` baselines them exactly like every other metric: points, trend over engine hours, outliers at `resolve_outlier_z_threshold(metric_id)`, and stratified baselines.
-- They have no insight rules (§3 non-goals) and are hidden from the Trends view until the follow-up (§15).
-- **Share of flights with events** is derived from the `time_above_pct` points (value > 0); it is not a separate metric.
+- They have no insight rules (§3 non-goals). Spec 12 §8.4 draws them on the Trends view, in a generated panel per limit — not a hand-maintained group here.
+- **Share of flights with events** is derived from the `time_above_pct` points (value > 0); it is not a separate metric. For `overboost`, whose `block_s` is a continuous block length present on nearly every flight rather than a sparse exceedance value, "has an event" is `block_s > limit_value` instead. Spec 12 §5.8's event frequency (the Trends page's per-limit change signal) reuses this exact "has an event" rule and the `FREQUENCY_DELTA` constant below (§8.2), computed over Trends' own recent window rather than this spec's fixed `frequency_window` monitored flights — two different windows for two different pages, not a second, competing definition of an event.
 
 ## 6. Engine profile changes
 
@@ -367,6 +369,8 @@ Evaluated in priority order; the first match wins.
 | **Stable** | None of the above. |
 
 Using the metric's own `outlier_z_threshold` keeps Spec 01's "one threshold, two consumers" principle: the same number marks a point as an outlier on the chart and decides drift. Adjusting it in the rule playground changes both. The 2-flight persistence reuses the Spec 08 `cylinder_rank` pattern.
+
+**`frequency_delta` is shared with Spec 12 §5.8, its window is not.** Trends' own event frequency reuses this exact constant (`filters.FREQUENCY_DELTA`, 0.30) and the §5 "has an event" rule, so Notes' Drifting status and Trends' frequency signal can't quietly disagree about what counts as a 30% rise — but each computes its own recent/reference split: this spec's fixed `frequency_window` (10 monitored flights) for Notes, Spec 12's hours-and-flight-count-gated recent window for Trends. The two pages ask the question over different spans on purpose (a filter's own review cadence vs. Trends' general change window), not by oversight.
 
 **Mark reviewed** records the time and engine hours. It clears Breached and Review due. It does not clear Drifting, which clears only when the condition stops holding or the pilot re-baselines.
 
@@ -637,7 +641,7 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 | Q2 | ~~Where do the WARNING caps come from?~~ **Superseded (v0.9): WARNING limits are never filterable (§6.3).** | Rotax FADEC sensor accuracy and Garmin display resolution, if published; otherwise placeholders that you set from your own data. **Phase 3:** 916iS ships the placeholder caps in §6.3, marked `PLACEHOLDER`; still to be replaced with sourced values. |
 | Q3 | One global merge gap, or per limit? | **Resolved (Phase 1).** Global 30 s, with a per-limit override; `rpm_idle_min` uses 0 s (§6.2). |
 | Q4 | Overboost and `rpm_takeoff_max` both encode the 5-minute rule with different thresholds. Should they be unified? | **Resolved (v0.12).** Overboost is the single owner of the 5-minute rule, reported by `limit_exceedances` with the 30 s merge gap (§6.4). `rpm_continuous_max` is retired; `rpm_takeoff_max` is a plain 5,800 rpm ceiling with a capped, absolute-only filter for takeoff-setpoint jitter (§6.7). |
-| Q5 | Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only. | Follow-up, once the Notes charts have been used. |
+| Q5 | ~~Should the per-limit metrics get a Trends-view group? They are already baselined, so this is UI only.~~ | **Resolved (Spec 12 §8.2).** One generated "Limit: `<name>`" panel per limit that has a filter or at least one exceedance on an eligible flight — not declared per topic (per-limit metrics have no register entry, R3.2), derived from the engine's own limit catalogue and filter state. |
 | Q6 | Existing annotations attached to per-event `limit_exceedances` insights will be orphaned by the new insight IDs. Migrate them? | **Resolved (Phase 1).** On re-analysis, each note on an old per-event insight moves to the new per-limit insight for the same flight and limit; several notes on one limit are joined (`workspace.migrate_limit_annotations`). |
 | Q7 | Does fuel pressure vary with OAT enough to need stratification? | **Resolved (Phase 2).** Peak excess does, time above doesn't; `fuel_press_max` is OAT-stratified (§6.5). |
 | Q8 | ~~Filters compare within the flight's band, but `baseline_deviation` compares against all flights. Align them?~~ | **Resolved (option B).** `baseline_deviation` moves to stratified leave-one-out comparison with an unstratified fallback below `n_min`: Spec 01 v0.13, R8; Spec 03 v0.11 §5.3 for the Trends outlier rings. Implemented as its own change, not part of Spec 09, but Spec 09's frozen-baseline comparison calls the same helper. |
@@ -720,7 +724,7 @@ A limit the target already filters is skipped and reported rather than overwritt
 doesn't validate in the target (e.g. a z filter whose new reference has too few flights with
 events) is still copied, reported as not valid, and shows as *not applied* on the Notes page.
 
-**Still open.** Q5 (a Trends-view group for the per-limit metrics) is a follow-up. The private
+**Still open.** The private
 characterization goldens (§14.4, "updated deliberately") must be regenerated and their diff
-reviewed wherever they are kept, since limit insights and exceedances changed shape.
+reviewed wherever they are kept, since limit insights and exceedances changed shape. (Q5 resolved — Spec 12 §8.2.)
 

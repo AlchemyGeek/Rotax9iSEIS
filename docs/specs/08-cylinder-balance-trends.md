@@ -1,7 +1,7 @@
 # Spec 08 — Cylinder Balance Trends (Mini-Spec)
 
 **Project:** SlingologyEIS
-**Status:** v0.3 — v0.2 implemented (engine 0.14.0); v0.3 insight changes (Spec 10 D3, D4, D8) not yet implemented
+**Status:** v0.4 — v0.2/v0.3 implemented (engine 0.14.0; Spec 10 D3/D4/D8); v0.4's Trends panel refactor implemented in Spec 12 Session B
 **Suggested repo path:** `docs/specs/08-cylinder-balance-trends.md`
 **Builds on:** Spec 01 (engine contract, metric registry, insight rules), Spec 03 (Trends view), Spec 05 (frontend bootstrap), Spec 10 (topic admission — this is the topic spec for `egt_cyl_deviation` and `cylinder_rank`, §9 there)
 **Revision history**
@@ -11,6 +11,7 @@
 | 0.1 | Initial mini-spec. |
 | 0.2 | Implemented. Decisions made during implementation are recorded in §11. |
 | 0.3 | Spec 10 audit decisions. **D4:** the `hot_cyl_changed` insight is retired — `egt_cyl_deviation` always fires first on any fault large enough to change the hottest cylinder (Spec 10 §6.1). The rank stays as context: the Trends chip and strip, the Flight view EGT line, and a sentence in `egt_cyl_deviation`'s insight when the hottest cylinder has changed (§6). **D8:** when a per-cylinder trigger fires, `egt_spread`'s baseline insight is folded into it (§6). **D3:** `egt4_elevation` is removed entirely; acceptance 1 and 5 rewritten (§10). |
+| 0.4 | §7: Trends rebuilt on Spec 12 (Session B) — the cylinder-balance chart itself is unchanged, now the `cylinder_balance` panel's content (with `egt_spread` added as a second strip) rather than a `GROUPS` picker entry; `egt1..4_deviation` declared `coupled: true` in the topic register (Spec 12 D4), collapsing to one change-summary row. |
 
 **Note on numbering:** This document is numbered 08. Number 06 stays reserved for the tabled "research mode" feature noted in Spec 05.
 
@@ -106,9 +107,10 @@ Register the numeric ones in `registry.py` (`egt` group, phase `CRUISE`). `egt_r
 
 ## 7. Trends view (web)
 
-EGT group in `web/src/views/Trends.tsx` becomes:
+**Superseded by Spec 12 (Session B).** `web/src/views/Trends.tsx`'s old `GROUPS` constant (the EGT group shown below) is gone along with the rest of the metric picker — Trends is now a ranked change summary plus register-declared panels (Spec 12 §7–§9). The cylinder-balance chart itself is unchanged in substance (items 1–4 below still describe it exactly) and keeps its own component (`CylinderBalance.tsx`); it now renders as the `cylinder_balance` panel's content, with `egt_spread` added below it as a second, ordinary strip on the same panel (Spec 12 §8.2) rather than a second picker entry. `egt1..4_deviation` are `coupled: true` in the topic register (Spec 12 D4) — the four deviations collapse to one change-summary row (they're each a distance from their shared mean and sum to zero); `egt_spread` is a different statistic and is not coupled, so it still ranks as its own row when it qualifies.
 
 ```ts
+// Pre-Spec-12 EGT group (web/src/views/Trends.tsx GROUPS) — removed, kept here for history:
 { label: "EGT", metrics: ["egt_spread", "cylinder_balance"] }
 ```
 

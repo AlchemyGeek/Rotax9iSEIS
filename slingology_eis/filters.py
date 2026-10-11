@@ -112,6 +112,28 @@ def _stats(values: list[float]) -> dict:
     return {"n": b.n, "mean": b.mean, "std": b.std, "min": b.min, "max": b.max}
 
 
+def points_baseline(points: list[dict], reference_ids: list[str]) -> dict:
+    """
+    §4: the baseline of a metric's `points` (the shape `update_fleet`
+    builds — {flight_id, value, band?, ...}) over a fixed set of flight
+    ids. Returns {n, mean, std, min, max, by_band: {band: stats}}. Pure —
+    takes `points` directly rather than a FleetAnalysis, so Spec 12's
+    shift statistic (computed inside `update_fleet`, before a
+    FleetAnalysis object exists) and this module's frozen-baseline
+    filters share the exact same stats math (Spec 12 R1.3/acceptance 2),
+    not two implementations that happen to agree today.
+    """
+    ref = set(reference_ids)
+    matched = [p for p in points if p["flight_id"] in ref and p.get("value") is not None]
+    out = _stats([p["value"] for p in matched])
+    bands: dict[str, list[float]] = {}
+    for p in matched:
+        if p.get("band") is not None:
+            bands.setdefault(p["band"], []).append(p["value"])
+    out["by_band"] = {b: _stats(v) for b, v in sorted(bands.items())}
+    return out
+
+
 def frozen_baseline(fleet, metric_key: str, reference_ids: list[str]) -> dict:
     """
     §4: the baseline of `metric_key` over a fixed set of flights, from the
@@ -119,16 +141,7 @@ def frozen_baseline(fleet, metric_key: str, reference_ids: list[str]) -> dict:
     flight later excluded from baselines (absent from the fleet's points)
     drops out. Returns {n, mean, std, min, max, by_band: {band: stats}}.
     """
-    ref = set(reference_ids)
-    points = [p for p in (fleet.metrics.get(metric_key) or {}).get("points", [])
-              if p["flight_id"] in ref and p.get("value") is not None]
-    out = _stats([p["value"] for p in points])
-    bands: dict[str, list[float]] = {}
-    for p in points:
-        if p.get("band") is not None:
-            bands.setdefault(p["band"], []).append(p["value"])
-    out["by_band"] = {b: _stats(v) for b, v in sorted(bands.items())}
-    return out
+    return points_baseline((fleet.metrics.get(metric_key) or {}).get("points", []), reference_ids)
 
 
 def comparison_set(frozen: dict, band: Optional[str], n_min: int = N_MIN) -> tuple[dict, dict]:

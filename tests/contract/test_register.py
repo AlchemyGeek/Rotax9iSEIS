@@ -47,10 +47,14 @@ def normalize_status_cell(cell: str) -> str:
 
 
 def parse_register_table(spec_text: str) -> dict:
-    """{topic_id: normalized 916iS status} from Spec 10 §5.2's table."""
+    """{topic_id: normalized 916iS status} from Spec 10 §5.2's table. Reads
+    the "Status today" cell by its header position, not by assuming it's
+    the last column — Spec 12 v0.9 appended a "Trends panel" column after
+    it."""
     lines = spec_text.splitlines()
     start = next(i for i, l in enumerate(lines) if l.startswith("###") and "5.2" in l)
     header = next(i for i in range(start, len(lines)) if "Status today" in lines[i])
+    status_col = [c.strip() for c in lines[header].strip("|").split("|")].index("Status today")
     out = {}
     for line in lines[header + 2:]:  # skip the header row and its --- separator
         if not line.startswith("|"):
@@ -59,7 +63,7 @@ def parse_register_table(spec_text: str) -> dict:
         m = re.match(r"`([a-z0-9_]+)`", cells[0])
         if not m:
             continue
-        out[m.group(1)] = normalize_status_cell(cells[-1])
+        out[m.group(1)] = normalize_status_cell(cells[status_col])
     return out
 
 

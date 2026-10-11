@@ -56,6 +56,7 @@ from .operations import (
     InsightSet,
     analyze_ecu,
     analyze_flight,
+    build_trends_panels,
     evaluate_insights,
     get_topic_help,
     update_fleet,
@@ -462,6 +463,17 @@ def op_get_fleet(params: dict, ctx: dict) -> Any:
     return _get_or_build_fleet(ctx["workspace_dir"]).to_dict()
 
 
+def op_get_trends_panels(params: dict, ctx: dict) -> Any:
+    """Spec 12 R3.3: panel layout for the Trends page, built from the
+    topic register rather than a frontend metric list."""
+    from . import help as _help
+
+    fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    register = _help.load_register() or {"topics": []}
+    filtered_limit_ids = {f["limit_id"] for f in ws.load_filters(ctx["workspace_dir"])["filters"]}
+    return {"panels": build_trends_panels(fleet, register, filtered_limit_ids)}
+
+
 def op_get_flight_series(params: dict, ctx: dict) -> Any:
     """The Flight view's timeline. Checks the workspace's own persisted
     copy first (fast path — every upload-imported flight has one), then
@@ -627,6 +639,35 @@ def op_exclude_flight(params: dict, ctx: dict) -> Any:
 
 def op_include_flight(params: dict, ctx: dict) -> Any:
     return ws.include_flight(ctx["workspace_dir"], params["flight_id"]).to_dict()
+
+
+def op_set_reference(params: dict, ctx: dict) -> Any:
+    """Spec 12 §11.3: pin a metric's shift reference. Returns the updated
+    BaselineConfig, not a rebuilt fleet — same shape as op_exclude_flight,
+    since the pin only changes what the *next* update_fleet call does."""
+    _require_active(ctx)
+    selection = ws.set_reference(
+        ctx["workspace_dir"], params["metric_id"], params["flight_ids"], params.get("label"))
+    return selection.baseline_config
+
+
+def op_clear_reference(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    selection = ws.clear_reference(ctx["workspace_dir"], params["metric_id"])
+    return selection.baseline_config
+
+
+def op_preview_clear_reference(params: dict, ctx: dict) -> Any:
+    """Spec 12 §5.7.1 item 5: read-only — never calls ws.clear_reference,
+    so the unpin confirmation can preview the effect before the pilot
+    commits to it."""
+    _require_active(ctx)
+    return ws.preview_clear_reference(ctx["workspace_dir"], params["metric_id"])
+
+
+def op_delete_shift_event(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    return {"shift_history": ws.delete_shift_event(ctx["workspace_dir"], params["event_id"])}
 
 
 def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"]) -> dict:
@@ -1308,12 +1349,17 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_flights": op_list_flights,
     "get_flight": op_get_flight,
     "get_fleet": op_get_fleet,
+    "get_trends_panels": op_get_trends_panels,
     "get_flight_series": op_get_flight_series,
     "rebuild_fleet": op_rebuild_fleet,
     "import_files": op_import_files,
     "list_flights_with_status": op_list_flights_with_status,
     "exclude_flight": op_exclude_flight,
     "include_flight": op_include_flight,
+    "set_reference": op_set_reference,
+    "clear_reference": op_clear_reference,
+    "preview_clear_reference": op_preview_clear_reference,
+    "delete_shift_event": op_delete_shift_event,
     "list_exclusions": op_list_exclusions,
     "include_excluded_log": op_include_excluded_log,
     "preview_excluded_log": op_preview_excluded_log,

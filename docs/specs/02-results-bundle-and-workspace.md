@@ -1,7 +1,7 @@
 # Spec 02 — Results Bundle & Workspace
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.8 — v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); v0.8's mixed-aircraft notice (§5.6) not yet implemented; the IndexedDB realization (§5.9) is not yet built
+**Status:** v0.9 — v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built
 **Suggested repo path:** `docs/specs/02-results-bundle-and-workspace.md`
 **Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
 **Precedes:** Spec 03 (UI Information Architecture)
@@ -19,6 +19,7 @@
 | 0.6 | Findings from the first real implementation pass. Two things fixed, not just documented: **`log_folders[].path` was genuinely wrong** — it mixed a JSON-serializable path string with a browser-only `FileSystemDirectoryHandle` in one field, quietly breaking §5.10's "identical JSON" claim; split into a plain display `path` (both realizations) plus a separate non-JSON handle store keyed by a new `folder_id`. **Exact-fingerprint duplicates must not reuse the overlap-duplicate drop-one-keep-one logic** — doing so silently discards a second export path instead of recording it in `imports[]`, defeating the reason that array exists; §5.7 now says so explicitly, plus which import wins when one is picked as primary (reuse the existing `most_rows` comparator). Two things added: `FlightSources.missing` (§6.2 — the field §5.5's persistence rule needed but the original sketch didn't have), and a fingerprint-caching rule (§5.7 — skip re-hashing a file whose path/size/mtime haven't changed, since reading every file's full bytes on every scan was asserted cheap without being addressed). |
 | 0.7 | **Log admission and flight exclusions folded in** (new §5.11, §6.8), replacing the separate Workspace Flight Exclusions spec (filed as a second "Spec 08") and recording the never-committed Ground Session Detection spec it depended on. Written against the implementation, and corrects four things the former spec got wrong: (1) `exclusions.json` governs **admission** (does a log become a flight at all), not baseline contribution — baseline contribution is, and stays, `fleet/selection.json`'s `excluded` list (§6.3). The two are deliberately separate tiers keyed differently (filename vs. `flight_id`), not two copies of one list; §5.11 states why. (2) Parse failures are not `corrupt_log` entries — an unreadable file is never recorded, it surfaces as the Unreadable status (Spec 03 §5.1). (3) `include` never deletes an entry, including a `user_defined` one — it sets `user_override`. (4) `exclusions.json` lives at the workspace root, not `data/`. §5.1, §5.3, §5.9, §6.3 and §7.1 updated to reference the new sections. Status header corrected — it still read "no code written" well after the filesystem realization shipped. New open questions Q12–Q14. |
 | 0.8 | **Mixed-aircraft workspaces made explicit (§5.6).** Tail number stays informational — never a gate, never an exclusion — but v0.7 called several same-engine aircraft in one workspace "a supported case" without noting that the per-aircraft layer (baselines, models, learned patterns, filters, change monitor — Spec 10 §1) then treats them as **one** aircraft. A workspace whose admitted flights carry more than one tail number now shows a persistent notice saying so and recommending one workspace per aircraft; the pilot can confirm that differing tail numbers are the same aircraft (a G3X ident typo, a re-registration), which clears it (`WorkspaceSettings.aircraft_aliases`, §6.6). OM limit checks are unaffected. Per-aircraft learning inside one workspace, with a fleet view comparing aircraft, becomes a future investigation (Q15). |
+| 0.9 | §6.3 gains `fleet/shift_history.json` (Spec 12 §6) — a `ShiftEvent[]`, alongside `selection.json`, append-only except user deletion. Pinned references are not a new file; they're `selection.json`'s `BaselineConfig.pinned_references` (Spec 12 §5.7). |
 
 ---
 
@@ -315,6 +316,8 @@ interface FleetSelection {
 (v0.3 had an `included: string[]` here; dropped in v0.4 — see the comment above.)
 
 `analysis.json` is a Spec 01 `FleetAnalysis`, with `models` (the `Model[]`, e.g. `takeoff_map`) included inline rather than as a separate file — the earlier layout's split between `baselines.json` and `models.json` (finding 2) is a historical accident of what script wrote it, not a meaningful boundary; both are outputs of the same `update_fleet` operation and are staleness-linked (Spec 01 §7).
+
+`shift_history.json` (Spec 12 §6, new in v0.9): a bare `ShiftEvent[]` array, alongside `selection.json` — append-only except user deletion (`delete_shift_event`). Pinned references are not a separate file; they live in `selection.json`'s `BaselineConfig.pinned_references` (Spec 12 §5.7/§11.1), since a pin is part of the same baseline configuration as everything else there, not a distinct concern.
 
 ### 6.4 `rules/`
 

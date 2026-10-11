@@ -1,0 +1,623 @@
+{
+  "panels": [
+    {
+      "metrics": [
+        {
+          "metric_id": "egt_spread",
+          "phrasing": {
+            "higher": "running wider than it used to",
+            "lower": "running narrower than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "egt1_deviation",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "either"
+        },
+        {
+          "metric_id": "egt2_deviation",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "either"
+        },
+        {
+          "metric_id": "egt3_deviation",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "either"
+        },
+        {
+          "metric_id": "egt4_deviation",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "either"
+        }
+      ],
+      "panel": "cylinder_balance"
+    },
+    {
+      "metrics": [
+        {
+          "metric_id": "oil_temp_peak",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "coolant_temp_peak",
+          "phrasing": {
+            "higher": "running hotter than it used to",
+            "lower": "running cooler than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "climb_thermal_rate",
+          "phrasing": {
+            "higher": "climbing with faster oil-temp rise than it used to",
+            "lower": "climbing with slower oil-temp rise than it used to"
+          },
+          "role": "context",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "thermal"
+    },
+    {
+      "metrics": [
+        {
+          "metric_id": "overboost_time",
+          "phrasing": {
+            "higher": "spending more time over boost than it used to",
+            "lower": "spending less time over boost than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "takeoff_map_residual_inhg",
+          "phrasing": {
+            "higher": "making less boost at takeoff than the model predicts, by a growing margin",
+            "lower": "making more boost at takeoff than the model predicts, by a growing margin"
+          },
+          "role": "primary",
+          "worsening": "either"
+        }
+      ],
+      "panel": "boost_power"
+    },
+    {
+      "metrics": [
+        {
+          "metric_id": "cruise_efficiency",
+          "phrasing": {
+            "higher": "more fuel-efficient than it used to be",
+            "lower": "less fuel-efficient than it used to be"
+          },
+          "role": "primary",
+          "worsening": "lower"
+        },
+        {
+          "metric_id": "cruise_fuel_flow",
+          "phrasing": {
+            "higher": "burning more fuel than it used to",
+            "lower": "burning less fuel than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "fuel"
+    },
+    {
+      "filtered": true,
+      "limit_id": "rpm_takeoff_max",
+      "metrics": [
+        {
+          "metric_id": "limit_rpm_takeoff_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_rpm_takeoff_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:rpm_takeoff_max"
+    },
+    {
+      "filtered": true,
+      "limit_id": "fuel_press_max",
+      "metrics": [
+        {
+          "metric_id": "limit_fuel_press_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_fuel_press_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:fuel_press_max"
+    },
+    {
+      "filtered": true,
+      "limit_id": "rpm_idle_min",
+      "metrics": [
+        {
+          "metric_id": "limit_rpm_idle_min_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_rpm_idle_min_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:rpm_idle_min"
+    },
+    {
+      "filtered": true,
+      "limit_id": "fuel_press_min",
+      "metrics": [
+        {
+          "metric_id": "limit_fuel_press_min_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_fuel_press_min_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:fuel_press_min"
+    },
+    {
+      "filtered": false,
+      "limit_id": "overboost",
+      "metrics": [
+        {
+          "metric_id": "limit_overboost_block_s",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:overboost"
+    },
+    {
+      "filtered": false,
+      "limit_id": "volts_min",
+      "metrics": [
+        {
+          "metric_id": "limit_volts_min_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_volts_min_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:volts_min"
+    },
+    {
+      "filtered": false,
+      "limit_id": "oil_press_min",
+      "metrics": [
+        {
+          "metric_id": "limit_oil_press_min_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_oil_press_min_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:oil_press_min"
+    },
+    {
+      "filtered": false,
+      "limit_id": "oil_press_max",
+      "metrics": [
+        {
+          "metric_id": "limit_oil_press_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_oil_press_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:oil_press_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "oil_press_cold_max",
+      "metrics": [
+        {
+          "metric_id": "limit_oil_press_cold_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_oil_press_cold_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:oil_press_cold_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "oil_temp_takeoff_min",
+      "metrics": [
+        {
+          "metric_id": "limit_oil_temp_takeoff_min_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_oil_temp_takeoff_min_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:oil_temp_takeoff_min"
+    },
+    {
+      "filtered": false,
+      "limit_id": "oil_temp_max",
+      "metrics": [
+        {
+          "metric_id": "limit_oil_temp_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_oil_temp_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:oil_temp_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "coolant_temp_max",
+      "metrics": [
+        {
+          "metric_id": "limit_coolant_temp_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_coolant_temp_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:coolant_temp_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt1_max",
+      "metrics": [
+        {
+          "metric_id": "limit_egt1_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt1_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt1_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt2_max",
+      "metrics": [
+        {
+          "metric_id": "limit_egt2_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt2_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt2_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt3_max",
+      "metrics": [
+        {
+          "metric_id": "limit_egt3_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt3_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt3_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt4_max",
+      "metrics": [
+        {
+          "metric_id": "limit_egt4_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt4_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt4_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "map_max",
+      "metrics": [
+        {
+          "metric_id": "limit_map_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_map_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:map_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "volts_max",
+      "metrics": [
+        {
+          "metric_id": "limit_volts_max_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_volts_max_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:volts_max"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt_split_high_flow",
+      "metrics": [
+        {
+          "metric_id": "limit_egt_split_high_flow_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt_split_high_flow_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt_split_high_flow"
+    },
+    {
+      "filtered": false,
+      "limit_id": "egt_split_low_flow",
+      "metrics": [
+        {
+          "metric_id": "limit_egt_split_low_flow_peak_excess",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        },
+        {
+          "metric_id": "limit_egt_split_low_flow_time_above_pct",
+          "phrasing": {
+            "higher": "spending more time or margin past the limit than it used to",
+            "lower": "spending less time or margin past the limit than it used to"
+          },
+          "role": "primary",
+          "worsening": "higher"
+        }
+      ],
+      "panel": "limit:egt_split_low_flow"
+    }
+  ]
+}

@@ -26,7 +26,10 @@ import type {
   RuleSet,
   ScanProgress,
   ScanResult,
+  ShiftEvent,
   TopicHelpResult,
+  TrendsPanel,
+  UnpinPreview,
   WhatIfResult,
   WorkspaceManifest,
   WorkspaceRegistryEntry,
@@ -153,6 +156,18 @@ export interface EngineClient {
   resetWorkspaceRules(): Promise<{ rules: RuleSet }>;
   saveBaselineConfig(baselineConfig: BaselineConfig): Promise<FleetAnalysis>;
   whatIfRules(candidate: { rules?: RuleSet; baseline_config?: BaselineConfig }): Promise<WhatIfResult>;
+
+  // Spec 12 §11.3 (Session A) — pinned references and shift-history deletion.
+  setReference(metricId: string, flightIds: string[], label?: string): Promise<BaselineConfig>;
+  clearReference(metricId: string): Promise<BaselineConfig>;
+  // Spec 12 §5.7.1 item 5 (Session D) — read-only: whether unpinning
+  // metricId right now would change its change_summary membership.
+  previewClearReference(metricId: string): Promise<UnpinPreview>;
+  deleteShiftEvent(eventId: string): Promise<{ shift_history: ShiftEvent[] }>;
+
+  // Spec 12 R3.3 (Session A) — Trends panel layout, built by the engine
+  // from the topic register, not a frontend metric list (D3).
+  getTrendsPanels(): Promise<{ panels: TrendsPanel[] }>;
 }
 
 class EngineRpcError extends Error {
@@ -444,6 +459,26 @@ export class LocalServerClient implements EngineClient {
 
   whatIfRules(candidate: { rules?: RuleSet; baseline_config?: BaselineConfig }) {
     return this.rpc<WhatIfResult>("what_if_rules", candidate);
+  }
+
+  setReference(metricId: string, flightIds: string[], label?: string) {
+    return this.rpc<BaselineConfig>("set_reference", { metric_id: metricId, flight_ids: flightIds, label });
+  }
+
+  clearReference(metricId: string) {
+    return this.rpc<BaselineConfig>("clear_reference", { metric_id: metricId });
+  }
+
+  previewClearReference(metricId: string) {
+    return this.rpc<UnpinPreview>("preview_clear_reference", { metric_id: metricId });
+  }
+
+  deleteShiftEvent(eventId: string) {
+    return this.rpc<{ shift_history: ShiftEvent[] }>("delete_shift_event", { event_id: eventId });
+  }
+
+  getTrendsPanels() {
+    return this.rpc<{ panels: TrendsPanel[] }>("get_trends_panels", {});
   }
 }
 

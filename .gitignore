@@ -1,5 +1,6 @@
 /data/
 /tests/characterization/golden/
+/engine-om/
 
 __pycache__/
 *.pyc

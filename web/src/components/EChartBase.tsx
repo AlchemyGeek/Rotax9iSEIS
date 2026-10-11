@@ -42,9 +42,14 @@ export interface EChartBaseProps {
   // than folded into one callback so single-axis callers (ChannelTimeline)
   // are untouched.
   onZoomY?: (startValue: number, endValue: number) => void;
+  // Spec 12 §8.3 — a clicked scatter point passes its own `data` array
+  // through untouched (callers know their own point shape, e.g.
+  // [x, value, flightId, date]); not fired for markLine/markArea clicks.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onPointClick?: (data: any) => void;
 }
 
-export function EChartBase({ option, height, onZoom, onZoomY }: EChartBaseProps) {
+export function EChartBase({ option, height, onZoom, onZoomY, onPointClick }: EChartBaseProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -96,6 +101,13 @@ export function EChartBase({ option, height, onZoom, onZoomY }: EChartBaseProps)
         if (onZoomY && dzY && dzYWithId?.id && changedIds.has(dzYWithId.id) && dzY.startValue !== undefined && dzY.endValue !== undefined) {
           onZoomY(dzY.startValue, dzY.endValue);
         }
+      });
+    }
+
+    if (onPointClick) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chart.on("click", (params: any) => {
+        if (params.componentType === "series" && params.seriesType === "scatter") onPointClick(params.data);
       });
     }
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from slingology_eis import workspace as ws
+from slingology_eis import operations, workspace as ws
 from ..conftest import LOGS_DIR, requires_flight_logs
 
 # Two real logs, same aircraft (KTOA tail), used across the real-log
@@ -131,6 +131,24 @@ def test_app_and_workspace_settings_are_separate_documents(tmp_path):
     assert (registry_path.parent / "settings.json").exists()
     assert (ws_dir / "settings.json").exists()
     assert (registry_path.parent / "settings.json") != (ws_dir / "settings.json")
+
+
+def test_trends_detail_strips_round_trips_through_workspace_settings(tmp_path):
+    """Spec 12 §8.4/§8.3 (Session F): per-panel 'Show detail strips'
+    state persists per workspace — plain settings plumbing, not engine
+    computation, but it does need its own dataclass field/round trip."""
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "detail-strips-test", "916iS")
+    ws_dir = root / manifest.id
+
+    settings = ws.load_workspace_settings(ws_dir)
+    assert settings.trends_detail_strips == {}
+
+    settings.trends_detail_strips = {"thermal": True, "limit:oil_temp_max": False}
+    ws.save_workspace_settings(ws_dir, settings)
+
+    reloaded = ws.load_workspace_settings(ws_dir)
+    assert reloaded.trends_detail_strips == {"thermal": True, "limit:oil_temp_max": False}
 
 
 # ── engine_model: locked, never per-log ──────────────────────────────────
@@ -713,10 +731,18 @@ class TestScanWithRealLogs:
         default_config = ws.load_selection(ws_dir).baseline_config
         assert default_config["outlier_z_threshold"] == 2.0
 
+        # An old-shape (pre-Spec-12) config, same as a workspace persisted
+        # before the Spec 12 fields existed — from_dict backfills the new
+        # defaults on load (Session B) rather than requiring an exact
+        # round trip, so an old workspace's selection.json gets the new
+        # fields without the pilot's existing settings being touched.
         new_config = {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 1.5,
                       "outlier_z_threshold_overrides": {"overboost_time": 3.0}}
         ws.update_baseline_config(ws_dir, new_config)
-        assert ws.load_selection(ws_dir).baseline_config == new_config
+        reloaded = ws.load_selection(ws_dir).baseline_config
+        assert reloaded["outlier_z_threshold"] == 1.5
+        assert reloaded["outlier_z_threshold_overrides"] == {"overboost_time": 3.0}
+        assert reloaded["recent_window_hours"] == operations.DEFAULT_BASELINE_CONFIG["recent_window_hours"]
 
     def test_different_tail_number_is_informational_never_excludes(self, tmp_path):
         """Both fixture logs happen to share the same aircraft_ident, so

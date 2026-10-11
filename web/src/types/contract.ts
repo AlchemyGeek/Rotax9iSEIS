@@ -299,6 +299,87 @@ export interface FleetBandStats extends FleetMetricBand {
   outliers: { flight_id: string; z_score: number }[];
 }
 
+// Spec 12 §5/§11.2 — absent below n_min or with no recent window.
+export interface Shift {
+  recent: { flight_ids: string[]; n: number; hours_from: number; hours_to: number; mean: number };
+  reference: {
+    kind: "rolling" | "pinned";
+    n: number;
+    hours_from: number | null;
+    hours_to: number | null;
+    label?: string;
+    // Spec 12 §5.7.1 (Session D) — when the reference was pinned (ISO
+    // 8601); the pin marker/badge's date fallback when no label was given.
+    set_at?: string;
+  } & FleetMetricBand & { by_band?: Record<string, FleetMetricBand> };
+  shift_z: number | null; // null when comparison.scope === "insufficient"
+  direction: "higher" | "lower" | "none";
+  comparison: {
+    scope: "band" | "all" | "mixed" | "insufficient";
+    by_band?: Record<string, number>;
+    unmatched: number;
+  };
+  bend?: { reference_slope: number; recent_slope: number; fires: boolean };
+  level: {
+    om_margin: boolean;
+    filter_edge: boolean;
+    limit?: number;
+    margin_line?: number;
+    // Session B: the resolved filter-band edge, in this metric's own
+    // units — the boolean alone isn't enough to draw the line (§8.3).
+    filter_edge_value?: number;
+  };
+  qualifies: boolean;
+  // Spec 12 §11.7 (Session C) — a per-limit metric's unit, mirrored
+  // from FleetMetric.unit onto its own Shift.
+  unit?: string;
+}
+
+// Spec 12 §5.8/§11.7 (Session C) — event frequency, the primary
+// limit-panel signal. Lives on the metric entry itself (not nested in
+// Shift) so it's present even when the metric has no shift at all (the
+// "rare" badge: peak_excess's own window can't form, but frequency —
+// computed from the limit's full-coverage metric — still can).
+export interface Frequency {
+  recent: { events: number; flights: number };
+  reference: { events: number; flights: number };
+  delta: number | null;
+  z: number | null;
+  qualifies: boolean;
+}
+
+// Spec 12 §9.3 (Session C, extended Session D) — the fixed readiness-
+// badge set, entirely engine-computed so the web never infers one from
+// raw numbers. Present on a metric wherever a badge should show instead
+// of its normal shift/trend. A badged metric is excluded from
+// change_summary ranking EXCEPT *filtered* and *pinned* (v0.5 §9.3) —
+// those describe a pilot choice, not a data limitation.
+export interface Readiness {
+  kind: "filtered" | "building" | "no_recent" | "no_events" | "rare" | "insufficient" | "pinned";
+  count?: number;
+  // Spec 12 §5.7.1 (Session D) — the *pinned* badge's text only: the
+  // user's own label, or the pin date formatted short ("12 Oct").
+  label?: string;
+}
+
+// preview_clear_reference (Spec 12 §5.7.1 item 5, Session D) — the
+// unpin confirmation's prediction, computed by rebuilding the fleet
+// with the pin hypothetically removed, nothing persisted.
+export interface UnpinPreview {
+  currently_in_summary: boolean;
+  would_be_in_summary: boolean;
+  changes: boolean;
+}
+
+// Spec 12 §8.4/§11.7 (Session C) — one tick per eligible flight, for
+// the event strip on a limit panel (and overboost_time).
+export interface EventTick {
+  flight_id: string;
+  date: string;
+  x: number | null;
+  has_event: boolean;
+}
+
 export interface FleetMetric {
   metric_id: string;
   baseline: FleetMetricBand;
@@ -306,6 +387,80 @@ export interface FleetMetric {
   points: FleetMetricPoint[];
   outliers: { flight_id: string; z_score: number }[];
   by_band?: { band_kind: string; bands: Record<string, FleetBandStats> };
+  // Spec 12 §5/§11.2 (Session A).
+  shift?: Shift;
+  // Spec 12 §11.7 (Session C) — per-limit metrics only (and
+  // overboost_time, which borrows the s unit from its own limit panel).
+  unit?: string;
+  frequency?: Frequency;
+  events?: EventTick[];
+  readiness?: Readiness;
+}
+
+// Spec 12 §7/§11.2 — engine-computed ordering over metrics[*].shift.
+// §7.1/D4 (Session B): a coupled panel collapses to one row — metric_id
+// is the lead (largest |shift_z|) member; panel/members present only
+// for such a row.
+export interface ChangeSummaryRow {
+  metric_id: string;
+  rank: number;
+  panel?: string;
+  members?: string[];
+}
+
+// Spec 12 §6 — shift_history.json. §7.1/D4 (Session B): a coupled event
+// additionally carries panel/members/member_detail (one event for the
+// whole panel, not one per member).
+export interface ShiftEvent {
+  id: string;
+  metric_id: string;
+  detected_at: string;
+  cleared_at?: string;
+  cleared_engine_hours?: number | null;
+  // Spec 12 §5.7.1 (Session D) — set only when an unpin directly closed
+  // this event, so the history doesn't read as the engine recovering.
+  cleared_by?: "unpin";
+  kind: "shift" | "om_margin" | "filter_edge" | "frequency";
+  window: { flight_ids: string[]; hours_from: number; hours_to: number };
+  shift_z: number | null;
+  direction: "higher" | "lower" | "none";
+  comparison: Shift["comparison"];
+  reference: { kind: "rolling" | "pinned"; n: number; hours_from: number | null; hours_to: number | null };
+  // Spec 12 §5.8/§11.7 (Session C) — present when this event's metric
+  // carries one, a snapshot at open time (same shape as FleetMetric.frequency).
+  frequency?: Frequency;
+  panel?: string;
+  members?: string[];
+  member_detail?: Record<string, { shift_z: number | null; direction: "higher" | "lower" | "none" }>;
+}
+
+// Spec 10 §5.1 (docs/specs/topics/register.json) — the register's
+// `trends` field per topic, read by the web for panel layout and
+// phrasing (Spec 12 §8.1). Per-limit metrics have no register entry;
+// their panel/worsening derive from the limit (engine side).
+export interface TrendsDeclaration {
+  panel: string | null;
+  coupled?: boolean;
+  role: "primary" | "context";
+  phrasing: { higher: string; lower: string };
+  worsening: "higher" | "lower" | "either";
+}
+
+// get_trends_panels (Session A/B) — the engine-built panel layout, so
+// the web never hand-lists metrics/panels itself (Spec 12 D3/R3.3).
+// phrasing/worsening come straight from the register (or a generic
+// default for a generated limit panel, R3.2) — the web never reads
+// register.json directly.
+export interface TrendsPanel {
+  panel: string; // "cylinder_balance" | "thermal" | "boost_power" | "fuel" | "limit:<id>"
+  limit_id?: string; // present only for a generated "limit:<id>" panel
+  filtered?: boolean;
+  metrics: {
+    metric_id: string;
+    role: "primary" | "context";
+    worsening: "higher" | "lower" | "either";
+    phrasing: { higher: string; lower: string } | null;
+  }[];
 }
 
 // Spec 01 §8.4 v0.8 — outlier_z_threshold (resolved per metric as
@@ -319,6 +474,13 @@ export interface BaselineConfig {
   band_kind_by_metric: Record<string, "oat_band" | "da_band" | null>;
   outlier_z_threshold: number;
   outlier_z_threshold_overrides?: Record<string, number>;
+  // Spec 12 §11.1 (Session A) — Baselines & Models window/margin fields.
+  recent_window_hours: number; // default 10
+  recent_window_min_flights: number; // default 5
+  recent_window_max_flights: number; // default 15
+  om_margin_fraction: number; // default 0.25
+  // metric_id -> frozen reference membership (Spec 12 §5.7).
+  pinned_references?: Record<string, { flight_ids: string[]; set_at: string; label?: string }>;
 }
 
 // Not the same shape as FlightAnalysis.provenance (no engine_profile/
@@ -361,6 +523,10 @@ export interface FleetAnalysis {
   provenance: FleetProvenance;
   // Optional: fleet results written before Spec 08 don't carry it.
   cylinder_balance?: CylinderBalance;
+  // Spec 12 §7/§11.2 (Session A) and §6 (Phase 2) — defaults to [] on
+  // fleet results written before Spec 12.
+  change_summary: ChangeSummaryRow[];
+  shift_history: ShiftEvent[];
 }
 
 // ── ECU (Spec 01 §8.6) ───────────────────────────────────────────────────────
@@ -532,6 +698,13 @@ export interface WorkspaceSettings {
   // Spec 02 v0.8 §5.6/§6.6: groups of aircraft_ident values the pilot
   // confirmed are one aircraft, e.g. [["N117ZS", "N117Z"]].
   aircraft_aliases?: string[][];
+  // Spec 12 §8.4/§8.3 (Session F) — per-panel "Show detail strips"
+  // state (panel id -> on/off), replacing the page-level researcher
+  // toggle. Decision (see report): workspace settings, not app
+  // settings — §8.4's own wording is "remembered per workspace", and
+  // this is the one place already round-tripped through the local
+  // server scoped to exactly one workspace.
+  trends_detail_strips?: Record<string, boolean>;
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

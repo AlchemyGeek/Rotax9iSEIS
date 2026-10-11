@@ -53,7 +53,9 @@ from .loader import (
     source_key as _source_key,
 )
 from .phases import detect_phases
-from .operations import FlightAnalysis, FleetAnalysis, analyze_flight, update_fleet
+from .operations import (
+    DEFAULT_BASELINE_CONFIG, FlightAnalysis, FleetAnalysis, analyze_flight, full_coverage_counterpart, update_fleet,
+)
 
 SCHEMA_VERSION = "02-v0.5"
 
@@ -301,23 +303,22 @@ class FleetSelection:
     # stores is the one real in-app selection: which known flights to
     # exclude from baselines, and why.
     excluded: list[dict] = field(default_factory=list)  # [{flight_id, reason}]
-    baseline_config: dict = field(
-        default_factory=lambda: {
-            "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
-        }
-    )
+    baseline_config: dict = field(default_factory=lambda: dict(DEFAULT_BASELINE_CONFIG))
 
     def to_dict(self) -> dict:
         return {"excluded": self.excluded, "baseline_config": self.baseline_config}
 
     @classmethod
     def from_dict(cls, d: dict) -> "FleetSelection":
-        return cls(
-            excluded=d.get("excluded", []),
-            baseline_config=d.get("baseline_config") or {
-                "membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
-            },
-        )
+        # Spec 12 (Session B): a workspace persisted before Spec 12 has a
+        # baseline_config with only the pre-Spec-12 keys — merge the new
+        # defaults *under* it rather than defaulting the whole dict only
+        # when it's empty, so an old workspace's selection.json gets the
+        # new fields backfilled (recent_window_*, om_margin_fraction)
+        # without silently dropping anything the pilot already set
+        # (outlier_z_threshold, band_kind_by_metric, overrides).
+        baseline_config = {**DEFAULT_BASELINE_CONFIG, **(d.get("baseline_config") or {})}
+        return cls(excluded=d.get("excluded", []), baseline_config=baseline_config)
 
 
 @dataclass
@@ -354,6 +355,12 @@ class WorkspaceSettings:
     # has confirmed are one aircraft, e.g. [["N117ZS", "N117Z"]]. Default
     # none — an older workspace's settings.json simply lacks the key.
     aircraft_aliases: list[list[str]] = field(default_factory=list)
+    # Spec 12 §8.4/§8.3 (Session F): Trends' per-panel "Show detail
+    # strips" state (panel id -> on/off) — plain settings plumbing, not
+    # engine computation, but the one existing per-workspace store the
+    # web already round-trips through (Session F report: app settings
+    # vs. workspace settings).
+    trends_detail_strips: dict[str, bool] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = {
@@ -364,6 +371,8 @@ class WorkspaceSettings:
             d["last_view"] = self.last_view
         if self.aircraft_aliases:
             d["aircraft_aliases"] = self.aircraft_aliases
+        if self.trends_detail_strips:
+            d["trends_detail_strips"] = self.trends_detail_strips
         return d
 
     @classmethod
@@ -373,6 +382,7 @@ class WorkspaceSettings:
             active_engine_profile=d.get("active_engine_profile", ""),
             last_view=d.get("last_view"),
             aircraft_aliases=d.get("aircraft_aliases") or [],
+            trends_detail_strips=d.get("trends_detail_strips") or {},
         )
 
 
@@ -692,6 +702,84 @@ def update_baseline_config(ws_dir: Path, baseline_config: dict) -> FleetSelectio
     return selection
 
 
+def set_reference(
+    ws_dir: Path, metric_id: str, flight_ids: list[str], label: Optional[str] = None,
+) -> FleetSelection:
+    """
+    Spec 12 §5.7/§11.3: pin `metric_id`'s shift reference to a frozen
+    flight_ids membership — statistics recompute from current analyses
+    and honour exclusions on the next update_fleet, they just stop
+    rolling. Saved regardless of size; a reference below n_min after
+    exclusions is caught at update_fleet time (REFERENCE_LOW_N, reverts
+    to rolling) rather than rejected here (R2.1: "still saved").
+    """
+    selection = load_selection(ws_dir)
+    pinned = dict(selection.baseline_config.get("pinned_references") or {})
+    entry = {"flight_ids": list(flight_ids), "set_at": datetime.now(timezone.utc).isoformat()}
+    if label:
+        entry["label"] = label
+    pinned[metric_id] = entry
+    selection.baseline_config = {**selection.baseline_config, "pinned_references": pinned}
+    save_selection(ws_dir, selection)
+    return selection
+
+
+def clear_reference(ws_dir: Path, metric_id: str) -> FleetSelection:
+    """
+    Unpin `metric_id`'s reference. Unlike `set_reference` (which only
+    writes the pin for whenever the *next* update_fleet happens to run),
+    this rebuilds the fleet immediately — Spec 12 §5.7.1 item 4 needs an
+    event that stops qualifying *as a direct result of this unpin* to
+    close with `cleared_by: "unpin"` at the moment it actually happens,
+    not retroactively guessed at from some later, unrelated rebuild that
+    wouldn't otherwise know why the event closed.
+    """
+    selection = load_selection(ws_dir)
+    pinned = dict(selection.baseline_config.get("pinned_references") or {})
+    if pinned.pop(metric_id, None) is not None:
+        selection.baseline_config = {**selection.baseline_config, "pinned_references": pinned}
+        save_selection(ws_dir, selection)
+        rebuild_fleet(ws_dir, cleared_by_unpin=metric_id)
+    return selection
+
+
+def _row_names(fleet: FleetAnalysis, metric_id: str) -> bool:
+    return any(metric_id in (row.get("members") or [row["metric_id"]]) for row in fleet.change_summary)
+
+
+def preview_clear_reference(ws_dir: Path, metric_id: str) -> dict:
+    """
+    Spec 12 §5.7.1 item 5: whether unpinning `metric_id` would change its
+    change_summary membership — computed by rebuilding the fleet with
+    the pin hypothetically removed, same inputs `rebuild_fleet` uses,
+    without writing anything (no call to `save_selection`/`save_fleet_analysis`).
+    `currently_in_summary` reflects the *persisted* pinned state (today's
+    fleet, rebuilt fresh rather than read from cache, so a stale cache
+    can't make the two sides of the comparison disagree).
+    """
+    selection = load_selection(ws_dir)
+    excluded_ids = {e["flight_id"] for e in selection.excluded}
+    included = [fa for fa in load_all_flight_analyses(ws_dir) if fa.flight_id not in excluded_ids]
+    engine_config = load_engine_config(load_manifest(ws_dir).engine_model)
+    filters = load_filters(ws_dir)["filters"]
+
+    current_fleet = update_fleet(
+        included, excluded=selection.excluded, baseline_config=selection.baseline_config,
+        engine_config=engine_config, filters=filters,
+    )
+    pinned = dict(selection.baseline_config.get("pinned_references") or {})
+    pinned.pop(metric_id, None)
+    hypothetical_config = {**selection.baseline_config, "pinned_references": pinned}
+    hypothetical_fleet = update_fleet(
+        included, excluded=selection.excluded, baseline_config=hypothetical_config,
+        engine_config=engine_config, filters=filters,
+    )
+
+    currently = _row_names(current_fleet, metric_id)
+    after = _row_names(hypothetical_fleet, metric_id)
+    return {"currently_in_summary": currently, "would_be_in_summary": after, "changes": currently != after}
+
+
 def load_fleet_analysis(ws_dir: Path) -> Optional[FleetAnalysis]:
     f = ws_dir / "fleet" / "analysis.json"
     if not f.exists():
@@ -703,13 +791,149 @@ def save_fleet_analysis(ws_dir: Path, fleet: FleetAnalysis) -> None:
     _write_json(ws_dir / "fleet" / "analysis.json", fleet.to_dict())
 
 
-def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
+# Spec 12 §6: fleet/shift_history.json, alongside selection.json (Spec 02
+# §6.3) — not yet itself documented there (out of this task's scope; only
+# Spec 10 §5.2 is the one spec edit requested — see report).
+
+def load_shift_history(ws_dir: Path) -> list[dict]:
+    f = ws_dir / "fleet" / "shift_history.json"
+    if not f.exists():
+        return []
+    return json.loads(f.read_text())
+
+
+def save_shift_history(ws_dir: Path, events: list[dict]) -> None:
+    _write_json(ws_dir / "fleet" / "shift_history.json", events)
+
+
+def _shift_event_kind(fleet: FleetAnalysis, row: dict) -> str:
+    """The event kind for a change_summary row — the union of om_margin/
+    filter_edge across every member for a coupled row (Session B D4:
+    "level crossings still override" applies panel-wide), else the one
+    metric's own level, else (Spec 12 §5.8) `frequency` when the row's
+    event frequency qualified rather than its shift_z — a limit panel's
+    `peak_excess` has no shift at all in the "rare" case (§9.3), so
+    `shift` is read defensively here. `row` always qualifies
+    (change_summary only contains qualifying rows), so this always
+    resolves to a real kind."""
+    members = row.get("members") or [row["metric_id"]]
+    levels = [((fleet.metrics[m].get("shift") or {}).get("level") or {}) for m in members]
+    if any(l.get("om_margin") for l in levels):
+        return "om_margin"
+    if any(l.get("filter_edge") for l in levels):
+        return "filter_edge"
+    if any((fleet.metrics[m].get("frequency") or {}).get("qualifies") for m in members):
+        return "frequency"
+    return "shift"
+
+
+def update_shift_history(
+    ws_dir: Path, fleet: FleetAnalysis, cleared_by_unpin: Optional[str] = None,
+) -> list[dict]:
+    """
+    Spec 12 §6, extended by v0.3 §7.1/D4 (Session B R3b.3): compares
+    `fleet.change_summary` (already one row per coupled panel, not per
+    member) against the metric's/panel's last recorded state, opening
+    or closing an event. An event's identity is its panel for a coupled
+    row, else its metric_id — matching change_summary's own grouping,
+    so a coupled panel never produces more than one open event between
+    its members. A coupled event additionally carries `members` (ids)
+    and `member_detail` (each member's own shift_z/direction at open
+    time) — a snapshot, since the live members' current shift will have
+    moved on by the time this history is read. Append-only except user
+    deletion (delete_shift_event); re-running update_fleet with no
+    qualify/clear transition appends nothing.
+
+    `cleared_by_unpin` (Spec 12 §5.7.1 item 4): the metric id `clear_reference`
+    just unpinned, passed through only on the one rebuild it triggers
+    itself — any event that closes *in this same call* for that metric
+    (or, for a coupled row, has it among `members`) was closed by the
+    unpin, not by the window simply rolling on, and is tagged
+    `cleared_by: "unpin"` so the history doesn't read as a recovery.
+    """
+    history = load_shift_history(ws_dir)
+    open_by_key = {(ev.get("panel") or ev["metric_id"]): ev for ev in history if "cleared_at" not in ev}
+
+    now = datetime.now(timezone.utc).isoformat()
+    changed = False
+    current_keys: set = set()
+    for row in fleet.change_summary:
+        metric_id = row["metric_id"]
+        entry = fleet.metrics[metric_id]
+        # Spec 12 §9.3 "rare": a limit's peak_excess can qualify on
+        # frequency alone with no shift of its own (too few sparse
+        # points for its own window) — fall back to the full-coverage
+        # counterpart's window (time_above_pct for peak_excess; every
+        # other metric is already its own counterpart) for the window
+        # this event opened in.
+        shift = entry.get("shift") or fleet.metrics[full_coverage_counterpart(metric_id)]["shift"]
+        key = row.get("panel") or metric_id
+        current_keys.add(key)
+        if key in open_by_key:
+            continue
+        event = {
+            "id": str(uuid.uuid4()), "metric_id": metric_id, "detected_at": now,
+            "kind": _shift_event_kind(fleet, row),
+            "window": {
+                "flight_ids": shift["recent"]["flight_ids"],
+                "hours_from": shift["recent"]["hours_from"], "hours_to": shift["recent"]["hours_to"],
+            },
+            "shift_z": entry["shift"]["shift_z"] if entry.get("shift") else None,
+            "direction": shift["direction"], "comparison": shift["comparison"],
+            "reference": {
+                "kind": shift["reference"]["kind"], "n": shift["reference"]["n"],
+                "hours_from": shift["reference"].get("hours_from"), "hours_to": shift["reference"].get("hours_to"),
+            },
+        }
+        if entry.get("frequency") is not None:
+            event["frequency"] = entry["frequency"]
+        if "panel" in row:
+            event["panel"] = row["panel"]
+            event["members"] = row["members"]
+            event["member_detail"] = {
+                m: {"shift_z": fleet.metrics[m]["shift"]["shift_z"], "direction": fleet.metrics[m]["shift"]["direction"]}
+                for m in row["members"]
+            }
+        history.append(event)
+        changed = True
+
+    for ev in history:
+        key = ev.get("panel") or ev["metric_id"]
+        if "cleared_at" not in ev and key not in current_keys:
+            ev["cleared_at"] = now
+            entry = fleet.metrics.get(ev["metric_id"], {})
+            ev["cleared_engine_hours"] = max(
+                (p["x"] for p in entry.get("points", []) if p.get("x") is not None), default=None)
+            if cleared_by_unpin is not None and cleared_by_unpin in (ev.get("members") or [ev["metric_id"]]):
+                ev["cleared_by"] = "unpin"
+            changed = True
+
+    if changed:
+        save_shift_history(ws_dir, history)
+    return history
+
+
+def delete_shift_event(ws_dir: Path, event_id: str) -> list[dict]:
+    """User deletion (Spec 12 §11.3 `delete_shift_event`) — the one
+    exception to the log's append-only rule."""
+    history = load_shift_history(ws_dir)
+    filtered = [ev for ev in history if ev.get("id") != event_id]
+    if len(filtered) != len(history):
+        save_shift_history(ws_dir, filtered)
+    return filtered
+
+
+def rebuild_fleet(ws_dir: Path, cleared_by_unpin: Optional[str] = None) -> FleetAnalysis:
     """
     Spec 01 `update_fleet`, scoped to this workspace: every flight in
     flights/ *except* the ones FleetSelection.excluded names — Missing
     flights are NOT excluded from this (§5.5: their baseline contribution
     stays unchanged while missing; only an explicit exclusion removes a
     flight from the fleet).
+
+    `cleared_by_unpin` (Spec 12 §5.7.1 item 4): passed straight through
+    to `update_shift_history` — set only by `clear_reference`'s own
+    rebuild, never by a plain `rebuild_fleet` call.
     """
     selection = load_selection(ws_dir)
     excluded_ids = {e["flight_id"] for e in selection.excluded}
@@ -717,7 +941,9 @@ def rebuild_fleet(ws_dir: Path) -> FleetAnalysis:
     fleet = update_fleet(
         included, excluded=selection.excluded, baseline_config=selection.baseline_config,
         engine_config=load_engine_config(load_manifest(ws_dir).engine_model),
+        filters=load_filters(ws_dir)["filters"],
     )
+    fleet.shift_history = update_shift_history(ws_dir, fleet, cleared_by_unpin=cleared_by_unpin)
     save_fleet_analysis(ws_dir, fleet)
     return fleet
 

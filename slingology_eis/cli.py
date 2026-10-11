@@ -175,6 +175,30 @@ def render_fleet_summary(fleet: FleetAnalysis) -> str:
     else:
         lines.append("\n  ✓ No fleet-level quality issues.")
 
+    if fleet.change_summary:
+        lines.append("\n  CHANGE SUMMARY:")
+        for row in fleet.change_summary:
+            m = fleet.metrics[row["metric_id"]]
+            s = m["shift"]
+            recent, ref, level = s["recent"], s["reference"], s["level"]
+            qualifiers = []
+            if level.get("om_margin"):
+                qualifiers.append("OM margin")
+            if level.get("filter_edge"):
+                qualifiers.append("filter edge")
+            if (s.get("bend") or {}).get("fires"):
+                qualifiers.append("bend")
+            shift_z = f"{s['shift_z']:+.2f}" if s["shift_z"] is not None else "—"
+            label = row["metric_id"]
+            if "panel" in row:
+                label = f"{row['panel']} (lead: {row['metric_id']}; members: {', '.join(row['members'])})"
+            lines.append(
+                f"    {label}: {s['direction']}  shift_z={shift_z}  "
+                f"recent(n={recent['n']}, {recent['hours_from']:.1f}-{recent['hours_to']:.1f}h)  "
+                f"ref(n={ref['n']}, {ref['kind']}, scope={s['comparison']['scope']})"
+                + (f"  [{', '.join(qualifiers)}]" if qualifiers else "")
+            )
+
     outlier_lines = []
     for metric_id, m in fleet.metrics.items():
         for o in m["outliers"]:
