@@ -464,9 +464,19 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
     annotations = ws.annotations_for_flight(ctx["workspace_dir"], flight_id)
     iset = evaluate_insights(fa, fleet, _resolve_rules(ctx), annotations=annotations,
                              filters=_workspace_filters(ctx))
+    # Live selection, not fleet.excluded — the fleet is a cache that's
+    # only rebuilt explicitly (Spec 03 principle 3), but whether a flight
+    # is excluded right now is simple, authoritative state that shouldn't
+    # wait on a rebuild to display correctly.
+    excluded_entry = next((e for e in ws.load_selection(ctx["workspace_dir"]).excluded if e["flight_id"] == flight_id), None)
     return {
         "flight_analysis": fa.to_dict(), "insight_set": iset.to_dict(),
         "source_filename": _source_filename(ctx["workspace_dir"], flight_id),
+        # Spec 14 §7.1 — the Flight view header's "Contributes to
+        # reference / Excluded from reference (reason)" state, and any
+        # open "reference changed" markers (acceptance 8) for this flight.
+        "reference_state": {"excluded": excluded_entry is not None, "reason": excluded_entry["reason"] if excluded_entry else None},
+        "reference_changes": ws.open_reference_changes_for_flight(ctx["workspace_dir"], flight_id),
     }
 
 
@@ -661,12 +671,63 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
     return {"rows": rows}
 
 
+def _insight_signature(iset) -> frozenset:
+    """(topic_id, rule_id, severity) per insight — the same grain
+    Baselines.tsx's whatIf diff already uses client-side (added/removed/
+    changed), here so exclude can tell which *other* flights' verdicts
+    moved (Spec 14 §7.1, acceptance 8)."""
+    return frozenset(
+        (t["topic_id"], i["rule_id"], i["severity"])
+        for t in iset.to_dict()["topics"] for i in t["insights"]
+    )
+
+
 def op_exclude_flight(params: dict, ctx: dict) -> Any:
-    return ws.exclude_flight(ctx["workspace_dir"], params["flight_id"], params.get("reason", "")).to_dict()
+    """Spec 14 §7.1: excluding a flight is also a Journal decision, with
+    a reason, a counted effect, and a "reference changed" marker on any
+    other flight whose insight verdict moved because the reference did.
+    Computing that means evaluating every other flight's insights before
+    and after — the one place in the app that sees both the before- and
+    after-exclusion fleet, so it has to happen here rather than lazily
+    at the next rebuild."""
+    workspace_dir = ctx["workspace_dir"]
+    flight_id = params["flight_id"]
+    reason = params.get("reason", "")
+    rules = _resolve_rules(ctx)
+    filters = _workspace_filters(ctx)
+
+    before_fleet = _get_or_build_fleet(workspace_dir)
+    others = [fa for fa in _load_workspace_flights(workspace_dir) if fa.flight_id != flight_id]
+    before = {fa.flight_id: _insight_signature(evaluate_insights(fa, before_fleet, rules, filters=filters)) for fa in others}
+
+    selection = ws.exclude_flight(workspace_dir, flight_id, reason)
+    after_fleet = ws.rebuild_fleet(workspace_dir)
+    changed = [
+        fa.flight_id for fa in others
+        if _insight_signature(evaluate_insights(fa, after_fleet, rules, filters=filters)) != before[fa.flight_id]
+    ]
+
+    entry = ws.append_journal_entry(
+        workspace_dir, kind="exclusion", what=flight_id, where={"flight_id": flight_id},
+        reason=reason,
+        effect=f"changed the verdict on {len(changed)} other flight{'' if len(changed) == 1 else 's'}" if changed else "no other flight's verdict changed",
+        ref_id=flight_id,
+    )
+    for fid in changed:
+        ws.add_reference_change_marker(
+            workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_flight_id=flight_id, reason=reason,
+        )
+    return selection.to_dict()
 
 
 def op_include_flight(params: dict, ctx: dict) -> Any:
-    return ws.include_flight(ctx["workspace_dir"], params["flight_id"]).to_dict()
+    workspace_dir = ctx["workspace_dir"]
+    flight_id = params["flight_id"]
+    selection = ws.include_flight(workspace_dir, flight_id)
+    closed = ws.close_journal_entry(workspace_dir, kind="exclusion", ref_id=flight_id)
+    if closed:
+        ws.resolve_reference_changes_for_cause(workspace_dir, closed["id"])
+    return selection.to_dict()
 
 
 def op_set_reference(params: dict, ctx: dict) -> Any:

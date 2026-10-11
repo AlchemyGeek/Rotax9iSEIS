@@ -1507,3 +1507,51 @@ def test_copy_filters_between_workspaces(registry_server):
     again = rpc(registry_server, "copy_filters", {"source_workspace_id": source["id"]})["result"]
     assert again["copied"] == [] and again["skipped"][0]["limit_id"] == "fuel_press_max"
     assert other["id"] != target["id"]
+
+
+
+def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(registry_server):
+    """Spec 14 §7.1 / acceptance 4, 8 — excluding a flight is a Journal
+    decision with a reason and a counted effect; any OTHER flight whose
+    insight verdict moved because the reference recomputed carries a
+    "reference changed" marker until the exclusion is reverted. 12 near-
+    identical oil-temp flights + one clear outlier: excluding the outlier
+    tightens the remaining flights' own leave-one-out baseline enough
+    that exactly one of them newly deviates (verified empirically, not
+    hand-derived — the z-threshold math isn't this test's subject)."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    near = [178, 179, 180, 181, 182, 183, 177, 184, 180, 179, 181, 178]
+    temps = near + [230]
+    ids = [_import_oil_temp_flight(registry_server, i + 1, t) for i, t in enumerate(temps)]
+    outlier_id = ids[-1]
+
+    excl = rpc(registry_server, "exclude_flight", {"flight_id": outlier_id, "reason": "230F is a clear outlier"})
+    assert excl["ok"], excl
+
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    entry = next(e for e in entries if e["kind"] == "exclusion" and e["ref_id"] == outlier_id)
+    assert entry["reason"] == "230F is a clear outlier"
+    assert entry["effect"] == "changed the verdict on 1 other flight"
+    assert entry["status"] == "open"
+
+    marked = [fid for fid in ids[:-1] if rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["reference_changes"]]
+    assert len(marked) == 1
+    marked_id = marked[0]
+    changes = rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_changes"]
+    assert changes[0]["cause_flight_id"] == outlier_id
+    assert changes[0]["reason"] == "230F is a clear outlier"
+    assert changes[0]["resolved"] is False
+
+    # The Flight view header state for the excluded flight itself.
+    excluded_state = rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_state"]
+    assert excluded_state == {"excluded": True, "reason": "230F is a clear outlier"}
+    included_state = rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_state"]
+    assert included_state == {"excluded": False, "reason": None}
+
+    # Revert (Include again): closes the Journal entry and resolves the marker.
+    inc = rpc(registry_server, "include_flight", {"flight_id": outlier_id})
+    assert inc["ok"], inc
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    entry = next(e for e in entries if e["id"] == entry["id"])
+    assert entry["status"] == "closed" and entry["closed_at"] is not None
+    assert rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_changes"] == []

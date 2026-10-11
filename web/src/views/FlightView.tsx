@@ -21,11 +21,17 @@ import { assignChannelColors } from "../lib/channels";
 import { useChartSession } from "../lib/chartSession";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import { phaseAtTime } from "../lib/phases";
+import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { colors as themeColors } from "../theme/colors";
 import type {
   Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
-  Insight, InsightSeverity, InsightSet, SeriesFixture, SlotGroupEntry, TopicResult,
+  Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, SeriesFixture, SlotGroupEntry, TopicResult,
 } from "../types/contract";
+
+// Spec 14 §7.1 — only these trigger kinds compare the flight against the
+// reference; a threshold insight (an OM limit, an ECU event) has nothing
+// to do with it, so it gets no exclude action.
+const REFERENCE_DRIVEN_TRIGGERS = new Set<Insight["trigger"]>(["baseline_deviation", "trend"]);
 
 const SEVERITY_RANK: Record<InsightSeverity, number> = { limit: 0, warning: 1, watch: 2, info: 3 };
 const client = getEngineClient();
@@ -114,6 +120,12 @@ export function FlightView() {
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Spec 14 §7.1 — "Contributes to reference / Excluded from reference
+  // (reason)" header state, and open "reference changed" markers (acceptance 8).
+  const [referenceState, setReferenceState] = useState<ReferenceState | null>(null);
+  const [referenceChanges, setReferenceChanges] = useState<ReferenceChangeMarker[]>([]);
+  const [excludeDialogFor, setExcludeDialogFor] = useState<string | null>(null); // insight id, or "header"
+  const [excludeBusy, setExcludeBusy] = useState(false);
   const [unitsSystem, setUnitsSystem] = useState<"imperial" | "metric">("imperial");
 
   // Skipped-log preview only (mode === "skipped") — why it was excluded,
@@ -269,6 +281,8 @@ export function FlightView() {
         if (cancelled) return;
         setFlightAnalysis(got.flight_analysis);
         setInsightSet(got.insight_set);
+        setReferenceState(got.reference_state);
+        setReferenceChanges(got.reference_changes);
         // A raw content-hash source_key is not a filename — if the server
         // genuinely has no recorded filename for this flight (no import
         // history at all, not just no persisted copy — that gap is
@@ -561,8 +575,43 @@ export function FlightView() {
     try {
       const got = await client.getFlight(flightId);
       setInsightSet(got.insight_set);
+      setReferenceState(got.reference_state);
+      setReferenceChanges(got.reference_changes);
     } catch {
       // server unreachable — leave the current state
+    }
+  }
+
+  async function handleExcludeFromReference(reason: string) {
+    if (!flightId) return;
+    setExcludeBusy(true);
+    try {
+      await client.excludeFlight(flightId, reason);
+      setExcludeDialogFor(null);
+      await reloadInsights();
+    } catch {
+      // server unreachable — dialog stays open
+    } finally {
+      setExcludeBusy(false);
+    }
+  }
+
+  async function handleIncludeInReference() {
+    if (!flightId) return;
+    try {
+      await client.includeFlight(flightId);
+      await reloadInsights();
+    } catch {
+      // server unreachable
+    }
+  }
+
+  async function handleRevertExclusion(causeFlightId: string) {
+    try {
+      await client.includeFlight(causeFlightId);
+      await reloadInsights();
+    } catch {
+      // server unreachable
     }
   }
 
@@ -878,11 +927,47 @@ export function FlightView() {
               {durationStr} &middot; {h.engine_hours_start ?? "—"} engine hrs &middot; {h.airport_hint ?? "—"}
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)" }}>
               {filename}
             </span>
+            {!usingFixture && referenceState && (
+              referenceState.excluded ? (
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); void handleIncludeInReference(); }}
+                  style={{ fontSize: 11, color: "var(--text-tertiary)" }}
+                  title="click to include again"
+                >
+                  Excluded from reference ({referenceState.reason})
+                </a>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Contributes to reference</span>
+              )
+            )}
           </div>
+          {referenceChanges.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+              {referenceChanges.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    background: "rgba(245,165,36,0.08)", border: "1px solid rgba(245,165,36,0.3)",
+                    borderRadius: 8, padding: "8px 12px", fontSize: 12, display: "flex",
+                    alignItems: "center", justifyContent: "space-between", gap: 10,
+                  }}
+                >
+                  <span>
+                    <strong style={{ color: "var(--severity-warning)" }}>Reference changed</strong>
+                    {" — a flight was excluded from the reference ("}{m.reason}{"); this flight's verdict may have moved."}
+                  </span>
+                  <a href="#" onClick={(e) => { e.preventDefault(); void handleRevertExclusion(m.cause_flight_id); }} style={{ fontSize: 11, flexShrink: 0 }}>
+                    Revert →
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
           {flightSummaryLine}
         </div>
 
@@ -968,7 +1053,9 @@ export function FlightView() {
                     secondaryAction={
                       topicId === "engine_ecu_inflight" && insight.evidence.some((ev) => ev.kind === "ecu_run")
                         ? { label: "See in ECU page →", onClick: () => handleEvidenceClick(insight, insight.evidence.findIndex((ev) => ev.kind === "ecu_run")) }
-                        : undefined
+                        : !usingFixture && REFERENCE_DRIVEN_TRIGGERS.has(insight.trigger) && !referenceState?.excluded
+                          ? { label: "Exclude this flight from reference →", onClick: () => setExcludeDialogFor(insight.id) }
+                          : undefined
                     }
                     note={existing?.note ?? insight.note}
                     notesEnabled={!usingFixture}
@@ -1224,6 +1311,14 @@ export function FlightView() {
       </>
       )}
       </div>
+      {excludeDialogFor && (
+        <ExcludeConfirmDialog
+          flightLabel={h.date}
+          busy={excludeBusy}
+          onCancel={() => setExcludeDialogFor(null)}
+          onConfirm={handleExcludeFromReference}
+        />
+      )}
     </NavShell>
   );
 }

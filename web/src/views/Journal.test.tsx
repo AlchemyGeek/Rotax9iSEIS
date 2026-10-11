@@ -40,6 +40,11 @@ vi.mock("../lib/engineClient", () => ({
       if (e) { e.status = "closed"; e.closed_at = "2026-10-11T00:00:00Z"; }
       return {};
     },
+    includeFlight: async (flightId: string) => {
+      const e = state.entries.find((e) => e.kind === "exclusion" && e.ref_id === flightId);
+      if (e) { e.status = "closed"; e.closed_at = "2026-10-11T00:00:00Z"; }
+      return {};
+    },
   }),
 }));
 
@@ -66,6 +71,11 @@ describe("Journal", () => {
         id: "jnl_3", kind: "reference_pin", what: "egt_spread", where: { metric_id: "egt_spread" },
         at: "2026-10-07T00:00:00Z", status: "open", ref_id: "egt_spread", effect: "n=9",
       },
+      {
+        id: "jnl_4", kind: "exclusion", what: "f2", where: { flight_id: "f2" },
+        at: "2026-10-09T00:00:00Z", status: "open", ref_id: "f2", reason: "ground run, not a flight",
+        effect: "changed the verdict on 1 other flight",
+      },
     ];
     state.annotations = [
       { id: "ann_1", flight_id: "f1", ref: { kind: "flight" }, note: "checking density altitude", created_at: "2026-10-01T00:00:00Z" },
@@ -82,9 +92,10 @@ describe("Journal", () => {
     const titles = screen.getAllByRole("link")
       .filter((a) => a.getAttribute("href") === "#" && !a.textContent?.includes("→"))
       .map((a) => a.textContent);
-    // jnl_3 (Oct 7) before jnl_2 (Oct 5) before jnl_1 (Oct 1).
-    expect(titles[0]).toBe("egt_spread");
-    expect(titles[1]).toBe("Filter: fuel_press_max");
+    // jnl_4 (Oct 9) before jnl_3 (Oct 7) before jnl_2 (Oct 5) before jnl_1 (Oct 1).
+    expect(titles[0]).toBe("f2");
+    expect(titles[1]).toBe("egt_spread");
+    expect(titles[2]).toBe("Filter: fuel_press_max");
     expect(screen.getByText("checking density altitude")).toBeTruthy();
   });
 
@@ -120,5 +131,16 @@ describe("Journal", () => {
     fireEvent.change(textarea, { target: { value: "confirmed with a mechanic" } });
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => expect(screen.getByText("confirmed with a mechanic")).toBeTruthy());
+  });
+
+  it("shows the exclusion's reason and counted effect, and includes the flight again on reversal", async () => {
+    renderJournal();
+    await screen.findByText("f2");
+    const row = screen.getByTestId("journal-entry-jnl_4");
+    expect(within(row).getByText(/ground run, not a flight/)).toBeTruthy();
+    expect(within(row).getByText(/changed the verdict on 1 other flight/)).toBeTruthy();
+    fireEvent.click(within(row).getByText("Include again"));
+    await waitFor(() => expect(within(row).getByText(/closed/)).toBeTruthy());
+    expect(screen.getByText("f2")).toBeTruthy(); // still present, not removed
   });
 });

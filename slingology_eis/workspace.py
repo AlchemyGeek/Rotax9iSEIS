@@ -1818,6 +1818,64 @@ def backfill_journal_from_existing(ws_dir: Path) -> None:
                 note=ref.get("label"), effect=f"n={len(ref.get('flight_ids', []))}", ref_id=metric_id,
                 at=ref.get("set_at"),
             )
+    # Exclusions carry no timestamp at all in FleetSelection (§6.3's own
+    # "excluded" list predates this entry kind and was never given one) —
+    # backfilled entries land at "now" rather than a fabricated date, and
+    # with no counted effect, since there's no "before" state left to
+    # diff against for something that happened before this code existed.
+    for e in load_selection(ws_dir).excluded:
+        if not has_open_journal_entry(ws_dir, kind="exclusion", ref_id=e["flight_id"]):
+            append_journal_entry(
+                ws_dir, kind="exclusion", what=e["flight_id"], where={"flight_id": e["flight_id"]},
+                reason=e.get("reason"), ref_id=e["flight_id"],
+            )
+
+
+# ── Reference-change markers (Spec 14 §7.1) ─────────────────────────────────
+# reference_changes.json: when excluding a flight changes another
+# flight's insight verdict (computed by server.py at exclude time, since
+# that's the one place both the before- and after-exclusion fleet are in
+# hand), that flight gets a marker here — "reference changed" on its
+# card — until the exclusion that caused it is reverted.
+
+_REFERENCE_CHANGES_VERSION = "1"
+
+
+def load_reference_changes(ws_dir: Path) -> dict:
+    f = ws_dir / "reference_changes.json"
+    if not f.exists():
+        return {"version": _REFERENCE_CHANGES_VERSION, "markers": []}
+    return json.loads(f.read_text())
+
+
+def add_reference_change_marker(
+    ws_dir: Path, *, flight_id: str, cause_journal_entry_id: str, cause_flight_id: str, reason: str,
+) -> dict:
+    store = load_reference_changes(ws_dir)
+    marker = {
+        "id": _new_id("rfc"), "flight_id": flight_id, "at": _now(),
+        "cause_journal_entry_id": cause_journal_entry_id, "cause_flight_id": cause_flight_id,
+        "reason": reason, "resolved": False,
+    }
+    store["markers"].append(marker)
+    _write_json(ws_dir / "reference_changes.json", store)
+    return marker
+
+
+def open_reference_changes_for_flight(ws_dir: Path, flight_id: str) -> list[dict]:
+    return [m for m in load_reference_changes(ws_dir)["markers"] if m["flight_id"] == flight_id and not m["resolved"]]
+
+
+def resolve_reference_changes_for_cause(ws_dir: Path, cause_journal_entry_id: str) -> int:
+    store = load_reference_changes(ws_dir)
+    n = 0
+    for m in store["markers"]:
+        if m["cause_journal_entry_id"] == cause_journal_entry_id and not m["resolved"]:
+            m["resolved"] = True
+            n += 1
+    if n:
+        _write_json(ws_dir / "reference_changes.json", store)
+    return n
 
 
 # ── Limit filters (Spec 09 §9) ──────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
@@ -147,7 +148,7 @@ export function Flights() {
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [excludingId, setExcludingId] = useState<string | null>(null);
-  const [excludeReason, setExcludeReason] = useState("");
+  const [excludeBusy, setExcludeBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeMessage, setRemoveMessage] = useState<string | null>(null);
@@ -357,14 +358,16 @@ export function Flights() {
     }
   }
 
-  async function handleExclude(flightId: string) {
+  async function handleExclude(flightId: string, reason: string) {
+    setExcludeBusy(true);
     try {
-      await client.excludeFlight(flightId, excludeReason.trim() || "excluded by pilot");
+      await client.excludeFlight(flightId, reason);
       setExcludingId(null);
-      setExcludeReason("");
       await refresh();
     } catch {
-      // server unreachable / fixture mode — nothing to persist
+      // server unreachable / fixture mode — nothing to persist, dialog stays open
+    } finally {
+      setExcludeBusy(false);
     }
   }
 
@@ -963,24 +966,7 @@ export function Flights() {
                         )}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {excludingId === row.flight_id ? (
-                          <span style={{ display: "flex", gap: 4 }}>
-                            <input
-                              autoFocus
-                              value={excludeReason}
-                              onChange={(e) => setExcludeReason(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && handleExclude(row.flight_id)}
-                              placeholder="reason"
-                              style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 100 }}
-                            />
-                            <button onClick={() => handleExclude(row.flight_id)} style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, background: "var(--accent)", border: "none", color: "var(--bg)", cursor: "pointer" }}>
-                              ✓
-                            </button>
-                            <button onClick={() => setExcludingId(null)} style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
-                              ×
-                            </button>
-                          </span>
-                        ) : row.excluded_reason ? (
+                        {row.excluded_reason ? (
                           <a href="#" onClick={(e) => { e.preventDefault(); handleInclude(row.flight_id); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }} title="click to re-include in reference">
                             excluded — {row.excluded_reason}
                           </a>
@@ -1131,6 +1117,14 @@ export function Flights() {
           </div>
         )}
       </div>
+      {excludingId && (
+        <ExcludeConfirmDialog
+          flightLabel={rows.find((r) => r.flight_id === excludingId)?.date ?? "this flight"}
+          busy={excludeBusy}
+          onCancel={() => setExcludingId(null)}
+          onConfirm={(reason) => handleExclude(excludingId, reason)}
+        />
+      )}
     </NavShell>
   );
 }

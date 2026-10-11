@@ -149,6 +149,8 @@ export function Journal() {
       } else if (entry.kind === "reference_pin") {
         await client.clearReference(entry.ref_id);
         notifyShiftHistoryChanged();
+      } else if (entry.kind === "exclusion") {
+        await client.includeFlight(entry.ref_id);
       }
       await refresh();
     } catch {
@@ -158,7 +160,7 @@ export function Journal() {
 
   function openWhere(entry: JournalEntry) {
     const where = entry.where as Record<string, unknown> | null | undefined;
-    if (entry.kind === "annotation" && where?.flight_id) navigate(`/flights/${where.flight_id}`);
+    if ((entry.kind === "annotation" || entry.kind === "exclusion") && where?.flight_id) navigate(`/flights/${where.flight_id}`);
     else if (entry.kind === "limit_filter") setActiveTab("filters");
     else if (entry.kind === "reference_pin") navigate("/settings?tab=reference");
   }
@@ -311,7 +313,7 @@ export function Journal() {
                         )}
                         {entry.status === "open" && !usingFixture && (
                           <button onClick={() => reverseEntry(entry)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>
-                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : "Remove"}
+                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : entry.kind === "exclusion" ? "Include again" : "Remove"}
                           </button>
                         )}
                       </div>

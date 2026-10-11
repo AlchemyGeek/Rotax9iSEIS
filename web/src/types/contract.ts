@@ -744,6 +744,25 @@ export type JournalEntryKind =
   | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit"
   | "exclusion" | "reference_pin" | "annotation";
 
+// Spec 14 §7.1 — the Flight view header's "Contributes to reference /
+// Excluded from reference (reason)" state, and an open "reference
+// changed" marker (acceptance 8) for a flight whose verdict moved
+// because another flight was excluded.
+export interface ReferenceState {
+  excluded: boolean;
+  reason: string | null;
+}
+
+export interface ReferenceChangeMarker {
+  id: string;
+  flight_id: string;
+  at: string;
+  cause_journal_entry_id: string;
+  cause_flight_id: string;
+  reason: string;
+  resolved: boolean;
+}
+
 export interface JournalEntry {
   id: string;
   kind: JournalEntryKind;

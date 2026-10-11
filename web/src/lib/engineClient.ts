@@ -22,6 +22,8 @@ import type {
   FleetSelectionResult,
   FlightAnalysis,
   JournalEntry,
+  ReferenceChangeMarker,
+  ReferenceState,
   LimitFilter,
   LimitFilterDraft,
   FlightTableRow,
@@ -85,7 +87,10 @@ export interface EngineClient {
   getSeries(file: UploadFile, channels: string[]): Promise<SeriesResult>;
   importFiles(files: UploadFile[], engine?: string): Promise<ImportResult>;
   listFlights(): Promise<FlightSummary[]>;
-  getFlight(flightId: string): Promise<{ flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null }>;
+  getFlight(flightId: string): Promise<{
+    flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
+    reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+  }>;
   getFleet(): Promise<FleetAnalysis>;
   rebuildFleet(): Promise<FleetAnalysis>;
   getFlightSeries(flightId: string, channels: string[]): Promise<SeriesResult>;
@@ -271,7 +276,10 @@ export class LocalServerClient implements EngineClient {
   }
 
   getFlight(flightId: string) {
-    return this.rpc<{ flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null }>(
+    return this.rpc<{
+      flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
+      reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+    }>(
       "get_flight",
       { flight_id: flightId }
     );
