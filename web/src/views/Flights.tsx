@@ -967,9 +967,13 @@ export function Flights() {
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         {row.excluded_reason ? (
-                          <a href="#" onClick={(e) => { e.preventDefault(); handleInclude(row.flight_id); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }} title="click to re-include in reference">
-                            excluded — {row.excluded_reason}
-                          </a>
+                          <span
+                            onClick={() => handleInclude(row.flight_id)}
+                            style={{ color: "var(--text-tertiary)", cursor: "pointer" }}
+                            title={`excluded — ${row.excluded_reason} — click to re-include in reference`}
+                          >
+                            &#10007;
+                          </span>
                         ) : row.in_baselines ? (
                           <span
                             onClick={() => setExcludingId(row.flight_id)}
