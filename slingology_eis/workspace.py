@@ -1752,12 +1752,14 @@ def append_journal_entry(
     ws_dir: Path, *, kind: str, what: str, where: Optional[dict] = None,
     reason: Optional[str] = None, note: Optional[str] = None,
     effect: Optional[str] = None, ref_id: Optional[str] = None, at: Optional[str] = None,
+    before: Any = None, after: Any = None,
 ) -> dict:
     store = load_journal(ws_dir)
     entry = {
         "id": _new_id("jnl"), "kind": kind, "what": what, "where": where,
         "at": at or _now(), "reason": reason, "note": note, "effect": effect,
         "status": "open", "closed_at": None, "ref_id": ref_id,
+        "before": before, "after": after,
     }
     store["entries"].append(entry)
     _write_json(ws_dir / "journal.json", store)
@@ -1766,7 +1768,12 @@ def append_journal_entry(
 
 def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optional[str] = None) -> Optional[dict]:
     """Closes the most recent open entry of `kind` for `ref_id` — struck
-    through in the UI, kept in the list, never removed (§6.4)."""
+    through in the UI, kept in the list, never removed (§6.4). Only
+    correct for kinds with at most one open entry per ref_id at a time
+    (filter/pin/exclusion's create-once-until-reversed lifecycle); a
+    topic can have several open rule_edit entries at once (each edit is
+    its own entry, Spec 14 §10 Q5), so that kind is closed by id instead
+    — see close_journal_entry_by_id."""
     store = load_journal(ws_dir)
     for entry in reversed(store["entries"]):
         if entry["kind"] == kind and entry["ref_id"] == ref_id and entry["status"] == "open":
@@ -1774,6 +1781,17 @@ def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optiona
             entry["closed_at"] = _now()
             if effect is not None:
                 entry["effect"] = effect
+            _write_json(ws_dir / "journal.json", store)
+            return entry
+    return None
+
+
+def close_journal_entry_by_id(ws_dir: Path, entry_id: str) -> Optional[dict]:
+    store = load_journal(ws_dir)
+    for entry in store["entries"]:
+        if entry["id"] == entry_id and entry["status"] == "open":
+            entry["status"] = "closed"
+            entry["closed_at"] = _now()
             _write_json(ws_dir / "journal.json", store)
             return entry
     return None
@@ -1849,12 +1867,20 @@ def load_reference_changes(ws_dir: Path) -> dict:
 
 
 def add_reference_change_marker(
-    ws_dir: Path, *, flight_id: str, cause_journal_entry_id: str, cause_flight_id: str, reason: str,
+    ws_dir: Path, *, flight_id: str, cause_journal_entry_id: str, cause_kind: str, reason: str,
+    cause_flight_id: Optional[str] = None, cause_topic_id: Optional[str] = None,
 ) -> dict:
+    """One marker kind, two causes (Spec 14 §7.1's "reference changed"
+    and §7.2's "rule changed" are the same card-level signal — something
+    about this flight's verdict moved for a reason that isn't this
+    flight's own data): cause_kind "exclusion" (cause_flight_id is what
+    Revert re-includes) or "rule_edit" (cause_topic_id + the causing
+    Journal entry's own before/after is what Revert restores)."""
     store = load_reference_changes(ws_dir)
     marker = {
         "id": _new_id("rfc"), "flight_id": flight_id, "at": _now(),
-        "cause_journal_entry_id": cause_journal_entry_id, "cause_flight_id": cause_flight_id,
+        "cause_journal_entry_id": cause_journal_entry_id, "cause_kind": cause_kind,
+        "cause_flight_id": cause_flight_id, "cause_topic_id": cause_topic_id,
         "reason": reason, "resolved": False,
     }
     store["markers"].append(marker)

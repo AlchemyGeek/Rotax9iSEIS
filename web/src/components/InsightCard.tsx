@@ -83,6 +83,7 @@ export function InsightCard({
   limitType,
   filterAction,
   secondaryAction,
+  ruleSetting,
   note,
   onSaveNote,
   onDeleteNote,
@@ -109,6 +110,11 @@ export function InsightCard({
   // series_window). Caller decides when this applies; this component
   // just renders it next to filterAction.
   secondaryAction?: { label: string; onClick: () => void };
+  // Spec 14 §7.2 item 1: "the card shows the setting that produced the
+  // insight" — plain text, always visible when present, plus an Edit
+  // toggle for RuleEditPanel (rendered by the caller below this card,
+  // same convention as filterAction/FilterEditor).
+  ruleSetting?: { text: string; editing: boolean; onToggleEdit: () => void };
   note?: string;
   onSaveNote?: (text: string) => void;
   onDeleteNote?: () => void;
@@ -183,6 +189,17 @@ export function InsightCard({
         {topicId.replace(/_/g, " ")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
+      {ruleSetting && (
+        <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{ruleSetting.text}</span>
+          <span
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); ruleSetting.onToggleEdit(); }}
+            style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline dotted" }}
+          >
+            {ruleSetting.editing ? "Close" : "Edit"}
+          </span>
+        </div>
+      )}
       {(jumpable || filterAction || secondaryAction) && (
         <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
           {jumpable && <span>View evidence →</span>}

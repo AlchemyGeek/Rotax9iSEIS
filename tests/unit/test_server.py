@@ -1555,3 +1555,102 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     entry = next(e for e in entries if e["id"] == entry["id"])
     assert entry["status"] == "closed" and entry["closed_at"] is not None
     assert rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_changes"] == []
+
+
+def test_apply_card_rule_edit_counted_effect_journal_entry_and_revert(registry_server):
+    """Spec 14 §7.2 / acceptance 5, 10 — editing a trigger's n_min on the
+    card is the exact mechanism that used to live only in the retired
+    playground: Apply writes rules/active.json and a Journal entry with
+    the counted effect, flights whose verdict moved carry a "rule
+    changed" marker, and Revert restores the exact previous value
+    (closing the entry) rather than resetting to shipped."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    # 7 near-identical + 1 clear outlier = 8 flights: the outlier's own
+    # leave-one-out baseline has n=7, below oil_temp_peak's shipped
+    # n_min of 10 — baseline_deviation can't evaluate at all regardless
+    # of how extreme the value is. Lowering n_min to 5 on the card makes
+    # it evaluate, and the outlier's insight newly fires.
+    near = [178, 179, 180, 181, 182, 177, 180]
+    temps = near + [230]
+    ids = [_import_oil_temp_flight(registry_server, i + 1, t) for i, t in enumerate(temps)]
+    outlier_id = ids[-1]
+
+    def oil_temp_insight(fid):
+        iset = rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["insight_set"]
+        topic = next(t for t in iset["topics"] if t["topic_id"] == "oil_temp_peak")
+        return [i for i in topic["insights"] if i["trigger"] == "baseline_deviation"]
+
+    assert oil_temp_insight(outlier_id) == []  # below n_min — no comparison at all
+
+    rules = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    before_topic = rules["rules"]["oil_temp_peak"]
+    assert before_topic["triggers"][0]["n_min"] == 10
+    new_topic = json.loads(json.dumps(before_topic))
+    new_topic["triggers"][0]["n_min"] = 5
+
+    applied = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": new_topic})
+    assert applied["ok"], applied
+    assert applied["result"]["changed_flight_ids"] == [outlier_id]
+    assert applied["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 5
+
+    # Persisted.
+    on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    assert on_disk["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 5
+    assert len(oil_temp_insight(outlier_id)) == 1
+
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    entry = next(e for e in entries if e["kind"] == "rule_edit")
+    assert entry["ref_id"] == "oil_temp_peak"
+    assert entry["before"]["triggers"][0]["n_min"] == 10
+    assert entry["after"]["triggers"][0]["n_min"] == 5
+    assert entry["effect"] == "changed on 1 flight"
+    assert entry["status"] == "open"
+
+    changes = rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_changes"]
+    assert len(changes) == 1
+    assert changes[0]["cause_kind"] == "rule_edit"
+    assert changes[0]["cause_topic_id"] == "oil_temp_peak"
+
+    # Revert: exact previous value, not shipped-defaults, entry closes.
+    reverted = rpc(registry_server, "revert_rule_edit", {"entry_id": entry["id"]})
+    assert reverted["ok"], reverted
+    assert reverted["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 10
+    assert oil_temp_insight(outlier_id) == []
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    assert next(e for e in entries if e["id"] == entry["id"])["status"] == "closed"
+    assert rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_changes"] == []
+
+
+def test_apply_card_rule_edit_keeps_two_edits_to_the_same_topic_independently_revertible(registry_server):
+    """Spec 14 §10 Q5 — each edit is its own Journal entry; reverting an
+    OLDER edit after a NEWER one closes exactly that entry, not whichever
+    is most recent (the bug close_journal_entry's ref_id lookup would
+    have had for this kind)."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    _import_oil_temp_flight(registry_server, 1, 180)
+
+    rules = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    topic = rules["rules"]["oil_temp_peak"]
+    first_edit = json.loads(json.dumps(topic)); first_edit["triggers"][0]["n_min"] = 7
+    first = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": first_edit})["result"]
+    second_edit = json.loads(json.dumps(first_edit)); second_edit["triggers"][0]["n_min"] = 5
+    second = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": second_edit})["result"]
+
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    rule_entries = [e for e in entries if e["kind"] == "rule_edit"]
+    assert len(rule_entries) == 2
+    assert all(e["status"] == "open" for e in rule_entries)
+
+    first_entry = next(e for e in rule_entries if e["after"]["triggers"][0]["n_min"] == 7)
+    rpc(registry_server, "revert_rule_edit", {"entry_id": first_entry["id"]})
+
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    rule_entries = {e["id"]: e for e in entries if e["kind"] == "rule_edit"}
+    assert rule_entries[first_entry["id"]]["status"] == "closed"
+    second_entry_id = next(eid for eid in rule_entries if eid != first_entry["id"])
+    assert rule_entries[second_entry_id]["status"] == "open"
+    # Reverting the first (n_min 7 -> 10) restores the shipped value,
+    # since that's what was active before that edit was made.
+    on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    assert on_disk["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 10
+

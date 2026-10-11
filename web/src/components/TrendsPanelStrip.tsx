@@ -10,7 +10,7 @@ import type { FleetMetric, Readiness, UnpinPreview } from "../types/contract";
 // Spec 12 §9.3 (Session C) — the fixed badge text, keyed by the
 // engine's own `readiness.kind`; the one place this copy lives, so
 // every caller (this strip, ChangeSummaryList, the collapsed panel
-// list, Baselines & Models) renders identical wording.
+// list, Settings → Reference & Models) renders identical wording.
 export function readinessText(r: Readiness): string {
   switch (r.kind) {
     case "filtered": return "filtered";

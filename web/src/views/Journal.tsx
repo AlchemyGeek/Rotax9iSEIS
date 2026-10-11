@@ -10,13 +10,14 @@ import type { Annotation, FilterHealth, JournalEntry, JournalEntryKind } from ".
 
 const client = getEngineClient();
 
-// Spec 14 §6.1 — the full kind taxonomy, in table order. Four of these
-// (acknowledged_insight, disabled_topic, rule_edit, exclusion) have no
-// entries yet: acknowledging/disabling a topic needs Spec 11's silencing
-// levels (paused — not built anywhere in this codebase today); rule_edit
-// and exclusion land with Spec 14 steps 5 and 4. The chips still show
-// all seven so the taxonomy reads as complete, not as if three kinds
-// were forgotten.
+// Spec 14 §6.1 — the full kind taxonomy, in table order. Two of these
+// (acknowledged_insight, disabled_topic) have no entries and can't yet:
+// acknowledging/disabling a topic needs Spec 11's silencing levels,
+// which are paused and not built anywhere in this codebase. The other
+// five (limit_filter, reference_pin, annotation from step 3; exclusion
+// from step 4; rule_edit from step 5) are all live. The chips still show
+// all seven so the taxonomy reads as complete, not as if entries were
+// missing by oversight.
 const KIND_ORDER: JournalEntryKind[] = [
   "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit",
   "exclusion", "reference_pin", "annotation",
@@ -34,6 +35,19 @@ const KIND_LABELS: Record<JournalEntryKind, string> = {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+
+// A rule_edit entry's before/after are the whole RuleTopic — this picks
+// out just the trigger fields that actually changed, e.g. "n_min: 10 →
+// 5", rather than dumping the full topic JSON.
+function ruleEditFieldDiff(before: unknown, after: unknown): string | null {
+  const b = (before as { triggers?: Record<string, unknown>[] } | undefined)?.triggers?.[0];
+  const a = (after as { triggers?: Record<string, unknown>[] } | undefined)?.triggers?.[0];
+  if (!b || !a) return null;
+  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
+  const changed = [...keys].filter((k) => k !== "type" && JSON.stringify(b[k]) !== JSON.stringify(a[k]));
+  if (changed.length === 0) return null;
+  return changed.map((k) => `${k}: ${JSON.stringify(b[k])} → ${JSON.stringify(a[k])}`).join(", ");
 }
 
 // Spec 03 §5.6's old Annotations page, renamed and redefined by Spec 14
@@ -151,6 +165,11 @@ export function Journal() {
         notifyShiftHistoryChanged();
       } else if (entry.kind === "exclusion") {
         await client.includeFlight(entry.ref_id);
+      } else if (entry.kind === "rule_edit") {
+        // Revert by entry id, not ref_id (topic_id) — a topic can have
+        // several open edits at once (Spec 14 §10 Q5), each independently
+        // revertible to its own exact previous value.
+        await client.revertRuleEdit(entry.id);
       }
       await refresh();
     } catch {
@@ -173,6 +192,9 @@ export function Journal() {
     if (entry.kind === "limit_filter" && entry.ref_id) {
       const health = filterHealthById.get(entry.ref_id);
       if (health && entry.status === "open") return { title: entry.what, detail: health.summary ?? null };
+    }
+    if (entry.kind === "rule_edit") {
+      return { title: entry.what, detail: ruleEditFieldDiff(entry.before, entry.after) };
     }
     return { title: entry.what, detail: entry.note ?? null };
   }
@@ -313,7 +335,7 @@ export function Journal() {
                         )}
                         {entry.status === "open" && !usingFixture && (
                           <button onClick={() => reverseEntry(entry)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>
-                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : entry.kind === "exclusion" ? "Include again" : "Remove"}
+                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : entry.kind === "exclusion" ? "Include again" : entry.kind === "rule_edit" ? "Revert" : "Remove"}
                           </button>
                         )}
                       </div>

@@ -305,6 +305,78 @@ def op_what_if_rules(params: dict, ctx: dict) -> Any:
     return {"flights": out}
 
 
+def _topic_insight_signature(iset, topic_id: str) -> frozenset:
+    t = next((t for t in iset.to_dict()["topics"] if t["topic_id"] == topic_id), None)
+    return frozenset((i["rule_id"], i["severity"]) for i in (t["insights"] if t else []))
+
+
+def op_apply_card_rule_edit(params: dict, ctx: dict) -> Any:
+    """Spec 14 §7.2 — the insight card's own Apply, replacing the retired
+    playground's "Apply to workspace". Same mechanics as op_exclude_flight
+    (§7.1): evaluate every flight's insights for the one edited topic
+    before and after, so the counted effect and any "rule changed"
+    markers are real, not estimated. The preview the card shows before
+    this (acceptance 5) is the existing what_if_rules RPC — unchanged,
+    reused as-is — so the card's preview and this apply can never
+    disagree about what the edit does; there's only one evaluation path."""
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    topic_id = params["topic_id"]
+    new_topic = params["topic"]
+    rules = _resolve_rules(ctx)
+    before_topic = rules["rules"].get(topic_id)
+    fleet = _get_or_build_fleet(workspace_dir)
+    filters = _workspace_filters(ctx)
+    flights = _load_workspace_flights(workspace_dir)
+
+    before = {fa.flight_id: _topic_insight_signature(evaluate_insights(fa, fleet, rules, filters=filters), topic_id) for fa in flights}
+
+    new_rules = {**rules, "rules": {**rules["rules"], topic_id: new_topic}}
+    ws.save_workspace_rules(workspace_dir, new_rules)
+    resolved = _resolve_rules(ctx)
+
+    changed = [
+        fa.flight_id for fa in flights
+        if _topic_insight_signature(evaluate_insights(fa, fleet, resolved, filters=filters), topic_id) != before[fa.flight_id]
+    ]
+
+    entry = ws.append_journal_entry(
+        workspace_dir, kind="rule_edit", what=f"Rule: {topic_id}", where={"topic_id": topic_id},
+        effect=f"changed on {len(changed)} flight{'' if len(changed) == 1 else 's'}" if changed else "no flight's verdict changed",
+        ref_id=topic_id, before=before_topic, after=new_topic,
+    )
+    for fid in changed:
+        ws.add_reference_change_marker(
+            workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_kind="rule_edit",
+            cause_topic_id=topic_id, reason=f"a rule setting changed on {topic_id}",
+        )
+    return {"rules": resolved, "journal_entry": entry, "changed_flight_ids": changed}
+
+
+def op_revert_rule_edit(params: dict, ctx: dict) -> Any:
+    """Restores the exact previous values the causing Journal entry holds
+    (Spec 14 §10 Q5 — not "reset to shipped", a separate action), closes
+    that entry by id (a topic can have several open rule_edit entries at
+    once, so "most recent open for this topic" would close the wrong one
+    if an older edit is reverted after a newer one), and resolves
+    whatever markers it caused. No new Journal entry for the revert
+    itself, matching Unpin/Include-again/Remove elsewhere in this session."""
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    entry_id = params["entry_id"]
+    store = ws.load_journal(workspace_dir)
+    entry = next((e for e in store["entries"] if e["id"] == entry_id and e["kind"] == "rule_edit"), None)
+    if entry is None:
+        raise RpcError("NOT_FOUND", f"no rule_edit journal entry {entry_id}")
+    topic_id = entry["ref_id"]
+    rules = _resolve_rules(ctx)
+    new_rules = {**rules, "rules": {**rules["rules"], topic_id: entry["before"]}}
+    ws.save_workspace_rules(workspace_dir, new_rules)
+    ws.close_journal_entry_by_id(workspace_dir, entry_id)
+    ws.resolve_reference_changes_for_cause(workspace_dir, entry_id)
+    return {"rules": _resolve_rules(ctx)}
+
+
 def op_list_engines(params: dict, ctx: dict) -> Any:
     engines_dir = _REPO_ROOT / "engines"
     results = []
@@ -715,7 +787,8 @@ def op_exclude_flight(params: dict, ctx: dict) -> Any:
     )
     for fid in changed:
         ws.add_reference_change_marker(
-            workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_flight_id=flight_id, reason=reason,
+            workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_kind="exclusion",
+            cause_flight_id=flight_id, reason=reason,
         )
     return selection.to_dict()
 
@@ -1480,6 +1553,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_workspace_rules": op_get_workspace_rules,
     "save_workspace_rules": op_save_workspace_rules,
     "reset_workspace_rules": op_reset_workspace_rules,
+    "apply_card_rule_edit": op_apply_card_rule_edit,
+    "revert_rule_edit": op_revert_rule_edit,
     "save_baseline_config": op_save_baseline_config,
     "what_if_rules": op_what_if_rules,
     "list_engines": op_list_engines,

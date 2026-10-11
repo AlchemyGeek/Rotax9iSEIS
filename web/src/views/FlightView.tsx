@@ -23,9 +23,10 @@ import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclu
 import { phaseAtTime } from "../lib/phases";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { colors as themeColors } from "../theme/colors";
+import { RuleEditPanel } from "../components/RuleEditPanel";
 import type {
   Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
-  Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, SeriesFixture, SlotGroupEntry, TopicResult,
+  Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, RuleSet, SeriesFixture, SlotGroupEntry, TopicResult,
 } from "../types/contract";
 
 // Spec 14 §7.1 — only these trigger kinds compare the flight against the
@@ -272,17 +273,20 @@ export function FlightView() {
       }
       setLoading(true);
       try {
-        const [got, registryResult, presetsResult, appSettings] = await Promise.all([
+        const [got, registryResult, presetsResult, appSettings, rulesResult] = await Promise.all([
           client.getFlight(flightId),
           client.getChannelRegistry(),
           client.getChartPresets(),
           client.getAppSettings(),
+          client.getWorkspaceRules(),
         ]);
         if (cancelled) return;
         setFlightAnalysis(got.flight_analysis);
         setInsightSet(got.insight_set);
         setReferenceState(got.reference_state);
         setReferenceChanges(got.reference_changes);
+        setResolvedRules(rulesResult.rules);
+        setShippedRules(rulesResult.shipped_rules);
         // A raw content-hash source_key is not a filename — if the server
         // genuinely has no recorded filename for this flight (no import
         // history at all, not just no persisted copy — that gap is
@@ -570,6 +574,11 @@ export function FlightView() {
   const filterLimitId = (insight: Insight, topicId: string) =>
     insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
 
+  // Spec 14 §7.2 — which insight's rule editor is open, if any.
+  const [ruleEditFor, setRuleEditFor] = useState<string | null>(null);
+  const [resolvedRules, setResolvedRules] = useState<RuleSet | null>(null);
+  const [shippedRules, setShippedRules] = useState<RuleSet | null>(null);
+
   async function reloadInsights() {
     if (!flightId) return;
     try {
@@ -580,6 +589,27 @@ export function FlightView() {
     } catch {
       // server unreachable — leave the current state
     }
+  }
+
+  // Spec 14 §7.2 item 1 — "the card shows the setting that produced the
+  // insight, e.g. trend · R² ≥ 0.5 · n ≥ 10". Only the three trigger
+  // kinds the card can edit (threshold/baseline_deviation/trend) get a
+  // line at all; cylinder_rank-style context-only topics have no trigger
+  // to show.
+  function ruleSettingText(insight: Insight, topicId: string): string | null {
+    const topic = resolvedRules?.rules[topicId];
+    const trigger = topic?.triggers?.find((t) => t.type === insight.trigger);
+    if (!trigger) return null;
+    if (trigger.type === "threshold") return trigger.z != null ? `threshold · z ≤ ${trigger.z}` : null;
+    if (trigger.type === "baseline_deviation") return `baseline deviation · n ≥ ${trigger.n_min ?? 10}`;
+    if (trigger.type === "trend") return `trend · R² ≥ ${trigger.r2_min ?? 0.5} · n ≥ ${trigger.n_min ?? 10}`;
+    return null;
+  }
+
+  function handleRuleApplied(newRules: RuleSet) {
+    setResolvedRules(newRules);
+    setRuleEditFor(null);
+    void reloadInsights();
   }
 
   async function handleExcludeFromReference(reason: string) {
@@ -609,6 +639,16 @@ export function FlightView() {
   async function handleRevertExclusion(causeFlightId: string) {
     try {
       await client.includeFlight(causeFlightId);
+      await reloadInsights();
+    } catch {
+      // server unreachable
+    }
+  }
+
+  async function handleRevertRuleEdit(journalEntryId: string) {
+    try {
+      const res = await client.revertRuleEdit(journalEntryId);
+      setResolvedRules(res.rules);
       await reloadInsights();
     } catch {
       // server unreachable
@@ -958,10 +998,22 @@ export function FlightView() {
                   }}
                 >
                   <span>
-                    <strong style={{ color: "var(--severity-warning)" }}>Reference changed</strong>
-                    {" — a flight was excluded from the reference ("}{m.reason}{"); this flight's verdict may have moved."}
+                    <strong style={{ color: "var(--severity-warning)" }}>
+                      {m.cause_kind === "rule_edit" ? "Rule changed" : "Reference changed"}
+                    </strong>
+                    {m.cause_kind === "rule_edit"
+                      ? ` — ${m.cause_topic_id}'s rule changed (${m.reason}); this flight's verdict may have moved.`
+                      : ` — a flight was excluded from the reference (${m.reason}); this flight's verdict may have moved.`}
                   </span>
-                  <a href="#" onClick={(e) => { e.preventDefault(); void handleRevertExclusion(m.cause_flight_id); }} style={{ fontSize: 11, flexShrink: 0 }}>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (m.cause_kind === "rule_edit") void handleRevertRuleEdit(m.cause_journal_entry_id);
+                      else if (m.cause_flight_id) void handleRevertExclusion(m.cause_flight_id);
+                    }}
+                    style={{ fontSize: 11, flexShrink: 0 }}
+                  >
                     Revert →
                   </a>
                 </div>
@@ -1061,6 +1113,15 @@ export function FlightView() {
                     notesEnabled={!usingFixture}
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
                     onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
+                    ruleSetting={
+                      !usingFixture && resolvedRules && ruleSettingText(insight, topicId)
+                        ? {
+                            text: ruleSettingText(insight, topicId)!,
+                            editing: ruleEditFor === insight.id,
+                            onToggleEdit: () => setRuleEditFor(ruleEditFor === insight.id ? null : insight.id),
+                          }
+                        : undefined
+                    }
                   />
                   {limitId && filterEditorFor === insight.id && (
                     <FilterEditor
@@ -1073,6 +1134,17 @@ export function FlightView() {
                         void reloadInsights();
                       }}
                       onCancel={() => setFilterEditorFor(null)}
+                    />
+                  )}
+                  {ruleEditFor === insight.id && resolvedRules && shippedRules && (
+                    <RuleEditPanel
+                      topicId={topicId}
+                      triggerType={insight.trigger}
+                      resolvedRules={resolvedRules}
+                      shippedRules={shippedRules}
+                      onApplied={handleRuleApplied}
+                      onCancel={() => setRuleEditFor(null)}
+                      onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
                     />
                   )}
                   </div>

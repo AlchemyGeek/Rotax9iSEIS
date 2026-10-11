@@ -758,7 +758,9 @@ export interface ReferenceChangeMarker {
   flight_id: string;
   at: string;
   cause_journal_entry_id: string;
-  cause_flight_id: string;
+  cause_kind: "exclusion" | "rule_edit";
+  cause_flight_id: string | null;
+  cause_topic_id: string | null;
   reason: string;
   resolved: boolean;
 }
@@ -775,6 +777,8 @@ export interface JournalEntry {
   status: "open" | "closed";
   closed_at?: string | null;
   ref_id?: string | null;
+  before?: unknown;
+  after?: unknown;
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

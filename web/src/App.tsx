@@ -23,10 +23,11 @@ function App() {
           <Route path="/flights/:flightId" element={<FlightView />} />
           <Route path="/skipped/:filenameParam" element={<FlightView />} />
           <Route path="/trends" element={<Trends />} />
-          {/* Spec 14 §4/step 1: Baselines is no longer a destination — the
-              URL redirects rather than 404ing for anyone with it bookmarked.
-              Baselines.tsx itself still exists (import removed here) so its
-              rule playground stays testable until Spec 14 step 5 removes it. */}
+          {/* Spec 14 §4/§9 acceptance 10: Baselines is no longer a
+              destination and Baselines.tsx's rule playground is retired
+              (step 5, superseded by the insight card's own rule editor) —
+              the URL redirects rather than 404ing for anyone with it
+              bookmarked. */}
           <Route path="/baselines" element={<Navigate to="/settings?tab=reference" replace />} />
           <Route path="/ecu" element={<ECU />} />
           <Route path="/annotations" element={<Navigate to="/journal" replace />} />

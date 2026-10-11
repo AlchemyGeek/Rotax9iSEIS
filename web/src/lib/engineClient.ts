@@ -29,6 +29,7 @@ import type {
   FlightTableRow,
   InsightSet,
   RuleSet,
+  RuleTopic,
   ScanProgress,
   ScanResult,
   ShiftEvent,
@@ -164,6 +165,8 @@ export interface EngineClient {
   // (rules/active.json + BaselineConfig), plus the live per-flight diff.
   getWorkspaceRules(): Promise<WorkspaceRulesResult>;
   saveWorkspaceRules(rules: RuleSet): Promise<{ rules: RuleSet }>;
+  applyCardRuleEdit(topicId: string, topic: RuleTopic): Promise<{ rules: RuleSet; journal_entry: JournalEntry; changed_flight_ids: string[] }>;
+  revertRuleEdit(entryId: string): Promise<{ rules: RuleSet }>;
   resetWorkspaceRules(): Promise<{ rules: RuleSet }>;
   saveBaselineConfig(baselineConfig: BaselineConfig): Promise<FleetAnalysis>;
   whatIfRules(candidate: { rules?: RuleSet; baseline_config?: BaselineConfig }): Promise<WhatIfResult>;
@@ -473,6 +476,16 @@ export class LocalServerClient implements EngineClient {
 
   saveWorkspaceRules(rules: RuleSet) {
     return this.rpc<{ rules: RuleSet }>("save_workspace_rules", { rules });
+  }
+
+  applyCardRuleEdit(topicId: string, topic: RuleTopic) {
+    return this.rpc<{ rules: RuleSet; journal_entry: JournalEntry; changed_flight_ids: string[] }>(
+      "apply_card_rule_edit", { topic_id: topicId, topic },
+    );
+  }
+
+  revertRuleEdit(entryId: string) {
+    return this.rpc<{ rules: RuleSet }>("revert_rule_edit", { entry_id: entryId });
   }
 
   resetWorkspaceRules() {
