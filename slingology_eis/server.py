@@ -51,6 +51,7 @@ from .limits import _resolve_engine_name, limit_catalog, load_engine_config, res
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
 from .operations import (
+    NO_CARD_TOPICS,
     EcuAnalysis,
     FlightAnalysis,
     FleetAnalysis,
@@ -235,9 +236,16 @@ def op_get_workspace_rules(params: dict, ctx: dict) -> Any:
     """The rule playground's opening state — resolved rules (active.json
     if edited, else shipped) plus the shipped defaults alongside, so the
     UI can show "shipped default: X" next to an edited value without a
-    second round trip."""
+    second round trip. card_topic_ids (Spec 14 §5.1 v0.6): the topics that
+    have a Flight view card — enabled or not — so Settings can list a
+    disabled topic as disabled without also listing the ones the engine
+    never surfaces."""
     _require_active(ctx)
-    return {"rules": _resolve_rules(ctx), "shipped_rules": _default_rules()}
+    rules = _resolve_rules(ctx)
+    return {
+        "rules": rules, "shipped_rules": _default_rules(),
+        "card_topic_ids": [t for t in rules["rules"] if t not in NO_CARD_TOPICS],
+    }
 
 
 def op_save_workspace_rules(params: dict, ctx: dict) -> Any:

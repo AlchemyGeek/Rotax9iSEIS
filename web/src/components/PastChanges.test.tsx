@@ -30,7 +30,11 @@ describe("PastChanges", () => {
     fireEvent.click(screen.getByText(/Past changes \(1\)/));
     expect(screen.getByText(/higher · detected/)).toBeTruthy();
 
+    // Spec 14 §7.5 (v0.6): scope stated up front; delete asks to confirm.
+    expect(screen.getByText("All flights in this workspace — this metric")).toBeTruthy();
     fireEvent.click(screen.getByTitle("Delete this event"));
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply to all flights" }));
     expect(onDelete).toHaveBeenCalledWith("ev1");
   });
 });

@@ -281,6 +281,8 @@ export interface AircraftSummary {
 export interface WorkspaceRulesResult {
   rules: RuleSet;
   shipped_rules: RuleSet;
+  // Spec 14 §5.1 (v0.6): topics with a Flight view card, enabled or not.
+  card_topic_ids: string[];
 }
 
 export interface WhatIfResult {

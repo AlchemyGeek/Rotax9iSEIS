@@ -1640,7 +1640,7 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
 # Research (climb_thermal_rate, D2) — not because a user turned them off.
 # They get no card, disabled or not, so they're never editable (§7.2
 # guards). Same set as register.json's help: false non-removed topics.
-_NO_CARD_TOPICS = frozenset({"cylinder_rank", "climb_thermal_rate"})
+NO_CARD_TOPICS = frozenset({"cylinder_rank", "climb_thermal_rate"})
 
 
 def _disabled_topic(topic_id: str) -> dict:
@@ -1958,7 +1958,7 @@ def evaluate_insights(
         # keeps a collapsed one (Spec 14 §7.3 v0.5). The rise-rate metrics
         # themselves stay computed (fm/fleet_analysis) either way.
         if not r_data.get(topic_id, {}).get("enabled", True):
-            if topic_id not in _NO_CARD_TOPICS:
+            if topic_id not in NO_CARD_TOPICS:
                 topics_out.append(_disabled_topic(topic_id))
             continue
         value = fm.get(flight_metric_id, {}).get("value")

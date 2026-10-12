@@ -110,6 +110,10 @@ export function Settings() {
   // Spec 14 §5.1 (v0.3) — n_min is shown here per trigger, read-only; it
   // lives in rules/active.json and is edited on the topic card (§7.3).
   const [rules, setRules] = useState<RuleSet | null>(null);
+  // Spec 14 §5.1 (v0.6): topics with a card, enabled or not — the n_min
+  // list shows a disabled one marked disabled, and never the ones the
+  // engine doesn't surface.
+  const [cardTopicIds, setCardTopicIds] = useState<Set<string>>(new Set());
 
   // Shared changelog (Spec 14 §5, acceptance 2).
   const [changelog, setChangelog] = useState<SettingsChangelogEntry[]>([]);
@@ -147,6 +151,7 @@ export function Settings() {
         setDraftBaselineConfig(clone(liveFleet.provenance.baseline_config));
         setEngineLimits(limits);
         setRules(workspaceRules.rules);
+        setCardTopicIds(new Set(workspaceRules.card_topic_ids));
         setUsingFixture(false);
         try {
           const changelogRes = await client.getSettingsChangelog();
@@ -468,15 +473,15 @@ export function Settings() {
                 {rules ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 10 }}>
                     {Object.entries(rules.rules)
-                      .filter(([, topic]) => topic.enabled)
+                      .filter(([topicId]) => cardTopicIds.has(topicId))
                       .flatMap(([topicId, topic]) =>
                         (topic.triggers ?? [])
                           .filter((t) => t.n_min != null)
-                          .map((t) => ({ topicId, type: t.type, n_min: t.n_min as number }))
+                          .map((t) => ({ topicId, type: t.type, n_min: t.n_min as number, enabled: topic.enabled }))
                       )
-                      .map(({ topicId, type, n_min }) => (
-                        <div key={`${topicId}-${type}`} className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "var(--text-secondary)" }}>
-                          <span>{topicId.replace(/_/g, " ")} &middot; {type}</span>
+                      .map(({ topicId, type, n_min, enabled }) => (
+                        <div key={`${topicId}-${type}`} className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: enabled ? "var(--text-secondary)" : "var(--text-tertiary)" }}>
+                          <span>{topicId.replace(/_/g, " ")} &middot; {type}{enabled ? "" : " · disabled"}</span>
                           <span>{n_min}</span>
                         </div>
                       ))}
