@@ -38,7 +38,13 @@ def test_every_profile_limit_has_a_unique_id(engine):
     cfg = load_engine_config(engine)
     ids = [lim["id"] for lim in limit_catalog(cfg)]
     assert len(ids) == len(set(ids))
-    assert {"egt_split_high_flow", "egt_split_low_flow", "overboost"} <= set(ids)
+    assert "overboost" in ids
+    # The EGT split limits exist only where the OM defines one (an
+    # egt_spread block); OM-912 i Series has none, so 912iS has neither.
+    if "egt_spread" in cfg:
+        assert {"egt_split_high_flow", "egt_split_low_flow"} <= set(ids)
+    else:
+        assert not {"egt_split_high_flow", "egt_split_low_flow"} & set(ids)
     assert all(lim.id for lim in engine_limits_from_config(cfg))
 
 

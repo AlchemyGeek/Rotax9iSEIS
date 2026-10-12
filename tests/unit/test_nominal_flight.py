@@ -53,7 +53,10 @@ def build_nominal_flight(cfg: dict) -> pd.DataFrame:
     oil_temp_max = _limit(cfg, "oil_temp_max")["max_val"]
     coolant_max = _limit(cfg, "coolant_temp_max")["max_val"]
     egt_max = _limit(cfg, "egt1_max")["max_val"]
-    map_max = _limit(cfg, "map_max")["max_val"]
+    # A naturally aspirated profile (912iS) has no MAP limit — its OM gives
+    # none — so MAP can't raise an event; standard sea-level pressure is
+    # used rather than a number borrowed from another profile.
+    map_lim = _limit(cfg, "map_max")
     volts_min = _limit(cfg, "volts_min")["min_val"]
     volts_max = _limit(cfg, "volts_max")["max_val"]
     fp_lim = _limit(cfg, "fuel_press_min")
@@ -69,7 +72,7 @@ def build_nominal_flight(cfg: dict) -> pd.DataFrame:
     oil_temp_nominal = min(200.0, oil_temp_max - 20)
     coolant_nominal = min(200.0, coolant_max - 20)
     egt_nominal = min(1400.0, egt_max - 100)
-    map_nominal = map_max - 5
+    map_nominal = map_lim["max_val"] - 5 if map_lim else 29.92
     volts_nominal = min(13.0, volts_max - 1)
     oil_press_nominal = oil_press_min + 10
     fuel_press_nominal = (
@@ -132,8 +135,11 @@ def build_nominal_flight(cfg: dict) -> pd.DataFrame:
 @pytest.mark.parametrize("engine", ENGINES)
 def test_nominal_flight_raises_zero_limit_events(engine):
     cfg = load_engine_config(engine)
-    for required in ("rpm_idle_min", "rpm_takeoff_max", "oil_press_min", "oil_temp_max",
-                      "coolant_temp_max", "egt1_max", "map_max", "volts_min", "volts_max"):
+    required_limits = ["rpm_idle_min", "rpm_takeoff_max", "oil_press_min", "oil_temp_max",
+                       "coolant_temp_max", "egt1_max", "volts_min", "volts_max"]
+    if cfg.get("turbocharged"):
+        required_limits.append("map_max")
+    for required in required_limits:
         if _limit(cfg, required) is None:
             pytest.fail(f"{engine} lacks the '{required}' limit this nominal flight needs — "
                         f"reporting rather than inventing a value for it.")
