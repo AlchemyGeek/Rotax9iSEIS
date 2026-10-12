@@ -358,9 +358,11 @@ export function TrendsPanelStrip({
   // legend, so it names exactly what's on screen. Both the "older
   // than the reference" and "between the reference and the window"
   // cases share one legend entry now (v0.9).
-  const hasNotUsed = pinned && shift != null && (
-    Math.min(...metric.points.map((p) => p.x).filter((x): x is number => x != null)) < shift.reference.hours_from
-    || shift.recent.hours_from > shift.reference.hours_to
+  const refFrom = shift?.reference.hours_from;
+  const refTo = shift?.reference.hours_to;
+  const hasNotUsed = pinned && shift != null && refFrom != null && refTo != null && (
+    Math.min(...metric.points.map((p) => p.x).filter((x): x is number => x != null)) < refFrom
+    || shift.recent.hours_from > refTo
   );
 
   // §5.7/R10.1 (Session G) — the eligible flights currently in view:

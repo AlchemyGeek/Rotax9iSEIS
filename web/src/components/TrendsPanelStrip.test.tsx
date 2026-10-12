@@ -69,7 +69,7 @@ describe("TrendsPanelStrip readiness badges", () => {
       baseline: { n: 20, mean: 5, std: 1, min: 3, max: 7, confidence: { level: "GOOD", n: 20 } },
       shift: {
         recent: { flight_ids: ["r1"], n: 1, hours_from: 40, hours_to: 41, mean: 10 },
-        reference: { kind: "rolling", n: 19, mean: 5, std: 1, min: 3, max: 7, confidence: { level: "GOOD", n: 19 } },
+        reference: { kind: "rolling", n: 19, hours_from: null, hours_to: null, mean: 5, std: 1, min: 3, max: 7, confidence: { level: "GOOD", n: 19 } },
         shift_z: 4.5, direction: "higher",
         comparison: { scope: "all", unmatched: 0 },
         level: { om_margin: false, filter_edge: false },
@@ -243,7 +243,7 @@ describe("TrendsPanelStrip pinned state", () => {
       points,
       shift: {
         recent: { flight_ids: recentIds, n: recentN, hours_from: 40, hours_to: 40 + recentN - 1, mean: 50 },
-        reference: { kind: "rolling", n: 20, mean: 20, std: 2, min: 15, max: 25, confidence: { level: "GOOD", n: 20 } },
+        reference: { kind: "rolling", n: 20, hours_from: null, hours_to: null, mean: 20, std: 2, min: 15, max: 25, confidence: { level: "GOOD", n: 20 } },
         shift_z: 10, direction: "higher",
         comparison: { scope: "all", unmatched: 0 },
         level: { om_margin: false, filter_edge: false },

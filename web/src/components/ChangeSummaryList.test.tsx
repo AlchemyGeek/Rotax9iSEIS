@@ -16,7 +16,7 @@ function noop() {}
 function baseShift(overrides: Partial<FleetAnalysis["metrics"][string]["shift"]> = {}) {
   return {
     recent: { flight_ids: ["r1", "r2"], n: 2, hours_from: 40, hours_to: 50, mean: 10 },
-    reference: { kind: "rolling" as const, n: 20, mean: 5, std: 1, min: 3, max: 7, confidence: { level: "GOOD" as const, n: 20 } },
+    reference: { kind: "rolling" as const, n: 20, hours_from: null, hours_to: null, mean: 5, std: 1, min: 3, max: 7, confidence: { level: "GOOD" as const, n: 20 } },
     shift_z: 3.0,
     direction: "higher" as const,
     comparison: { scope: "all" as const, unmatched: 0 },

@@ -78,10 +78,10 @@ describe("Journal", () => {
       },
     ];
     state.annotations = [
-      { id: "ann_1", flight_id: "f1", ref: { kind: "flight" }, note: "checking density altitude", created_at: "2026-10-01T00:00:00Z" },
+      { id: "ann_1", flight_id: "f1", ref: { kind: "insight", insight_id: "ins_1" }, note: "checking density altitude", created_at: "2026-10-01T00:00:00Z" },
     ];
     state.health = [
-      { filter_id: "flt_1", limit_id: "fuel_press_max", valid: true, status: "drifting", reasons: ["event frequency up"], diagnostics: [], series: [] },
+      { filter_id: "flt_1", limit_id: "fuel_press_max", valid: true, status: "drifting", reasons: ["event frequency up"], diagnostics: [], series: [], hours_since_review: null },
     ];
   });
 
