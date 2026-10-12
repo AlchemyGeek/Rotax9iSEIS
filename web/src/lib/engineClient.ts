@@ -129,6 +129,9 @@ export interface EngineClient {
   listFlightsWithStatus(): Promise<{ rows: FlightTableRow[] }>;
   excludeFlight(flightId: string, reason: string): Promise<FleetSelectionResult>;
   includeFlight(flightId: string): Promise<FleetSelectionResult>;
+  // Spec 14 §7.1 (v0.6) — read-only: the other flights whose verdict would
+  // change if this flight were excluded from / included in the reference.
+  previewReferenceMembership(flightId: string, action: "exclude" | "include"): Promise<{ changed_flight_ids: string[] }>;
   removeMissingFlight(flightId: string): Promise<{ removed: boolean }>;
   removeFlight(flightId: string): Promise<{ removed: boolean; scan_result: ScanResult | null }>;
   removeFlights(flightIds: string[]): Promise<{ removed_flight_ids: string[]; scan_result: ScanResult | null }>;
@@ -385,6 +388,10 @@ export class LocalServerClient implements EngineClient {
 
   includeFlight(flightId: string) {
     return this.rpc<FleetSelectionResult>("include_flight", { flight_id: flightId });
+  }
+
+  previewReferenceMembership(flightId: string, action: "exclude" | "include") {
+    return this.rpc<{ changed_flight_ids: string[] }>("preview_reference_membership", { flight_id: flightId, action });
   }
 
   removeMissingFlight(flightId: string) {

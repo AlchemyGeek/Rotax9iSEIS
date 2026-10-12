@@ -127,6 +127,8 @@ export function FlightView() {
   const [referenceState, setReferenceState] = useState<ReferenceState | null>(null);
   const [referenceChanges, setReferenceChanges] = useState<ReferenceChangeMarker[]>([]);
   const [excludeDialogFor, setExcludeDialogFor] = useState<string | null>(null); // insight id, or "header"
+  // Spec 14 §7.1 (v0.6): Include again opens the same dialog, not a one-click action.
+  const [includeDialogOpen, setIncludeDialogOpen] = useState(false);
   const [excludeBusy, setExcludeBusy] = useState(false);
   const [unitsSystem, setUnitsSystem] = useState<"imperial" | "metric">("imperial");
 
@@ -623,11 +625,15 @@ export function FlightView() {
 
   async function handleIncludeInReference() {
     if (!flightId) return;
+    setExcludeBusy(true);
     try {
       await client.includeFlight(flightId);
+      setIncludeDialogOpen(false);
       await reloadInsights();
     } catch {
-      // server unreachable
+      // server unreachable — dialog stays open
+    } finally {
+      setExcludeBusy(false);
     }
   }
 
@@ -976,7 +982,7 @@ export function FlightView() {
                 <span style={{ fontSize: 11 }}>
                   <a
                     href="#"
-                    onClick={(e) => { e.preventDefault(); void handleIncludeInReference(); }}
+                    onClick={(e) => { e.preventDefault(); setIncludeDialogOpen(true); }}
                     style={{ color: "var(--text-tertiary)" }}
                     title="click to include again"
                   >
@@ -1404,8 +1410,19 @@ export function FlightView() {
       </>
       )}
       </div>
-      {excludeDialogFor && (
+      {includeDialogOpen && flightId && (
         <ExcludeConfirmDialog
+          mode="include"
+          flightId={flightId}
+          flightLabel={h.date}
+          busy={excludeBusy}
+          onCancel={() => setIncludeDialogOpen(false)}
+          onConfirm={() => void handleIncludeInReference()}
+        />
+      )}
+      {excludeDialogFor && flightId && (
+        <ExcludeConfirmDialog
+          flightId={flightId}
           flightLabel={h.date}
           busy={excludeBusy}
           onCancel={() => setExcludeDialogFor(null)}

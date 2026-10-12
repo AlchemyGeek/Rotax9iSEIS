@@ -924,6 +924,20 @@ def delete_shift_event(ws_dir: Path, event_id: str) -> list[dict]:
     return filtered
 
 
+def fleet_for_exclusions(ws_dir: Path, excluded: list[dict]) -> FleetAnalysis:
+    """The workspace fleet as it would be with exactly `excluded` left out
+    — nothing saved, no shift history. rebuild_fleet's own computation,
+    and the Spec 14 §7.1 exclude/include preview's (v0.6)."""
+    selection = load_selection(ws_dir)
+    excluded_ids = {e["flight_id"] for e in excluded}
+    included = [fa for fa in load_all_flight_analyses(ws_dir) if fa.flight_id not in excluded_ids]
+    return update_fleet(
+        included, excluded=excluded, baseline_config=selection.baseline_config,
+        engine_config=load_engine_config(load_manifest(ws_dir).engine_model),
+        filters=load_filters(ws_dir)["filters"],
+    )
+
+
 def rebuild_fleet(ws_dir: Path, cleared_by_unpin: Optional[str] = None) -> FleetAnalysis:
     """
     Spec 01 `update_fleet`, scoped to this workspace: every flight in
@@ -936,14 +950,7 @@ def rebuild_fleet(ws_dir: Path, cleared_by_unpin: Optional[str] = None) -> Fleet
     to `update_shift_history` — set only by `clear_reference`'s own
     rebuild, never by a plain `rebuild_fleet` call.
     """
-    selection = load_selection(ws_dir)
-    excluded_ids = {e["flight_id"] for e in selection.excluded}
-    included = [fa for fa in load_all_flight_analyses(ws_dir) if fa.flight_id not in excluded_ids]
-    fleet = update_fleet(
-        included, excluded=selection.excluded, baseline_config=selection.baseline_config,
-        engine_config=load_engine_config(load_manifest(ws_dir).engine_model),
-        filters=load_filters(ws_dir)["filters"],
-    )
+    fleet = fleet_for_exclusions(ws_dir, load_selection(ws_dir).excluded)
     fleet.shift_history = update_shift_history(ws_dir, fleet, cleared_by_unpin=cleared_by_unpin)
     save_fleet_analysis(ws_dir, fleet)
     return fleet

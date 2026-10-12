@@ -148,6 +148,8 @@ export function Flights() {
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [excludingId, setExcludingId] = useState<string | null>(null);
+  // Spec 14 §7.1 (v0.6): Include again opens the exclusion dialog in include mode.
+  const [includingId, setIncludingId] = useState<string | null>(null);
   const [excludeBusy, setExcludeBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -372,11 +374,15 @@ export function Flights() {
   }
 
   async function handleInclude(flightId: string) {
+    setExcludeBusy(true);
     try {
       await client.includeFlight(flightId);
+      setIncludingId(null);
       await refresh();
     } catch {
-      // server unreachable / fixture mode
+      // server unreachable / fixture mode — dialog stays open
+    } finally {
+      setExcludeBusy(false);
     }
   }
 
@@ -968,9 +974,9 @@ export function Flights() {
                       <td onClick={(e) => e.stopPropagation()}>
                         {row.excluded_reason ? (
                           <span
-                            onClick={() => handleInclude(row.flight_id)}
+                            onClick={() => setIncludingId(row.flight_id)}
                             style={{ color: "var(--text-tertiary)", cursor: "pointer" }}
-                            title={`excluded — ${row.excluded_reason} — click to re-include in reference`}
+                            title={`excluded — ${row.excluded_reason} — click to include in reference again`}
                           >
                             &#10007;
                           </span>
@@ -1121,8 +1127,19 @@ export function Flights() {
           </div>
         )}
       </div>
+      {includingId && (
+        <ExcludeConfirmDialog
+          mode="include"
+          flightId={includingId}
+          flightLabel={rows.find((r) => r.flight_id === includingId)?.date ?? "this flight"}
+          busy={excludeBusy}
+          onCancel={() => setIncludingId(null)}
+          onConfirm={() => handleInclude(includingId)}
+        />
+      )}
       {excludingId && (
         <ExcludeConfirmDialog
+          flightId={excludingId}
           flightLabel={rows.find((r) => r.flight_id === excludingId)?.date ?? "this flight"}
           busy={excludeBusy}
           onCancel={() => setExcludingId(null)}

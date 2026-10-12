@@ -778,6 +778,36 @@ def _insight_signature(iset) -> frozenset:
     )
 
 
+def _other_flights_whose_verdict_changes(workspace_dir, flight_id, before_fleet, after_fleet, rules, filters) -> list[str]:
+    """Flights other than `flight_id` whose insight verdict differs between
+    the two fleets — what an exclusion (or its reversal) changes elsewhere.
+    One computation for the exclude itself and for its preview (§7.1), so
+    the preview's count and the Journal's counted effect can't disagree."""
+    others = [fa for fa in _load_workspace_flights(workspace_dir) if fa.flight_id != flight_id]
+    return [
+        fa.flight_id for fa in others
+        if _insight_signature(evaluate_insights(fa, before_fleet, rules, filters=filters))
+        != _insight_signature(evaluate_insights(fa, after_fleet, rules, filters=filters))
+    ]
+
+
+def op_preview_reference_membership(params: dict, ctx: dict) -> Any:
+    """Spec 14 §7.1 (v0.6): read-only — the other flights whose verdict
+    would change if `flight_id` were excluded from the reference
+    (action "exclude") or included again ("include"). Nothing is saved."""
+    workspace_dir = ctx["workspace_dir"]
+    flight_id = params["flight_id"]
+    excluded = ws.load_selection(workspace_dir).excluded
+    without = [e for e in excluded if e["flight_id"] != flight_id]
+    with_it = without + [{"flight_id": flight_id, "reason": ""}]
+    current = _get_or_build_fleet(workspace_dir)
+    proposed = ws.fleet_for_exclusions(workspace_dir, with_it if params["action"] == "exclude" else without)
+    changed = _other_flights_whose_verdict_changes(
+        workspace_dir, flight_id, current, proposed, _resolve_rules(ctx), _workspace_filters(ctx),
+    )
+    return {"changed_flight_ids": changed}
+
+
 def op_exclude_flight(params: dict, ctx: dict) -> Any:
     """Spec 14 §7.1: excluding a flight is also a Journal decision, with
     a reason, a counted effect, and a "reference changed" marker on any
@@ -793,15 +823,9 @@ def op_exclude_flight(params: dict, ctx: dict) -> Any:
     filters = _workspace_filters(ctx)
 
     before_fleet = _get_or_build_fleet(workspace_dir)
-    others = [fa for fa in _load_workspace_flights(workspace_dir) if fa.flight_id != flight_id]
-    before = {fa.flight_id: _insight_signature(evaluate_insights(fa, before_fleet, rules, filters=filters)) for fa in others}
-
     selection = ws.exclude_flight(workspace_dir, flight_id, reason)
     after_fleet = ws.rebuild_fleet(workspace_dir)
-    changed = [
-        fa.flight_id for fa in others
-        if _insight_signature(evaluate_insights(fa, after_fleet, rules, filters=filters)) != before[fa.flight_id]
-    ]
+    changed = _other_flights_whose_verdict_changes(workspace_dir, flight_id, before_fleet, after_fleet, rules, filters)
 
     entry = ws.append_journal_entry(
         workspace_dir, kind="exclusion", what=flight_id, where={"flight_id": flight_id},
@@ -1609,6 +1633,7 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "list_exclusions": op_list_exclusions,
     "include_excluded_log": op_include_excluded_log,
     "preview_excluded_log": op_preview_excluded_log,
+    "preview_reference_membership": op_preview_reference_membership,
     "get_excluded_log_series": op_get_excluded_log_series,
     "list_annotations": op_list_annotations,
     "list_filters": op_list_filters,

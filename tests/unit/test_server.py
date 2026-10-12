@@ -1525,6 +1525,15 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     ids = [_import_oil_temp_flight(registry_server, i + 1, t) for i, t in enumerate(temps)]
     outlier_id = ids[-1]
 
+    # Spec 14 §7.1 (v0.6): the dialog's preview — read-only, same count the
+    # exclusion then records.
+    journal_before = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    preview = rpc(registry_server, "preview_reference_membership", {"flight_id": outlier_id, "action": "exclude"})
+    assert preview["ok"], preview
+    assert len(preview["result"]["changed_flight_ids"]) == 1
+    assert rpc(registry_server, "get_journal", {})["result"]["entries"] == journal_before
+    assert rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_state"]["excluded"] is False
+
     excl = rpc(registry_server, "exclude_flight", {"flight_id": outlier_id, "reason": "230F is a clear outlier"})
     assert excl["ok"], excl
 
@@ -1547,6 +1556,12 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     assert excluded_state == {"excluded": True, "reason": "230F is a clear outlier"}
     included_state = rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_state"]
     assert included_state == {"excluded": False, "reason": None}
+
+    # The preview names the flight the exclusion actually marked, and the
+    # reverse preview (Include again) names the same flight.
+    assert preview["result"]["changed_flight_ids"] == [marked_id]
+    back = rpc(registry_server, "preview_reference_membership", {"flight_id": outlier_id, "action": "include"})
+    assert back["result"]["changed_flight_ids"] == [marked_id]
 
     # Revert (Include again): closes the Journal entry and resolves the marker.
     inc = rpc(registry_server, "include_flight", {"flight_id": outlier_id})
