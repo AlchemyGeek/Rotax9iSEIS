@@ -277,10 +277,14 @@ def test_seven_eligible_flights_has_a_window_but_no_qualifying_reference():
 def test_real_log_set_cylinder_panel_is_exactly_one_row_naming_cylinder_3(real_flight_analyses):
     """Spec 12 v0.3 acceptance 11: on the real log set, the cylinder
     panel's coupled egtN_deviation metrics produce exactly one
-    change_summary row, naming cylinder 3 (Session A's +4.02σ result)."""
+    change_summary row, naming cylinder 3 (Session A's +4.02σ result).
+    Pinned to the fleet golden's cut-off (test_fleet_analysis_golden.
+    CUTOFF_DATE): a result recorded on that set, not on whatever the log
+    directory has grown to — with the three later flights the same
+    coupled row (egt2 + egt3) leads with cylinder 2 instead."""
     if not real_flight_analyses:
         pytest.skip("no local flight logs")
-    fleet = update_fleet(real_flight_analyses)
+    fleet = update_fleet(chronological(real_flight_analyses, pinned_to_date="2026-09-27"))
     coupled_rows = [r for r in fleet.change_summary if r.get("panel") == "cylinder_balance"]
     assert len(coupled_rows) == 1
     assert coupled_rows[0]["metric_id"] == "egt3_deviation"
