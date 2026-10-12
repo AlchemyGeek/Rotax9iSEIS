@@ -465,6 +465,7 @@ export function Settings() {
                 {rules ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 10 }}>
                     {Object.entries(rules.rules)
+                      .filter(([, topic]) => topic.enabled)
                       .flatMap(([topicId, topic]) =>
                         (topic.triggers ?? [])
                           .filter((t) => t.n_min != null)
