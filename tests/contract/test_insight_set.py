@@ -598,8 +598,10 @@ def test_topic_card_enabled_and_structural_trigger_status_on_real_flights(real_f
 
 @requires_flight_logs
 def test_every_evaluated_topic_honours_enabled(real_flight_analyses, real_fleet_analysis, rules):
-    """Spec 14 §7.3 guard / §9 criterion 13 — each evaluated topic,
-    disabled in turn, produces no insight on any flight.
+    """Spec 14 §7.3 guard / §9 criteria 13 and 17 — each evaluated topic,
+    disabled in turn, produces no insight on any flight, and still returns
+    one collapsed result (enabled: false, no analysis, no insight) so its
+    card stays — uniformly, egt_cyl_deviation included (v0.5).
     Found in v0.3: overboost_time, map_at_takeoff, engine_ecu_inflight and
     limit_exceedances ignored the flag. Disabling limit_exceedances hides
     its insights only — the flight's limit events (what Spec 09 filters and
@@ -618,11 +620,13 @@ def test_every_evaluated_topic_honours_enabled(real_flight_analyses, real_fleet_
             events_before = copy.deepcopy(fa.exceedances)
             iset = evaluate_insights(fa, real_fleet_analysis, disabled)
             assert not [i for t in iset.topics for i in t["insights"] if i["topic_id"] == topic_id], (topic_id, fa.flight_id)
-            # egt_cyl_deviation still emits its (empty) card, reporting
-            # enabled: false; every other topic emits none when disabled.
-            for t in iset.topics:
-                if t["topic_id"] == topic_id:
-                    assert t["enabled"] is False and not t["insights"], (topic_id, fa.flight_id)
+            mine = [t for t in iset.topics if t["topic_id"] == topic_id]
+            assert len(mine) == 1, (topic_id, fa.flight_id)
+            assert mine[0]["enabled"] is False, (topic_id, fa.flight_id)
+            assert mine[0]["analysis"]["text"] == "" and mine[0]["insights"] == [], (topic_id, fa.flight_id)
+            assert not mine[0].get("limit_refs"), (topic_id, fa.flight_id)
+            # Same topics, same order: the disabled card stays where it was.
+            assert [t["topic_id"] for t in iset.topics] == [t["topic_id"] for t in before.topics], (topic_id, fa.flight_id)
             # Every other topic keeps the same insights, counted by (id,
             # rule_id, severity) as the §7.2 preview counts them — wording
             # may change: the egt_spread / egt_cyl_deviation fold (Spec 10
@@ -642,6 +646,14 @@ def test_every_evaluated_topic_honours_enabled(real_flight_analyses, real_fleet_
                 assert fa.exceedances == events_before
                 for t in iset.topics:
                     assert all(r["insight_id"] is None for r in t.get("limit_refs", [])), fa.flight_id
+
+    # A disabled result is still a valid TopicResult.
+    all_off = copy.deepcopy(rules)
+    for topic_id in evaluated:
+        all_off["rules"][topic_id]["enabled"] = False
+    iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, all_off)
+    jsonschema.validate(iset.to_dict(), _SCHEMA)
+    assert {t["topic_id"] for t in iset.topics} == evaluated
 
     # The limit_exceedances case is only meaningful if some flight has events.
     assert any(fa.exceedances for fa in real_flight_analyses)

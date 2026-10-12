@@ -340,15 +340,29 @@ def op_apply_card_rule_edit(params: dict, ctx: dict) -> Any:
         if _topic_insight_signature(evaluate_insights(fa, fleet, resolved, filters=filters), topic_id) != before[fa.flight_id]
     ]
 
+    # Spec 14 §7.3 (v0.5): Enable on a disabled topic's collapsed card
+    # closes the open disabled_topic entry it undoes and resolves the
+    # markers that entry caused — the same outcome as Journal's Revert of
+    # it, reached through the card's preview-before-apply flow — rather
+    # than opening a second entry. With no open disabled_topic entry
+    # (disabled before the Journal, or by editing the file) it is an
+    # ordinary rule_edit below.
+    if not (before_topic or {}).get("enabled", True) and new_topic.get("enabled", True):
+        open_disable = [e for e in ws.load_journal(workspace_dir)["entries"]
+                        if e["kind"] == "disabled_topic" and e.get("ref_id") == topic_id and e.get("status") == "open"]
+        if open_disable:
+            for e in open_disable:
+                ws.close_journal_entry_by_id(workspace_dir, e["id"])
+                ws.resolve_reference_changes_for_cause(workspace_dir, e["id"])
+            return {"rules": resolved, "journal_entry": None, "closed_journal_entry_ids": [e["id"] for e in open_disable],
+                    "changed_flight_ids": changed}
+
     # Spec 14 §7.3 / §8 (Spec 11 impact): the topic's enabled flag going
     # true -> false *is* Spec 11's disable-topic silencing level, so an
     # edit that does that is journaled as "disabled_topic" rather than a
     # generic "rule_edit" — same apply/revert mechanism either way
     # (op_revert_rule_edit handles both kinds), just the kind a pilot
-    # sees in Journal. Re-enabling never happens through this RPC (a
-    # disabled topic has no card to edit from — only through Journal's
-    # revert of that disabled_topic entry), so the reverse direction
-    # doesn't need its own kind.
+    # sees in Journal. The reverse direction is handled above.
     kind = "disabled_topic" if (before_topic or {}).get("enabled", True) and not new_topic.get("enabled", True) else "rule_edit"
     entry = ws.append_journal_entry(
         workspace_dir, kind=kind, what=f"Rule: {topic_id}", where={"topic_id": topic_id},

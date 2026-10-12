@@ -1635,13 +1635,37 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
     return "limit" if trigger_type == "threshold" else "watch"
 
 
+# Spec 14 §7.3 (v0.5): topics that ship disabled because the engine
+# doesn't surface them — context-only (cylinder_rank, Spec 10 D4) or
+# Research (climb_thermal_rate, D2) — not because a user turned them off.
+# They get no card, disabled or not, so they're never editable (§7.2
+# guards). Same set as register.json's help: false non-removed topics.
+_NO_CARD_TOPICS = frozenset({"cylinder_rank", "climb_thermal_rate"})
+
+
+def _disabled_topic(topic_id: str) -> dict:
+    """Spec 14 §7.3 (v0.5): a topic the user disabled still returns a
+    result, so its card stays (collapsed, with Enable) — enabled: false,
+    no analysis, no insight, nothing to report on its triggers."""
+    return {
+        "topic_id": topic_id,
+        "analysis": {"text": ""},
+        "insights": [],
+        "metric_ids": [],
+        "enabled": False,
+        "trigger_status": [],
+    }
+
+
 def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) -> None:
     """Spec 08 §6 `egt_cyl_deviation`: one rule block applied to each
     cylinder's balance metric (`applies_to`), each against its own
     leave-one-out baseline."""
     rule = r_data.get("egt_cyl_deviation", {})
-    enabled = rule.get("enabled", True)
-    all_triggers = rule.get("triggers", []) if enabled else []
+    if not rule.get("enabled", True):
+        topics_out.append(_disabled_topic("egt_cyl_deviation"))
+        return
+    all_triggers = rule.get("triggers", [])
     applies_to = set(rule.get("applies_to") or _CYL_DEVIATION_KEYS)
     bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
 
@@ -1929,12 +1953,13 @@ def evaluate_insights(
 
     # ── The 8 topics driven by a single flight metric + fleet baseline ──────
     for topic_id, (flight_metric_id, fleet_key) in _TOPIC_METRIC_MAP.items():
-        # Spec 10 D2: climb_thermal_rate ships disabled (Research status) —
-        # a disabled topic emits no TopicResult at all, not just zero
-        # insights, so it has no Flight view card. The rise-rate metrics
-        # themselves stay computed (fm/fleet_analysis), just not surfaced
-        # as a topic here.
+        # Spec 10 D2: climb_thermal_rate ships disabled (Research status)
+        # and has no Flight view card at all; a topic the user disabled
+        # keeps a collapsed one (Spec 14 §7.3 v0.5). The rise-rate metrics
+        # themselves stay computed (fm/fleet_analysis) either way.
         if not r_data.get(topic_id, {}).get("enabled", True):
+            if topic_id not in _NO_CARD_TOPICS:
+                topics_out.append(_disabled_topic(topic_id))
             continue
         value = fm.get(flight_metric_id, {}).get("value")
         fleet_metric = fleet_analysis.metrics.get(fleet_key)
@@ -2047,6 +2072,8 @@ def evaluate_insights(
             if ob_om is not None:
                 ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
         _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
+    else:
+        topics_out.append(_disabled_topic("overboost_time"))
 
     # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time above: this
     # topic's own leave-one-out model/insight only gets built when enabled.
@@ -2093,6 +2120,8 @@ def evaluate_insights(
                         "detail": f"{abs(delta):.2f} inHg {direction} model (tolerance ±{tolerance:.2f} inHg)",
                     }
         _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0, [map_status])
+    else:
+        topics_out.append(_disabled_topic("map_at_takeoff"))
 
     # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time/map_at_takeoff
     # above: this topic's own insights only get built when enabled.
@@ -2164,6 +2193,8 @@ def evaluate_insights(
             "trigger_status": [{"type": "threshold", "met": len(ecu_insights) > 0, "detail": None}],
         }
         topics_out.append(ecu_topic)
+    else:
+        topics_out.append(_disabled_topic("engine_ecu_inflight"))
 
     # Bypasses _emit(): limit_exceedances is per-limit (Spec 09 §10.1), not
     # metric-shaped. One insight per limit per flight, carrying its events;
@@ -2254,6 +2285,7 @@ def evaluate_insights(
         })
     else:
         limit_insights = []
+        topics_out.append(_disabled_topic("limit_exceedances"))
 
     # Spec 10 §4.1 (Spec 01 §8.5 TopicResult.limit_refs, Spec 09 §10.2/
     # §10.3): every topic that declares limit_refs at rule level gets each
@@ -2265,7 +2297,7 @@ def evaluate_insights(
     # badge mirrors the more actionable state.
     for t in topics_out:
         refs = r_data.get(t["topic_id"], {}).get("limit_refs")
-        if not refs:
+        if not refs or not t.get("enabled", True):
             continue
         resolved = []
         for lid in refs:

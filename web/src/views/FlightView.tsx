@@ -675,7 +675,12 @@ export function FlightView() {
     return items.sort((a, b) => SEVERITY_RANK[a.insight.severity] - SEVERITY_RANK[b.insight.severity]);
   }, [insightSet]);
 
-  const noInsightTopics = useMemo(() => insightSet.topics.filter((t) => t.insights.length === 0), [insightSet]);
+  // A disabled topic (Spec 14 §7.3 v0.5) wasn't analysed — it isn't one
+  // of the topics "analysed with nothing to flag".
+  const noInsightTopics = useMemo(
+    () => insightSet.topics.filter((t) => t.insights.length === 0 && t.enabled !== false),
+    [insightSet],
+  );
 
   // An insight's phase(s), from whichever of its events/evidence actually
   // carry a time — an exceedance event's elapsed_s, or a series_window
@@ -1315,6 +1320,28 @@ export function FlightView() {
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Analysis</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                   {insightSet.topics.map((t) => {
+                    if (t.enabled === false) {
+                      const title = topicHelpById[t.topic_id]?.title ?? t.topic_id.replace(/_/g, " ");
+                      return (
+                        <div key={t.topic_id} style={{ background: "var(--panel)", borderRadius: 10, padding: "9px 15px", alignSelf: "start" }}>
+                          {!usingFixture && resolvedRules?.rules[t.topic_id] && shippedRules ? (
+                            <TopicRulesPanel
+                              topicId={t.topic_id}
+                              topic={t}
+                              title={title}
+                              resolvedRules={resolvedRules}
+                              shippedRules={shippedRules}
+                              onApplied={handleRuleApplied}
+                              onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
+                            />
+                          ) : (
+                            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                              <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{title}</span> · disabled
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
                     const topInsight = mirroredLimitInsight(t) ?? topTopicInsight(t);
                     const clickable = Boolean(topInsight && topInsight.evidence.length > 0);
                     const Wrapper = clickable ? "a" : "div";

@@ -165,7 +165,10 @@ export interface EngineClient {
   // (rules/active.json + BaselineConfig), plus the live per-flight diff.
   getWorkspaceRules(): Promise<WorkspaceRulesResult>;
   saveWorkspaceRules(rules: RuleSet): Promise<{ rules: RuleSet }>;
-  applyCardRuleEdit(topicId: string, topic: RuleTopic): Promise<{ rules: RuleSet; journal_entry: JournalEntry; changed_flight_ids: string[] }>;
+  // journal_entry is null when the edit re-enables a disabled topic: that
+  // closes its open disabled_topic entry (closed_journal_entry_ids)
+  // instead of opening one (Spec 14 §7.3 v0.5).
+  applyCardRuleEdit(topicId: string, topic: RuleTopic): Promise<{ rules: RuleSet; journal_entry: JournalEntry | null; closed_journal_entry_ids?: string[]; changed_flight_ids: string[] }>;
   revertRuleEdit(entryId: string): Promise<{ rules: RuleSet }>;
   resetWorkspaceRules(): Promise<{ rules: RuleSet }>;
   saveBaselineConfig(baselineConfig: BaselineConfig): Promise<FleetAnalysis>;
@@ -479,7 +482,7 @@ export class LocalServerClient implements EngineClient {
   }
 
   applyCardRuleEdit(topicId: string, topic: RuleTopic) {
-    return this.rpc<{ rules: RuleSet; journal_entry: JournalEntry; changed_flight_ids: string[] }>(
+    return this.rpc<{ rules: RuleSet; journal_entry: JournalEntry | null; closed_journal_entry_ids?: string[]; changed_flight_ids: string[] }>(
       "apply_card_rule_edit", { topic_id: topicId, topic },
     );
   }

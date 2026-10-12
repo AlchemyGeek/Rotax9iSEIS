@@ -64,7 +64,7 @@ const RESET_LINK: React.CSSProperties = { marginLeft: 8, fontSize: 10, color: "v
 // a second editor scoped to whichever single trigger happened to fire
 // (that was v0.2's RuleEditPanel, retired by this component).
 export function TopicRulesPanel({
-  topicId, topic, resolvedRules, shippedRules, onApplied, onNavigateFlight, defaultOpen = false, openRequest = 0,
+  topicId, topic, resolvedRules, shippedRules, onApplied, onNavigateFlight, defaultOpen = false, openRequest = 0, title,
 }: {
   topicId: string;
   topic: TopicResult;
@@ -76,6 +76,8 @@ export function TopicRulesPanel({
   // Spec 14 §7.3 (v0.4) — the insight card's "edit trigger ↓" bumps this
   // to open the disclosure from outside; 0 means never requested.
   openRequest?: number;
+  // The topic's display title, for the disabled card's one line.
+  title?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   // Opened by a request: open, then scroll once the editor has rendered
@@ -170,6 +172,12 @@ export function TopicRulesPanel({
   function handleCancel() {
     setDraftTopic(clone(savedTopic));
     setError(null);
+    if (topic.enabled === false) setOpen(false);
+  }
+
+  function handleEnable() {
+    setDraftTopic({ ...clone(savedTopic), enabled: true });
+    setOpen(true);
   }
 
   async function handleApply() {
@@ -177,6 +185,7 @@ export function TopicRulesPanel({
     setError(null);
     try {
       const res = await client.applyCardRuleEdit(topicId, draftTopic);
+      if (topic.enabled === false) setOpen(false);
       onApplied(res.rules);
     } catch {
       setError("Couldn't reach the local server — nothing was applied.");
@@ -193,6 +202,85 @@ export function TopicRulesPanel({
 
   const triggers = draftTopic.triggers ?? [];
   const enabledDirty = draftTopic.enabled !== savedTopic.enabled;
+
+  // The preview and Cancel/Apply, shared by the triggers disclosure and
+  // the disabled card's Enable (Spec 14 §7.3 v0.5) — one apply flow.
+  const previewAndActions = (
+    <>
+    {dirty && (
+      <div style={{ fontSize: 11 }}>
+        {diffing ? (
+          <span style={{ color: "var(--text-tertiary)" }}>Computing…</span>
+        ) : whatIf ? (
+          changedRows.length === 0 ? (
+            <span style={{ color: "var(--text-tertiary)" }}>On your {diffRows.length} flights: no change.</span>
+          ) : (
+            <div>
+              <div style={{ color: "var(--text-secondary)", marginBottom: 4 }}>
+                On your {diffRows.length} flights: {changedRows.length} change{changedRows.length === 1 ? "" : "s"}
+                {" ("}{changedRows.filter((r) => r.kind === "added").length} newly flagged
+                {", "}{changedRows.filter((r) => r.kind === "removed").length} cleared
+                {", "}{changedRows.filter((r) => r.kind === "changed").length} changed severity).
+                <InlineHelp id="preview.counts" />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 120, overflowY: "auto" }}>
+                {changedRows.map((r) => (
+                  <a
+                    key={r.flightId}
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); onNavigateFlight(r.flightId); }}
+                    className="mono"
+                    style={{ color: DIFF_COLOR[r.kind] }}
+                  >
+                    {r.flightId} &mdash; {DIFF_LABEL[r.kind]}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )
+        ) : null}
+      </div>
+    )}
+    {error && <div style={{ fontSize: 11, color: "var(--severity-limit)" }}>{error}</div>}
+
+    <div style={{ display: "flex", gap: 8 }}>
+      <button onClick={handleCancel} disabled={!dirty} style={{ ...BUTTON, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: dirty ? "pointer" : "default" }}>
+        Cancel
+      </button>
+      <button
+        onClick={handleApply}
+        disabled={!dirty || applying}
+        style={{ ...BUTTON, background: dirty ? "var(--accent)" : "var(--panel)", border: "none", color: dirty ? "var(--bg)" : "var(--text-tertiary)", fontWeight: 600, cursor: dirty && !applying ? "pointer" : "default" }}
+      >
+        {applying ? "Applying…" : "Apply"}
+      </button>
+    </div>
+    </>
+  );
+
+  // Spec 14 §7.3 (v0.5): a disabled topic's card is one collapsed line —
+  // <topic> · disabled · Enable. Enable previews the re-enable across the
+  // workspace before anything is applied, like any other edit.
+  if (topic.enabled === false) {
+    return (
+      <div ref={rootRef} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+          <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{title ?? topicId.replace(/_/g, " ")}</span>
+          {" · disabled · "}
+          {!open && (
+            <a href="#" onClick={(e) => { e.preventDefault(); handleEnable(); }} style={{ fontSize: 12 }}>
+              Enable
+            </a>
+          )}
+        </div>
+        {open && (
+          <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", marginTop: 6, display: "flex", flexDirection: "column", gap: 10 }}>
+            {previewAndActions}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} style={{ marginTop: 4 }}>
@@ -274,54 +362,7 @@ export function TopicRulesPanel({
             );
           })}
 
-          {dirty && (
-            <div style={{ fontSize: 11 }}>
-              {diffing ? (
-                <span style={{ color: "var(--text-tertiary)" }}>Computing…</span>
-              ) : whatIf ? (
-                changedRows.length === 0 ? (
-                  <span style={{ color: "var(--text-tertiary)" }}>On your {diffRows.length} flights: no change.</span>
-                ) : (
-                  <div>
-                    <div style={{ color: "var(--text-secondary)", marginBottom: 4 }}>
-                      On your {diffRows.length} flights: {changedRows.length} change{changedRows.length === 1 ? "" : "s"}
-                      {" ("}{changedRows.filter((r) => r.kind === "added").length} newly flagged
-                      {", "}{changedRows.filter((r) => r.kind === "removed").length} cleared
-                      {", "}{changedRows.filter((r) => r.kind === "changed").length} changed severity).
-                      <InlineHelp id="preview.counts" />
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 120, overflowY: "auto" }}>
-                      {changedRows.map((r) => (
-                        <a
-                          key={r.flightId}
-                          href="#"
-                          onClick={(e) => { e.preventDefault(); onNavigateFlight(r.flightId); }}
-                          className="mono"
-                          style={{ color: DIFF_COLOR[r.kind] }}
-                        >
-                          {r.flightId} &mdash; {DIFF_LABEL[r.kind]}
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )
-              ) : null}
-            </div>
-          )}
-          {error && <div style={{ fontSize: 11, color: "var(--severity-limit)" }}>{error}</div>}
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCancel} disabled={!dirty} style={{ ...BUTTON, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: dirty ? "pointer" : "default" }}>
-              Cancel
-            </button>
-            <button
-              onClick={handleApply}
-              disabled={!dirty || applying}
-              style={{ ...BUTTON, background: dirty ? "var(--accent)" : "var(--panel)", border: "none", color: dirty ? "var(--bg)" : "var(--text-tertiary)", fontWeight: 600, cursor: dirty && !applying ? "pointer" : "default" }}
-            >
-              {applying ? "Applying…" : "Apply"}
-            </button>
-          </div>
+          {previewAndActions}
         </div>
       )}
     </div>

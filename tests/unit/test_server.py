@@ -1688,6 +1688,33 @@ def test_apply_card_rule_edit_classifies_enable_toggle_as_disabled_topic(registr
     assert next(e for e in entries if e["id"] == entry["id"])["status"] == "closed"
 
 
+def test_enable_from_collapsed_card_closes_the_disabled_topic_entry(registry_server):
+    """Spec 14 §7.3 (v0.5) / criterion 17 — a disabled topic still has a
+    (collapsed) card: get_flight returns its result with enabled: false
+    and no analysis. Enable goes through the same apply RPC, re-enables
+    the topic and closes the disabled_topic entry instead of opening a
+    second one."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    flight_id = _import_oil_temp_flight(registry_server, 1, 180)
+
+    topic = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]["rules"]["oil_temp_peak"]
+    disabled = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": {**topic, "enabled": False}})
+    disable_entry = disabled["result"]["journal_entry"]
+
+    iset = rpc(registry_server, "get_flight", {"flight_id": flight_id})["result"]["insight_set"]
+    card = next(t for t in iset["topics"] if t["topic_id"] == "oil_temp_peak")
+    assert card["enabled"] is False and card["analysis"]["text"] == "" and card["insights"] == []
+
+    enabled = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": {**topic, "enabled": True}})
+    assert enabled["ok"], enabled
+    assert enabled["result"]["journal_entry"] is None
+    assert enabled["result"]["closed_journal_entry_ids"] == [disable_entry["id"]]
+    assert enabled["result"]["rules"]["rules"]["oil_temp_peak"]["enabled"] is True
+
+    entries = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["ref_id"] == "oil_temp_peak"]
+    assert [(e["kind"], e["status"]) for e in entries] == [("disabled_topic", "closed")]
+
+
 def test_apply_card_rule_edit_plain_value_change_stays_rule_edit(registry_server):
     """A trigger-value edit with no change to `enabled` keeps the
     existing "rule_edit" kind."""

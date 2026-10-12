@@ -158,6 +158,9 @@ def render_report(fa: FlightAnalysis, iset: InsightSet) -> str:
     for topic in iset.topics:
         title = topic["topic_id"].replace("_", " ").upper()
         lines.append(f"\n── {title} " + "─" * max(0, 58 - len(title)))
+        if topic.get("enabled") is False:
+            lines.append("  (disabled)")
+            continue
         lines.append(f"  Analysis: {topic['analysis']['text']}")
         for insight in topic["insights"]:
             lines.append(f"  Insight:  [{insight['severity']}] {insight['message']['text']}")
