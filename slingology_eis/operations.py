@@ -2023,211 +2023,237 @@ def evaluate_insights(
     # the close call, whose threshold still shifts with any active filter
     # band. `_resolve_limit_ref_events` is the same resolution oil_temp_peak
     # / coolant_temp_peak use — overboost no longer gets its own mechanism.
-    ob_om, _ = _resolve_limit_ref_events("overboost_time")
-    if ob_om is not None:
-        ob_limit = ob_om["limit_value"]
-        ob_filter = valid_filters.get(ob_om["id"])
-        ob_band = (_filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
-                   if ob_filter is not None else 0.0)
-        ob_close_call = (ob_limit + ob_band) - ob_om.get("close_call_margin_s", 60)
-    else:
-        ob_limit = 300
-        ob_close_call = None
-    ob_total = fm.get("overboost_total_s", {}).get("value")
-    ob_max = fm.get("overboost_max_block_s", {}).get("value")
-    raw = topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_close_call)
-    for ins in raw["insights"]:
+    # Spec 14 §7.3 guard (v0.4) — found disabled-but-still-evaluated in
+    # v0.3: this topic's own insight (the close call) only exists when
+    # the topic is enabled, same as every other topic. The underlying
+    # limit *events* this close call compares against are unaffected —
+    # they come from flight_analysis.exceedances / events_by_limit,
+    # computed above, independent of this topic entirely.
+    if r_data.get("overboost_time", {}).get("enabled", True):
+        ob_om, _ = _resolve_limit_ref_events("overboost_time")
         if ob_om is not None:
-            ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
-    _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
+            ob_limit = ob_om["limit_value"]
+            ob_filter = valid_filters.get(ob_om["id"])
+            ob_band = (_filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
+                       if ob_filter is not None else 0.0)
+            ob_close_call = (ob_limit + ob_band) - ob_om.get("close_call_margin_s", 60)
+        else:
+            ob_limit = 300
+            ob_close_call = None
+        ob_total = fm.get("overboost_total_s", {}).get("value")
+        ob_max = fm.get("overboost_max_block_s", {}).get("value")
+        raw = topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_close_call)
+        for ins in raw["insights"]:
+            if ob_om is not None:
+                ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
+        _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
 
-    map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
-    map_points = (map_model or {}).get("points", [])
-    map_loo_fit = _leave_one_out_map_fit(map_points, flight_id)
-    map_trigger = next(
-        (t for t in r_data.get("map_at_takeoff", {}).get("triggers", []) if t.get("type") == "threshold"),
-        {},
-    )
-    map_z = map_trigger.get("z", 2.0)
-    raw = topics.takeoff_map(
-        fm.get("takeoff_map_inhg", {}).get("value"),
-        fm.get("takeoff_pressure_alt_ft", {}).get("value"),
-        fm.get("takeoff_oat_c", {}).get("value"),
-        map_loo_fit, z=map_z,
-    )
-    # Spec 14 §7.3 — same delta/tolerance topics.takeoff_map computes
-    # internally for its own insight text, kept inline here (it's the
-    # only caller) rather than threaded back out through that function's
-    # return shape.
-    map_status = {"type": "threshold", "met": None, "detail": None}
-    obs_map = fm.get("takeoff_map_inhg", {}).get("value")
-    n_model = map_loo_fit.get("n", 0)
-    if obs_map is not None and n_model >= 5:
-        obs_pa = fm.get("takeoff_pressure_alt_ft", {}).get("value")
-        obs_oat = fm.get("takeoff_oat_c", {}).get("value")
-        pa_range = map_loo_fit.get("pa_range")
-        oat_range = map_loo_fit.get("oat_range")
-        outside_range = (
-            (pa_range is not None and obs_pa is not None and not (pa_range[0] <= obs_pa <= pa_range[1]))
-            or (oat_range is not None and obs_oat is not None and not (oat_range[0] <= obs_oat <= oat_range[1]))
+    # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time above: this
+    # topic's own leave-one-out model/insight only gets built when enabled.
+    if r_data.get("map_at_takeoff", {}).get("enabled", True):
+        map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
+        map_points = (map_model or {}).get("points", [])
+        map_loo_fit = _leave_one_out_map_fit(map_points, flight_id)
+        map_trigger = next(
+            (t for t in r_data.get("map_at_takeoff", {}).get("triggers", []) if t.get("type") == "threshold"),
+            {},
         )
-        if not outside_range:
-            exp_map = topics.predict_takeoff_map(map_loo_fit, obs_pa, obs_oat) if obs_pa is not None and obs_oat is not None else None
-            se = map_loo_fit.get("residual_se")
-            if exp_map is not None and se is not None:
-                delta = obs_map - exp_map
-                tolerance = map_z * se
-                direction = "below" if delta < 0 else "above"
-                map_status = {
-                    "type": "threshold", "met": abs(delta) >= tolerance,
-                    "detail": f"{abs(delta):.2f} inHg {direction} model (tolerance ±{tolerance:.2f} inHg)",
-                }
-    _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0, [map_status])
+        map_z = map_trigger.get("z", 2.0)
+        raw = topics.takeoff_map(
+            fm.get("takeoff_map_inhg", {}).get("value"),
+            fm.get("takeoff_pressure_alt_ft", {}).get("value"),
+            fm.get("takeoff_oat_c", {}).get("value"),
+            map_loo_fit, z=map_z,
+        )
+        # Spec 14 §7.3 — same delta/tolerance topics.takeoff_map computes
+        # internally for its own insight text, kept inline here (it's the
+        # only caller) rather than threaded back out through that function's
+        # return shape.
+        map_status = {"type": "threshold", "met": None, "detail": None}
+        obs_map = fm.get("takeoff_map_inhg", {}).get("value")
+        n_model = map_loo_fit.get("n", 0)
+        if obs_map is not None and n_model >= 5:
+            obs_pa = fm.get("takeoff_pressure_alt_ft", {}).get("value")
+            obs_oat = fm.get("takeoff_oat_c", {}).get("value")
+            pa_range = map_loo_fit.get("pa_range")
+            oat_range = map_loo_fit.get("oat_range")
+            outside_range = (
+                (pa_range is not None and obs_pa is not None and not (pa_range[0] <= obs_pa <= pa_range[1]))
+                or (oat_range is not None and obs_oat is not None and not (oat_range[0] <= obs_oat <= oat_range[1]))
+            )
+            if not outside_range:
+                exp_map = topics.predict_takeoff_map(map_loo_fit, obs_pa, obs_oat) if obs_pa is not None and obs_oat is not None else None
+                se = map_loo_fit.get("residual_se")
+                if exp_map is not None and se is not None:
+                    delta = obs_map - exp_map
+                    tolerance = map_z * se
+                    direction = "below" if delta < 0 else "above"
+                    map_status = {
+                        "type": "threshold", "met": abs(delta) >= tolerance,
+                        "detail": f"{abs(delta):.2f} inHg {direction} model (tolerance ±{tolerance:.2f} inHg)",
+                    }
+        _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0, [map_status])
 
-    # FlightAnalysis.ecu_runs is keyed start_utc/duration_s/... (Spec 01
-    # §8.3 shape); topics.engine_ecu_inflight -> cas.analyze_inflight_pattern
-    # expects source_file/start_time (§8.6-adjacent, cas.py's own shape).
-    # Adapt rather than let the mismatch silently produce a None timestamp.
-    adapted_runs = [
-        {**r, "source_file": flight_id, "start_time": r.get("start_utc")}
-        for r in flight_analysis.ecu_runs
-    ]
-    raw = topics.engine_ecu_inflight(adapted_runs)
+    # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time/map_at_takeoff
+    # above: this topic's own insights only get built when enabled.
+    if r_data.get("engine_ecu_inflight", {}).get("enabled", True):
+        # FlightAnalysis.ecu_runs is keyed start_utc/duration_s/... (Spec 01
+        # §8.3 shape); topics.engine_ecu_inflight -> cas.analyze_inflight_pattern
+        # expects source_file/start_time (§8.6-adjacent, cas.py's own shape).
+        # Adapt rather than let the mismatch silently produce a None timestamp.
+        adapted_runs = [
+            {**r, "source_file": flight_id, "start_time": r.get("start_utc")}
+            for r in flight_analysis.ecu_runs
+        ]
+        raw = topics.engine_ecu_inflight(adapted_runs)
 
-    # analyze_inflight_pattern() (cas.py) rebuilds its own event dicts and
-    # drops elapsed_s along the way (it's also used fleet-wide, where one
-    # flight's elapsed time isn't meaningful) — look the run back up by its
-    # start_utc, which survives, to recover it for the series_window below.
-    _ecu_runs_by_start = {r["start_utc"]: r for r in flight_analysis.ecu_runs}
+        # analyze_inflight_pattern() (cas.py) rebuilds its own event dicts and
+        # drops elapsed_s along the way (it's also used fleet-wide, where one
+        # flight's elapsed time isn't meaningful) — look the run back up by its
+        # start_utc, which survives, to recover it for the series_window below.
+        _ecu_runs_by_start = {r["start_utc"]: r for r in flight_analysis.ecu_runs}
 
-    def _ecu_insight(e: dict) -> dict:
-        iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16]
-        run = _ecu_runs_by_start.get(e["start_time"]) or {}
-        elapsed_s = run.get("elapsed_s")
-        duration_s = run.get("duration_s") or e.get("duration_s") or 0
-        # Zoom to the moment on this flight's own chart, like every other
-        # insight (RPM + oil pressure — the pair a CAN-dropout/oil-NaN
-        # signature actually shows up in). The ecu_run reference stays as a
-        # second evidence entry so "See in ECU page" can still jump to and
-        # highlight the matching run there (ECU.tsx's runRefKey) — a
-        # deliberate second destination, not a replaced one.
-        evidence = []
-        if elapsed_s is not None:
-            pad = max(duration_s * 0.5, 15)
-            evidence.append({
-                "kind": "series_window",
-                "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
-                "start_s": max(0, elapsed_s - pad),
-                "end_s": elapsed_s + duration_s + pad,
-                # The event's own, unpadded bounds — a marker at the exact
-                # moment, distinct from the padded window above (padding is
-                # for zoom context; a one-row alert would otherwise be
-                # invisible inside its own ~30s of surrounding padding).
-                "marker_start_s": elapsed_s,
-                "marker_end_s": elapsed_s + max(duration_s, 1),
-            })
-        evidence.append({"kind": "ecu_run", "ref": str(e["start_time"])})
-        d = {
-            "id": iid,
-            "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
-            "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
-            "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
-            "evidence": evidence,
-            "confidence": _confidence(0),
+        def _ecu_insight(e: dict) -> dict:
+            iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16]
+            run = _ecu_runs_by_start.get(e["start_time"]) or {}
+            elapsed_s = run.get("elapsed_s")
+            duration_s = run.get("duration_s") or e.get("duration_s") or 0
+            # Zoom to the moment on this flight's own chart, like every other
+            # insight (RPM + oil pressure — the pair a CAN-dropout/oil-NaN
+            # signature actually shows up in). The ecu_run reference stays as a
+            # second evidence entry so "See in ECU page" can still jump to and
+            # highlight the matching run there (ECU.tsx's runRefKey) — a
+            # deliberate second destination, not a replaced one.
+            evidence = []
+            if elapsed_s is not None:
+                pad = max(duration_s * 0.5, 15)
+                evidence.append({
+                    "kind": "series_window",
+                    "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
+                    "start_s": max(0, elapsed_s - pad),
+                    "end_s": elapsed_s + duration_s + pad,
+                    # The event's own, unpadded bounds — a marker at the exact
+                    # moment, distinct from the padded window above (padding is
+                    # for zoom context; a one-row alert would otherwise be
+                    # invisible inside its own ~30s of surrounding padding).
+                    "marker_start_s": elapsed_s,
+                    "marker_end_s": elapsed_s + max(duration_s, 1),
+                })
+            evidence.append({"kind": "ecu_run", "ref": str(e["start_time"])})
+            d = {
+                "id": iid,
+                "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
+                "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
+                "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
+                "evidence": evidence,
+                "confidence": _confidence(0),
+            }
+            if iid in notes_by_insight_id:
+                d["note"] = notes_by_insight_id[iid]
+            return d
+
+        ecu_insights = [_ecu_insight(e) for e in raw["events"]]
+        ecu_topic = {
+            "topic_id": "engine_ecu_inflight",
+            "analysis": {"text": raw["analysis"]},
+            "insights": ecu_insights,
+            "metric_ids": ["inflight_ecu_count"],
+            "enabled": True,
+            # Spec 14 §7.3 — this trigger has no numeric setting (condition
+            # "any_inflight"); met is simply whether it fired on this flight.
+            "trigger_status": [{"type": "threshold", "met": len(ecu_insights) > 0, "detail": None}],
         }
-        if iid in notes_by_insight_id:
-            d["note"] = notes_by_insight_id[iid]
-        return d
-
-    ecu_insights = [_ecu_insight(e) for e in raw["events"]]
-    ecu_topic = {
-        "topic_id": "engine_ecu_inflight",
-        "analysis": {"text": raw["analysis"]},
-        "insights": ecu_insights,
-        "metric_ids": ["inflight_ecu_count"],
-        "enabled": True,
-        # Spec 14 §7.3 — this trigger has no numeric setting (condition
-        # "any_inflight"); met is simply whether it fired on this flight.
-        "trigger_status": [{"type": "threshold", "met": len(ecu_insights) > 0, "detail": None}],
-    }
-    topics_out.append(ecu_topic)
+        topics_out.append(ecu_topic)
 
     # Bypasses _emit(): limit_exceedances is per-limit (Spec 09 §10.1), not
     # metric-shaped. One insight per limit per flight, carrying its events;
     # its evidence is one series_window per event, in time order, so the
     # card's click zooms to the first and the expanded rows to each.
-    groups = []
-    for lid, evs in events_by_limit.items():
-        first = evs[0]
-        lim = limits_by_id.get(lid) or {
-            "id": lid, "label": first["label"], "unit": first["unit"], "limit_type": first["limit_type"],
-            "limit_value": first["limit_value"], "severity": first["severity"],
-        }
-        flt = valid_filters.get(lid)
-        if flt is None:
-            groups.append({"limit_id": lid, "limit": lim, "events": evs, "kind": "exceedance"})
-            continue
-        text = _filters.band_text(flt, lim, frozen_by_limit.get(lid))
-        breaches = [e for e in evs if suppressed_by.get(_event_id(e)) is None]
-        tolerated = [e for e in evs if suppressed_by.get(_event_id(e)) is not None]
-        if breaches:
-            groups.append({"limit_id": lid, "limit": lim, "events": breaches, "kind": "breach",
-                           "filter": flt, "filter_text": text})
-        if tolerated:
-            groups.append({"limit_id": lid, "limit": lim, "events": tolerated, "kind": "filtered",
-                           "filter": flt, "filter_text": text})
-    raw = topics.limit_exceedance_groups(groups)
-    limit_insights = []
-    noted_limits: set[str] = set()
-    for ins in raw["insights"]:
-        g = groups[ins.pop("group")]
-        kind = g["kind"]
-        iid = _limit_insight_id(flight_id, g["limit_id"], kind)
-        if kind == "filtered":
-            # Quiet: info for a CAUTION limit, watch for a WARNING one (§10.1).
-            severity = "watch" if g["limit"].get("severity") == "WARNING" else "info"
-        else:
-            severity = _severity_for(rules, "limit_exceedances", ins["trigger"])
-        limit_insight = {
-            "id": iid,
+    #
+    # Spec 14 §7.3 guard (v0.4) — disabling this topic hides its insights
+    # only. `events_by_limit`/`valid_filters`/`suppressed_by` above are
+    # computed from flight_analysis.exceedances independent of this block,
+    # so Spec 09 filters and the Trends per-limit metrics (which read those,
+    # not this topic's output) are unaffected either way. `limit_insights`
+    # is still needed below (the mirrored-badge resolution on oil_temp_peak
+    # / coolant_temp_peak / overboost_time) only when this topic actually
+    # produced insights to mirror — empty when disabled, same as it would
+    # be on a flight with no exceedances at all.
+    if r_data.get("limit_exceedances", {}).get("enabled", True):
+        groups = []
+        for lid, evs in events_by_limit.items():
+            first = evs[0]
+            lim = limits_by_id.get(lid) or {
+                "id": lid, "label": first["label"], "unit": first["unit"], "limit_type": first["limit_type"],
+                "limit_value": first["limit_value"], "severity": first["severity"],
+            }
+            flt = valid_filters.get(lid)
+            if flt is None:
+                groups.append({"limit_id": lid, "limit": lim, "events": evs, "kind": "exceedance"})
+                continue
+            text = _filters.band_text(flt, lim, frozen_by_limit.get(lid))
+            breaches = [e for e in evs if suppressed_by.get(_event_id(e)) is None]
+            tolerated = [e for e in evs if suppressed_by.get(_event_id(e)) is not None]
+            if breaches:
+                groups.append({"limit_id": lid, "limit": lim, "events": breaches, "kind": "breach",
+                               "filter": flt, "filter_text": text})
+            if tolerated:
+                groups.append({"limit_id": lid, "limit": lim, "events": tolerated, "kind": "filtered",
+                               "filter": flt, "filter_text": text})
+        raw = topics.limit_exceedance_groups(groups)
+        limit_insights = []
+        noted_limits: set[str] = set()
+        for ins in raw["insights"]:
+            g = groups[ins.pop("group")]
+            kind = g["kind"]
+            iid = _limit_insight_id(flight_id, g["limit_id"], kind)
+            if kind == "filtered":
+                # Quiet: info for a CAUTION limit, watch for a WARNING one (§10.1).
+                severity = "watch" if g["limit"].get("severity") == "WARNING" else "info"
+            else:
+                severity = _severity_for(rules, "limit_exceedances", ins["trigger"])
+            limit_insight = {
+                "id": iid,
+                "topic_id": "limit_exceedances",
+                "rule_id": "limit_exceedances.threshold",
+                "trigger": ins["trigger"],
+                "severity": severity,
+                "message": {"text": ins["text"]},
+                "evidence": [_event_window(e) for e in g["events"]],
+                "confidence": _confidence(0),
+                "limit_id": g["limit_id"],
+                "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+                # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
+                # can say up front when it can't.
+                "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
+                               if g["limit_id"] in limits_by_id else False),
+            }
+            if kind != "exceedance":
+                limit_insight["filter"] = {"filter_id": g["filter"]["id"],
+                                           "outcome": "breach" if kind == "breach" else "suppressed"}
+            # A note saved on this limit before it was filtered (or while it had
+            # no breach) is keyed to another kind's id; show it on the limit's
+            # first insight rather than lose it from view.
+            note = notes_by_insight_id.get(iid)
+            if note is None and g["limit_id"] not in noted_limits:
+                note = next((notes_by_insight_id[k] for k in (
+                    _limit_insight_id(flight_id, g["limit_id"], other)
+                    for other in ("exceedance", "breach", "filtered") if other != kind)
+                    if k in notes_by_insight_id), None)
+            if note is not None:
+                limit_insight["note"] = note
+                noted_limits.add(g["limit_id"])
+            limit_insights.append(limit_insight)
+        topics_out.append({
             "topic_id": "limit_exceedances",
-            "rule_id": "limit_exceedances.threshold",
-            "trigger": ins["trigger"],
-            "severity": severity,
-            "message": {"text": ins["text"]},
-            "evidence": [_event_window(e) for e in g["events"]],
-            "confidence": _confidence(0),
-            "limit_id": g["limit_id"],
-            "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
-            # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
-            # can say up front when it can't.
-            "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
-                           if g["limit_id"] in limits_by_id else False),
-        }
-        if kind != "exceedance":
-            limit_insight["filter"] = {"filter_id": g["filter"]["id"],
-                                       "outcome": "breach" if kind == "breach" else "suppressed"}
-        # A note saved on this limit before it was filtered (or while it had
-        # no breach) is keyed to another kind's id; show it on the limit's
-        # first insight rather than lose it from view.
-        note = notes_by_insight_id.get(iid)
-        if note is None and g["limit_id"] not in noted_limits:
-            note = next((notes_by_insight_id[k] for k in (
-                _limit_insight_id(flight_id, g["limit_id"], other)
-                for other in ("exceedance", "breach", "filtered") if other != kind)
-                if k in notes_by_insight_id), None)
-        if note is not None:
-            limit_insight["note"] = note
-            noted_limits.add(g["limit_id"])
-        limit_insights.append(limit_insight)
-    topics_out.append({
-        "topic_id": "limit_exceedances",
-        "analysis": {"text": raw["analysis"]},
-        "insights": limit_insights,
-        "metric_ids": [],
-        "enabled": True,
-        "trigger_status": [{"type": "threshold", "met": len(limit_insights) > 0, "detail": None}],
-    })
+            "analysis": {"text": raw["analysis"]},
+            "insights": limit_insights,
+            "metric_ids": [],
+            "enabled": True,
+            "trigger_status": [{"type": "threshold", "met": len(limit_insights) > 0, "detail": None}],
+        })
+    else:
+        limit_insights = []
 
     # Spec 10 §4.1 (Spec 01 §8.5 TopicResult.limit_refs, Spec 09 §10.2/
     # §10.3): every topic that declares limit_refs at rule level gets each
