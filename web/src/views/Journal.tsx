@@ -381,6 +381,7 @@ export function Journal() {
                     )}
                     <span className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
                       {formatDate(entry.at)}
+                      {entry.backfilled && " · backfilled"}
                       {entry.reason && ` · ${entry.reason}`}
                       {entry.effect && ` · ${entry.effect}`}
                     </span>

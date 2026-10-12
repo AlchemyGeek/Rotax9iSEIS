@@ -793,6 +793,10 @@ export interface JournalEntry {
   ref_id?: string | null;
   before?: unknown;
   after?: unknown;
+  // Spec 14 §6.1 (v0.3) — imported once from a record that predates
+  // journal.json; always false for an entry created by a live user
+  // action. Carries no counted effect (see `effect` above).
+  backfilled?: boolean;
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 import uuid
 import warnings
 from dataclasses import dataclass, field
@@ -1740,6 +1741,18 @@ def diff_and_log_settings(ws_dir: Path, tab: str, before: dict, after: dict, sou
 
 _JOURNAL_VERSION = "1"
 
+# server.py runs a ThreadingHTTPServer — one thread per request — so two
+# browser tabs/clients opening the same workspace at once (Spec 14 §9
+# acceptance 12) really can call get_journal, and therefore
+# backfill_journal_from_existing, concurrently in this one process.
+# Without serializing journal.json's read-modify-write, both threads can
+# read "not backfilled yet" before either writes, producing two entries
+# for the same source record — the duplicate observed live in v0.2. One
+# process-wide RLock (reentrant: backfill's own read-check-append needs
+# to nest inside the same critical section as append_journal_entry's)
+# around every journal.json mutation closes the window.
+_JOURNAL_LOCK = threading.RLock()
+
 
 def load_journal(ws_dir: Path) -> dict:
     f = ws_dir / "journal.json"
@@ -1752,18 +1765,19 @@ def append_journal_entry(
     ws_dir: Path, *, kind: str, what: str, where: Optional[dict] = None,
     reason: Optional[str] = None, note: Optional[str] = None,
     effect: Optional[str] = None, ref_id: Optional[str] = None, at: Optional[str] = None,
-    before: Any = None, after: Any = None,
+    before: Any = None, after: Any = None, backfilled: bool = False,
 ) -> dict:
-    store = load_journal(ws_dir)
-    entry = {
-        "id": _new_id("jnl"), "kind": kind, "what": what, "where": where,
-        "at": at or _now(), "reason": reason, "note": note, "effect": effect,
-        "status": "open", "closed_at": None, "ref_id": ref_id,
-        "before": before, "after": after,
-    }
-    store["entries"].append(entry)
-    _write_json(ws_dir / "journal.json", store)
-    return entry
+    with _JOURNAL_LOCK:
+        store = load_journal(ws_dir)
+        entry = {
+            "id": _new_id("jnl"), "kind": kind, "what": what, "where": where,
+            "at": at or _now(), "reason": reason, "note": note, "effect": effect,
+            "status": "open", "closed_at": None, "ref_id": ref_id,
+            "before": before, "after": after, "backfilled": backfilled,
+        }
+        store["entries"].append(entry)
+        _write_json(ws_dir / "journal.json", store)
+        return entry
 
 
 def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optional[str] = None) -> Optional[dict]:
@@ -1774,27 +1788,29 @@ def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optiona
     topic can have several open rule_edit entries at once (each edit is
     its own entry, Spec 14 §10 Q5), so that kind is closed by id instead
     — see close_journal_entry_by_id."""
-    store = load_journal(ws_dir)
-    for entry in reversed(store["entries"]):
-        if entry["kind"] == kind and entry["ref_id"] == ref_id and entry["status"] == "open":
-            entry["status"] = "closed"
-            entry["closed_at"] = _now()
-            if effect is not None:
-                entry["effect"] = effect
-            _write_json(ws_dir / "journal.json", store)
-            return entry
-    return None
+    with _JOURNAL_LOCK:
+        store = load_journal(ws_dir)
+        for entry in reversed(store["entries"]):
+            if entry["kind"] == kind and entry["ref_id"] == ref_id and entry["status"] == "open":
+                entry["status"] = "closed"
+                entry["closed_at"] = _now()
+                if effect is not None:
+                    entry["effect"] = effect
+                _write_json(ws_dir / "journal.json", store)
+                return entry
+        return None
 
 
 def close_journal_entry_by_id(ws_dir: Path, entry_id: str) -> Optional[dict]:
-    store = load_journal(ws_dir)
-    for entry in store["entries"]:
-        if entry["id"] == entry_id and entry["status"] == "open":
-            entry["status"] = "closed"
-            entry["closed_at"] = _now()
-            _write_json(ws_dir / "journal.json", store)
-            return entry
-    return None
+    with _JOURNAL_LOCK:
+        store = load_journal(ws_dir)
+        for entry in store["entries"]:
+            if entry["id"] == entry_id and entry["status"] == "open":
+                entry["status"] = "closed"
+                entry["closed_at"] = _now()
+                _write_json(ws_dir / "journal.json", store)
+                return entry
+        return None
 
 
 def has_open_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> bool:
@@ -1813,40 +1829,55 @@ def backfill_journal_from_existing(ws_dir: Path) -> None:
     entry per live record that's missing one, dated at the record's own
     original timestamp rather than "now", so it sorts into its real
     place in the newest-first list instead of jumping to the top.
+
+    The whole scan-and-append pass runs under _JOURNAL_LOCK as one
+    critical section (Spec 14 §9 acceptance 12) — two threads calling
+    this for the same just-opened workspace serialize instead of racing,
+    so the second one's has_open_journal_entry checks see the first
+    one's writes and backfills nothing.
     """
-    for f in load_filters(ws_dir)["filters"]:
-        if not has_open_journal_entry(ws_dir, kind="limit_filter", ref_id=f["id"]):
-            append_journal_entry(
-                ws_dir, kind="limit_filter", what=f"Filter: {f['limit_id']}",
-                where={"limit_id": f["limit_id"]}, note=f.get("note"), ref_id=f["id"],
-                at=f.get("created_at"),
-            )
-    for a in load_annotations(ws_dir)["annotations"]:
-        if not has_open_journal_entry(ws_dir, kind="annotation", ref_id=a["id"]):
-            append_journal_entry(
-                ws_dir, kind="annotation", what=a["note"][:80],
-                where={"flight_id": a["flight_id"], "ref": a["ref"]}, ref_id=a["id"],
-                at=a.get("created_at"),
-            )
-    pinned = (load_selection(ws_dir).baseline_config or {}).get("pinned_references") or {}
-    for metric_id, ref in pinned.items():
-        if not has_open_journal_entry(ws_dir, kind="reference_pin", ref_id=metric_id):
-            append_journal_entry(
-                ws_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
-                note=ref.get("label"), effect=f"n={len(ref.get('flight_ids', []))}", ref_id=metric_id,
-                at=ref.get("set_at"),
-            )
-    # Exclusions carry no timestamp at all in FleetSelection (§6.3's own
-    # "excluded" list predates this entry kind and was never given one) —
-    # backfilled entries land at "now" rather than a fabricated date, and
-    # with no counted effect, since there's no "before" state left to
-    # diff against for something that happened before this code existed.
-    for e in load_selection(ws_dir).excluded:
-        if not has_open_journal_entry(ws_dir, kind="exclusion", ref_id=e["flight_id"]):
-            append_journal_entry(
-                ws_dir, kind="exclusion", what=e["flight_id"], where={"flight_id": e["flight_id"]},
-                reason=e.get("reason"), ref_id=e["flight_id"],
-            )
+    with _JOURNAL_LOCK:
+        for f in load_filters(ws_dir)["filters"]:
+            if not has_open_journal_entry(ws_dir, kind="limit_filter", ref_id=f["id"]):
+                append_journal_entry(
+                    ws_dir, kind="limit_filter", what=f"Filter: {f['limit_id']}",
+                    where={"limit_id": f["limit_id"]}, note=f.get("note"), ref_id=f["id"],
+                    at=f.get("created_at"), backfilled=True,
+                )
+        for a in load_annotations(ws_dir)["annotations"]:
+            if not has_open_journal_entry(ws_dir, kind="annotation", ref_id=a["id"]):
+                append_journal_entry(
+                    ws_dir, kind="annotation", what=a["note"][:80],
+                    where={"flight_id": a["flight_id"], "ref": a["ref"]}, ref_id=a["id"],
+                    at=a.get("created_at"), backfilled=True,
+                )
+        # v0.3 (Spec 14 §6.1): backfilled entries carry no counted effect
+        # — there's no "before" state left to diff against for something
+        # that happened before this code existed. The pinned set's size
+        # is descriptive, not a computed effect of an action, so it moves
+        # into `note` alongside the label rather than `effect`.
+        pinned = (load_selection(ws_dir).baseline_config or {}).get("pinned_references") or {}
+        for metric_id, ref in pinned.items():
+            if not has_open_journal_entry(ws_dir, kind="reference_pin", ref_id=metric_id):
+                n = len(ref.get("flight_ids", []))
+                label = ref.get("label")
+                append_journal_entry(
+                    ws_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
+                    note=f"{label} (n={n})" if label else f"n={n}", ref_id=metric_id,
+                    at=ref.get("set_at"), backfilled=True,
+                )
+        # Exclusions carry no timestamp at all in FleetSelection (§6.3's
+        # own "excluded" list predates this entry kind and was never
+        # given one) — backfilled entries land at "now" rather than a
+        # fabricated date, and with no counted effect, since there's no
+        # "before" state left to diff against for something that
+        # happened before this code existed.
+        for e in load_selection(ws_dir).excluded:
+            if not has_open_journal_entry(ws_dir, kind="exclusion", ref_id=e["flight_id"]):
+                append_journal_entry(
+                    ws_dir, kind="exclusion", what=e["flight_id"], where={"flight_id": e["flight_id"]},
+                    reason=e.get("reason"), ref_id=e["flight_id"], backfilled=True,
+                )
 
 
 # ── Reference-change markers (Spec 14 §7.1) ─────────────────────────────────

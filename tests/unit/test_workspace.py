@@ -848,9 +848,50 @@ def test_journal_backfills_entries_for_records_predating_the_journal(tmp_path):
     assert by_kind["annotation"]["ref_id"] == ann["id"]
     assert by_kind["annotation"]["at"] == ann["created_at"]
     assert by_kind["reference_pin"]["ref_id"] == "egt_spread"
-    assert by_kind["reference_pin"]["effect"] == "n=2"
+    assert by_kind["reference_pin"]["note"] == "pre-existing pin (n=2)"
     assert all(e["status"] == "open" for e in entries)
+    # v0.3 (Spec 14 §6.1): marked backfilled, no counted effect.
+    assert all(e["backfilled"] is True for e in entries)
+    assert all(e["effect"] is None for e in entries)
 
     # Idempotent — a second backfill doesn't duplicate.
     ws.backfill_journal_from_existing(ws_dir)
     assert len(ws.load_journal(ws_dir)["entries"]) == 3
+
+
+def test_journal_backfill_is_idempotent_under_concurrent_callers(tmp_path):
+    """Spec 14 §9 acceptance 12 — server.py runs a ThreadingHTTPServer,
+    so two clients opening the same just-migrated workspace at once can
+    call get_journal (and therefore backfill_journal_from_existing) from
+    different threads in the same process at the same time. Without
+    _JOURNAL_LOCK serializing the whole scan-and-append pass, both
+    threads' has_open_journal_entry checks can read "not backfilled yet"
+    before either writes, producing two entries for the one pre-existing
+    filter. A thread barrier lines up every caller to call in together,
+    maximizing the chance of hitting that window if the lock weren't
+    there."""
+    import threading
+
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "journal-backfill-race", "916iS")
+    ws_dir = root / manifest.id
+    ws.save_filter(ws_dir, {"limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "x"})
+    assert ws.load_journal(ws_dir)["entries"] == []
+
+    n_callers = 8
+    barrier = threading.Barrier(n_callers)
+
+    def call():
+        barrier.wait()
+        ws.backfill_journal_from_existing(ws_dir)
+
+    threads = [threading.Thread(target=call) for _ in range(n_callers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    entries = ws.load_journal(ws_dir)["entries"]
+    assert len(entries) == 1, f"expected exactly one backfilled entry, got {len(entries)}"
+    assert entries[0]["kind"] == "limit_filter"
+    assert entries[0]["backfilled"] is True
