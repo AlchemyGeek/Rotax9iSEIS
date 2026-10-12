@@ -592,6 +592,15 @@ export function FlightView() {
     }
   }
 
+  // Spec 14 §7.3 (v0.4) — "edit trigger ↓" on an insight card: the
+  // topic's TopicRulesPanel in Analysis opens and scrolls itself into
+  // view. n bumps on every request so a second click re-opens a
+  // disclosure closed since.
+  const [rulesJump, setRulesJump] = useState<{ topicId: string; n: number } | null>(null);
+  const canEditRules = (topicId: string) =>
+    !usingFixture && mode === "flight" && Boolean(resolvedRules?.rules[topicId] && shippedRules)
+    && insightSet.topics.some((t) => t.topic_id === topicId);
+
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);
     void reloadInsights();
@@ -1094,6 +1103,11 @@ export function FlightView() {
                           ? { label: "Exclude this flight from reference →", onClick: () => setExcludeDialogFor(insight.id) }
                           : undefined
                     }
+                    editAction={
+                      canEditRules(topicId)
+                        ? { label: "edit trigger ↓", onClick: () => setRulesJump((prev) => ({ topicId, n: (prev?.n ?? 0) + 1 })) }
+                        : undefined
+                    }
                     note={existing?.note ?? insight.note}
                     notesEnabled={!usingFixture}
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
@@ -1345,6 +1359,7 @@ export function FlightView() {
                             shippedRules={shippedRules}
                             onApplied={handleRuleApplied}
                             onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
+                            openRequest={rulesJump?.topicId === t.topic_id ? rulesJump.n : 0}
                           />
                         )}
                       </Wrapper>

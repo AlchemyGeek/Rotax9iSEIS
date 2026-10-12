@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import { DIFF_COLOR, DIFF_LABEL, diffKind, topicInsights } from "../lib/ruleDiff";
 import type { InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TopicResult, WhatIfResult } from "../types/contract";
@@ -63,7 +63,7 @@ const RESET_LINK: React.CSSProperties = { marginLeft: 8, fontSize: 10, color: "v
 // a second editor scoped to whichever single trigger happened to fire
 // (that was v0.2's RuleEditPanel, retired by this component).
 export function TopicRulesPanel({
-  topicId, topic, resolvedRules, shippedRules, onApplied, onNavigateFlight, defaultOpen = false,
+  topicId, topic, resolvedRules, shippedRules, onApplied, onNavigateFlight, defaultOpen = false, openRequest = 0,
 }: {
   topicId: string;
   topic: TopicResult;
@@ -72,8 +72,23 @@ export function TopicRulesPanel({
   onApplied: (rules: RuleSet) => void;
   onNavigateFlight: (flightId: string) => void;
   defaultOpen?: boolean;
+  // Spec 14 §7.3 (v0.4) — the insight card's "edit trigger ↓" bumps this
+  // to open the disclosure from outside; 0 means never requested.
+  openRequest?: number;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  // Opened by a request: open, then scroll once the editor has rendered
+  // (scrolling before it opens lands short — the card is still small).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrolledFor = useRef(0);
+  useEffect(() => {
+    if (openRequest > 0) setOpen(true);
+  }, [openRequest]);
+  useEffect(() => {
+    if (!open || openRequest === 0 || scrolledFor.current === openRequest) return;
+    scrolledFor.current = openRequest;
+    rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [open, openRequest]);
   const [draftTopic, setDraftTopic] = useState<RuleTopic>(() => clone(resolvedRules.rules[topicId]));
   const [whatIf, setWhatIf] = useState<WhatIfResult | null>(null);
   const [diffing, setDiffing] = useState(false);
@@ -179,7 +194,7 @@ export function TopicRulesPanel({
   const enabledDirty = draftTopic.enabled !== savedTopic.enabled;
 
   return (
-    <div style={{ marginTop: 4 }}>
+    <div ref={rootRef} style={{ marginTop: 4 }}>
       <div
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
         style={{ fontSize: 11, color: dirty ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer" }}

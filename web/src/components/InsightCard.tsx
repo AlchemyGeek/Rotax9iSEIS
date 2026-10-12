@@ -83,6 +83,7 @@ export function InsightCard({
   limitType,
   filterAction,
   secondaryAction,
+  editAction,
   note,
   onSaveNote,
   onDeleteNote,
@@ -109,6 +110,10 @@ export function InsightCard({
   // series_window). Caller decides when this applies; this component
   // just renders it next to filterAction.
   secondaryAction?: { label: string; onClick: () => void };
+  // Spec 14 §7.3 (v0.4): "edit trigger ↓" — jumps to this topic's card in
+  // Analysis and opens its triggers disclosure. The editor lives there
+  // only; this card never carries a second one.
+  editAction?: { label: string; onClick: () => void };
   note?: string;
   onSaveNote?: (text: string) => void;
   onDeleteNote?: () => void;
@@ -183,7 +188,7 @@ export function InsightCard({
         {topicId.replace(/_/g, " ")}
       </div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
-      {(jumpable || filterAction || secondaryAction) && (
+      {(jumpable || filterAction || secondaryAction || editAction) && (
         <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
           {jumpable && <span>View evidence →</span>}
           {secondaryAction && (
@@ -208,6 +213,18 @@ export function InsightCard({
               style={{ color: "var(--text-tertiary)", cursor: "pointer", textDecoration: "underline dotted" }}
             >
               {filterAction.label}
+            </span>
+          )}
+          {editAction && (
+            <span
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editAction.onClick();
+              }}
+              style={{ color: "var(--text-tertiary)", cursor: "pointer", textDecoration: "underline dotted" }}
+            >
+              {editAction.label}
             </span>
           )}
         </div>
