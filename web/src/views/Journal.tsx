@@ -7,6 +7,7 @@ import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import { annotationStore as fixtureAnnotations } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import type { Annotation, FilterHealth, JournalEntry, JournalEntryKind } from "../types/contract";
+import { InlineHelp } from "../components/InlineHelp";
 
 const client = getEngineClient();
 
@@ -279,6 +280,7 @@ export function Journal() {
                   >
                     <span>
                       <strong style={{ color: "var(--severity-warning)" }}>{health.status === "breached" ? "Breached" : "Drifting"}</strong>
+                      <InlineHelp id="journal.change_notices" />
                       {" — "}{entry.what}{health.reasons[0] ? `: ${health.reasons[0]}` : ""}
                     </span>
                     <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab("filters"); }} style={{ fontSize: 11, flexShrink: 0 }}>
@@ -381,7 +383,7 @@ export function Journal() {
                     )}
                     <span className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
                       {formatDate(entry.at)}
-                      {entry.backfilled && " · backfilled"}
+                      {entry.backfilled && <> · backfilled<InlineHelp id="journal.backfilled" /></>}
                       {entry.reason && ` · ${entry.reason}`}
                       {entry.effect && ` · ${entry.effect}`}
                     </span>

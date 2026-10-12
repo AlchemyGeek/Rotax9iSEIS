@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
+import { InlineHelp } from "../components/InlineHelp";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
 import { getEngineClient } from "../lib/engineClient";
@@ -380,8 +381,8 @@ export function Settings() {
               </div>
               <div style={{ ...ROW_STYLE, marginBottom: 0 }}>
                 <span style={{ color: "var(--text-secondary)" }}>Engine overrides</span>
-                <span style={{ color: "var(--text-tertiary)" }} title="Spec 14 §10 Q1 — no profile has needed an override yet; the shipped profile is read-only until engine_overrides.json is designed">
-                  None
+                <span style={{ color: "var(--text-tertiary)" }}>
+                  None<InlineHelp id="engine.overrides" />
                 </span>
               </div>
             </div>
@@ -397,7 +398,7 @@ export function Settings() {
                       <th style={{ fontWeight: 500, padding: "4px 8px 4px 0" }}>Limit</th>
                       <th style={{ fontWeight: 500, padding: "4px 8px" }}>Value</th>
                       <th style={{ fontWeight: 500, padding: "4px 8px" }}>Severity</th>
-                      <th style={{ fontWeight: 500, padding: "4px 8px" }}>Suppression</th>
+                      <th style={{ fontWeight: 500, padding: "4px 8px" }}>Suppression<InlineHelp id="engine.suppression" /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -432,7 +433,7 @@ export function Settings() {
         {tab === "reference" && (
           <>
             <div style={PANEL_STYLE}>
-              <div style={PANEL_TITLE_STYLE}>Contributing flights</div>
+              <div style={PANEL_TITLE_STYLE}>Contributing flights<InlineHelp id="reference.contributing_flights" /></div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10 }}>
                 {fleet.flight_ids.length} of {totalFlights} flights contribute
                 {fleet.excluded.length > 0 && ` · ${fleet.excluded.length} excluded`}
@@ -455,10 +456,10 @@ export function Settings() {
               <div style={PANEL_STYLE}>
                 <div style={PANEL_TITLE_STYLE}>Comparison</div>
                 <label style={ROW_STYLE}>
-                  <span style={{ color: "var(--text-secondary)" }}>Outlier z-threshold</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Outlier z-threshold<InlineHelp id="reference.outlier_z_threshold" /></span>
                   {numberInput(draftBaselineConfig.outlier_z_threshold, (v) => setDraftBaselineConfig((p) => ({ ...p, outlier_z_threshold: v })), { step: 0.1, min: 0 })}
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }} title="Spec 01 §8.4 v0.8 — drives both the Trends outlier marker and the baseline_deviation insight trigger, for every metric with no override.">
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
                   default: 2.0
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>n_min (sample-size gate), per trigger — read-only here, edited on each topic's card:</div>
@@ -497,7 +498,7 @@ export function Settings() {
               <div style={PANEL_STYLE}>
                 <div style={PANEL_TITLE_STYLE}>Window</div>
                 <label style={ROW_STYLE}>
-                  <span style={{ color: "var(--text-secondary)" }}>Recent window (hours)</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Recent window (hours)<InlineHelp id="reference.recent_window" /></span>
                   {numberInput(draftBaselineConfig.recent_window_hours, (v) => setDraftBaselineConfig((p) => ({ ...p, recent_window_hours: v })), { min: 1 })}
                 </label>
                 <label style={ROW_STYLE}>
@@ -512,7 +513,7 @@ export function Settings() {
                   <span style={{ color: "var(--text-secondary)" }}>OM margin fraction</span>
                   {numberInput(draftBaselineConfig.om_margin_fraction, (v) => setDraftBaselineConfig((p) => ({ ...p, om_margin_fraction: v })), { step: 0.05, min: 0, max: 1 })}
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }} title="Spec 12 §5.1/§5.5 — how Trends' change summary sizes its recent window and draws the OM margin line.">
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
                   Defaults: 10h &middot; 5 &middot; 15 &middot; 0.25
                 </div>
               </div>
@@ -537,7 +538,7 @@ export function Settings() {
             </div>
 
             <div style={PANEL_STYLE}>
-              <div style={PANEL_TITLE_STYLE}>Reference per metric</div>
+              <div style={PANEL_TITLE_STYLE}>Reference per metric<InlineHelp id="reference.pinning" /></div>
               {Object.keys(draftBaselineConfig.pinned_references ?? {}).length === 0 ? (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   None — every metric's reference is rolling. Pin one from its panel on Trends.
@@ -571,7 +572,7 @@ export function Settings() {
             </div>
 
             <div style={PANEL_STYLE}>
-              <div style={PANEL_TITLE_STYLE}>Stratification</div>
+              <div style={PANEL_TITLE_STYLE}>Stratification<InlineHelp id="reference.stratification" /></div>
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
                 Read-only in v1 — the band edges are research-paper §9 constants.
               </div>

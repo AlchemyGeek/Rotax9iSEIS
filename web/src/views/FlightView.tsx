@@ -24,6 +24,7 @@ import { phaseAtTime } from "../lib/phases";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { colors as themeColors } from "../theme/colors";
 import { TopicRulesPanel } from "../components/TopicRulesPanel";
+import { InlineHelp } from "../components/InlineHelp";
 import type {
   Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
   Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, RuleSet, SeriesFixture, SlotGroupEntry, TopicResult,
@@ -967,14 +968,17 @@ export function FlightView() {
             </span>
             {!usingFixture && referenceState && (
               referenceState.excluded ? (
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); void handleIncludeInReference(); }}
-                  style={{ fontSize: 11, color: "var(--text-tertiary)" }}
-                  title="click to include again"
-                >
-                  Excluded from reference ({referenceState.reason})
-                </a>
+                <span style={{ fontSize: 11 }}>
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); void handleIncludeInReference(); }}
+                    style={{ color: "var(--text-tertiary)" }}
+                    title="click to include again"
+                  >
+                    Excluded from reference ({referenceState.reason})
+                  </a>
+                  <InlineHelp id="flight.excluded_from_reference" />
+                </span>
               ) : (
                 <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Contributes to reference</span>
               )

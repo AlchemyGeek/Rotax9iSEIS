@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import { DIFF_COLOR, DIFF_LABEL, diffKind, topicInsights } from "../lib/ruleDiff";
 import type { InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TopicResult, WhatIfResult } from "../types/contract";
+import { InlineHelp } from "./InlineHelp";
 
 const client = getEngineClient();
 const SEVERITIES: InsightSeverity[] = ["info", "watch", "warning", "limit"];
@@ -208,7 +209,7 @@ export function TopicRulesPanel({
         >
           <label style={ROW}>
             <span>
-              enabled
+              enabled<InlineHelp id="trigger.enabled" />
               {enabledDirty && <span onClick={resetEnabledToShipped} style={RESET_LINK}>Reset to shipped</span>}
             </span>
             <input type="checkbox" checked={draftTopic.enabled} onChange={(e) => updateEnabled(e.target.checked)} />
@@ -229,6 +230,7 @@ export function TopicRulesPanel({
               >
                 <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                   {triggerSettingText(t)}
+                  {t.type === "baseline_deviation" && <InlineHelp id="trigger.baseline_deviation" />}
                   {triggerDirty && <span onClick={() => resetTriggerToShipped(idx)} style={RESET_LINK}>Reset to shipped</span>}
                 </div>
                 {status && (
@@ -246,18 +248,18 @@ export function TopicRulesPanel({
                 )}
                 {t.type === "baseline_deviation" && (
                   <label style={ROW}>
-                    <span>n_min (sample-size gate)</span>
+                    <span>n_min (sample-size gate)<InlineHelp id="trigger.n_min" /></span>
                     {numberInput(t.n_min ?? 10, (v) => updateTrigger(idx, { n_min: v }), { min: 1 })}
                   </label>
                 )}
                 {t.type === "trend" && (
                   <>
                     <label style={ROW}>
-                      <span>r2_min</span>
+                      <span>r2_min<InlineHelp id="trigger.r2_min" /></span>
                       {numberInput(t.r2_min ?? 0.5, (v) => updateTrigger(idx, { r2_min: v }), { step: 0.05, min: 0, max: 1 })}
                     </label>
                     <label style={ROW}>
-                      <span>n_min</span>
+                      <span>n_min<InlineHelp id="trigger.n_min" /></span>
                       {numberInput(t.n_min ?? 10, (v) => updateTrigger(idx, { n_min: v }), { min: 1 })}
                     </label>
                   </>
@@ -286,6 +288,7 @@ export function TopicRulesPanel({
                       {" ("}{changedRows.filter((r) => r.kind === "added").length} newly flagged
                       {", "}{changedRows.filter((r) => r.kind === "removed").length} cleared
                       {", "}{changedRows.filter((r) => r.kind === "changed").length} changed severity).
+                      <InlineHelp id="preview.counts" />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 120, overflowY: "auto" }}>
                       {changedRows.map((r) => (
