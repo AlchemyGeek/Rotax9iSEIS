@@ -267,7 +267,9 @@ describe("TrendsPanelStrip pinned state", () => {
     expect(screen.getByText(/2026-09-01/)).toBeTruthy();
     expect(screen.queryByText(/makes comparisons noisier/)).toBeNull();
     fireEvent.change(screen.getByPlaceholderText(/after oil change/), { target: { value: "my label" } });
-    fireEvent.click(screen.getByText("Pin reference"));
+    // Spec 14 §7.5: the dialog states its scope, and its confirm repeats it.
+    expect(within(screen.getByRole("dialog")).getByText("All flights in this workspace — this metric")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("Apply to all flights"));
     expect(onPinReference).toHaveBeenCalledWith(metric.points.slice(1).map((p) => p.flight_id), "my label");
   });
 
@@ -340,9 +342,8 @@ describe("TrendsPanelStrip pinned state", () => {
     expect(screen.getByText("Checking…")).toBeTruthy();
     await waitFor(() => screen.getByText(/no longer appear in the change summary/));
     expect(screen.getByText(/reference will again include all earlier flights/)).toBeTruthy();
-    // Two "Unpin reference"s on screen now (the strip's trigger, and
-    // the dialog's own confirm button) — scope to the dialog.
-    fireEvent.click(within(screen.getByRole("dialog")).getByText("Unpin reference"));
+    expect(within(screen.getByRole("dialog")).getByText("All flights in this workspace — this metric")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("Apply to all flights"));
     expect(onUnpinReference).toHaveBeenCalled();
   });
 });

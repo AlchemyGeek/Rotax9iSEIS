@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UnpinPreview } from "../types/contract";
+import { ScopeCaption } from "./ScopeCaption";
+import { APPLY_LABEL } from "../lib/scope";
 
 // Spec 12 §5.7.1 items 2 and 5 (wording fixed v0.6, Session E) — the
 // pin control opens a confirmation, not an immediate action; the unpin
@@ -105,6 +107,7 @@ export function PinConfirmDialog({ metricLabel, zoomSelection, windowSelection, 
 
   return (
     <DialogShell title={`Pin reference: ${metricLabel}`} onCancel={onCancel}>
+      <div style={{ marginBottom: 8 }}><ScopeCaption scope="metric" /></div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
         {mode === "zoom" && isFullHistory ? (
           <p style={{ margin: "0 0 8px" }}>
@@ -140,7 +143,7 @@ export function PinConfirmDialog({ metricLabel, zoomSelection, windowSelection, 
       </label>
       <div style={BUTTON_ROW}>
         <button style={CANCEL_BUTTON} onClick={onCancel}>Cancel</button>
-        <button style={CONFIRM_BUTTON} onClick={() => onConfirm(selection, label.trim() || undefined)}>Pin reference</button>
+        <button style={CONFIRM_BUTTON} onClick={() => onConfirm(selection, label.trim() || undefined)}>{APPLY_LABEL.metric}</button>
       </div>
     </DialogShell>
   );
@@ -167,13 +170,14 @@ export function UnpinConfirmDialog({ metricLabel, preview, onConfirm, onCancel }
   }
   return (
     <DialogShell title={`Unpin reference: ${metricLabel}`} onCancel={onCancel}>
+      <div style={{ marginBottom: 8 }}><ScopeCaption scope="metric" /></div>
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
         <p style={{ margin: "0 0 8px" }}>The reference will again include all earlier flights and grow as you fly. Shift-history events recorded while pinned are unaffected.</p>
         <p style={{ margin: "0 0 8px", fontWeight: 600, color: "var(--text-primary)" }}>{line}</p>
       </div>
       <div style={BUTTON_ROW}>
         <button style={CANCEL_BUTTON} onClick={onCancel}>Cancel</button>
-        <button style={CONFIRM_BUTTON} onClick={onConfirm} disabled={!preview}>Unpin reference</button>
+        <button style={CONFIRM_BUTTON} onClick={onConfirm} disabled={!preview}>{APPLY_LABEL.metric}</button>
       </div>
     </DialogShell>
   );

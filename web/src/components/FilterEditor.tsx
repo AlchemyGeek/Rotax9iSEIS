@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import type { FilterMagnitudeMode, FilterPreview, FilterProposal, LimitFilter, LimitFilterDraft } from "../types/contract";
+import { ScopeCaption } from "./ScopeCaption";
+import { APPLY_LABEL } from "../lib/scope";
 
 const client = getEngineClient();
 
@@ -198,6 +200,7 @@ export function FilterEditor({
     >
       <div>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{proposal.existing ? "Edit filter" : "Filter this limit"}: {limit.label}</div>
+        <ScopeCaption scope="limit" />
         <div className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
           OM {limit.limit_type === "MIN" ? "min" : "max"} {limit.limit_value} {unit}
           {flightPeak !== undefined && flightPeak !== null && <> · this flight {sign}{fmt(flightPeak)} {unit}</>}
@@ -301,7 +304,7 @@ export function FilterEditor({
           Preview
         </button>
         <button style={buttonStyle(true, canSave)} disabled={!canSave} onClick={save}>
-          {proposal.existing ? "Save changes" : "Save filter"}
+          {APPLY_LABEL.limit}
         </button>
         <button style={buttonStyle(false)} onClick={onCancel}>Cancel</button>
         {proposal.existing && (

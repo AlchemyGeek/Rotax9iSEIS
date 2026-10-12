@@ -54,6 +54,12 @@ describe("TopicRulesPanel openRequest", () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
+  it("states its scope at the top of the disclosure and on Apply (Spec 14 §7.5)", () => {
+    render(panel(1));
+    expect(screen.getByText("All flights in this workspace — this topic")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply to all flights" })).toBeTruthy();
+  });
+
   it("re-opens on a later request after the user closed it", () => {
     const { rerender } = render(panel(1));
     screen.getByText(/▾ triggers/).click();
@@ -90,10 +96,11 @@ describe("TopicRulesPanel on a disabled topic", () => {
     expect(screen.queryByText(/triggers/)).toBeNull();
 
     fireEvent.click(screen.getByText("Enable"));
+    expect(screen.getByText("All flights in this workspace — this topic")).toBeTruthy();
     await screen.findByText(/On your 1 flights: 1 change/, {}, { timeout: 2000 });
     expect(whatIfRules.mock.calls[0][0].rules.rules.egt_spread.enabled).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: /Apply/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply to all flights" }));
     await vi.waitFor(() => expect(onApplied).toHaveBeenCalled());
     expect(applyCardRuleEdit).toHaveBeenCalledWith("egt_spread", { ...disabledRules.rules.egt_spread, enabled: true });
   });

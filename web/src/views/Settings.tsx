@@ -5,6 +5,8 @@ import { InlineHelp } from "../components/InlineHelp";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
 import { getEngineClient } from "../lib/engineClient";
+import { ScopeCaption } from "../components/ScopeCaption";
+import { APPLY_LABEL } from "../lib/scope";
 import {
   appSettings as fixtureAppSettings,
   engineLimits as fixtureEngineLimits,
@@ -519,7 +521,8 @@ export function Settings() {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <ScopeCaption scope="reference_settings" />
               <button
                 onClick={resetReferenceToShipped}
                 disabled={savingReference || usingFixture}
@@ -533,7 +536,7 @@ export function Settings() {
                 title={usingFixture ? "not connected to a live workspace" : undefined}
                 style={{ padding: "7px 14px", borderRadius: 8, background: referenceDirty ? "var(--accent)" : "var(--panel)", border: "1px solid var(--border)", color: referenceDirty ? "var(--bg)" : "var(--text-tertiary)", fontSize: 12, fontWeight: 600, cursor: referenceDirty && !usingFixture ? "pointer" : "default" }}
               >
-                {savingReference ? "Saving…" : "Save"}
+                {savingReference ? "Saving…" : APPLY_LABEL.reference_settings}
               </button>
             </div>
 

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { ScopeCaption } from "./ScopeCaption";
+import { APPLY_LABEL, EXCLUDE_NOTE } from "../lib/scope";
 
 // Spec 14 §7.1 — "A small dialog takes the reason (required)... This is
 // the entry point most pilots will use" — shared between the Flights row
@@ -48,7 +50,8 @@ export function ExcludeConfirmDialog({
   return createPortal(
     <div style={SHELL_STYLE} onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div role="dialog" aria-label={`Exclude ${flightLabel} from reference`} style={CARD_STYLE}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Exclude this flight from reference</div>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Exclude this flight from reference</div>
+        <div style={{ marginBottom: 10 }}><ScopeCaption scope="flight" note={EXCLUDE_NOTE} /></div>
         <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 10 }}>
           {flightLabel} stops shaping other flights&rsquo; reference. It is still analyzed and still shows its own
           insights — this only changes what other flights are compared against.
@@ -75,7 +78,7 @@ export function ExcludeConfirmDialog({
             disabled={!reason.trim() || busy}
             onClick={() => onConfirm(reason.trim())}
           >
-            {busy ? "Excluding…" : "Exclude from reference"}
+            {busy ? "Excluding…" : APPLY_LABEL.flight}
           </button>
         </div>
       </div>

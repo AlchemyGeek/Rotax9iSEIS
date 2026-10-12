@@ -5,6 +5,8 @@ import type { FilterHealth, FilterListEntry, FilterStatus, LimitFilter, Workspac
 import { FilterEditor } from "./FilterEditor";
 import { FilterHealthCharts } from "./FilterHealthCharts";
 import { notifyFiltersChanged } from "../lib/filterAttention";
+import { ScopeCaption } from "./ScopeCaption";
+import { APPLY_LABEL } from "../lib/scope";
 
 const STATUS_STYLE: Record<FilterStatus, { label: string; color: string }> = {
   breached: { label: "BREACHED", color: "var(--severity-limit)" },
@@ -152,7 +154,8 @@ function CopyFilters({ onCopied }: { onCopied: () => void }) {
               </option>
             ))}
           </select>
-          <span onClick={copy} style={{ color: "var(--accent)", cursor: "pointer" }}>Copy</span>
+          <ScopeCaption scope="all_limits" />
+          <span onClick={copy} style={{ color: "var(--accent)", cursor: "pointer" }}>{APPLY_LABEL.all_limits}</span>
         </>
       )}
       <span onClick={() => { setSources(null); setResult(null); }} style={{ color: "var(--text-tertiary)", cursor: "pointer" }}>
@@ -309,7 +312,8 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                   last breach →
                 </span>
               )}
-              <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+              <span style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+                <ScopeCaption scope="limit" />
                 {[
                   ["Edit", () => setEditing(editing === filter.id ? null : filter.id)],
                   ["Reset reference", () => act(() => client.rebaselineFilter(filter.id))],

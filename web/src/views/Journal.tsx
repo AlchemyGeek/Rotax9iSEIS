@@ -8,8 +8,20 @@ import { annotationStore as fixtureAnnotations } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import type { Annotation, FilterHealth, JournalEntry, JournalEntryKind } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
+import { ScopeCaption } from "../components/ScopeCaption";
+import type { Scope } from "../lib/scope";
 
 const client = getEngineClient();
+
+// Spec 14 §7.5 — reversing an entry has the scope of the decision it
+// reverses; shown beside the action. Annotations change no result.
+const ENTRY_SCOPE: Partial<Record<JournalEntryKind, Scope>> = {
+  exclusion: "flight",
+  reference_pin: "metric",
+  limit_filter: "limit",
+  rule_edit: "topic",
+  disabled_topic: "topic",
+};
 
 // Spec 14 §6.1 — the full kind taxonomy, in table order. One of these
 // (acknowledged_insight) has no entries and can't yet: acknowledging an
@@ -353,6 +365,9 @@ export function Journal() {
                           <button onClick={() => startEdit(liveAnnotation)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>
                             Edit
                           </button>
+                        )}
+                        {entry.status === "open" && !usingFixture && ENTRY_SCOPE[entry.kind] && (
+                          <ScopeCaption scope={ENTRY_SCOPE[entry.kind]!} />
                         )}
                         {entry.status === "open" && !usingFixture && (
                           <button onClick={() => reverseEntry(entry)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>

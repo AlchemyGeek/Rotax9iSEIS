@@ -3,6 +3,8 @@ import { getEngineClient } from "../lib/engineClient";
 import { DIFF_COLOR, DIFF_LABEL, diffKind, topicInsights } from "../lib/ruleDiff";
 import type { InsightSeverity, RuleSet, RuleTopic, RuleTrigger, TopicResult, WhatIfResult } from "../types/contract";
 import { InlineHelp } from "./InlineHelp";
+import { ScopeCaption } from "./ScopeCaption";
+import { APPLY_LABEL } from "../lib/scope";
 
 const client = getEngineClient();
 const SEVERITIES: InsightSeverity[] = ["info", "watch", "warning", "limit"];
@@ -252,7 +254,7 @@ export function TopicRulesPanel({
         disabled={!dirty || applying}
         style={{ ...BUTTON, background: dirty ? "var(--accent)" : "var(--panel)", border: "none", color: dirty ? "var(--bg)" : "var(--text-tertiary)", fontWeight: 600, cursor: dirty && !applying ? "pointer" : "default" }}
       >
-        {applying ? "Applying…" : "Apply"}
+        {applying ? "Applying…" : APPLY_LABEL.topic}
       </button>
     </div>
     </>
@@ -275,6 +277,7 @@ export function TopicRulesPanel({
         </div>
         {open && (
           <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", marginTop: 6, display: "flex", flexDirection: "column", gap: 10 }}>
+            <ScopeCaption scope="topic" />
             {previewAndActions}
           </div>
         )}
@@ -295,6 +298,7 @@ export function TopicRulesPanel({
           onClick={(e) => e.stopPropagation()}
           style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", marginTop: 6, display: "flex", flexDirection: "column", gap: 10 }}
         >
+          <ScopeCaption scope="topic" />
           <label style={ROW}>
             <span>
               enabled<InlineHelp id="trigger.enabled" />
