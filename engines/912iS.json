@@ -210,6 +210,8 @@
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same gate as fuel_press_min and rpm_idle_min: with the engine stopped (master or avionics off at shutdown) the bus reads 0.0 V, which is not a fault.",
+      "min_rpm": 1000,
       "note": "Not an OM limit. Below ~12V indicates alternator failure or excessive load."
     },
     {
