@@ -340,8 +340,18 @@ def op_apply_card_rule_edit(params: dict, ctx: dict) -> Any:
         if _topic_insight_signature(evaluate_insights(fa, fleet, resolved, filters=filters), topic_id) != before[fa.flight_id]
     ]
 
+    # Spec 14 §7.3 / §8 (Spec 11 impact): the topic's enabled flag going
+    # true -> false *is* Spec 11's disable-topic silencing level, so an
+    # edit that does that is journaled as "disabled_topic" rather than a
+    # generic "rule_edit" — same apply/revert mechanism either way
+    # (op_revert_rule_edit handles both kinds), just the kind a pilot
+    # sees in Journal. Re-enabling never happens through this RPC (a
+    # disabled topic has no card to edit from — only through Journal's
+    # revert of that disabled_topic entry), so the reverse direction
+    # doesn't need its own kind.
+    kind = "disabled_topic" if (before_topic or {}).get("enabled", True) and not new_topic.get("enabled", True) else "rule_edit"
     entry = ws.append_journal_entry(
-        workspace_dir, kind="rule_edit", what=f"Rule: {topic_id}", where={"topic_id": topic_id},
+        workspace_dir, kind=kind, what=f"Rule: {topic_id}", where={"topic_id": topic_id},
         effect=f"changed on {len(changed)} flight{'' if len(changed) == 1 else 's'}" if changed else "no flight's verdict changed",
         ref_id=topic_id, before=before_topic, after=new_topic,
     )
@@ -365,9 +375,9 @@ def op_revert_rule_edit(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     entry_id = params["entry_id"]
     store = ws.load_journal(workspace_dir)
-    entry = next((e for e in store["entries"] if e["id"] == entry_id and e["kind"] == "rule_edit"), None)
+    entry = next((e for e in store["entries"] if e["id"] == entry_id and e["kind"] in ("rule_edit", "disabled_topic")), None)
     if entry is None:
-        raise RpcError("NOT_FOUND", f"no rule_edit journal entry {entry_id}")
+        raise RpcError("NOT_FOUND", f"no rule_edit or disabled_topic journal entry {entry_id}")
     topic_id = entry["ref_id"]
     rules = _resolve_rules(ctx)
     new_rules = {**rules, "rules": {**rules["rules"], topic_id: entry["before"]}}

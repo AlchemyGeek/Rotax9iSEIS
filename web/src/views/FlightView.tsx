@@ -23,7 +23,7 @@ import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclu
 import { phaseAtTime } from "../lib/phases";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { colors as themeColors } from "../theme/colors";
-import { RuleEditPanel } from "../components/RuleEditPanel";
+import { TopicRulesPanel } from "../components/TopicRulesPanel";
 import type {
   Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
   Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, RuleSet, SeriesFixture, SlotGroupEntry, TopicResult,
@@ -574,8 +574,9 @@ export function FlightView() {
   const filterLimitId = (insight: Insight, topicId: string) =>
     insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
 
-  // Spec 14 §7.2 — which insight's rule editor is open, if any.
-  const [ruleEditFor, setRuleEditFor] = useState<string | null>(null);
+  // Spec 14 §7.3 — the topic card's own triggers disclosure/editor reads
+  // and applies against these; it's the one rule-editing entry point
+  // now (the insight card no longer has its own, separate control).
   const [resolvedRules, setResolvedRules] = useState<RuleSet | null>(null);
   const [shippedRules, setShippedRules] = useState<RuleSet | null>(null);
 
@@ -591,24 +592,8 @@ export function FlightView() {
     }
   }
 
-  // Spec 14 §7.2 item 1 — "the card shows the setting that produced the
-  // insight, e.g. trend · R² ≥ 0.5 · n ≥ 10". Only the three trigger
-  // kinds the card can edit (threshold/baseline_deviation/trend) get a
-  // line at all; cylinder_rank-style context-only topics have no trigger
-  // to show.
-  function ruleSettingText(insight: Insight, topicId: string): string | null {
-    const topic = resolvedRules?.rules[topicId];
-    const trigger = topic?.triggers?.find((t) => t.type === insight.trigger);
-    if (!trigger) return null;
-    if (trigger.type === "threshold") return trigger.z != null ? `threshold · z ≤ ${trigger.z}` : null;
-    if (trigger.type === "baseline_deviation") return `baseline deviation · n ≥ ${trigger.n_min ?? 10}`;
-    if (trigger.type === "trend") return `trend · R² ≥ ${trigger.r2_min ?? 0.5} · n ≥ ${trigger.n_min ?? 10}`;
-    return null;
-  }
-
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);
-    setRuleEditFor(null);
     void reloadInsights();
   }
 
@@ -1113,15 +1098,6 @@ export function FlightView() {
                     notesEnabled={!usingFixture}
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
                     onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
-                    ruleSetting={
-                      !usingFixture && resolvedRules && ruleSettingText(insight, topicId)
-                        ? {
-                            text: ruleSettingText(insight, topicId)!,
-                            editing: ruleEditFor === insight.id,
-                            onToggleEdit: () => setRuleEditFor(ruleEditFor === insight.id ? null : insight.id),
-                          }
-                        : undefined
-                    }
                   />
                   {limitId && filterEditorFor === insight.id && (
                     <FilterEditor
@@ -1134,17 +1110,6 @@ export function FlightView() {
                         void reloadInsights();
                       }}
                       onCancel={() => setFilterEditorFor(null)}
-                    />
-                  )}
-                  {ruleEditFor === insight.id && resolvedRules && shippedRules && (
-                    <RuleEditPanel
-                      topicId={topicId}
-                      triggerType={insight.trigger}
-                      resolvedRules={resolvedRules}
-                      shippedRules={shippedRules}
-                      onApplied={handleRuleApplied}
-                      onCancel={() => setRuleEditFor(null)}
-                      onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
                     />
                   )}
                   </div>
@@ -1371,6 +1336,16 @@ export function FlightView() {
                           >
                             Compared with all {aircraftSummary!.idents.length} aircraft in this workspace.
                           </div>
+                        )}
+                        {!usingFixture && resolvedRules?.rules[t.topic_id] && shippedRules && (
+                          <TopicRulesPanel
+                            topicId={t.topic_id}
+                            topic={t}
+                            resolvedRules={resolvedRules}
+                            shippedRules={shippedRules}
+                            onApplied={handleRuleApplied}
+                            onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
+                          />
                         )}
                       </Wrapper>
                     );

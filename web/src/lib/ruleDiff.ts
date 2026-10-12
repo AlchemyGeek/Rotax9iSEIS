@@ -2,10 +2,11 @@ import type { Insight, InsightSet } from "../types/contract";
 
 // Originally shared between the rule playground (Baselines.tsx, used for
 // Spec 14 §9 acceptance 6's side-by-side comparison, then removed —
-// step 5) and the insight card's own rule editor (RuleEditPanel.tsx,
-// still here). The two having shared this one function rather than
-// independent implementations is what made "the card preview equals the
-// retired playground's diff" true by construction, not by coincidence.
+// step 5) and the insight card's own rule editor (retired v0.3, moved to
+// the topic card — TopicRulesPanel.tsx, still here). The two having
+// shared this one function rather than independent implementations is
+// what made "the card preview equals the retired playground's diff" true
+// by construction, not by coincidence.
 
 export function topicInsights(iset: InsightSet | undefined, topicId: string): Insight[] {
   return iset?.topics.find((t) => t.topic_id === topicId)?.insights ?? [];

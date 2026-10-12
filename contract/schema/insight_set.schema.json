@@ -27,6 +27,24 @@
           },
           "insights": { "type": "array", "items": { "$ref": "#/$defs/insight" } },
           "metric_ids": { "type": "array", "items": { "type": "string" } },
+          "enabled": {
+            "type": "boolean",
+            "description": "Spec 14 §7.3 — the topic's enabled flag from rules/active.json, shown and editable on the topic card (the disable-topic silencing level)."
+          },
+          "trigger_status": {
+            "type": "array",
+            "description": "Spec 14 §7.3 — one entry per configured trigger on this topic, whether or not it fired, for the topic card's triggers disclosure.",
+            "items": {
+              "type": "object",
+              "required": ["type", "met"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "enum": ["threshold", "baseline_deviation", "trend"] },
+                "met": { "type": ["boolean", "null"], "description": "null when there isn't enough data to evaluate." },
+                "detail": { "type": ["string", "null"], "description": "e.g. \"1.2 std devs above all your flights, n=41\" or \"R² 0.30 over 23 flights\"." }
+              }
+            }
+          },
           "limit_refs": {
             "type": "array",
             "description": "Spec 10 §4.1 (Spec 01 §8.5): the rule's limit_refs, each resolved to this flight's limit_exceedances insight for that limit, or null if none fired. Drives the mirrored badge (Spec 03 §5.2); never an insight of its own.",

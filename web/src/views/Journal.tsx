@@ -10,14 +10,15 @@ import type { Annotation, FilterHealth, JournalEntry, JournalEntryKind } from ".
 
 const client = getEngineClient();
 
-// Spec 14 §6.1 — the full kind taxonomy, in table order. Two of these
-// (acknowledged_insight, disabled_topic) have no entries and can't yet:
-// acknowledging/disabling a topic needs Spec 11's silencing levels,
-// which are paused and not built anywhere in this codebase. The other
-// five (limit_filter, reference_pin, annotation from step 3; exclusion
-// from step 4; rule_edit from step 5) are all live. The chips still show
-// all seven so the taxonomy reads as complete, not as if entries were
-// missing by oversight.
+// Spec 14 §6.1 — the full kind taxonomy, in table order. One of these
+// (acknowledged_insight) has no entries and can't yet: acknowledging an
+// insight needs Spec 11's silencing levels, which are paused and not
+// built anywhere in this codebase. The other six (limit_filter,
+// reference_pin, annotation from step 3; exclusion from step 4;
+// rule_edit from step 5; disabled_topic from v0.3's topic-card enabled
+// flag, §7.3) are all live. The chips still show all seven so the
+// taxonomy reads as complete, not as if entries were missing by
+// oversight.
 const KIND_ORDER: JournalEntryKind[] = [
   "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit",
   "exclusion", "reference_pin", "annotation",
@@ -37,17 +38,33 @@ function formatDate(iso: string): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
 }
 
-// A rule_edit entry's before/after are the whole RuleTopic — this picks
-// out just the trigger fields that actually changed, e.g. "n_min: 10 →
-// 5", rather than dumping the full topic JSON.
+// A rule_edit/disabled_topic entry's before/after are the whole
+// RuleTopic — this picks out just the fields that actually changed
+// (the `enabled` flag, and each trigger's own fields by position),
+// e.g. "n_min: 10 → 5" or "enabled: true → false", rather than dumping
+// the full topic JSON. The topic-card edit (§7.3) can change several
+// triggers and `enabled` in one Apply, so this isn't limited to triggers[0].
 function ruleEditFieldDiff(before: unknown, after: unknown): string | null {
-  const b = (before as { triggers?: Record<string, unknown>[] } | undefined)?.triggers?.[0];
-  const a = (after as { triggers?: Record<string, unknown>[] } | undefined)?.triggers?.[0];
+  const b = before as { enabled?: boolean; triggers?: Record<string, unknown>[] } | undefined;
+  const a = after as { enabled?: boolean; triggers?: Record<string, unknown>[] } | undefined;
   if (!b || !a) return null;
-  const keys = new Set([...Object.keys(b), ...Object.keys(a)]);
-  const changed = [...keys].filter((k) => k !== "type" && JSON.stringify(b[k]) !== JSON.stringify(a[k]));
-  if (changed.length === 0) return null;
-  return changed.map((k) => `${k}: ${JSON.stringify(b[k])} → ${JSON.stringify(a[k])}`).join(", ");
+  const parts: string[] = [];
+  if (b.enabled !== a.enabled) parts.push(`enabled: ${JSON.stringify(b.enabled)} → ${JSON.stringify(a.enabled)}`);
+  const bTriggers = b.triggers ?? [];
+  const aTriggers = a.triggers ?? [];
+  for (let i = 0; i < Math.max(bTriggers.length, aTriggers.length); i++) {
+    const bt = bTriggers[i];
+    const at = aTriggers[i];
+    if (!bt || !at) continue;
+    const keys = new Set([...Object.keys(bt), ...Object.keys(at)]);
+    for (const k of keys) {
+      if (k === "type") continue;
+      if (JSON.stringify(bt[k]) !== JSON.stringify(at[k])) {
+        parts.push(`${bt.type}.${k}: ${JSON.stringify(bt[k])} → ${JSON.stringify(at[k])}`);
+      }
+    }
+  }
+  return parts.length > 0 ? parts.join(", ") : null;
 }
 
 // Spec 03 §5.6's old Annotations page, renamed and redefined by Spec 14
@@ -165,10 +182,12 @@ export function Journal() {
         notifyShiftHistoryChanged();
       } else if (entry.kind === "exclusion") {
         await client.includeFlight(entry.ref_id);
-      } else if (entry.kind === "rule_edit") {
+      } else if (entry.kind === "rule_edit" || entry.kind === "disabled_topic") {
         // Revert by entry id, not ref_id (topic_id) — a topic can have
         // several open edits at once (Spec 14 §10 Q5), each independently
-        // revertible to its own exact previous value.
+        // revertible to its own exact previous value. disabled_topic is
+        // the enabled-flag edit (§7.3) and reverts through the identical
+        // mechanism as any other rule_edit.
         await client.revertRuleEdit(entry.id);
       }
       await refresh();
@@ -193,7 +212,7 @@ export function Journal() {
       const health = filterHealthById.get(entry.ref_id);
       if (health && entry.status === "open") return { title: entry.what, detail: health.summary ?? null };
     }
-    if (entry.kind === "rule_edit") {
+    if (entry.kind === "rule_edit" || entry.kind === "disabled_topic") {
       return { title: entry.what, detail: ruleEditFieldDiff(entry.before, entry.after) };
     }
     return { title: entry.what, detail: entry.note ?? null };
@@ -335,7 +354,7 @@ export function Journal() {
                         )}
                         {entry.status === "open" && !usingFixture && (
                           <button onClick={() => reverseEntry(entry)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>
-                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : entry.kind === "exclusion" ? "Include again" : entry.kind === "rule_edit" ? "Revert" : "Remove"}
+                            {entry.kind === "reference_pin" ? "Unpin" : entry.kind === "annotation" ? "Delete" : entry.kind === "exclusion" ? "Include again" : entry.kind === "rule_edit" || entry.kind === "disabled_topic" ? "Revert" : "Remove"}
                           </button>
                         )}
                       </div>

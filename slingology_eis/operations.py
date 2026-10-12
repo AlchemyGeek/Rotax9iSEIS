@@ -1646,6 +1646,7 @@ def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) ->
     bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
 
     cyls, metric_ids, low_n, fleet_n = [], [], False, 0
+    status_cyls = []  # (cyl_n, value, b, z_threshold) for every applies_to cylinder
     for n, key in enumerate(_CYL_DEVIATION_KEYS, start=1):
         fleet_metric = fleet.metrics.get(key)
         value = fa.metrics.get(f"{key}_f", {}).get("value")
@@ -1663,13 +1664,53 @@ def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) ->
             if not (cyl_low_n and t.get("type") == "baseline_deviation")
         ]
         cyls.append({"cyl": n, "value": value, "b": b, "triggers": triggers})
+        if key in applies_to:
+            status_cyls.append((n, value, b, z))
 
     if not cyls:
         return
     raw = topics.cyl_deviation(cyls)
     for ins in raw["insights"]:
         ins["evidence"] = [{"kind": "metric", "metric_id": f"egt{ins.pop('cyl')}_deviation"}]
-    emit("egt_cyl_deviation", raw, metric_ids, fleet_n)
+
+    # Spec 14 §7.3 — one topic card, four cylinders behind one rule: the
+    # disclosure shows one status per trigger, naming whichever cylinder
+    # comes closest to (or already meets) it, rather than four rows for
+    # a rule that's edited once for all of them.
+    trigger_status = []
+    for t in all_triggers:
+        ttype = t.get("type")
+        if ttype == "baseline_deviation":
+            candidates = []
+            for cyl_n, value, b, z_thr in status_cyls:
+                _, _, comparison = topics.baseline_triggered(value, b, {**t, "z_score_threshold": z_thr})
+                z = comparison.get("z")
+                if z is not None and comparison.get("n", 0) >= t.get("n_min", 10):
+                    candidates.append((abs(z), cyl_n, value, b, z_thr))
+            if candidates:
+                _, cyl_n, value, b, z_thr = max(candidates, key=lambda c: c[0])
+                st = _trigger_status({**t, "z_score_threshold": z_thr}, value, b)
+                st["detail"] = f"cyl {cyl_n}: {st['detail']}"
+                trigger_status.append(st)
+            else:
+                trigger_status.append({"type": ttype, "met": None, "detail": None})
+        elif ttype == "trend":
+            candidates = []
+            for cyl_n, _, b, _z in status_cyls:
+                _, _, detail = topics.trend_triggered(b, t)
+                if detail is not None:
+                    candidates.append((detail["r_squared"], cyl_n, b))
+            if candidates:
+                _, cyl_n, b = max(candidates, key=lambda c: c[0])
+                st = _trigger_status(t, None, b)
+                st["detail"] = f"cyl {cyl_n}: {st['detail']}"
+                trigger_status.append(st)
+            else:
+                trigger_status.append({"type": ttype, "met": None, "detail": None})
+        else:
+            trigger_status.append({"type": ttype, "met": None, "detail": None})
+
+    emit("egt_cyl_deviation", raw, metric_ids, fleet_n, trigger_status)
     if low_n:
         topics_out[-1]["_low_n"] = True
 
@@ -1686,6 +1727,44 @@ def _hot_cyl_changed_for(fa, fleet) -> bool:
     cb = fleet.cylinder_balance or {}
     point = next((p for p in cb.get("points", []) if p["flight_id"] == fa.flight_id), None)
     return bool(point and point.get("hot_cyl_changed"))
+
+
+def _trigger_status(trigger: dict, value, b: dict) -> dict:
+    """Spec 14 §7.3 — whether `trigger` was met on this flight and by how
+    much, for the topic card's triggers disclosure, independent of
+    whether it actually produced a firing insight. Reuses topics.py's
+    own baseline_triggered/trend_triggered for the met/not-met decision
+    (the exact same call the topic function already makes for the
+    insight itself) rather than re-deriving it — only the text
+    formatting below is new, not the computation. `met` is None when
+    there isn't enough data to evaluate at all (distinct from False,
+    "evaluated and not met")."""
+    ttype = trigger.get("type")
+    if ttype == "baseline_deviation":
+        triggered, _, comparison = topics.baseline_triggered(value, b, trigger)
+        z = comparison.get("z")
+        # Below n_min, the same "not a reliable comparison" rule
+        # BASELINE_LOW_N already applies elsewhere — insufficient, not
+        # evaluated, regardless of what z happens to say.
+        if z is None or comparison.get("n", 0) < trigger.get("n_min", 10):
+            return {"type": ttype, "met": None, "detail": None}
+        direction = "above" if z > 0 else "below"
+        scope_text = (
+            f"your other {comparison['band']} flights, n={comparison['n']}"
+            if comparison.get("scope") == "band" and comparison.get("band")
+            else f"all your flights, n={comparison.get('n', 0)}"
+        )
+        return {"type": ttype, "met": triggered, "detail": f"{abs(z):.1f} std devs {direction} {scope_text}"}
+    if ttype == "trend":
+        triggered, _, detail = topics.trend_triggered(b, trigger)
+        if detail is None:
+            return {"type": ttype, "met": None, "detail": None}
+        dir_text = f", trending {detail['direction']}" if detail["direction"] in ("increasing", "decreasing") else ""
+        return {
+            "type": ttype, "met": triggered,
+            "detail": f"R² {detail['r_squared']:.2f} over {detail['n']} flights{dir_text}",
+        }
+    return {"type": ttype, "met": None, "detail": None}
 
 
 def evaluate_insights(
@@ -1801,7 +1880,7 @@ def evaluate_insights(
             return None, None
         return om_limit, unsuppressed_by_limit.get(ref, [])
 
-    def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int):
+    def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int, trigger_status: Optional[list] = None):
         confidence = _confidence(fleet_n)
         insights = []
         for ins in raw["insights"]:
@@ -1836,6 +1915,16 @@ def evaluate_insights(
             "analysis": {"text": raw["analysis"]},
             "insights": insights,
             "metric_ids": metric_ids,
+            # Spec 14 §7.3 — every topic the engine evaluates carries its
+            # own enabled flag, read from the same rules dict evaluate_
+            # insights resolved everything else from (true for every
+            # caller today — the generic loop and egt_cyl_deviation
+            # already skip _emit entirely when disabled; this is the
+            # honest read rather than an assumption), and, where
+            # computable, one entry per trigger for the topic card's
+            # disclosure.
+            "enabled": r_data.get(topic_id, {}).get("enabled", True),
+            "trigger_status": trigger_status or [],
         })
 
     # ── The 8 topics driven by a single flight metric + fleet baseline ──────
@@ -1866,6 +1955,15 @@ def evaluate_insights(
             for t in all_triggers
             if not (low_n and t.get("type") == "baseline_deviation")
         ]
+        # Spec 14 §7.3 — status is computed from *all* configured
+        # triggers, not the low-n-filtered list above: a trigger below
+        # n_min still belongs on the topic card (met: None), it just
+        # can't fire an insight.
+        status_triggers = [
+            {**t, "z_score_threshold": resolved_z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+        ]
+        trigger_status = [_trigger_status(t, value, b) for t in status_triggers]
 
         if topic_id == "egt_spread":
             enabled = r_data.get(topic_id, {}).get("enabled", True)
@@ -1883,7 +1981,7 @@ def evaluate_insights(
         # key (Trends/get_fleet's naming), not flight_metric_id — "View
         # evidence" navigates with this id as ?metric=, and the two sides
         # of _TOPIC_METRIC_MAP disagree on naming for 7 of 8 topics.
-        _emit(topic_id, raw, [fleet_key], fleet_n)
+        _emit(topic_id, raw, [fleet_key], fleet_n, trigger_status)
         if low_n:
             topics_out[-1]["_low_n"] = True
 
@@ -1957,7 +2055,34 @@ def evaluate_insights(
         fm.get("takeoff_oat_c", {}).get("value"),
         map_loo_fit, z=map_z,
     )
-    _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0)
+    # Spec 14 §7.3 — same delta/tolerance topics.takeoff_map computes
+    # internally for its own insight text, kept inline here (it's the
+    # only caller) rather than threaded back out through that function's
+    # return shape.
+    map_status = {"type": "threshold", "met": None, "detail": None}
+    obs_map = fm.get("takeoff_map_inhg", {}).get("value")
+    n_model = map_loo_fit.get("n", 0)
+    if obs_map is not None and n_model >= 5:
+        obs_pa = fm.get("takeoff_pressure_alt_ft", {}).get("value")
+        obs_oat = fm.get("takeoff_oat_c", {}).get("value")
+        pa_range = map_loo_fit.get("pa_range")
+        oat_range = map_loo_fit.get("oat_range")
+        outside_range = (
+            (pa_range is not None and obs_pa is not None and not (pa_range[0] <= obs_pa <= pa_range[1]))
+            or (oat_range is not None and obs_oat is not None and not (oat_range[0] <= obs_oat <= oat_range[1]))
+        )
+        if not outside_range:
+            exp_map = topics.predict_takeoff_map(map_loo_fit, obs_pa, obs_oat) if obs_pa is not None and obs_oat is not None else None
+            se = map_loo_fit.get("residual_se")
+            if exp_map is not None and se is not None:
+                delta = obs_map - exp_map
+                tolerance = map_z * se
+                direction = "below" if delta < 0 else "above"
+                map_status = {
+                    "type": "threshold", "met": abs(delta) >= tolerance,
+                    "detail": f"{abs(delta):.2f} inHg {direction} model (tolerance ±{tolerance:.2f} inHg)",
+                }
+    _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0, [map_status])
 
     # FlightAnalysis.ecu_runs is keyed start_utc/duration_s/... (Spec 01
     # §8.3 shape); topics.engine_ecu_inflight -> cas.analyze_inflight_pattern
@@ -2014,11 +2139,16 @@ def evaluate_insights(
             d["note"] = notes_by_insight_id[iid]
         return d
 
+    ecu_insights = [_ecu_insight(e) for e in raw["events"]]
     ecu_topic = {
         "topic_id": "engine_ecu_inflight",
         "analysis": {"text": raw["analysis"]},
-        "insights": [_ecu_insight(e) for e in raw["events"]],
+        "insights": ecu_insights,
         "metric_ids": ["inflight_ecu_count"],
+        "enabled": True,
+        # Spec 14 §7.3 — this trigger has no numeric setting (condition
+        # "any_inflight"); met is simply whether it fired on this flight.
+        "trigger_status": [{"type": "threshold", "met": len(ecu_insights) > 0, "detail": None}],
     }
     topics_out.append(ecu_topic)
 
@@ -2095,6 +2225,8 @@ def evaluate_insights(
         "analysis": {"text": raw["analysis"]},
         "insights": limit_insights,
         "metric_ids": [],
+        "enabled": True,
+        "trigger_status": [{"type": "threshold", "met": len(limit_insights) > 0, "detail": None}],
     })
 
     # Spec 10 §4.1 (Spec 01 §8.5 TopicResult.limit_refs, Spec 09 §10.2/

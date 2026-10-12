@@ -339,7 +339,7 @@ def test_evaluate_insights_baseline_deviation_uses_band_scoped_comparison():
     assert len(egt_topic["insights"]) == 1
     insight = egt_topic["insights"][0]
     comparison = insight["message"]["values"]["comparison"]
-    assert comparison == {"scope": "band", "band": "warm", "n": 10}
+    assert comparison == {"scope": "band", "band": "warm", "n": 10, "z": 37.00189753320683}
     assert "your other warm flights, n=10" in insight["message"]["text"]
 
 
@@ -391,7 +391,7 @@ def test_evaluate_insights_baseline_deviation_falls_back_below_band_n_min():
     # Fallen back to the unstratified comparison (n=12, all non-target
     # points) — NOT the "rare" band it's nominally in, which only had 2
     # other flights, below n_min=5.
-    assert comparison == {"scope": "all", "band": None, "n": 12}
+    assert comparison == {"scope": "all", "band": None, "n": 12, "z": 70.3564727954972}
 
 
 @requires_flight_logs
@@ -480,3 +480,116 @@ def test_topic_thresholds_match_limit_events(real_flight_analyses, real_fleet_an
         if ob_exceeded_event:
             lim_insights = [i for i in by_topic["limit_exceedances"]["insights"] if i.get("limit_id") == "overboost"]
             assert len(lim_insights) == 1 and ob_time_insights == [], fa.flight_id
+
+
+def test_topic_card_trigger_status_reports_met_and_detail_even_when_not_fired():
+    """Spec 14 §7.3 — a topic's triggers disclosure needs a value for
+    every configured trigger, not just the ones that fired. egt_spread's
+    flight sits inside its baseline (no deviation) and has no trend fit
+    at all; both triggers should still report a readable status."""
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 10.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    points = (
+        [{"flight_id": "target", "date": "2026-01-01", "x": 10.0, "value": 10.0}]
+        + [{"flight_id": f"f{i}", "date": "2026-01-01", "x": float(i), "value": 10.0 + (i % 2)} for i in range(12)]
+    )
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target"] + [p["flight_id"] for p in points[1:]],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 12, "mean": 10.5, "std": 0.5, "min": 10.0, "max": 11.0,
+                         "confidence": {"level": "GOOD", "n": 12}},
+            # No real trend fit (direction "insufficient_data", r_squared/n None).
+            "trend": {"n": 13, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "GOOD", "n": 13}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 5, "severity": "watch"},
+        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    assert topic["insights"] == []  # nothing fired
+    assert topic["enabled"] is True
+
+    status_by_type = {s["type"]: s for s in topic["trigger_status"]}
+    assert set(status_by_type) == {"baseline_deviation", "trend"}
+
+    bd = status_by_type["baseline_deviation"]
+    assert bd["met"] is False  # evaluated, didn't cross the threshold
+    assert "std devs" in bd["detail"] and "n=12" in bd["detail"]
+
+    trend = status_by_type["trend"]
+    assert trend["met"] is None  # no fit at all — insufficient data, not "not met"
+    assert trend["detail"] is None
+
+
+def test_topic_card_trigger_status_below_n_min_reports_insufficient_not_a_verdict():
+    """A baseline comparison below n_min is never meaningful (BASELINE_LOW_N
+    elsewhere) — the topic card must say so (met=None), not claim a false
+    "not met" from too few points to trust."""
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 10.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    points = [{"flight_id": "target", "date": "2026-01-01", "x": 3.0, "value": 10.0}] + [
+        {"flight_id": f"f{i}", "date": "2026-01-01", "x": float(i), "value": 10.0} for i in range(2)
+    ]
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target", "f0", "f1"],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 2, "mean": 10.0, "std": 0.0, "min": 10.0, "max": 10.0,
+                         "confidence": {"level": "LOW", "n": 2}},
+            "trend": {"n": 3, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "LOW", "n": 3}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    bd = next(s for s in topic["trigger_status"] if s["type"] == "baseline_deviation")
+    assert bd["met"] is None
+    assert bd["detail"] is None
+
+
+@requires_flight_logs
+def test_topic_card_enabled_and_structural_trigger_status_on_real_flights(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 14 §7.3 — every evaluated topic on a real flight carries
+    `enabled` and a non-empty trigger_status for topics with configured
+    triggers (overboost_time ships with none, so its list may be empty);
+    engine_ecu_inflight/limit_exceedances' structural triggers report met
+    as exactly whether they fired."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    fa = real_flight_analyses[0]
+    iset = evaluate_insights(fa, real_fleet_analysis, rules)
+    by_topic = {t["topic_id"]: t for t in iset.topics}
+    for topic_id, topic in by_topic.items():
+        assert isinstance(topic["enabled"], bool), topic_id
+        assert isinstance(topic["trigger_status"], list), topic_id
+
+    ecu = by_topic["engine_ecu_inflight"]
+    ecu_status = ecu["trigger_status"][0]
+    assert ecu_status["met"] == (len(ecu["insights"]) > 0)
+
+    lim = by_topic["limit_exceedances"]
+    lim_status = lim["trigger_status"][0]
+    assert lim_status["met"] == (len(lim["insights"]) > 0)

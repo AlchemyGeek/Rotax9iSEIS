@@ -49,6 +49,12 @@ def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str, dict]:
     if value is None or b.get("mean") is None or b.get("std") is None:
         return False, "", comparison
     z = z_score(value, b["mean"], b["std"])
+    # Spec 14 §7.3 — the topic card shows a trigger's current value even
+    # when it didn't fire ("not met: 1.2 std devs..."), so `z` is always
+    # attached to `comparison` now, not only computed for the fired-text
+    # branch below. Same number either way; this doesn't change whether
+    # or what fires, only what's still available to read afterward.
+    comparison = {**comparison, "z": z}
     threshold = rule.get("z_score_threshold", 2.0)
     if abs(z) >= threshold:
         direction = "above" if z > 0 else "below"
@@ -60,8 +66,13 @@ def baseline_triggered(value, b: dict, rule: dict) -> tuple[bool, str, dict]:
     return False, "", comparison
 
 
-def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
-    """Check a trend trigger. Returns (triggered, insight_text)."""
+def trend_triggered(b: dict, rule: dict) -> tuple[bool, str, Optional[dict]]:
+    """Check a trend trigger. Returns (triggered, insight_text, detail).
+    `detail` (Spec 14 §7.3 — the topic card's "not met: R² 0.30 over 23
+    flights" even when no insight fired) is {"r_squared", "n",
+    "direction", "slope"} whenever a fit exists, None when there isn't
+    enough data for one — same cases the insight text already
+    distinguishes, just not discarded on the non-firing path anymore."""
     t = b.get("trend") or {}
     r2, n, direction = t.get("r_squared"), t.get("n"), t.get("direction")
     # r2/n are None (and direction reads "insufficient data" / "insufficient_data"
@@ -69,16 +80,17 @@ def trend_triggered(b: dict, rule: dict) -> tuple[bool, str]:
     # legacy fleet.py vs the Stage 3 contract) whenever there isn't enough data
     # for a fit; guard on the values themselves, not a specific spelling.
     if not t or r2 is None or n is None:
-        return False, ""
+        return False, "", None
+    detail = {"r_squared": r2, "n": n, "direction": direction, "slope": t.get("slope")}
     if r2 < rule.get("r2_min", 0.5) or n < rule.get("n_min", 10):
-        return False, ""
+        return False, "", detail
     wanted = rule.get("direction")
     # "either" (Spec 08 §6): a drift in both directions matters, e.g. a
     # cylinder running hotter (lean injector) or cooler (ignition, probe).
     if direction == wanted or (wanted == "either" and direction in ("increasing", "decreasing")):
         return True, (f"⚠ Trending {direction} over engine hours "
-                      f"(slope={t['slope']:+.3f}/hr, R²={r2:.2f}, n={n}).")
-    return False, ""
+                      f"(slope={t['slope']:+.3f}/hr, R²={r2:.2f}, n={n})."), detail
+    return False, "", detail
 
 
 def confidence_note(b: dict) -> str:
@@ -121,7 +133,7 @@ def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, e
                 if triggered:
                     insights.append({"trigger": "baseline_deviation", "text": text, "comparison": comparison})
             elif rule["type"] == "trend":
-                triggered, text = trend_triggered(b, rule)
+                triggered, text, _ = trend_triggered(b, rule)
                 if triggered:
                     insights.append({"trigger": "trend", "text": text})
     return {"analysis": analysis, "insights": insights}
@@ -179,7 +191,7 @@ def cyl_deviation(cyls: list[dict]) -> dict:
                     insights.append({"trigger": "baseline_deviation", "cyl": c["cyl"],
                                      "text": f"Cyl {c['cyl']}: {text}", "comparison": comparison})
             elif rule["type"] == "trend":
-                triggered, text = trend_triggered(c["b"], rule)
+                triggered, text, _ = trend_triggered(c["b"], rule)
                 if triggered:
                     insights.append({"trigger": "trend", "cyl": c["cyl"],
                                      "text": f"Cyl {c['cyl']}: {text}"})

@@ -13,7 +13,7 @@ import {
 } from "../lib/fixtures";
 import type {
   AppSettings, BaselineConfig, ChartPreset, EngineLimitsResult, FleetAnalysis,
-  SettingsChangelogEntry, UnpinPreview, WorkspaceManifest, WorkspaceSettings,
+  RuleSet, SettingsChangelogEntry, UnpinPreview, WorkspaceManifest, WorkspaceSettings,
 } from "../types/contract";
 
 const client = getEngineClient();
@@ -104,6 +104,10 @@ export function Settings() {
   // Engine (Spec 14 §5).
   const [engineLimits, setEngineLimits] = useState<EngineLimitsResult>(fixtureEngineLimits);
 
+  // Spec 14 §5.1 (v0.3) — n_min is shown here per trigger, read-only; it
+  // lives in rules/active.json and is edited on the topic card (§7.3).
+  const [rules, setRules] = useState<RuleSet | null>(null);
+
   // Shared changelog (Spec 14 §5, acceptance 2).
   const [changelog, setChangelog] = useState<SettingsChangelogEntry[]>([]);
 
@@ -121,9 +125,9 @@ export function Settings() {
     let cancelled = false;
     async function load() {
       try {
-        const [app, active, chartPresets, liveFleet, limits] = await Promise.all([
+        const [app, active, chartPresets, liveFleet, limits, workspaceRules] = await Promise.all([
           client.getAppSettings(), client.getActiveWorkspace(), client.getChartPresets(),
-          client.getFleet(), client.getEngineLimits(),
+          client.getFleet(), client.getEngineLimits(), client.getWorkspaceRules(),
         ]);
         if (cancelled) return;
         setAppSettings(app);
@@ -139,6 +143,7 @@ export function Settings() {
         setFleet(liveFleet);
         setDraftBaselineConfig(clone(liveFleet.provenance.baseline_config));
         setEngineLimits(limits);
+        setRules(workspaceRules.rules);
         setUsingFixture(false);
         try {
           const changelogRes = await client.getSettingsChangelog();
@@ -156,6 +161,7 @@ export function Settings() {
           setFleet(fixtureFleet);
           setDraftBaselineConfig(clone(fixtureFleet.provenance.baseline_config));
           setEngineLimits(fixtureEngineLimits);
+          setRules(null);
           setUsingFixture(true);
         }
       } finally {
@@ -455,9 +461,25 @@ export function Settings() {
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }} title="Spec 01 §8.4 v0.8 — drives both the Trends outlier marker and the baseline_deviation insight trigger, for every metric with no override.">
                   default: 2.0
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>
-                  n_min (sample-size gate): 10, set per rule — not a single global field in today's schema.
-                </div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>n_min (sample-size gate), per trigger — read-only here, edited on each topic's card:</div>
+                {rules ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 10 }}>
+                    {Object.entries(rules.rules)
+                      .flatMap(([topicId, topic]) =>
+                        (topic.triggers ?? [])
+                          .filter((t) => t.n_min != null)
+                          .map((t) => ({ topicId, type: t.type, n_min: t.n_min as number }))
+                      )
+                      .map(({ topicId, type, n_min }) => (
+                        <div key={`${topicId}-${type}`} className="mono" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "var(--text-secondary)" }}>
+                          <span>{topicId.replace(/_/g, " ")} &middot; {type}</span>
+                          <span>{n_min}</span>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>not connected to a live workspace</div>
+                )}
                 {Object.keys(draftBaselineConfig.outlier_z_threshold_overrides ?? {}).length > 0 && (
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Per-metric overrides</div>

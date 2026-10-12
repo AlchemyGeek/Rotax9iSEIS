@@ -1654,3 +1654,53 @@ def test_apply_card_rule_edit_keeps_two_edits_to_the_same_topic_independently_re
     on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
     assert on_disk["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 10
 
+
+
+def test_apply_card_rule_edit_classifies_enable_toggle_as_disabled_topic(registry_server):
+    """Spec 14 §7.3 / §8 — the enabled flag going true -> false on a topic
+    card is Spec 11's disable-topic silencing level; it gets its own
+    Journal kind, but reverts through the exact same mechanism as any
+    other rule_edit entry."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    _import_oil_temp_flight(registry_server, 1, 180)
+
+    rules = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    topic = rules["rules"]["oil_temp_peak"]
+    assert topic["enabled"] is True
+    disabled_topic = {**topic, "enabled": False}
+
+    applied = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": disabled_topic})
+    assert applied["ok"], applied
+
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    entry = next(e for e in entries if e["ref_id"] == "oil_temp_peak")
+    assert entry["kind"] == "disabled_topic"
+    assert entry["before"]["enabled"] is True
+    assert entry["after"]["enabled"] is False
+
+    on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    assert on_disk["rules"]["oil_temp_peak"]["enabled"] is False
+
+    reverted = rpc(registry_server, "revert_rule_edit", {"entry_id": entry["id"]})
+    assert reverted["ok"], reverted
+    assert reverted["result"]["rules"]["rules"]["oil_temp_peak"]["enabled"] is True
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    assert next(e for e in entries if e["id"] == entry["id"])["status"] == "closed"
+
+
+def test_apply_card_rule_edit_plain_value_change_stays_rule_edit(registry_server):
+    """A trigger-value edit with no change to `enabled` keeps the
+    existing "rule_edit" kind."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    _import_oil_temp_flight(registry_server, 1, 180)
+
+    rules = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
+    topic = rules["rules"]["oil_temp_peak"]
+    edited = json.loads(json.dumps(topic))
+    edited["triggers"][0]["n_min"] = 7
+
+    applied = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": edited})
+    assert applied["ok"], applied
+    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
+    entry = next(e for e in entries if e["ref_id"] == "oil_temp_peak")
+    assert entry["kind"] == "rule_edit"

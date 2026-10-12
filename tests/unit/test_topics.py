@@ -20,7 +20,7 @@ def test_baseline_triggered_above_threshold():
     assert triggered
     assert "above" in text and "⚠" in text
     # No "comparison" on b -> synthesized as an all-flights comparison (R8).
-    assert comparison == {"scope": "all", "band": None, "n": 0}
+    assert comparison == {"scope": "all", "band": None, "n": 0, "z": 2.0}
     assert "all your flights, n=0" in text
 
 
@@ -35,7 +35,7 @@ def test_baseline_triggered_not_triggered():
     triggered, text, comparison = topics.baseline_triggered(11, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert not triggered
     assert text == ""
-    assert comparison == {"scope": "all", "band": None, "n": 0}
+    assert comparison == {"scope": "all", "band": None, "n": 0, "z": 0.2}
 
 
 def test_baseline_triggered_missing_data():
@@ -52,7 +52,7 @@ def test_baseline_triggered_uses_band_comparison_when_present():
     b = {"mean": 10, "std": 5, "comparison": {"scope": "band", "band": "warm", "n": 14}}
     triggered, text, comparison = topics.baseline_triggered(20, b, {"z_score_threshold": 2.0})
     assert triggered
-    assert comparison == {"scope": "band", "band": "warm", "n": 14}
+    assert comparison == {"scope": "band", "band": "warm", "n": 14, "z": 2.0}
     assert "your other warm flights, n=14" in text
     assert "all your flights" not in text
 
@@ -68,21 +68,26 @@ def test_baseline_triggered_falls_back_to_all_comparison_text():
 
 def test_trend_triggered_matches_direction():
     b = {"trend": {"direction": "increasing", "r_squared": 0.8, "n": 15, "slope": 0.5}}
-    triggered, text = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
+    triggered, text, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
     assert triggered
     assert "increasing" in text
+    assert detail == {"r_squared": 0.8, "n": 15, "direction": "increasing", "slope": 0.5}
 
 
 def test_trend_triggered_wrong_direction():
     b = {"trend": {"direction": "decreasing", "r_squared": 0.8, "n": 15, "slope": -0.5}}
-    triggered, _ = topics.trend_triggered(b, {"direction": "increasing"})
+    triggered, _, detail = topics.trend_triggered(b, {"direction": "increasing"})
     assert not triggered
+    # Spec 14 §7.3 — detail still reflects the real fit even though this
+    # particular trigger (direction mismatch) didn't fire from it.
+    assert detail == {"r_squared": 0.8, "n": 15, "direction": "decreasing", "slope": -0.5}
 
 
 def test_trend_triggered_below_r2_or_n():
-    b = {"trend": {"direction": "increasing", "r_squared": 0.1, "n": 15}}
-    triggered, _ = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5})
+    b = {"trend": {"direction": "increasing", "r_squared": 0.1, "n": 15, "slope": 0.2}}
+    triggered, _, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5})
     assert not triggered
+    assert detail == {"r_squared": 0.1, "n": 15, "direction": "increasing", "slope": 0.2}
 
 
 def test_trend_triggered_insufficient_data_contract_spelling():
@@ -91,9 +96,10 @@ def test_trend_triggered_insufficient_data_contract_spelling():
     # crash (TypeError comparing None < float) whenever a fleet is too small
     # for a fit, e.g. a fresh 2-flight local-server workspace.
     b = {"trend": {"direction": "insufficient_data", "r_squared": None, "n": None, "slope": None}}
-    triggered, text = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
+    triggered, text, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
     assert not triggered
     assert text == ""
+    assert detail is None
 
 
 def test_confidence_note_thresholds():

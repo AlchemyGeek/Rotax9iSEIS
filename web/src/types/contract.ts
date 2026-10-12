@@ -162,6 +162,16 @@ export interface InsightEvent {
   suppressed_by: "magnitude" | "duration" | null;
 }
 
+// Spec 14 §7.3 — one entry per configured trigger on a topic, whether or
+// not it fired this flight, for the topic card's triggers disclosure.
+// `met` is null when there isn't enough data to evaluate at all (distinct
+// from false = evaluated and not met).
+export interface TriggerStatus {
+  type: "threshold" | "baseline_deviation" | "trend";
+  met: boolean | null;
+  detail: string | null;
+}
+
 export interface TopicResult {
   topic_id: string;
   analysis: { text: string };
@@ -172,6 +182,10 @@ export interface TopicResult {
   // none fired. Drives the mirrored badge (Spec 03 §5.2); never an
   // insight of its own.
   limit_refs?: { limit_id: string; insight_id: string | null }[];
+  // Spec 14 §7.3 — the topic's enabled flag from rules/active.json and
+  // its triggers' met/detail status, for the topic card's disclosure.
+  enabled?: boolean;
+  trigger_status?: TriggerStatus[];
 }
 
 export interface InsightSet {
