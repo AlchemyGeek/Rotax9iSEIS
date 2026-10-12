@@ -9,7 +9,7 @@ export const INLINE_HELP = {
   "reference.outlier_z_threshold":
     "How far from your usual a flight must be before it is called out — lower flags more flights, including more ordinary variation.",
   "reference.recent_window":
-    "How many of your latest flights Trends checks against the reference — a smaller window shows a change sooner but is thrown more easily by one odd flight.",
+    "How many of your latest flights Trends checks against the reference — a smaller window shows a change sooner but can be swayed by one odd flight.",
   "reference.pinning":
     "Pinning freezes which flights count as normal for a metric, so new flights are compared with those flights instead of with everything flown so far.",
   "reference.contributing_flights":
@@ -40,7 +40,7 @@ export const INLINE_HELP = {
   "journal.backfilled":
     "Recorded before the Journal existed, so it is dated to when it was imported and has no count of what it changed.",
   "journal.change_notices":
-    "A past decision whose situation has moved since you made it — here, a limit filter whose recent flights breach or drift from its band — so you can check it still holds.",
+    "A past decision whose basis has moved since you made it — for example, a limit filter whose recent flights now breach or drift from its band — so you can check it still holds.",
 
   // Flight view header
   "flight.excluded_from_reference":
