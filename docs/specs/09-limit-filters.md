@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.17 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
+**Status:** v0.18 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -27,6 +27,7 @@
 | 0.15 | **D16 and D17 decided (§6.8).** `rpm_idle_min`: the OM states 1,800 rpm as a true minimum; the `min_rpm: 1000` gate (commit b6fbaba) stays; a new **idle-established** condition removes start-up spool-up; N117ZS's steady 20–30 rpm low idle is cause 3a (allowlist); the profile note's "normal governor variation" replaced by the actual rationale for `min_duration_s`. `rpm_takeoff_max`: no OM transient allowance and no resolution tolerance (10 rpm steps mean any reading above 5,800 is a real exceedance); hard ceiling, pilot filter ≤ +30 rpm, allowlist entry citing the Maintenance Manual Line. Mirrored-badge wording aligned with the contract: the mirrored outcome is `suppressed` or `breach` (§10.2, §12.1, acceptance 21). |
 | 0.16 | **Q5 resolved (Spec 12 §8.2).** The per-limit metrics get Trends panels after all — generated per limit (filtered, or at least one exceedance), not declared per topic, so limits that have never fired produce no panel. |
 | 0.17 | **Spec 12 Phase 6.** §5: the stale "hidden from the Trends view until the follow-up" note corrected now that Spec 12 §8.4 draws them; overboost's "has an event" rule (`block_s > limit_value`, not `> 0`) written down, since `block_s` is a continuous block length present on nearly every flight. §8.2: `frequency_delta` is confirmed shared with Spec 12 §5.8's event frequency (same constant and "has an event" rule, different recent/reference windows — Notes' fixed `frequency_window` vs. Trends' own recent window). |
+| 0.18 | **Filters on CAS events** (Spec 01 v0.21, Spec 10 D19). A filter attaches to a *target*: a limit (as before) or a classified CAS alert (`cas_id`, today only `ENGINE ECU`). CAS targets offer the duration condition only — there is no excess, so no magnitude condition and no z reference; the §8 change monitor runs on event frequency alone (Spec 12 §5.8). §4, §7.3, §9, §10.1, §11 updated; `limit_id` becomes `target` in storage (migration: existing records are `{kind: "limit"}`). Phase-scoped suppression for a target, decided 2026-10-11 (per-limit phase exclusion), is specified separately when it lands and applies to CAS targets the same way. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -93,7 +94,9 @@ This section is written for pilots, not developers. It can be reused in the READ
 
 **Limit.** One entry in an engine profile's `limits` list, plus the two computed EGT split limits and the overboost limit. Identified by a new stable `limit_id` (§6.1).
 
-**Filter.** A per-workspace record attached to exactly one limit. It holds a magnitude condition, a duration condition, or both. The UI presents the two as separate toggles. At most one filter per limit per workspace.
+**Target (v0.18).** What a filter attaches to: a limit (`limit_id`, §6.1) or a classified CAS alert (`cas_id`, Spec 01 §8.6 — today `ENGINE ECU`). CAS events have a duration and a phase but no excess.
+
+**Filter.** A per-workspace record attached to exactly one target. For a limit it holds a magnitude condition, a duration condition, or both; for a CAS target, a duration condition only. The UI presents the conditions as separate toggles. At most one filter per target per workspace.
 
 **Excess.** How far an event went past the limit, in engine units (Spec 01 §6.4): `observed − limit` for MAX, `limit − observed` for MIN. Always positive for a real exceedance.
 
@@ -332,7 +335,7 @@ For percent and z, the UI always shows the resolved band in display units next t
 
 The engine validates filters, not only the UI:
 
-- `limit_id` exists in the workspace's engine profile, and the limit is filterable.
+- the target exists: a `limit_id` in the workspace's engine profile with a filterable limit, or a `cas_id` the engine classifies (Spec 01 §8.6); a CAS target carries no magnitude condition.
 - The mode is in the limit's `magnitude_modes`, and a duration condition is present only if `duration_allowed`; band and duration are within caps.
 - A note is present for WARNING limits.
 - A z reference has `n ≥ n_min`.
@@ -386,7 +389,8 @@ interface LimitFilterStore {
 
 interface LimitFilter {
   id: string;                          // stable, e.g. uuid
-  limit_id: string;                    // §6.1
+  target: { kind: "limit"; limit_id: string }      // §6.1
+        | { kind: "cas"; cas_id: string };         // v0.18; magnitude not allowed
   magnitude?: {
     mode: "absolute" | "percent" | "z";
     value: number;                     // engine units / % / z
@@ -414,9 +418,9 @@ At least one of `magnitude` or `duration` must be present. Removing a filter del
 
 ## 10. Insights
 
-### 10.1 One insight per limit per flight
+### 10.1 One insight per target per flight
 
-`limit_exceedances` changes from one insight per event to one insight per limit per flight. This applies whether or not a filter exists. Each insight carries its events; the UI expands to them.
+`limit_exceedances` changes from one insight per event to one insight per limit per flight — and, from v0.18, one per CAS target per flight (Spec 10 §4.1: it owns every event, limit or CAS). This applies whether or not a filter exists. Each insight carries its events; the UI expands to them. A CAS insight's text names the class and, when set, `not_lane_check_reason` ("ENGINE ECU during TAXI, 7 s, 2,550 rpm — below the lane-check band"). Severity for CAS events is the display label from `insight_rules.json` (`watch` default); no policy branches on it.
 
 | Situation | Insights for that limit on the flight |
 |---|---|
@@ -539,6 +543,8 @@ interface FilterHealth {
 | Code | Level | When |
 |---|---|---|
 | `FILTER_UNKNOWN_LIMIT` | warn | `limit_id` not in the engine profile |
+| `FILTER_UNKNOWN_CAS` | warn | `cas_id` not a classified CAS alert (v0.18) |
+| `FILTER_CAS_MAGNITUDE` | warn | magnitude condition on a CAS target; ignored (v0.18) |
 | `FILTER_NOT_ALLOWED` | warn | Limit not filterable, mode not allowed, or cap exceeded |
 | `FILTER_NOTE_REQUIRED` | warn | WARNING limit filter without a note |
 | `FILTER_REFERENCE_LOW_N` | warn | z reference below `n_min`, including after exclusions removed reference flights |

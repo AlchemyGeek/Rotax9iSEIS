@@ -1,7 +1,7 @@
 # Spec 14 — Settings, Journal, and Rule Editing on the Card
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.6 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
+**Status:** v0.7 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
 **Suggested repo path:** `docs/specs/14-settings-journal-and-card-rule-editing.md`
 **Builds on:** Spec 02 (`FleetSelection`, `rules/active.json`, `annotations.json`, app-level vs workspace-level settings §6.4), Spec 03 (§3 principle 6, §4 nav, §5.5 Baselines & models, §5.6 Annotations, §5.7 Settings), Spec 09 (filters, "what would this hide?" preview v0.2, Notes page), Spec 10 (§6.1 rules that do not reflect what runs), Spec 11 (insight layer — paused; three silencing levels, settings shown on the card), Spec 12 (Trends as a change page — recent window, reference pinning)
 **Supersedes:** Spec 03 §5.5 (the rule playground as a page) and the part of principle 6 that places all tuning in Baselines & Models
@@ -12,6 +12,7 @@
 | Version | Change |
 |---|---|
 | 0.6 | **From implementation of v0.5.** §7.5 table gains the controls found outside it: Reference & Models save (*every metric*), copy filters (*every limit copied*), Journal reversals (scope of the decision undone), Trends shift-history delete (*this metric*). *Include again* uses the same dialog and preview as *Exclude* rather than acting in one click (§7.1). Tail-number grouping is a workspace definition, not a §7.5 decision — it goes to the Settings changelog. §7.3 clarified: the collapsed card applies to every topic that has a card; topics with no card (fixed in engine code) get none; *Enable* closes the open `disabled_topic` entry. Settings `n_min` list shows disabled topics marked *disabled* instead of hiding them (§5.1). Spec 01 note made concrete. |
+| 0.7 | ECU leaves the top-level nav (Spec 03 v0.14, Spec 10 D19): its content is now Flight-view CAS event rows and a Trends panel. §4 table, activity grouping and nav sketch updated; acceptance 1 amended. No other change. |
 | 0.5 | **From implementation of v0.4 steps 1–3.** A disabled topic's card **stays, collapsed** to one line with *Enable*, uniformly for every topic — as built, the engine returned no result for a disabled topic and its card vanished, leaving Journal as the only way back (§7.3). `margin_min_f` and `consecutive_flights` leave the §7.4 list: they are fixed in engine code, not editable triggers; Code's draft wording kept for when they are. Preview wording adopted as built (§7.2). Spec 01 to note that a disabled topic still returns a topic result carrying `enabled: false` and no analysis. §7.5 scope labelling was not built in the v0.4 run and remains pending. |
 | 0.4 | **From implementation of v0.3, and inline help.** Insight card keeps a *jump* to its topic card's open disclosure — one editor, reachable from the insight (§7.3). Engine gap found: `overboost_time`, `map_at_takeoff`, `engine_ecu_inflight`, `limit_exceedances` never read their `enabled` flag; disabling them changed the file and Journal but suppressed nothing — made a guard with a uniform test (§7.3). New §7.4 inline help: when a parameter or section gets help, what it says, where the text lives. New §7.5 scope labelling: every decision control says, before it is touched, whether it applies to this flight or to all flights in the workspace — a trigger edited from one flight's topic card is a workspace rule, and nothing said so until the preview. Acceptance 13–16. `trigger_status` per topic now in the engine contract (Spec 01 to note). |
 | 0.3 | **From implementation of v0.2.** Rule editing moves from the *insight* card to the *topic* card (§7.3), so a trigger that never fires can still be edited in context — found live: no trend trigger fires on the 53-flight set, so no trend rule had an entry point. `n_min` is per-trigger in `rules/active.json`, not a global field; §5.1 corrected to show it read-only. Backfilled Journal entries are marked as backfilled and carry no counted effect (§6.1); backfill must be idempotent. Exclusion dialog has one field, reason (§7.1). Q4 part-resolved: 57 ms preview on 53 flights, local-server mode; Pyodide unmeasured. Acknowledge and disable-topic levels stay unbuilt until Spec 11 (§7.2). |
@@ -32,7 +33,7 @@ This spec puts each of those jobs where a pilot would look for it, under one org
 
 | This spec owns | Owned elsewhere |
 |---|---|
-| The grouping of top-level destinations by activity (§4) | Each view's own content: Flights (Spec 03 §5.1), Flight view (§5.2), Trends (Spec 12), ECU (§5.4) |
+| The grouping of top-level destinations by activity (§4) | Each view's own content: Flights (Spec 03 §5.1), Flight view (§5.2), Trends (Spec 12) |
 | Settings as a section, its tabs and what each holds (§5) | The settings' *values and semantics*: `outlier_z_threshold`, `n_min` (Spec 01 §8.4), recent window and pinning (Spec 12), engine overrides schema (Spec 02 §6.4) |
 | Journal: what it lists, how entries are created, reviewed and reversed (§6) | Each decision's engine behaviour: filters (Spec 09), silencing levels and markers (Spec 11), annotations (Spec 01 R3) |
 | The user-facing term "reference", and the exclusion workflow from an insight card (§7.1) | Membership vs contribution, `FleetSelection`, rescan (Spec 02 §5.1, §6.3) |
@@ -53,7 +54,7 @@ Pages are grouped by **what the user is doing**, not by who the user is. There i
 
 | Activity | Shape | Destinations |
 |---|---|---|
-| Fly and look | read, every flight | Flights · Flight view · Trends · ECU |
+| Fly and look | read, every flight | Flights · Flight view · Trends |
 | Decide about results | act in context, review later | **Journal** (§6) |
 | Investigate | iterate, produce a finding | Research (Spec 06, reserved) |
 | Configure the computation | set, rarely revisit | **Settings** (§5), from the gear icon |
@@ -61,7 +62,7 @@ Pages are grouped by **what the user is doing**, not by who the user is. There i
 Nav shell (replaces Spec 03 §4's sketch):
 
 ```
-[Logo]  [Workspace: N117ZS ▾]   Flights   Trends   ECU   Journal   ⚙
+[Logo]  [Workspace: N117ZS ▾]   Flights   Trends   Journal   ⚙
 ```
 
 Four everyday destinations, Journal beside them, Settings behind the gear. Baselines leaves the top level. Research is **not shown** until Spec 06 is designed (Q3, decided v0.2) — no placeholder. When it arrives it is a distinct destination with a defined path *out*: a finding becomes a Journal decision or a Settings change carrying provenance ("filter created from Research task #4"), per Spec 03 principle 6's Explore → operational path.
@@ -246,7 +247,7 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 
 ## 9. Acceptance criteria
 
-1. The top-level nav shows Flights, Trends, ECU, Journal and the Settings gear; no Baselines destination and no Research entry.
+1. The top-level nav shows Flights, Trends, Journal and the Settings gear; no Baselines, ECU or Research entry (ECU removed v0.7).
 2. Settings has Engine, Reference & Models and App tabs, and one changelog listing every change made in any of them.
 3. No user-facing string says "baseline(s)"; "reference" is used throughout. Internal names unchanged.
 4. A flight can be excluded from the reference from a `baseline_deviation`, outlier or trend insight card, with a required reason, and the exclusion appears in Flights, Flight view, Reference & Models and Journal; *Include again* works from each of Flights, Flight view and Journal.

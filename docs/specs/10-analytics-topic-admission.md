@@ -1,7 +1,7 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.11 — for review. Decisions D1–D18 in §6.3, all closed (D7 revised in v0.7; D18 added in v0.10). Implemented: Phases A–D; Phase E (topic help) in progress.
+**Status:** Draft v0.12 — for review. Decisions D1–D19 in §6.3, all closed (D7 revised in v0.7; D18 added in v0.10; D19 in v0.12). Implemented: Phases A–D; Phase E (topic help) in progress.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
@@ -22,6 +22,7 @@
 | 0.9 | **Spec 12 adds a `trends` field** (§5.1, §5.2) — panel, role, worsening direction and phrasing for the Trends change page (Spec 12 §8.1). Declaration lives at `docs/specs/topics/register.json` (alongside `status`/`topic_spec`/`help`, D12's existing hybrid register — not a new document), one `trends` object per topic entry, `null` where a topic has no scalar fleet metric for a panel to draw (`cylinder_rank`, `engine_ecu_inflight`, `limit_exceedances`) or the metric it would use doesn't exist yet (`map_at_takeoff`, pending the takeoff-MAP residual). `update_fleet` reads it (via `slingology_eis.operations.resolve_worsening_direction`) for the change statistic's worsening direction (Spec 12 R1.6/R3.3); `operations.build_trends_panels` exposes panel layout to callers without a frontend metric list. §5.2's table gains a **Trends panel** column with the same values. |
 | 0.10 | **D18 — `engine_ecu_inflight` re-audited after Spec 01 v0.19.** The E3 evidence (v0.1: "4 genuine in-flight events"; v0.4: "5 IN_FLIGHT events in 50 flights, CAN-dropout pattern at idle") was a classifier defect — the runs are ground events, most of them single-row blips at engine start; the corrected result is zero in-flight events and one 5 s ground CAN dropout. Verdict changes from **Keep** to **Admitted (provisional)** (§8.1 stage; same footing `cylinder_rank` had: mechanism sound, positive case never seen; condition: first true positive or a deliberate test). The "clear action" sentence (CAN/HIC inspection, B.U.D.S.) is removed from the audit — it is single-aircraft maintenance guidance (§9 item 11) and the engine no longer emits it. §3 example, register row, audit table, §6.1, §6.2 and Appendix A updated; `register.json` status for 916iS becomes `Admitted (provisional)`. |
 | 0.11 | Lane-check RPM band sourced from the OM (4,000 rpm procedure RPM, ±500 rpm our tolerance; 912iS/916iS, 915iS at its OM's 2,500 rpm, 914iS unverified); D18 evidence recorded (full set, Spec 01 v0.20). |
+| 0.12 | **D19 — ENGINE ECU events are CAS events** (ECU review, 2026-10-13, four decisions). §4.1 generalised from OM-limit events to *events*: `limit_exceedances` owns every event, `source: limit` or `source: cas`; `engine_ecu_inflight` becomes a referencing topic (analysis line, lane-check summary, mirrored badge; no second insight), its D18 provisional condition unchanged. `GROUND` events are shown by default with the reason they are not a lane check; the user filters (Spec 09 v0.18) or acknowledges. Trends gets a frequency panel per classified CAS alert now, not deferred (Spec 12 v0.10) — the decision is not to be based on one aircraft's data. Lane-check adherence is **not** admitted: it is pilot procedure, not an engine signal; recorded as candidate **C6** (procedure class, undefined) in §7. The Engine ECU view (Spec 03 §5.4) is removed. |
 
 ---
 
@@ -89,9 +90,9 @@ Two classes of topic go through the same gate:
 
 A number that informs flight planning but says nothing about the engine (range, efficiency, fuel burned) is **not a topic** — see §4.2.
 
-### 4.1 Ownership of OM-limit events (Q1(a), decided v0.2)
+### 4.1 Ownership of events (Q1(a), decided v0.2; generalised to CAS events in v0.12, D19)
 
-Every OM-limit exceedance is reported **once**, by `limit_exceedances` — one insight per limit per flight, carrying its events (Spec 09 §10.1). It owns the event's severity, evidence, filter (Spec 09) and annotations.
+Every **event** — an OM-limit exceedance (`source: limit`) or a classified CAS alert occurrence (`source: cas`, Spec 01 §8.6; today the `GROUND`/`IN_FLIGHT` classes of ENGINE ECU) — is reported **once**, by `limit_exceedances` — one insight per target per flight, carrying its events (Spec 09 §10.1). It owns the event's severity label, evidence, filter (Spec 09) and annotations. The card's display name may say "Limits & alerts"; the topic id does not change.
 
 A topic that references a limit (through a threshold trigger's `limit_ref` — today `oil_temp_peak` and `coolant_temp_peak`) **does not emit an insight for it**. Instead:
 
@@ -100,6 +101,8 @@ A topic that references a limit (through a threshold trigger's `limit_ref` — t
 - its card **displays** that insight's severity badge, so the Analysis grid still shows at a glance which topic the problem belongs to. The badge is mirrored, not a second insight: the insight list, its counts, filters and annotations see exactly one.
 
 The topic keeps everything only it can do — baseline and trend triggers against the aircraft's own history.
+
+**ENGINE ECU follows the same rule (v0.12, D19).** `engine_ecu_inflight` references the CAS event: its analysis line carries the per-class counts and the `lane_check` summary (`both` / `single` / `none`, informational only — never an insight), its card links to the event and mirrors its badge. It emits no insight of its own. Its D18 provisional condition (first `IN_FLIGHT` event) is unchanged — the event will appear as a CAS event when it happens.
 
 **Overboost is not an exception (v0.3).** Until v0.3, overboost was checked only by `overboost_time` (`report_in_exceedances: false`) and this section made it an exception. Spec 09 v0.12 moves it into `limit_exceedances` as an ordinary event, one per block past the 300 s limit, so it follows the same rule as every other limit: `limit_exceedances` owns the event and `overboost_time` references it. The topic keeps the close call — a block near the limit is not an OM exceedance, so only the topic can report it. The 5,800 rpm ceiling (`rpm_takeoff_max`) is an ordinary limit owned by `limit_exceedances`.
 
@@ -330,6 +333,7 @@ Once decided, each change becomes a BACKLOG item with this register as its refer
 | D15 | `fuel_press_max` | **Cause 3a: allowlist entry + pilot filter**; profile keeps OM 46 psi; entry prompts a mechanic check (sender vs regulator). | 2026-10-03, v0.6 |
 | D16 | `rpm_idle_min` | **Closed.** OM states 1,800 rpm as a minimum (915 i A OM table; OM-916 per the research paper). Keep the minimum and the `min_rpm: 1000` gate; add the idle-established condition (applies only after rpm has reached 1,800 since engine start); N117ZS's steady 20–30 rpm low idle is cause 3a (allowlist entry, pilot filter); profile note states the real rationale for `min_duration_s`. | 2026-10-05, v0.7 |
 | D17 | `rpm_takeoff_max` | **Closed.** Cause 3a (prop-governor overshoot, constant-speed propeller confirmed). No OM transient allowance in the 5,800–5,900 rpm band; no resolution tolerance (10 rpm steps). Hard ceiling; pilot filter ≤ +30 rpm; allowlist entry citing the Maintenance Manual Line. | 2026-10-05, v0.7 |
+| D19 | ENGINE ECU events | **CAS events, owned by `limit_exceedances`** (§4.1 generalised). `GROUND` events shown by default with `not_lane_check_reason`; user filters (duration) or acknowledges — no severity policy. Trends: frequency panel per classified CAS alert, built now (Spec 12 v0.10). Lane-check adherence not admitted → C6. Spec 03 §5.4 removed. Decided with four options discussed per point; the Trends panel was not deferred because "my aircraft shows nothing" is single-aircraft reasoning. | 2026-10-13, v0.12 |
 | D18 | `engine_ecu_inflight` | **Admitted (provisional).** Prior E3 evidence (4, then 5 "in-flight" ENGINE ECU runs) withdrawn — a classifier defect, corrected in Spec 01 v0.19 (phase-based classes, minimum duration). Zero in-flight events on the full set (115 logs); two short `GROUND` runs (Spec 01 v0.20). Condition to close: first true `IN_FLIGHT` positive, or a deliberate injected-excerpt test. Single-aircraft action text removed from the audit and the engine. Full set (115 logs, Spec 01 v0.20): 0 `IN_FLIGHT`; 2 `GROUND` runs, both in one stationary ground run (2026-10-05 KBVS, 7 s and 8 s, 15 s apart, ~2,550 rpm, oil-pressure dropout in the second) — consistent with a lane check performed below the OM's 4,000 rpm; no ground faults. With the lane-check band sourced from the OM (v0.11, 4,000 ± 500 rpm on the 916iS) a third `GROUND` run appears: 2026-05-20 18:09:49 (11 s), the first half of a paired lane check in which rpm fell from ~4,300 to ~2,600–3,160 while the lane was off, pulling the run's mean below the band. | 2026-10-13, v0.10; evidence v0.11 |
 
 ## 7. Coverage view
@@ -349,7 +353,8 @@ Logged engine channels against the topics and limit checks that use them. A blan
 | `fuel_press_psi` | — | min, max | Candidate **C3**: fuel pressure stability in flight (pump/regulator health), phase-aware for pump tests and tank switching. Note: both fuel-pressure limits fire on most flights (D6 diagnosis pending) — a topic needs to establish what normal looks like on this installation first |
 | `main_volts`, `batt_amps` | — | volts min, max | Candidate **C4**: charging-system health (bus voltage and battery current under load). Note: the 9xiS ECU depends on electrical supply, which may make this a health topic rather than airframe-only. |
 | `fuel_qty_l/r_gal` | — | — | **Decided: no topic.** Tank senders are attitude-sensitive and used only as a plausibility check (research paper §6.2, toolkit 0.6.0). |
-| CAS string | `engine_ecu_inflight` | — | Other engine CAS alerts not yet classified — candidate for a later classification topic |
+| CAS string | `engine_ecu_inflight` | — | Other engine CAS alerts not yet classified — candidate for a later classification topic; each one admitted becomes a CAS event target (Spec 01 §8.6, D19) |
+| lane-check pairing (`EcuAnalysis.lane_check`) | `engine_ecu_inflight` (summary line only) | — | Candidate **C6**: lane-check adherence over flights. Fails A2 as written — pilot procedure, not an engine signal. Would need a *procedure* class defined first (admission criteria for procedure metrics do not exist). Not admitted (D19). |
 | Not logged: throttle position, lane A/B status, injector pulse width, ignition advance, wastegate position, T_plenum | — | — | **Out of reach (A1).** ECO/POWER inference (BACKLOG A4) is the only route, and it's blocked on a validation flight. |
 
 C1–C5 enter the lifecycle (§8) as **Proposed**. None is admitted by being listed here.

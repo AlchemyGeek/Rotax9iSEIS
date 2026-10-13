@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.20 — for review
+**Status:** Draft v0.21 — for review
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -30,6 +30,7 @@
 | 0.18 | Spec 12 Phase 6 lands: §8.4 `MetricFleet` gains `unit?`, `frequency?`, `events?`, `readiness?` — a per-limit metric's unit from the engine profile; event frequency (the primary limit-panel signal) and its per-flight event ticks; the fixed readiness-badge classification (`filtered`/`building`/`no_recent`/`no_events`/`rare`/`insufficient`), computed engine-side so no UI infers one from raw numbers. Full `Frequency`/`Readiness`/`EventTick` shapes defined in Spec 12 §11.7, not duplicated here. `ShiftEvent.kind` gains `"frequency"` (Spec 12 §6/§11.7). |
 | 0.19 | §8.6 rewritten. `IN_FLIGHT` was a residual bucket (anything not POWERUP/SHUTDOWN/LANE_CHECK) with no flight test, no startup window and no minimum duration; on review (2026-10-11, the project's `engine_ecu_runs.csv`) all four of its `IN_FLIGHT` runs are on the ground at idle — three are single 1 Hz rows at or just after engine start, one is a 5 s idle CAN dropout (the full log set's fifth, counted in Spec 10 Appendix A, is to be classified the same way). Classification now comes from the phase detector (`GROUND_START` / `LANE_CHECK` / `GROUND` / `IN_FLIGHT` / `GROUND_SHUTDOWN`), with a minimum event duration and merge gap from the engine profile. The corrected fleet finding is **zero in-flight ENGINE ECU events**. §8.5's `engine_ecu_inflight` paragraph, §12 criterion 3, the testing-limitation note and Q6 updated to match. `RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT`, `analyze_inflight_pattern` and ENGINE ECU's `ALWAYS_ABNORMAL` membership leave the engine. |
 | 0.20 | §8.6 amended after the v0.19 implementation run (115 logs). Two findings. (1) The `IN_FLIGHT`-wins rule promoted four ordinary shutdowns to `IN_FLIGHT`: the phase detector keeps the first 4–11 rows after engine cut labelled LANDING_ROLL (taxiing at 7–9 kt) or DESCENT (at 0 kt) before switching to SHUTDOWN, and the alert starts as the engine stops. New **engine-state rule**: a run during which RPM falls below the engine-running threshold and stays there to the run's end is `GROUND_SHUTDOWN` whatever the phase labels; and the `IN_FLIGHT`-wins exception now also requires IAS above the taxi ceiling during the overlap. The phase-detector slop itself (DESCENT at 0 kt, LANDING_ROLL during taxi) is a `phases.py` defect, logged to BACKLOG, not fixed here. (2) The 2026-06-04 21:17:17 run is a shutdown (2 rows TAXI at 1,760 rpm, then RPM and oil pressure stop, 3 rows SHUTDOWN, log ends) — `GROUND_SHUTDOWN`, not the ground CAN dropout v0.19 called it. Criterion 3 and Q6 corrected. Corrected fleet result on 115 logs: 0 `IN_FLIGHT`, 2 `GROUND`, 31 sub-threshold blips. |
+| 0.21 | **CAS events** (ECU review decisions 1–4, 2026-10-13; Spec 10 D19). Events gain a `source`: `limit` (the existing exceedances) or `cas` (a classified CAS alert occurrence). Every `GROUND` and `IN_FLIGHT` `EcuRun` is emitted as a CAS event (`cas_id: "ENGINE ECU"`) in the same per-flight event list as limit exceedances, with `classification`, `phase`, `phase_uncertain`, duration, context and — when the run is close to the lane-check signature — `not_lane_check_reason`. Evidence gains kind `cas_event`; `ecu_run` evidence is retired. `engine_ecu_inflight` follows Spec 10 §4.1: it references the event, emits no second insight, keeps the class counts and the `lane_check` line. Spec 09 filters attach to a limit or a CAS id (duration condition only for CAS). Spec 12 generates an event-frequency panel per CAS id. `ecu_runs` stays as the classifier's full output. |
 
 ---
 
@@ -433,7 +434,7 @@ interface TopicResult {
 }
 ```
 
-**`engine_ecu_inflight` fires only when this flight has an `IN_FLIGHT`-classified `EcuRun`** (§8.6), where `IN_FLIGHT` means the run overlaps a flight phase (TAKEOFF_ROLL through LANDING_ROLL) for at least the minimum event duration — not merely that the engine was running. Ground-context occurrences (`GROUND_START`, `LANE_CHECK`, `GROUND_SHUTDOWN`) are the routine case on nearly every flight and are Analysis-only, never an insight: flagging them per flight would warn on nearly every flight in the fleet, the opposite of what an insight is for. A `GROUND` run (engine running, taxiing or idling, not a lane check) is an event in `EcuAnalysis` and on the Flight view but does not fire this topic; whether and how it is surfaced beyond that is a Spec 03/10 decision, not an engine one. On the current fleet the topic is silent on every flight, correctly — the runs previously labelled `IN_FLIGHT` were a classifier defect (v0.19), not events. Per-event detail (co-active alerts, oil-pressure NaN context) lives in `EcuAnalysis` (§8.6), not duplicated here.
+**`engine_ecu_inflight` is a referencing topic (v0.21, Spec 10 §4.1 / D19).** The event itself — any `GROUND` or `IN_FLIGHT` ENGINE ECU run — is a CAS event owned by the events owner (`limit_exceedances`, §8.6), reported once, filterable (Spec 09) and acknowledgeable (Spec 14). `engine_ecu_inflight` emits **no insight of its own**: its analysis line gives the class counts for the flight (`GROUND_START` n, `LANE_CHECK` n, `GROUND` n, `IN_FLIGHT` n, blips n), the `lane_check` summary, and — when the flight has a `GROUND` or `IN_FLIGHT` event — a link to that event with its severity badge mirrored, exactly as `overboost_time` references its limit event. Ground-context classes (`GROUND_START`, `LANE_CHECK`, `GROUND_SHUTDOWN`) never produce an event or an insight; they are the routine case on nearly every flight. The topic's Spec 10 status (Admitted, provisional — D18) is unchanged: its condition closes on the first `IN_FLIGHT` event, which will surface as a CAS event.
 
 ```ts
 interface Insight {
@@ -445,7 +446,7 @@ interface Insight {
     | { kind: "metric"; metric_id: string }
     | { kind: "baseline_point"; metric_id: string; flight_id: string }
     | { kind: "series_window"; channels: string[]; start_s: number; end_s: number }
-    | { kind: "exceedance" | "ecu_run"; ref: string })[];
+    | { kind: "exceedance" | "cas_event"; ref: string })[];   // ecu_run retired v0.21
   confidence: Baseline["confidence"];
   note?: string;                  // pilot annotation (BACKLOG B4) attached by the host
 }
@@ -484,6 +485,20 @@ A run in UNKNOWN phase is classified by the nearest preceding known phase and fl
 **`EcuRun`** keeps the existing columns (`start`/`end` (UTC + `elapsed_s`), `duration_s`, `lane_check_pair`, `lane_check_note`, `co_alerts`, the per-run context means — RPM, power %, oil pressure/temp, coolant temp, main volts, battery amps, fuel pressure, IAS, baro altitude — `volts_delta`, `rpm_accel_pre`, `oil_nan_frac`) and adds `phase` (the deciding phase) and `phase_uncertain`.
 
 **`EcuAnalysis`** carries per-classification counts, `sub_threshold_blips`, per-event co-active alerts for every `GROUND` and `IN_FLIGHT` run (BACKLOG B3 — per event, never a pooled table), and `lane_check: "both" | "single" | "none"` per flight. It no longer carries a recommended-actions list or a pooled in-flight pattern analysis: `analyze_inflight_pattern` and `RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT` leave the engine (the correlation study was a one-time research question, answered; it survives as a notebook at most). `ENGINE ECU` leaves `ALWAYS_ABNORMAL` — its abnormality is decided by classification, not a static list. The topic's help entry (§8.8) describes the classes in plain language and may name the OM/Rotax-generic follow-up (fault-log read); it carries no aircraft-specific wiring guidance (Spec 10 §9 item 11).
+
+**CAS events (v0.21).** Every `GROUND` and `IN_FLIGHT` run is also emitted as an **event** in the flight's event list, alongside limit exceedances. Events share one shape with a `source` discriminator:
+
+```ts
+type Event = Exceedance & { source: "limit" }            // existing, unchanged otherwise
+           | { source: "cas"; cas_id: "ENGINE ECU";      // the only classified CAS alert today; others join via Spec 10 §8
+               event_id: string;                         // cas_id + start UTC, stable for annotations/filters
+               classification: "GROUND" | "IN_FLIGHT"; phase: string; phase_uncertain: boolean;
+               start_utc: string; elapsed_s: number; duration_s: number;
+               context: { rpm: number; ias_kt: number; oil_nan_frac: number; co_alerts: string[] };
+               not_lane_check_reason?: "rpm_below_band" | "rpm_above_band" | "unpaired" | "too_long" | "moving" };
+```
+
+Whether the list is the existing `exceedances` array with `source` added or a sibling array is an implementation choice; consumers must see one list. `not_lane_check_reason` is set when the run matches every part of the lane-check signature but one — it is what lets the Flight view say "7 s during TAXI, 2,550 rpm — below the lane-check band" and makes the obvious filter obvious (Spec 03 §5.2). CAS events have no `excess` and no OM value; magnitude filters do not apply to them (Spec 09 §7). `Insight.evidence` gains `{ kind: "cas_event"; ref: event_id }`; the `ecu_run` kind is retired. Ground-context classes never become events. `ecu_runs` remains on `FlightAnalysis` as the classifier's full output for the event's expanded view and for research.
 
 **Phase-detector dependence.** This classification is only as good as `phases.py`. Finding 9 (takeoff not detected on some flights) must not silently turn a flight's TAKEOFF_ROLL run into `GROUND`: when `PHASE_TAKEOFF_NOT_DETECTED` is raised for a flight, any `GROUND` run with IAS above the taxi ceiling is reported as `IN_FLIGHT` with `phase_uncertain: true`. The phase-regression snapshot (`notebooks/06_phase_regression.py`, per CLAUDE.md) is taken before and after this change.
 

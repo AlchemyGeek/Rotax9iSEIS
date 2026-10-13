@@ -1,7 +1,7 @@
 # Spec 12 — Trends as a Change Page
 
 **Project:** SlingologyEIS
-**Status:** v0.9 — Phases 1–9 implemented (Sessions A–F, Oct 2026); Session G (§17 Phase 10, zoom-based pin) pending
+**Status:** v0.10 — Phases 1–9 implemented (Sessions A–F, Oct 2026); Session G (§17 Phase 10, zoom-based pin) pending
 **Suggested repo path:** `docs/specs/12-trends-change-page.md`
 **Builds on:** Spec 01 (engine contract §8.4), Spec 03 (UI §5.3), Spec 08 (cylinder balance panel), Spec 09 (frozen baselines, change monitor, per-limit metrics), Spec 10 (topic register)
 **Revises:** Spec 01 §8.4 (new change statistic, `BaselineConfig` fields), Spec 03 §5.3 (rewritten), Spec 10 §5.1 (register gains a `trends` field)
@@ -11,6 +11,7 @@
 |---|---|
 | 0.1 | Initial draft from the Oct 6 2026 Trends review. Decisions D1–D3 recorded in §3. |
 | 0.9 | After Session F, which ran against the v0.7 prompt and delivered tiers and detail strips but not the zoom-based pin; that work becomes Phase 10 (Session G). Session F decisions recorded (§3.6). The whole-history fit line was found never to have been implemented and now is (§8.3). Tier-3 count on the current log set is 14. |
+| 0.10 | **CAS event panels** (Spec 10 D19, Spec 01 v0.21). Event panels are generated for two sources: the profile's limits (as before) and the **classified CAS alerts** (today `ENGINE ECU`), one panel per target. A CAS panel has the event strip and the frequency header (§5.8, §8.4) and no `peak_excess` strip (no excess exists); frequency is its only ranking signal. Built now, not deferred: a panel that reads *no events* on one aircraft is the honest state for that aircraft and the useful state for another. §3.7, §5.8, §8.2, §8.4, §11.7 updated. |
 | 0.8 | **Pin is zoom-based** (D2 amended again, §5.7, §5.7.1): the flights visible in the strip's current x-range become the baseline; the recent window is the one-click alternative in the confirmation. This is the explicit historical cut v0.1–v0.7 deferred to v2, delivered now because `set_reference` already takes a flight list and the label *these flights* already implied it. Phase 9 extended. |
 | 0.7 | After Session E. Session E decisions recorded (§3.5). **Panel tiers** (§9.1): panels ordered by what they have to say — qualifying first, then trendable, then a single collapsed *Never exceeded (N)* group at the bottom. **Detail strips** (§8.3): the page-level "researcher view" toggle becomes a per-panel *Show detail strips* affordance. Spec 03's stale pin wording noted for correction in the Phase 9 pass. Phase 9 added. |
 | 0.6 | After Session D. **Pin semantics corrected** (D2 amended, §5.7, §5.7.1): pinning makes the current window's flights the metric's fixed baseline — what Session D built and validated — not a freeze of the older rolling reference, which v0.1–v0.5 described and which has weak value (a rolling reference grows, it does not slide, so it dilutes drift rather than hiding it) and an arbitrary cut. Wording: **Pin baseline to these flights / Unpin baseline**; badge *baseline pinned*. Visual: muted *not used* region to the left of the pinned baseline replaces the gap region. Small-baseline caution in the confirmation. Session D decisions recorded (§3.4). Phase 8 added. |
@@ -121,6 +122,15 @@ Decisions settled during the review for the window and the v1/v2 split are recor
 | F3 | The whole-history fit had never been implemented; it is now a dotted line through `baseline.mean` at the mean plotted x with `trend.slope` (the contract carries no intercept). |
 | F4 | A tier-3 row's representative metric is `peak_excess` (or `block_s` for overboost), the same metric the group's tick count and event strip use. |
 
+### 3.7 Functional decisions from the ECU review (recorded, 2026-10-13)
+
+| # | Decision |
+|---|---|
+| G1 | Panel sources are the profile's limits **and** the register's classified CAS alerts (Spec 10 §8 lifecycle; today `ENGINE ECU`). Not "any CAS id seen in the logs" — an unclassified alert has no defined meaning and gets no panel. |
+| G2 | A CAS panel = event strip + frequency header only. No `peak_excess` strip, no OM line, no filter band edge (a duration filter shows as a header note, "events ≤ N s filtered"). |
+| G3 | Same generation rule as limits: a panel exists when the target has a filter or at least one event on an eligible flight; otherwise it sits in the *Never exceeded / no events* group in the bottom tier. |
+| G4 | `engine_ecu_inflight` keeps `trends: null` in the register — the panel is generated from events, not declared by the topic. |
+
 ## 4. Concepts
 
 **Fleet metric.** A per-flight scalar baselined by `update_fleet` (today: `BASELINE_METRIC_DEFS` plus Spec 09's `limit_<id>_peak_excess` / `limit_<id>_time_above_pct`).
@@ -214,7 +224,7 @@ A pin that cannot be seen, understood or undone is a trap, not a tool. Requireme
 
 `peak_excess` is **conditional**: it has a value only on flights where the limit was exceeded (Spec 09 §5), so its reference is "how far over, on the flights that went over." A shift in it says exceedances are getting larger; it cannot say they are getting more frequent. `time_above_pct` carries frequency but is mostly zeros, so its reference usually has no variance and no z is defined (A6). Neither strip can detect the change a pilot most wants on a rarely-exceeded limit: *this used to happen once a year and now it is every flight.*
 
-For every limit (and for `overboost_time`), the engine therefore computes **event frequency**: the share of flights with at least one event, in the recent window and in the reference. It qualifies when the recent share exceeds the reference share by at least `frequency_delta`, the rule Spec 09 §8.2 already applies to filters, so Notes and Trends use one definition of "more often". A qualifying frequency ranks in the summary like a shift, using the recent share's standardised difference from the reference share (a two-proportion z) as its rank key, and opens a shift-history event of kind `frequency`. Frequency is the **primary** change signal for limit panels; `peak_excess` shift is the secondary ("and when it happens, it goes further over"). `time_above_pct` is context only (§8.4).
+For every limit (and for `overboost_time`), and from v0.10 for every classified CAS alert (Spec 01 §8.6 `source: cas`), the engine therefore computes **event frequency**: the share of flights with at least one event, in the recent window and in the reference. It qualifies when the recent share exceeds the reference share by at least `frequency_delta`, the rule Spec 09 §8.2 already applies to filters, so Notes and Trends use one definition of "more often". A qualifying frequency ranks in the summary like a shift, using the recent share's standardised difference from the reference share (a two-proportion z) as its rank key, and opens a shift-history event of kind `frequency`. Frequency is the **primary** change signal for limit panels; `peak_excess` shift is the secondary ("and when it happens, it goes further over"). `time_above_pct` is context only (§8.4).
 
 Below `n_min` reference flights, or when the reference share is 0 and the recent window has a single event, frequency does not qualify; a single new event on a never-exceeded limit is reported by the Flight view's `limit_exceedances`, not by Trends.
 
@@ -284,7 +294,7 @@ Panel membership is part of the register entry and is reviewed under A6 (distinc
 
 Removed from Trends as standalone entries: `cruise_da_ft` (becomes condition strip data in v2), `egt4_elevation` (already deprecated by Spec 08), `takeoff_map_inhg` raw (replaced by the residual). The Fuel panel is marked **planning** in its header, consistent with Spec 10 §4.2, and sits last.
 
-Limit panels are generated, not declared: one per limit that has a filter (Spec 09) or at least one exceedance on an eligible flight; limits never exceeded and never filtered produce no panel. Order: filtered first, then by most recent exceedance.
+Event panels are generated, not declared: one per **target** — a limit, or a classified CAS alert (v0.10, §3.7 G1) — that has a filter (Spec 09) or at least one event on an eligible flight; targets never exceeded and never filtered produce no panel. Order: filtered first, then by most recent exceedance.
 
 ### 8.3 Common chart behaviour
 
@@ -297,7 +307,9 @@ Every panel strip draws, on one engine-hours axis shared across the panel:
 - the metric's shift card (plain statement, comparison line, qualifiers) beside or below the strip, identical to its summary row;
 - "set reference here" on long-press / right-click of a point or an x-position; a pinned reference shows a pin marker and an "unpin" action.
 
-### 8.4 Limit panels and the event strip
+### 8.4 Event panels (limit and CAS) and the event strip
+
+A CAS panel (v0.10) consists of the event strip and its frequency header only — the `peak_excess` strip, OM zero line and filter band edge below do not apply (§3.7 G2). Each tick's tooltip names the class (`GROUND` / `IN_FLIGHT`) and `not_lane_check_reason` when set.
 
 Every limit panel, and the `overboost_time` strip in Boost / power, begins with an **event strip**: one tick per eligible flight on the shared engine-hours axis — a short, pale tick for a flight with no event, a tall, solid tick for a flight with one — with the reference and recent-window shading running across it like every other strip. Its header states the frequency comparison in words: *"exceeded on 2 of 10 recent flights · 1 of 40 earlier."* When frequency qualifies (§5.8), this header is what the summary row quotes. Ticks do not encode magnitude; that is the strip below.
 
