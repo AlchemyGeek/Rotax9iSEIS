@@ -1,7 +1,7 @@
 # Spec 01 — Engine Contract
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.18 — for review
+**Status:** Draft v0.20 — for review
 **Suggested repo path:** `docs/specs/01-engine-contract.md`
 **Baseline reviewed:** repo snapshot at commit `ed0ca33` (2026-07-07); provided project logs
 **Follows:** design discussion (Sept 2026). **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture), Spec 04 (Pyodide Spike Plan)
@@ -28,6 +28,8 @@
 | 0.16 | §8.8: `TopicHelp.validated` — whether the topic is validated on the active engine profile (Spec 10 v0.7 §8.1, from `register.json`); `false` drives the "not yet validated on this engine" note (Spec 03 §5.2). |
 | 0.17 | Spec 12 lands: §8.4 `BaselineConfig` gains `recent_window_hours`/`recent_window_min_flights`/`recent_window_max_flights`/`om_margin_fraction`/`pinned_references`; `MetricFleet` gains `shift?`; `FleetAnalysis` gains `change_summary`/`shift_history` (full `Shift`/`ShiftEvent` shapes defined in Spec 12 §11.2/§6, not duplicated here). §7 `update_fleet` takes an optional `LimitFilter[]` and computes the change statistic; new operations `set_reference`/`clear_reference`/`delete_shift_event`. §8.1 diagnostic catalog gains `RECENT_WINDOW_CAPPED`/`RECENT_WINDOW_LOW_N`/`REFERENCE_LOW_N`/`SHIFT_COMPARISON_INSUFFICIENT`. |
 | 0.18 | Spec 12 Phase 6 lands: §8.4 `MetricFleet` gains `unit?`, `frequency?`, `events?`, `readiness?` — a per-limit metric's unit from the engine profile; event frequency (the primary limit-panel signal) and its per-flight event ticks; the fixed readiness-badge classification (`filtered`/`building`/`no_recent`/`no_events`/`rare`/`insufficient`), computed engine-side so no UI infers one from raw numbers. Full `Frequency`/`Readiness`/`EventTick` shapes defined in Spec 12 §11.7, not duplicated here. `ShiftEvent.kind` gains `"frequency"` (Spec 12 §6/§11.7). |
+| 0.19 | §8.6 rewritten. `IN_FLIGHT` was a residual bucket (anything not POWERUP/SHUTDOWN/LANE_CHECK) with no flight test, no startup window and no minimum duration; on review (2026-10-11, the project's `engine_ecu_runs.csv`) all four of its `IN_FLIGHT` runs are on the ground at idle — three are single 1 Hz rows at or just after engine start, one is a 5 s idle CAN dropout (the full log set's fifth, counted in Spec 10 Appendix A, is to be classified the same way). Classification now comes from the phase detector (`GROUND_START` / `LANE_CHECK` / `GROUND` / `IN_FLIGHT` / `GROUND_SHUTDOWN`), with a minimum event duration and merge gap from the engine profile. The corrected fleet finding is **zero in-flight ENGINE ECU events**. §8.5's `engine_ecu_inflight` paragraph, §12 criterion 3, the testing-limitation note and Q6 updated to match. `RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT`, `analyze_inflight_pattern` and ENGINE ECU's `ALWAYS_ABNORMAL` membership leave the engine. |
+| 0.20 | §8.6 amended after the v0.19 implementation run (115 logs). Two findings. (1) The `IN_FLIGHT`-wins rule promoted four ordinary shutdowns to `IN_FLIGHT`: the phase detector keeps the first 4–11 rows after engine cut labelled LANDING_ROLL (taxiing at 7–9 kt) or DESCENT (at 0 kt) before switching to SHUTDOWN, and the alert starts as the engine stops. New **engine-state rule**: a run during which RPM falls below the engine-running threshold and stays there to the run's end is `GROUND_SHUTDOWN` whatever the phase labels; and the `IN_FLIGHT`-wins exception now also requires IAS above the taxi ceiling during the overlap. The phase-detector slop itself (DESCENT at 0 kt, LANDING_ROLL during taxi) is a `phases.py` defect, logged to BACKLOG, not fixed here. (2) The 2026-06-04 21:17:17 run is a shutdown (2 rows TAXI at 1,760 rpm, then RPM and oil pressure stop, 3 rows SHUTDOWN, log ends) — `GROUND_SHUTDOWN`, not the ground CAN dropout v0.19 called it. Criterion 3 and Q6 corrected. Corrected fleet result on 115 logs: 0 `IN_FLIGHT`, 2 `GROUND`, 31 sub-threshold blips. |
 
 ---
 
@@ -431,7 +433,7 @@ interface TopicResult {
 }
 ```
 
-**`engine_ecu_inflight` fires only when this flight has a real `IN_FLIGHT`-classified `EcuRun`** (§8.6) — not merely when the ENGINE ECU CAS alert is present somewhere in the log. A wireframe pass got this wrong: it built an insight named `engine_ecu_inflight`, severitized as `warning`, whose actual content described *ground-context* presence (active during `POWERUP`, before engine start) — which is the routine case on nearly every flight (141 of 145 real fleet ECU runs are ground-context), not an anomaly. Flagging that per-flight would mean nearly every flight gets the same warning, which is exactly what an insight shouldn't do — it should flag a genuine deviation, not restate a near-universal baseline. Ground-context ECU presence belongs in the `Analysis` text only, no `insight`, on every flight where that's all there is. `engine_ecu_inflight` should read as silent for such a flight, correctly, not as a workaround — there's nothing to flag. On a flight that *does* have a real `IN_FLIGHT` run, the insight is real and warranted; per-event detail (which co-active alerts, and whether any of them correlate with an actual out-of-range engine parameter rather than just another avionics-backup indication) lives in `EcuAnalysis` (§8.6), not duplicated here.
+**`engine_ecu_inflight` fires only when this flight has an `IN_FLIGHT`-classified `EcuRun`** (§8.6), where `IN_FLIGHT` means the run overlaps a flight phase (TAKEOFF_ROLL through LANDING_ROLL) for at least the minimum event duration — not merely that the engine was running. Ground-context occurrences (`GROUND_START`, `LANE_CHECK`, `GROUND_SHUTDOWN`) are the routine case on nearly every flight and are Analysis-only, never an insight: flagging them per flight would warn on nearly every flight in the fleet, the opposite of what an insight is for. A `GROUND` run (engine running, taxiing or idling, not a lane check) is an event in `EcuAnalysis` and on the Flight view but does not fire this topic; whether and how it is surfaced beyond that is a Spec 03/10 decision, not an engine one. On the current fleet the topic is silent on every flight, correctly — the runs previously labelled `IN_FLIGHT` were a classifier defect (v0.19), not events. Per-event detail (co-active alerts, oil-pressure NaN context) lives in `EcuAnalysis` (§8.6), not duplicated here.
 
 ```ts
 interface Insight {
@@ -459,7 +461,33 @@ Severity is defined in the rule set (R1): `insight_rules.json` gains an optional
 
 ### 8.6 ECU analysis
 
-`EcuRun` mirrors the current `engine_ecu_runs.csv` columns: `start`/`end` (UTC + `elapsed_s`), `duration_s`, `classification` (`POWERUP` | `SHUTDOWN` | `LANE_CHECK` | `IN_FLIGHT`), `lane_check_pair` + `lane_check_note`, `co_alerts`, and the per-run context means (RPM, power %, oil pressure/temp, coolant temp, main volts, battery amps, fuel pressure, IAS, baro altitude, `volts_delta`, `rpm_accel_pre`, `oil_nan_frac`). `EcuAnalysis` adds per-classification counts and, per BACKLOG B3, **per-event** co-active alerts for each `IN_FLIGHT` event rather than a pooled table.
+**Run extraction.** Contiguous rows with `ENGINE ECU` in the CAS string form a run. Runs separated by less than `cas.merge_gap_s` (engine profile; default 5 s) are merged. Runs shorter than `cas.min_event_duration_s` (default 3 s) after merging are **not** `EcuRun`s; they are counted in `EcuAnalysis.sub_threshold_blips` per flight, for data quality only. At 1 Hz a single-row CAS token is indistinguishable from a sampling artefact. (These are distinct from the exceedance checker's `exceedance_merge_gap_s`, which is per limit.)
+
+**Classification** is by the flight phase (§8.3 / `phases.py`) the run overlaps — no private RPM, IAS or voltage heuristics:
+
+| `classification` | Phases | Meaning |
+|---|---|---|
+| `GROUND_START` | PRE_START, ENGINE_START, WARMUP | Avionics boot, RS-232 fallback, engine catching. Expected. |
+| `LANE_CHECK` | WARMUP or TAXI **and** the lane-check signature (run-up RPM band, stationary, ≤ `lane_check_max_duration_s`, paired within `lane_check_pair_window_s`) | Deliberate single-lane run-up. Expected. |
+| `GROUND` | TAXI (not a lane check), or LANDING_ROLL after ground speed < 5 kt | Engine running on the ground, not starting, not a lane check. |
+| `IN_FLIGHT` | TAKEOFF_ROLL, CLIMB, CRUISE, DESCENT, APPROACH, LANDING_ROLL | The only flight event. |
+| `GROUND_SHUTDOWN` | SHUTDOWN | Expected. |
+
+Rules, in order:
+
+1. **Engine-state rule (v0.20).** If RPM falls below the engine-running threshold during the run and stays there to the run's end, the run is `GROUND_SHUTDOWN`, whatever phases its rows carry. The ENGINE ECU alert routinely starts as the engine is cut, and the phase detector can lag the cut by several rows (LANDING_ROLL while taxiing in, DESCENT at 0 kt). Symmetrically, a run whose rows all precede the first RPM above the running threshold is `GROUND_START`.
+2. **`IN_FLIGHT`-wins.** A run overlapping an in-flight phase for ≥ `min_event_duration_s` **with IAS above the taxi ceiling during that overlap** is `IN_FLIGHT`. Phase label alone is not enough (v0.20).
+3. **Majority.** Otherwise the run takes the phase holding the majority of its rows.
+
+A run in UNKNOWN phase is classified by the nearest preceding known phase and flagged `phase_uncertain: true`. The former `POWERUP`/`SHUTDOWN` voltage-decline test is retired; the phase detector separates PRE_START from SHUTDOWN, and rule 1 covers the boundary rows it gets late.
+
+**`EcuRun`** keeps the existing columns (`start`/`end` (UTC + `elapsed_s`), `duration_s`, `lane_check_pair`, `lane_check_note`, `co_alerts`, the per-run context means — RPM, power %, oil pressure/temp, coolant temp, main volts, battery amps, fuel pressure, IAS, baro altitude — `volts_delta`, `rpm_accel_pre`, `oil_nan_frac`) and adds `phase` (the deciding phase) and `phase_uncertain`.
+
+**`EcuAnalysis`** carries per-classification counts, `sub_threshold_blips`, per-event co-active alerts for every `GROUND` and `IN_FLIGHT` run (BACKLOG B3 — per event, never a pooled table), and `lane_check: "both" | "single" | "none"` per flight. It no longer carries a recommended-actions list or a pooled in-flight pattern analysis: `analyze_inflight_pattern` and `RECOMMENDED_ACTIONS_ENGINE_ECU_INFLIGHT` leave the engine (the correlation study was a one-time research question, answered; it survives as a notebook at most). `ENGINE ECU` leaves `ALWAYS_ABNORMAL` — its abnormality is decided by classification, not a static list. The topic's help entry (§8.8) describes the classes in plain language and may name the OM/Rotax-generic follow-up (fault-log read); it carries no aircraft-specific wiring guidance (Spec 10 §9 item 11).
+
+**Phase-detector dependence.** This classification is only as good as `phases.py`. Finding 9 (takeoff not detected on some flights) must not silently turn a flight's TAKEOFF_ROLL run into `GROUND`: when `PHASE_TAKEOFF_NOT_DETECTED` is raised for a flight, any `GROUND` run with IAS above the taxi ceiling is reported as `IN_FLIGHT` with `phase_uncertain: true`. The phase-regression snapshot (`notebooks/06_phase_regression.py`, per CLAUDE.md) is taken before and after this change.
+
+**Why v0.19.** The previous classifier labelled a run `IN_FLIGHT` whenever it was not POWERUP (< 30 % engine-running rows in *that run*), SHUTDOWN (voltage decline) or LANE_CHECK. It never tested for flight. A one-row blip seconds after the engine catches is 100 % "running" and fell through. Review of the project snapshot's 145 runs: 2026-04-23 19:44:50 (1 s, 1,720 rpm, 2.5 min after power-on, EFIS/NAV still on backup), 2026-04-30 18:30:26 (1 s, 1,770 rpm, on the ground), 2026-05-27 20:06:38 (1 s, 510 rpm, oil 2 psi, OIL PRESS + FUEL PRESS co-active — the engine catching), 2026-06-04 21:17:17 (5 s, 1,760 rpm, oil-pressure NaN 3/5 rows — read at the time as a CAN dropout at idle; the raw log shows RPM and oil pressure stopping after two rows and the log ending — a shutdown, v0.20). Zero in-flight events.
 
 ### 8.7 Series for charts
 
@@ -557,7 +585,7 @@ The phase-detector fix (finding 9) is **not** part of these stages. It lands as 
 
 1. `analyze_flight` on `log_20260423_200615_KACV.csv` reproduces all 31 columns of its `fleet_metrics.csv` row with zero differences, and additionally populates the four newer metrics with explicit missing reasons where null (expected here: `takeoff_*` → `NO_PHASE`, `cruise_nmpg` → `NO_PHASE`).
 2. The same run emits `PHASE_TAKEOFF_NOT_DETECTED` (finding 9) and `PHASE_NO_CRUISE`.
-3. `analyze_ecu` on that log reproduces its rows in `engine_ecu_runs.csv` (2 `POWERUP`, 2 `LANE_CHECK`, 1 `SHUTDOWN`; no `IN_FLIGHT`).
+3. `analyze_ecu` on that log yields 2 `GROUND_START`, 2 `LANE_CHECK`, 1 `GROUND_SHUTDOWN`, `lane_check: "both"`, no `GROUND`, no `IN_FLIGHT` (the pre-v0.19 goldens read 2 `POWERUP`, 2 `LANE_CHECK`, 1 `SHUTDOWN`). On the full local log set (all logs the loader can read, ground sessions included): `IN_FLIGHT` = 0 on every log; the four shutdown runs the v0.19 rule promoted (04-17 12:13:55, 04-22 19:08:23, 06-17 17:25:09 and its duplicate export) are `GROUND_SHUTDOWN`; 2026-06-04 21:17:17 is `GROUND_SHUTDOWN`; the 2026-04-23, 2026-04-30 and 2026-05-27 blips appear only in `sub_threshold_blips`; the two `GROUND` runs are listed with phase, RPM, IAS and duration; every former `POWERUP`/`SHUTDOWN` run lands in `GROUND_START`/`GROUND_SHUTDOWN`, and any that does not is listed for review.
 4. `update_fleet` on the 23 flight rows of `fleet_metrics.csv` reproduces current baseline and trend values (n, mean, std, slope, R²) and the stratified baselines.
 5. Every result validates against the generated JSON Schemas; serialization contains no bare `NaN`.
 6. No core function reads the filesystem, environment, or wall clock (enforced by a test that runs the core with file access blocked).
@@ -566,7 +594,7 @@ The phase-detector fix (finding 9) is **not** part of these stages. It lands as 
 9. Scripts 01–04 produce output identical to the Stage 0 goldens after Stages 1–3; every §7 workflow is reachable via a `slingology-eis` subcommand whose `--json` output validates against the schemas.
 10. **Topic help (§8.8).** For every bundled engine profile and the default rule set: every topic the engine can emit has a help entry; every placeholder in every applicable entry resolves; `get_topic_help` returns no diagnostics; the rendered `text` contains no `{`. Runs everywhere (no log data needed).
 
-**Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the four genuine `IN_FLIGHT` runs) needs the raw log set, either shared in the project or run locally to produce golden outputs.
+**Testing limitation.** Only one raw log is available in the project space. Criteria 1–3 are fully testable now; criterion 4 uses the derived metrics table, not raw logs. Full-fleet regression (all 23 flights end to end, ECU events including the two `GROUND` runs, the four late-phase shutdowns and the sub-threshold blips (v0.20)) needs the raw log set, either shared in the project or run locally to produce golden outputs.
 
 ## 13. Out of scope for this spec
 
@@ -580,5 +608,5 @@ Results bundle and workspace format (Spec 02); UI layout and chart choices (Spec
 |---|---|---|
 | Q1 | Should `flight_id` also survive re-exports that shift the start minute? | Provisionally resolved (R5). Confirm by running duplicate detection over the full log set and counting `exact` vs `overlap` groups. Needs the raw logs. |
 | Q3 | Is the `Topic` plugin interface worth freezing before Stage 2? | Deferred. Freeze after two structurally different topics (a simple threshold topic such as overboost and a model-based one such as takeoff MAP) are ported in Stage 2 without special-casing. |
-| Q6 | Are the four `IN_FLIGHT` ECU events and the KSFF `OIL PRESS` co-alert to remain test fixtures? | Proposed: yes, as short scrubbed excerpts (GPS dropped or offset). Needs the raw logs. |
+| Q6 | Which ECU excerpts remain test fixtures now that no `IN_FLIGHT` runs exist? | Proposed (v0.20): one of the two `GROUND` runs, one late-phase shutdown (e.g. 06-17 17:25:09 — exercises rule 1), the 2026-05-27 engine-catch blip (sub-threshold, `OIL PRESS` co-alert) and one paired lane check, as short scrubbed excerpts (GPS dropped or offset). |
 | Q8 | How are the built UI assets packaged so that `slingology-eis serve` works from a plain `pip`/`pipx` install (bundled in the wheel, or fetched at first run)? | New. To be settled in Spec 04. |

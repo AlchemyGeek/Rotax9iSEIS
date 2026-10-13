@@ -1,9 +1,9 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.16 — implementation in progress (`web/src/views`, against the local-server adapter); Spec 12's Trends rebuild (§5.3) implemented in Session B
+**Status:** v0.13 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
-**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO)
+**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
 
 **Revision history**
@@ -22,11 +22,8 @@
 | 0.10 | §5.3: the "Stratify by" toggle finally has a real behavior spec — it never had one beyond a name. Hidden entirely for a non-stratifiable metric, off by default for the 7 that are (per Spec 01 §8.4 v0.10's real `band_kind_by_metric` values), and honest about lower per-band confidence rather than hiding or upgrading it. |
 | 0.11 | §5.3: with stratification on, outlier rings come from the per-band outliers (Spec 01 v0.13, R8), so a ringed point and a "watch" insight always use the same comparison. `baseline_deviation` now compares within the flight's band, so the stratified view is the one that matches the insights for stratified metrics. |
 | 0.12 | §5.1 aligned with Spec 02 v0.7's two exclusion tiers (§5.11 there). "Ground session (skipped)" removed as a row status — a skipped log never becomes a flight, so it can't be a row; skipped logs (ground session, short flight, corrupt log, user-skipped) get their own **Skipped** panel instead, with read-only preview and Include, as built. The In baselines column is stated to be Tier 2 only. Status header corrected from "no code written". |
-| 0.13 | §5.2: every topic card in the Analysis grid gets a **`?`** that opens a one-paragraph explanation of the topic (Spec 01 §8.8 `get_topic_help`; required by Spec 10 for every visible topic), and the flight-summary line gets one too. Values in the text are formatted in the pilot's units like everything else. "The 14 topics" in the layout sketch replaced by "the visible topics" — the set is now governed by Spec 10's register. Also aligned with Spec 10 v0.5's decisions: a topic that references an OM limit **mirrors** that limit's badge on its card while the insight list shows the exceedance once (Spec 10 §4.1); a **flight-summary line** in the header carries fuel burned, cruise nm/gal and cruise fuel flow, with no severity (Spec 10 §4.2); analysis lines that say why a comparison wasn't made (too short a flight, D7; outside the takeoff-MAP model's range, D5) render like any other; Trends drops Climb Thermal Rate (Research, D2), EGT4 Elevation (removed, D3) and Oil/Coolant Ratio (removed, D1), and no Research-status topic appears on Trends or the Flight view. |
-| 0.14 | **Mixed-aircraft notice** (Spec 02 v0.8 §5.6): where it appears (§5.1, §5.2, §5.3). **Unverified-on-this-engine note** (Spec 10 v0.7 §8.1) on topic cards and in topic help. "Not compared" analysis lines: the short-flight example removed (Spec 10 D7 revised — no duration threshold). |
-| 0.15 | **§5.3 replaced by a pointer to Spec 12 v0.3 §7–§9/§12** — Trends is a change summary plus register-declared panels now, not a metric picker; see Spec 12 for the full behaviour. §5.5 gains the Trends change window fields and a pinned-references table (Spec 12 §11.1/§5.7). §4 gains the Trends nav badge (Spec 12 §9.5), the same pattern as Notes' filter-drift badge. |
-| 0.16 | §5.5's pinned-references table corrected to v0.6 wording (Spec 12 §5.7.1): "pinned baselines", "Pin baseline to these flights" — the v0.15 quote still read "pin reference to current window", the phrasing Spec 12 itself retired in Session E but this file never followed up on. |
-**Baseline reviewed:** repo `main` at commit `1740d1b`
+| 0.13 | Realigned with **Spec 14** (Settings, Journal, rule editing on the card). §4: Baselines leaves the top-level nav; Annotations becomes **Journal**; Settings is a tabbed section. §5.5 Baselines & models superseded by Spec 14 §5.1 (Settings → Reference & Models) and §7.2–§7.3 (rule editing on the topic card). §5.6 Annotations superseded by Spec 14 §6 (Journal). §5.7 Settings restated as the tabbed section. §5.2 Flight view gains the topic card's triggers disclosure, the reference-contribution header, exclude-from-card and the "reference changed" / "rule changed" markers. Principle 5 restated: the sandbox is the workspace copy of the rules, wherever it is edited, and nothing applies without a fleet-wide preview. Principle 6 restated: the researcher's extra surface is Settings, not a tuning page; all tuning is done where results are shown. §1 and D6 updated to match. Wireframes `Baselines.dc.html`, `Annotations.dc.html`, `Settings.dc.html` superseded. User-facing "baseline(s)" → "reference" throughout. Q2 moot. |
+**Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
 ---
 
@@ -34,7 +31,7 @@
 
 Specs 01, 02, and 04 built the machine: a typed, stateless engine; a workspace to hold its output; three ways to run it. None of that is visible to a pilot. This spec is the part they actually see — organized around the goal stated at the very start of this project: someone should be able to look at a flight or a fleet and understand what it means, without combing through pages of text output.
 
-It defines the views, what data each one binds to (from Spec 01 §8 and Spec 02's workspace), how they navigate to each other, and the two features that were explicitly part of the original brief but don't fit inside a single "view": the **rule playground**, and **evidence links** from an insight to the chart or table row that supports it.
+It defines the views, what data each one binds to (from Spec 01 §8 and Spec 02's workspace), how they navigate to each other, and the two features that were explicitly part of the original brief but don't fit inside a single "view": **rule editing with a fleet-wide preview** (originally a standalone rule playground; since v0.13 done on the topic card, Spec 14 §7.2–§7.3), and **evidence links** from an insight to the chart or table row that supports it.
 
 **Explicitly deferred to a later spec (or a per-view addendum):** exact visual design (spacing, color palette, typography), the mockups/wireframes themselves, and ECharts option objects. This spec fixes structure and data flow; visual design is a natural fit for the frontend-design skill once implementation starts.
 
@@ -47,28 +44,28 @@ It defines the views, what data each one binds to (from Spec 01 §8 and Spec 02'
 | D3 | Non-technical target user; the UI is the *only* thing most pilots ever see — the CLI is a contributor/power-user tool. | Spec 01 §7.1 |
 | D4 | iPad is a real target, not just a fallback, for the tested device class; still touch-friendly, responsive design regardless. | Spec 04 Appendix B |
 | D5 | Every insight must link to the evidence that produced it (chart, table row, event). | Original design brief |
-| D6 | The UI is also meant to help *develop* the analysis — the rule playground is a first-class feature, not an afterthought. | Original design brief |
+| D6 | The UI is also meant to help *develop* the analysis — editing a rule and seeing its fleet-wide consequence is a first-class feature, not an afterthought. Since v0.13 this lives on the topic card, not a separate page (Spec 14 §7.3). | Original design brief; Spec 14 |
 | **R1** | **Resolves Spec 02 Q1.** Series caching: **not cached** in the workspace for v1. `get_series` (Spec 01 §7) re-parses on demand. The spike measured 2.1–2.6 s for a full flight's load+phases+metrics (Spec 04 Appendix A) — well inside what a "open this flight" wait tolerates, and it avoids a second stale-vs-fresh problem alongside `FlightAnalysis` itself. Revisit only if real usage shows re-parsing is a bottleneck. |
 | **R2** | **Resolves Spec 02 Q5.** Bundle import gets a **preview mode**: opening a bundle (drag-in, or a "browse community samples" flow) shows its contents in the same flight-view/trends components, tagged read-only, with an explicit "Add to my workspace" action before anything merges. Nothing merges silently. This is a UI-level choice, as Spec 02 anticipated — the bundle format itself is unchanged. |
 
 ## 3. Design principles for this spec
 
-1. **Every screen answers a question a pilot actually has**, not a category of data the engine happens to produce. The six views in §5 map to "what should I look at," "what happened on this flight," "is this normal," "what's wrong with the ECU," "how are my baselines built," and "what have I already explained."
+1. **Every screen answers a question a pilot actually has**, not a category of data the engine happens to produce. The views in §5 map to "what should I look at," "what happened on this flight," "is this normal," "what's wrong with the ECU," and "what have I decided" (Journal); "what is my engine compared against" is configuration and lives in Settings (Spec 14 §5.1).
 2. **Insights are the entry point, charts are the evidence.** A pilot lands on a severity-sorted list of things worth knowing, and each one expands into the specific chart window or table row that justifies it (Spec 01 §8.5 `evidence`). Nobody should have to know which of the 14 topics to go looking for.
-3. **Nothing computed is ever silently stale.** Any view showing a `FlightAnalysis`, `FleetAnalysis`, or `InsightSet` also shows Spec 02's `stale` flag when true, with one visible action to refresh — never a background recompute the pilot didn't ask for (cost is real: re-running fleet baselines touches every included flight).
+3. **Nothing computed is ever silently stale.** Any view showing a `FlightAnalysis`, `FleetAnalysis`, or `InsightSet` also shows Spec 02's `stale` flag when true, with one visible action to refresh — never a background recompute the pilot didn't ask for (cost is real: re-running the reference touches every included flight).
 4. **Touch-first, not touch-tolerant.** Every interactive chart element has a tap target, not just a hover state; this is required for D4, not optional polish.
-5. **The rule playground is a sandbox, not a settings page.** Edits there never touch the shipped `insight_rules.json` (Spec 02 §6.4) — only the workspace's `rules/active.json` copy — so experimenting is free of consequence.
-6. **Two personas share one computation; they diverge only in which surfaces they visit, never in what the same data produces.** A casual pilot ("load my log, see the results") and a researcher ("diagnose this, tune that, chase an anomaly across many flights") are both real users of this product, and the wrong way to serve both is two modes that can silently disagree about the same flight. There is exactly one active configuration per workspace at any time — one set of thresholds, one rule set, one baseline config — and every view reads it. What differs is exposure, not computation:
-   - The **casual persona's world** is Flights, Flight view, Trends, and ECU. Insights appear, outliers are marked, nothing asks them to understand a threshold exists.
-   - The **researcher's world** adds Baselines & Models, where every tunable thing actually lives — this is where principle 5's sandbox does its job. A value a pilot never visits this screen to change simply stays at its default; a value only becomes visible to someone who went looking for it by design, not by accident.
+5. **Rule edits are a sandbox, not a settings change.** Editing a trigger — on a topic card, Spec 14 §7.3 — never touches the shipped `insight_rules.json` (Spec 02 §6.4), only the workspace's `rules/active.json` copy, and never applies without showing its fleet-wide consequence first. Experimenting is free of consequence and never silent.
+6. **Two personas share one computation; they diverge only in which surfaces they visit, never in what the same data produces.** A casual pilot ("load my log, see the results") and a researcher ("diagnose this, tune that, chase an anomaly across many flights") are both real users of this product, and the wrong way to serve both is two modes that can silently disagree about the same flight. There is exactly one active configuration per workspace at any time — one set of thresholds, one rule set, one reference config — and every view reads it. What differs is exposure, not computation:
+   - The **casual persona's world** is Flights, Flight view, Trends and ECU. Insights appear, outliers are marked; the setting behind a card is a closed disclosure they need never open.
+   - The **researcher's world** adds Settings (Spec 14 §5) — the configuration of the computation — and the open disclosures on the same cards the casual pilot sees. There is no separate tuning page: tuning happens where results are shown, with the implication previewed before apply (Spec 14 §7.2–§7.3), and every decision is recorded in Journal (Spec 14 §6). A value a pilot never opens a disclosure to change simply stays at its default.
    - **Workspaces are the hard-separation mechanism**, not a new one invented for this: an experiment workspace (Spec 02 §5.1) already exists for trying things on a subset of one's own logs. A researcher chasing a hypothesis with aggressive settings does it in a workspace built for that, never the one used for a casual view of the same aircraft. This is the same mechanism the multi-workspace model already provides, applied to a case it wasn't explicitly framed around before now.
-   - **A future Research/Explore mode** (tabled as its own feature, not designed here) should follow the same split: a distinct destination, not woven into the four operational views, so a casual pilot's screens stay exactly as simple regardless of how much experimentation capability eventually sits behind Baselines & Models. It should also have a defined path *out* — a genuine finding becomes an annotation, and potentially, per Spec 01 §9's community-extension model, a real Topic. Research mode is upstream of the operational side, not walled off from it.
+   - **A future Research mode** (Spec 06, reserved; not in the nav until designed — Spec 14 Q3) should follow the same split: a distinct destination, not woven into the four operational views, so a casual pilot's screens stay exactly as simple regardless of how much experimentation capability eventually sits behind it. It should also have a defined path *out* — a genuine finding becomes a Journal decision or a Settings change carrying provenance, and potentially, per Spec 01 §9's community-extension model, a real Topic. Research mode is upstream of the operational side, not walled off from it.
 
 ## 4. Navigation shell
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ [Logo]  [Workspace: N117ZS ▾]  Flights Trends ECU Baselines ⚙│  <- top-level nav, always visible
+│ [Logo]  [Workspace: N117ZS ▾]  Flights Trends ECU Journal ⚙  │  <- top-level nav, always visible
 ├─────────────────────────────────────────────────────────────┤
 │                                                                │
 │                     active view                               │
@@ -78,13 +75,11 @@ It defines the views, what data each one binds to (from Spec 01 §8 and Spec 02'
 
 **Workspace switcher, permanent in the nav** (new in v0.6, per Spec 02 v0.5's multi-workspace model) — the active workspace's name, a dropdown to the others (Spec 02 §5.2's registry), and "+ New workspace." Not in Settings: switching workspaces is something a pilot managing more than one aircraft does routinely, not configuration they set once. Settings (§5.7, gear icon) still holds per-workspace and app-level settings, just not the switch action itself.
 
-**Five top-level destinations** (§5.1–§5.5: Flights, Trends, ECU, Baselines, Annotations — the last reached the same way as before, not shown in the ASCII sketch above for space), plus Settings (§5.7) from the gear icon. This drops to five from the original six because **Import is no longer a destination** — see §5.1.
+**Four everyday destinations and Journal** (Spec 14 §4): Flights (§5.1), Trends (§5.3), ECU (§5.4), Journal (§5.6, Spec 14 §6), plus Settings (§5.7) from the gear icon. Destinations are grouped by what the user is doing — look, decide, configure — not by who the user is. **Baselines is no longer a destination** (v0.13): what it governed is either configuration (Settings → Reference & Models, Spec 14 §5.1) or a decision made on a card (Spec 14 §7). Its old route redirects to Settings → Reference & Models. **Import is no longer a destination** either — see §5.1. Research (Spec 06) is not shown until designed.
 
 **"Flights" now means the log browser**, not a direct link into one flight's detail. This corrects a real mistake in earlier wireframe rounds: the nav's "Flights" pill pointed straight at single-flight detail (now §5.2, "Flight view"), which is a different thing built for a different question. A pilot lands on Flights, sees every flight in the active workspace, and clicks one to reach Flight view — the nav item was never actually wired to the right destination.
 
-A **global stale banner** appears under the nav bar, not per-view, whenever any part of the workspace needs recomputing after an import — "3 new flights imported — recompute fleet baselines?" — because staleness after import is a workspace-wide event, not a single view's concern.
-
-**Trends nav badge** (Spec 12 §9.5): the "Trends" pill carries a small count of open shift events (`FleetAnalysis.shift_history`, uncleared) — a passive signal, no colour implying severity (the change summary ranks by evidence, not policy, §7), the same mechanism Notes' own filter-drift badge already uses for its pill.
+A **global stale banner** appears under the nav bar, not per-view, whenever any part of the workspace needs recomputing after an import — "3 new flights imported — recompute reference?" — because staleness after import is a workspace-wide event, not a single view's concern.
 
 ## 5. The views
 
@@ -94,7 +89,7 @@ A **global stale banner** appears under the nav bar, not per-view, whenever any 
 
 Replaces the old standalone Import destination and the never-built "just a list" gap between Import and Flight view. Grounded directly in Spec 02 v0.5's data model — this view is mostly a straightforward rendering of what §5–§6 of that spec already defines, not new design.
 
-- **Header:** active workspace's name, its log folders (each marked reachable/unreachable per Spec 02 §5.5), a **Rescan** action, and a one-line summary — "48 flights · 45 in baselines · 2 missing · 1 other aircraft."
+- **Header:** active workspace's name, its log folders (each marked reachable/unreachable per Spec 02 §5.5), a **Rescan** action, and a one-line summary — "48 flights · 45 in reference · 2 missing · 1 other aircraft."
 - **Drop zone / file picker**, same role Import used to have alone — still large and unmissable for D3's non-technical-user onboarding, now living as the top of this view rather than a separate destination. Dropping a folder (or files, as a fallback — mainly needed on Safari, which can't retain folder permissions the way Chrome does) triggers a scan the same way an explicit Rescan does.
 - **Table, one row per flight** (duplicate exports from Spec 01's `flight_id` matching collapse into one row):
 
@@ -103,13 +98,12 @@ Replaces the old standalone Import destination and the never-built "just a list"
   | Date / route | Apr 23 · KACV |
   | Duration, engine hours | 4h 30m · 38.2h |
   | Insights | count, colored by worst severity (§5.2's severity tokens) |
-  | In baselines | ✓, or "excluded — <reason>" (Spec 02 §6.3's `excluded` list — Tier 2 of Spec 02 §5.11; toggle lives here) |
+  | In reference | ✓, or "excluded — <reason>" (Spec 02 §6.3's `excluded` list — Tier 2 of Spec 02 §5.11; toggle lives here, and since v0.13 also on the insight card, Spec 14 §7.1). User-facing word is "reference"; "baseline" stays internal. |
   | Status | see below |
   | Source | filename + folder, on hover/expand |
 
   Clicking a row opens Flight view (§5.2).
 - **Status values**, matching Spec 02 §5.5/§5.6 exactly rather than inventing UI-only states: Analyzed · Needs re-analysis (rules/overrides/engine version changed since last computed — Spec 02 §8's `stale` flag) · Missing log (Spec 02 §5.5 — results kept, charts unavailable) · Folder unreachable ("Locate folder") · Different aircraft (Spec 02 §5.6 — informational only, never excludes) · Unreadable (parse failure).
-- **Mixed-aircraft notice** (Spec 02 §5.6, v0.14). When admitted flights carry more than one distinct tail number, a persistent notice sits above the table: "This workspace contains flights from N aircraft (N117ZS, N456CD…). Comparisons with your usual treat them as one aircraft. For per-aircraft results, use one workspace per aircraft." It offers **These are the same aircraft…**, which lets the pilot group tail numbers (a G3X ident typo, a re-registration) into one; grouped idents are listed under the notice and can be ungrouped. The notice never blocks anything. Trends shows the same notice in its header.
 - **Skipped panel**, separate from the table (Spec 02 §5.11, Tier 1): logs in the workspace's folders that the admission rules kept from becoming flights — ground session, short flight, corrupt log — plus any the pilot skipped. Each shows its category and reason, opens read-only in Flight view so the call can be checked, and has an **Include** action (an override, never a delete). A chip in the header shows the count; the panel's per-log date/duration is fetched only when it's opened, since that re-reads each file.
 - **Grouping:** by date (default) or by folder, mirroring how the pilot already organized their own files — no in-app subset filter beyond that, consistent with Spec 02 §5.4's "subsets are made by organizing folders, not by picking in the app."
 - **Status chips filter the table** — e.g. show only Missing, or only Excluded.
@@ -124,9 +118,8 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout:
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ Header: date, duration, aircraft, [stale? refresh]         │
-│ Flight summary: fuel burned · cruise nm/gal · cruise fuel  │
-│ flow  (?)                                                  │
+│ Header: date, duration, aircraft, [stale? refresh],         │
+│         Contributes to reference / Excluded (reason)        │
 ├───────────────────────┬─────────────────────────────────────┤
 │ Insight list           │  Timeline chart                     │
 │ (severity-sorted,      │  - phase bands (color-coded)        │
@@ -138,19 +131,15 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout:
 │  [click → highlights    │                                      │
 │   the evidence window]  │                                      │
 ├───────────────────────┴─────────────────────────────────────┤
-│ Analysis lines (the visible topics — Spec 10 register,       │
-│ shown even where no insight fired — this is the "why nothing │
-│ is wrong" half of the two-layer format, Spec 01 §8.5)        │
+│ Topic cards (every evaluated topic, TopicResult.analysis.text,│
+│ shown even where no insight fired — the "why nothing is      │
+│ wrong" half of the two-layer format, Spec 01 §8.5), each     │
+│ with a closed ▸ triggers disclosure (Spec 14 §7.3)           │
 └───────────────────────────────────────────────────────────┘
 ```
 
 - **Insight list** is the entry point (principle 2): each item shows severity, the rendered `message.text`, and confidence. Clicking one scrolls/zooms the timeline chart to its `evidence` window (`series_window` evidence → zoom to `[start_s, end_s]`; `exceedance`/`ecu_run` evidence → jump to and highlight that event; `baseline_point` evidence → a "compare to fleet" link into Trends, §5.3, pre-filtered to that flight). Only topics with `insight != null` appear here — a topic with no fired insight is never listed with a placeholder `info` severity just to have an entry; it belongs in Analysis only (below). A short line below the list states how many topics were analyzed with nothing to flag, so the list's shortness reads as "nothing more to report," not as missing content.
-- **Severity travels with the topic, not the section.** `InsightSet.topics` already bundles each topic's `analysis` and `insight` together (Spec 01 §8.5), so the same severity dot/label used in the insight list is repeated on that topic's card in Analysis, whenever `insight != null` — same color, same shape, same token. A topic with `insight == null` carries no tag in either place; the *absence* of a tag is itself the "nothing flagged" signal, not a separate `info` badge. **Mirrored limit badges (Spec 10 §4.1):** a topic that references an OM limit (its rule's `limit_refs`, Spec 09 §10.2 — today `oil_temp_peak`, `coolant_temp_peak`, `overboost_time`) emits no insight of its own for that limit. When `limit_exceedances` has an insight for a referenced limit on this flight, the topic's card shows that insight's badge and links to it. The badge is display-only: the insight list, its counts, filters and notes see the one `limit_exceedances` insight, never a second entry. One severity token set, defined once, referenced everywhere it appears (insight list, Analysis grid, and anywhere else a topic's severity is shown, e.g. the fleet-wide rule-playground table in §5.5): `info` `#64748B`, `watch` `#FDE047`, `warning` `#F5A524`, `limit` `#E5484D`. `warning` and `limit` render with a small triangle indicator, `watch` and `info` with a circle, so severity is never conveyed by color alone.
-- **Mixed-aircraft note** (Spec 02 §5.6). In a workspace whose flights carry more than one tail number (after the pilot's same-aircraft confirmations), every card whose comparison comes from history — baseline, trend or model insights and their analysis lines — carries a one-line note: "Compared with all N aircraft in this workspace." OM limit cards don't. The note links to the Flights tab notice.
-- **Unverified on this engine** (Spec 10 §8.1). A topic whose register status for the workspace's engine profile is *Unverified* shows a small "Not yet validated on the 912iS" tag beside its title, and the same sentence at the end of its help popover. It never changes the topic's severity or hides it.
-- **Flight-summary line** (Spec 10 §4.2). Under the header: fuel burned, cruise nm/gal and mean cruise fuel flow, in the pilot's units, with a `?` (below). These are planning numbers, not topics: no severity token, no insight, no card in the Analysis grid. A value that couldn't be computed (no cruise detected) shows "—" with the same plain-language reason the header already gives.
-- **"Not compared" analysis lines.** Some analysis lines say why a comparison wasn't made rather than giving one — for example a takeoff outside the elevation/temperature range the takeoff-MAP model has seen (Spec 10 D5). They render as ordinary analysis lines with no tag; the explanation is in the text, which the engine supplies.
-- **Topic help (`?`).** Each topic card in the Analysis grid has a small `?` beside its title. Clicking it (or focusing it and pressing Enter) opens a popover with the topic's title and its one-paragraph explanation from `get_topic_help` (Spec 01 §8.8): what the topic checks, what it compares against, why it matters, and what to do if it fires. The popover is general, not about this flight — the card's own analysis line already says what happened here — so it reads the same on every flight and stays short. Values inside the text (limits, thresholds, counts) are formatted in the pilot's units, exactly as analysis lines are. Help is fetched once per engine profile and rule set and cached, not per flight. A topic whose help reports `applies: false` for the active engine profile shows no `?`. The flight-summary line (fuel burned, cruise nm/gal, cruise fuel flow — Spec 10 §4.2) gets the same `?`, explaining why those numbers never raise an alert. The `?` is a real button with an accessible label ("About: Oil temperature peak"), and the popover closes on Escape or a click outside it.
+- **Severity travels with the topic, not the section.** `InsightSet.topics` already bundles each topic's `analysis` and `insight` together (Spec 01 §8.5), so the same severity dot/label used in the insight list is repeated on that topic's card in Analysis, whenever `insight != null` — same color, same shape, same token. A topic with `insight == null` carries no tag in either place; the *absence* of a tag is itself the "nothing flagged" signal, not a separate `info` badge. One severity token set, defined once, referenced everywhere it appears (insight list, Analysis grid, and anywhere else a topic's severity is shown, e.g. the preview on a topic card, Spec 14 §7.2): `info` `#64748B`, `watch` `#FDE047`, `warning` `#F5A524`, `limit` `#E5484D`. `warning` and `limit` render with a small triangle indicator, `watch` and `info` with a circle, so severity is never conveyed by color alone.
 - **Timeline chart** is the one place `get_series` (R1) is called, lazily — only the channels the visible insights/topics reference are fetched by default, with a channel picker (from the Spec 01 §6.4 registry) to add more. This bounds the re-parse cost from R1 to what's actually shown.
 - **Phase bands** double as the visible marker for the finding-9 defect: a flight that's entirely one phase band (per `PHASE_TAKEOFF_NOT_DETECTED`, Spec 01 §8.1) shows a plain-language note here, not just a diagnostic code — "phase detection didn't find a clear climb or cruise for this flight; some metrics below are unavailable as a result."
 - **Only one navigational bar, not two.** An earlier pass had a second, separate "current zoom phase" band alongside the minimap — cut after review, because it was redundant with the minimap without adding real function of its own, and because two different-scope representations (local detail vs. full-flight overview) crammed into one bar would have meant sacrificing one or the other rather than genuinely merging them. What that band showed — which phase(s) the current zoom window covers — moved into the main chart itself instead, as a tint behind the data (below), which puts the information exactly where it's already being read rather than in a strip that has to be cross-checked. The minimap is now the only bar, and it keeps its original job unchanged: full-flight orientation and drag-to-navigate.
@@ -167,12 +156,26 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout:
   | `CLIMB` | `#22C55E` | `UNKNOWN` | `#1F2937` |
 
 - **No text inside the minimap or the chart tint.** At small sizes, and at whatever width a short zoom window leaves the chart, a label reliably either doesn't fit or gets truncated into something unreadable. Both communicate by color alone; what's currently showing is named in a caption line, and the phase-to-color mapping lives in a persistent legend key — shown in full always, not trimmed to only the phases present in the current flight, since it's meant to be learned once and reused across every flight a pilot looks at.
-- **Annotations** attach inline: any insight or event card has an "add a note" affordance, writing to Spec 02's `annotations.json` via the host, keyed by `flight_id` (Spec 01 R3) — no separate annotations screen for single-flight notes; §5.6 is for browsing/managing them across the fleet.
+- **Reference contribution** is stated in the header — *Contributes to reference* or *Excluded from reference (reason)* — with the toggle (Spec 14 §7.1).
+- **Topic card: triggers disclosure** (v0.13, Spec 14 §7.3). Every topic card — whether or not an insight fired — has a closed-by-default disclosure listing the topic's triggers with their current values and whether each was met on this flight and by how much (*trend · R² ≥ 0.5 · n ≥ 10 — not met: R² 0.30 over 23 flights*). Each value is editable inline; the fleet-wide preview (insights added / removed / severity-changed, flights linked) is shown before Apply; Apply writes `rules/active.json` and a Journal entry with the counted effect; Cancel discards; Reset to shipped per rule. The topic's `enabled` flag is edited here too and reports its scope before apply. This is where D6 now lives; a trigger that has never fired is edited from the topic card of a flight where it did not fire.
+- **Exclude this flight from reference →** on any `baseline_deviation`, outlier or trend insight; reason required; same dialog as the Flights toggle (Spec 14 §7.1).
+- **Markers.** A card whose verdict changed because the reference moved or a rule was edited carries *reference changed* / *rule changed*, showing what changed, when and the reason, with **Revert** behind the same preview (Spec 14 §7.2).
+- **Annotations** attach inline: any insight or event card has an "add a note" affordance, writing to Spec 02's `annotations.json` via the host, keyed by `flight_id` (Spec 01 R3) — no separate annotations screen for single-flight notes; Journal (§5.6) is for browsing/managing them across the fleet.
 - **Report / export:** "Download as text" (the familiar script 04 report, via `render_report`) and "Export flight bundle" (Spec 02 §7, `scope: "single_flight"`) live here as secondary actions.
 
 ### 5.3 Trends
 
-**Superseded by Spec 12 (v0.3), §7–§9 and §12.** Trends is no longer a one-metric-at-a-time picker; it opens on a ranked **change summary** of what has shifted from the pilot's own history, with panels (declared in the Spec 10 topic register, not this file) below it. The metric picker, the whole-history trend line as the default statistic, and the standalone model view are gone — see Spec 12 §12 for the itemised list of what carried over (engine-hours x-axis, Flight-view point links, the Flights sample-count link, the stratification toggle rules of v0.10/v0.11, outlier ring sourcing) versus what changed. The EGT cylinder-balance chart (hottest-cylinder strip, "usual hottest" chip, Spec 08 §7) is unchanged in itself, now one strip among several on the Cylinder balance panel (Spec 08 §7's own v0.4 note).
+**Question answered:** "Is this flight normal for my airplane, over time?"
+
+- One metric at a time (picker from the registry), plotted as engine-hours-on-x, value-on-y, with the leave-one-out reference band (Spec 01 §8.4 R2; "baseline" internally) drawn behind the points, and each point clickable back into that flight's Flight view. The sample count ("n=23") links to Flights (§5.1), pre-filtered to that reference's contributing flights — one click from a summary statistic to which actual flights it's built on.
+- **Stratification toggle — never specified beyond a name until now.** Whether it's shown at all, and which kind, is fixed per metric by `band_kind_by_metric` (Spec 01 §8.4) — never a user choice of "stratify by DA or OAT," since a metric only has one physically correct band kind. Concretely:
+  - **Disabled/hidden entirely** for a metric where `band_kind_by_metric[metric] === null` (e.g. Overboost Time, Climb Thermal Rate) — no toggle shown, not a grayed-out one, since there's nothing to offer.
+  - **Off by default** for every stratifiable metric (5 of the 9 real metrics: EGT Spread, EGT4 Elevation, Oil Temp Peak, Coolant Temp Peak, Oil/Coolant Ratio → `oat_band`; Cruise Efficiency, Cruise Fuel Flow → `da_band`) — the single unstratified reference is the first thing shown, matching principle 6 (§3): a casual pilot never has to understand density altitude banding to read this chart.
+  - **On:** redraws as one band per value `band_kind_by_metric` actually produced for this metric's flights (not a fixed 4 — a metric might only have 3 of the 4 bands represented), each with its own reference region and its own `confidence` label — which will typically read lower than the unstratified fleet confidence (Spec 01 §8.4's honest trade-off), and that's shown as-is, not upgraded or hidden. A band with `n < 3` still renders, labeled `VERY_LOW`, not suppressed — consistent with never hiding data over a confidence threshold, only labeling it (same principle as `BASELINE_LOW_N`, Spec 01 §8.4).
+  - Each point's own band (from `points[].band`) determines which region it's drawn in; switching the toggle re-groups the same points, it doesn't re-fetch anything.
+- Trend line (slope, direction, R², confidence) drawn only when `n` clears the same `n_min` gate as insight triggers (Spec 01 §8.4) — a trend line drawn on 4 points would misrepresent confidence the engine itself doesn't claim. When stratified, this becomes one trend line per band, same gate applied per band's own `n`.
+- Outliers visually flagged on the scatter, distinct from points that merely sit outside the baseline band without crossing the z-score threshold. With stratification **off**, rings come from `FleetMetric.outliers`; with it **on**, from each band's `by_band.bands[b].outliers` (Spec 01 R8). Because `baseline_deviation` compares a flight within its own band (falling back to all flights when the band is too small), the stratified view is the one that matches the insights for stratified metrics; the insight text says which comparison was used.
+- **Model view** (takeoff MAP, and any future `Model`): a small dedicated panel — predicted vs. actual scatter, coefficients shown as plain text ("MAP drops ~X inHg per 1,000 ft density altitude"), and the `note` field when `n < 5` ("still collecting data").
 
 ### 5.4 Engine ECU CAS Events
 
@@ -189,40 +192,43 @@ Built directly on Spec 01 §8.6/finding 9's BACKLOG B3 fix (per-event co-active 
 - Each run links to its flight's Flight view, scrolled to that moment.
 - A "pull B.U.D.S. fault log" reminder banner when the current-flight ECU report would have shown one (matching script 04's existing "Action required" line), so the actionable guidance survives the move from text to UI.
 
-### 5.5 Baselines & models
+### 5.5 Reference & Models (moved to Settings in v0.13)
 
-**Question answered:** "How are my baselines built, and can I fix one that's wrong?"
+**Superseded by Spec 14 §5.1.** The question this view answered — "what is my engine compared against, and how is that built?" — is configuration, and lives in Settings → Reference & Models (§5.7): contributing flights (linking to Flights, no list of its own), global `outlier_z_threshold`, recent window (Spec 12), per-metric pinning (Spec 12), stratification (read-only), fitted models. The **rule playground is retired**; rule editing happens on the topic card (§5.2, Spec 14 §7.2–§7.3) with the same fleet-wide diff, now shown *before* apply. Engine overrides, when designed, live in Settings → Engine. The v0.12 text is kept below for history.
+
+<details><summary>v0.12 text (superseded)</summary>
 
 This view is Spec 02's `FleetSelection` made visible and editable, plus the **rule playground**:
 
 - **Flight inclusion — no separate list here (changed in v0.6).** Membership isn't stored per Spec 02 v0.5 §5.1/§6.3 — this panel links out to Flights (§5.1) rather than keeping its own copy of the fleet list, which would just be a second place for it to drift out of sync. The exclude toggle and reason still live inline on each row *in Flights*, not duplicated here. Rebuilding baselines (`rebuild_baselines` workflow, Spec 01 §7) is still an explicit action on this panel, never automatic on toggle — matches principle 3.
 - **Baseline config:** membership (leave-one-out, fixed per Spec 01 R2 — shown as read-only explanation, not a toggle, since v1 doesn't expose changing it) and `n_min` per metric, if the pilot wants to loosen or tighten the sample-size gate.
-- **Trends change window** (Spec 12 §11.1, new in v0.15): `recent_window_hours`/`recent_window_min_flights`/`recent_window_max_flights`/`om_margin_fraction`, the same `BaselineConfig` document as everything else on this panel — one more set of fields in the existing editor, not a new screen.
-- **Pinned baselines** (Spec 12 §5.7, new in v0.15, retitled v0.16): a table, one row per metric with a pinned baseline — label, `n`, `set_at`, and an unpin action. Set from a panel on Trends ("Pin baseline to these flights"), not from this screen; this is the read/manage surface for pins made there, consistent with flight inclusion above (§5.1 owns the toggle, this panel shows the consequence).
 - **Rule playground (D6):** the differentiating feature, and principle 6's concrete home — this is the one screen where the researcher persona's tuning actually lives. A rule from `rules/active.json` (Spec 02 §6.4) shown with its threshold/condition editable inline, alongside `BaselineConfig`'s `outlier_z_threshold` and `n_min` (Spec 01 §8.4, global default plus per-metric override) — one editor over two underlying documents, since both are the same kind of thing to a pilot even though they're stored separately. Editing it re-runs `evaluate_insights` (cheap, per Spec 01 §7) against every flight in the current fleet selection and shows, live, which flights' insights would change — added, removed, or altered severity — as a diffed list, not just a recount. "Reset to shipped defaults" always available. This is where a pilot (or a contributor validating a rule change before submitting a PR) actually develops the analysis, which was the second half of the original goal alongside the graphical UI itself.
 - **Engine overrides:** editing `engine_overrides.json` (Spec 02 §6.4) lives here too — same pattern as rules, but for limits rather than insight thresholds, and it requires the `reason`/`source` fields Spec 02 made mandatory, shown as required form fields, not optional ones.
 
-### 5.6 Annotations (browse/manage)
+</details>
 
-**Question answered:** "What have I already explained, across all my flights?"
+### 5.6 Journal (was Annotations)
 
-A simple filterable list of every entry in `annotations.json` (Spec 02 §6.5): flight, what it's attached to, the note, when. Exists mainly so an annotation made months ago (e.g. "overboost was intentional, checking density altitude tolerance") is findable later without hunting through individual flights — this is the direct answer to BACKLOG B4's original motivation. Edit and delete happen here or inline in Flight view; both write to the same store.
+**Question answered:** "What have I decided, across all my flights — and has anything changed since?"
+
+**Superseded by Spec 14 §6.** The Annotations page is renamed **Journal** and redefined as the user's decision journal: acknowledged insights, limit filters (Spec 09), disabled topics, rule edits, flight exclusions, pinned references and free-text annotations, each with where it was made, when, the reason, and the counted effect at the time. Entries are created elsewhere in the flow — on a card, in Flights, in Trends — and come here for review, editing and reversal; reversed entries are closed, not deleted. Change notices (Spec 09 §12 drift and its generalisation, Spec 14 §6.2) sit on their entries. Backfilled entries from before Journal existed are marked as such. The inline "add a note" affordance on cards (§5.2) is unchanged and writes a Journal annotation. BACKLOG B4's original motivation — an explanation made months ago is findable later — is still met, as one entry kind among several.
 
 ### 5.7 Settings
 
-Not a top-level nav item (§4) — reached via the gear icon. **Narrower than v0.5's version of this section, deliberately**: the workspace switcher now lives permanently in the nav (§4), and the per-flight log browser (folder list, rescan, missing-log table) is now Flights (§5.1) — Settings doesn't duplicate either.
+Not a top-level nav item (§4) — reached via the gear icon. The workspace switcher lives permanently in the nav (§4) and the log browser is Flights (§5.1); Settings duplicates neither. Since v0.13 it is a **tabbed section** (Spec 14 §5) holding everything that changes what the engine computes, split as Spec 02 §6.4 splits the files:
 
-- **App-level** (Spec 02 §6.6 `AppSettings`): units, which workspace reopens on launch.
-- **Workspace-level** (Spec 02 §6.6 `WorkspaceSettings`): `engine_model` (locked, shown read-only per Spec 02 §5.6 — changing it isn't an edit, it's a reason to make a new workspace), engine overrides, anonymize-by-default.
-- **Export/import bundle** (Spec 02 §7): scope picker (single flight / fleet subset / full workspace), anonymize toggle, download. Import here is the same drop-and-preview flow as §5.8 below, just reached from a different entry point.
-- **Persistence nudge** (Spec 02 §9): a one-time (dismissible, not recurring — principle 3's "no silent background work" extends to not nagging) prompt to request persistent storage and a reminder to export a backup bundle periodically, in browser mode only.
+- **Engine** — active profile and version (`engine_model` locked, read-only per Spec 02 §5.6 — changing it is a reason to make a new workspace); the OM limits it ships, read-only, with their phase-aware suppression windows; engine overrides when designed (Spec 02 §6.4, `reason`/`source` mandatory). Until then: "None".
+- **Reference & Models** — Spec 14 §5.1 (see §5.5).
+- **App** — units, which workspace reopens on launch, anonymize-by-default (Spec 02 §6.6); the **export/import bundle** flow (Spec 02 §7: scope picker, anonymize toggle, download; import is §5.8's drop-and-preview flow from a different entry point); and the **persistence nudge** (Spec 02 §9 — one-time, dismissible, browser mode only).
+
+One **changelog** across the three tabs: every change, with setting, before/after, source (user, Research task, app upgrade) and time; cross-linked with Journal when the change resulted from a decision (Spec 14 §6.3).
 
 ### 5.8 Bundle preview (not top-level; a modal/overlay flow)
 
 **Resolves R2.** Triggered by dragging a `.eisbundle.json`/`.eisbundle.zip` anywhere in the app, or a future "browse community samples" entry point (Spec 01 §9 community goal). Opens the bundle's contents in the *same* Flight-view and Trends components used for the live workspace, with:
 
 - A persistent "Previewing: not yet added to your workspace" banner.
-- Every write-capable action (annotate, exclude from baseline, edit rules) disabled — this is a viewer, not an editing surface, until the pilot commits.
+- Every write-capable action (annotate, exclude from reference, edit rules) disabled — this is a viewer, not an editing surface, until the pilot commits.
 - One explicit "Add to my workspace" button that runs the actual merge (Spec 02 §7.4) and only then makes the data live and editable.
 
 This reuses rather than duplicates the flight/trends UI, which is why it's a flow layered on existing views rather than a seventh destination.
@@ -246,14 +252,14 @@ Consistent with R1 and Spec 02 §5's split between small derived data and re-par
 
 ## 7. Out of scope for this spec
 
-Visual design tokens and mockups (a natural next step once this structure is agreed, likely via the frontend-design skill); the exact rule-playground diff algorithm (functionally specified in §5.5, implementation detail); mobile phone layout (iPad and desktop only, per Spec 04's tested scope); internationalization; accessibility audit (should follow standard practice but isn't specified here).
+Visual design tokens and mockups (a natural next step once this structure is agreed, likely via the frontend-design skill); the exact preview diff algorithm (functionally specified in Spec 14 §7.2, implementation detail); the wireframes `design/wireframes/Baselines.dc.html`, `Annotations.dc.html` and `Settings.dc.html`, superseded by Spec 14 and not updated — `web/src/views` is the reference for those screens; mobile phone layout (iPad and desktop only, per Spec 04's tested scope); internationalization; accessibility audit (should follow standard practice but isn't specified here).
 
 ## 8. Open questions
 
 | # | Question | Leaning |
 |---|---|---|
 | Q1 | Should the global stale banner (§4) block navigation until resolved, or just persist as a dismissible notice? | Dismissible — principle 3 says no forced recompute, and blocking navigation would punish a pilot who just wants to check one flight after a big import. |
-| Q2 | Does the rule playground (§5.5) need its own "save as a named experiment" beyond the single working copy in `rules/active.json`? | Not for v1 — Spec 02's schema only anticipates one active copy; revisit if pilots want to compare two rule sets side by side. |
+| Q2 | ~~Does the rule playground (§5.5) need its own "save as a named experiment" beyond the single working copy in `rules/active.json`?~~ | **Moot in v0.13:** the playground is retired. The single working copy in `rules/active.json` stands; comparing two rule sets is an experiment-workspace job, or Research when designed. |
 | Q3 | Should Trends (§5.3) support comparing two metrics at once (e.g. EGT spread vs. OAT), or stay one-metric-at-a-time? | One at a time for v1; the model view (§5.3) already covers the one two-variable case (MAP model) that matters today. |
 | Q4 | Where does the phase-detection defect note (§5.2) go once finding 9 is actually fixed (Spec 01 migration Stage 2b)? | Becomes dead code to remove; not worth designing a toggle for a temporary state. |
 | Q5 | Does the ECU view (§5.4) need a fleet-wide "how often does this happen" summary, or is per-event always the right granularity per B3's original complaint? | Per-event is the fix B3 asked for; a fleet summary could be added as a secondary rollup later without contradicting this, so not blocking. |
