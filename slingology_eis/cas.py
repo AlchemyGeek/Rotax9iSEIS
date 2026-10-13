@@ -335,24 +335,55 @@ def classify_ecu_run(
     runup_rpm_min: float,
     runup_rpm_max: float,
     takeoff_not_detected: bool = False,
+    engine_ran_before: bool = True,
 ) -> tuple[str, str, bool]:
     """(classification, deciding phase, phase_uncertain) for one run.
 
-    A run overlapping an in-flight phase for ≥ min_event_duration_s rows is
-    IN_FLIGHT; otherwise the class holding the majority of its rows wins
-    (ties go to the class reached first in the run). A WARMUP/TAXI run with
-    the lane-check signature is LANE_CHECK. Finding-9 guard: on a flight
-    where takeoff wasn't detected, a GROUND run above taxi IAS is IN_FLIGHT,
-    phase-uncertain.
+    Rules in order (Spec 01 §8.6 v0.20):
+    1. Engine state. If the engine stops during the run (RPM drops to or
+       below the running threshold, a missing reading counting as stopped)
+       and stays stopped to the run's end, it is GROUND_SHUTDOWN, whatever
+       the phase labels — unless the aircraft is above taxi IAS while
+       stopped, which is not a shutdown on the ground. A run wholly before
+       the engine first runs in this log is GROUND_START.
+    2. IN_FLIGHT wins when ≥ min_event_duration_s rows are in an in-flight
+       phase with IAS above the taxi ceiling.
+    3. Otherwise the class holding the majority of its rows (ties go to the
+       class reached first in the run); a WARMUP/TAXI run with the
+       lane-check signature is LANE_CHECK. Finding-9 guard: on a flight
+       where takeoff wasn't detected, a GROUND run above taxi IAS is
+       IN_FLIGHT, phase-uncertain.
+    `engine_ran_before`: the engine ran at some row before this run's
+    first row.
     """
     gs = seg["gnd_spd_kt"] if "gnd_spd_kt" in seg.columns else pd.Series([None] * len(seg), index=seg.index)
+    ias_rows = seg["ias_kt"].fillna(0) if "ias_kt" in seg.columns else pd.Series(0.0, index=seg.index)
     row_classes = [_row_class(p, g) for p, g in zip(known_phase, gs)]
     uncertain = bool(substituted.any())
+    running = (seg["rpm"].fillna(0) > _RPM_RUNNING).to_numpy() if "rpm" in seg.columns else np.zeros(len(seg), bool)
 
-    n_flight = sum(1 for c in row_classes if c == "IN_FLIGHT")
+    # Rule 1 — engine state.
+    if not running[-1]:
+        idx = np.flatnonzero(running)
+        tail_from = idx[-1] + 1 if len(idx) else 0
+        stopped_in_run = len(idx) > 0 or engine_ran_before
+        if stopped_in_run and float(ias_rows.iloc[tail_from:].max()) <= TAXI_IAS_CEILING_KT:
+            return "GROUND_SHUTDOWN", str(known_phase.iloc[-1]), uncertain
+        if not len(idx) and not engine_ran_before:
+            # Wholly before the first running row — including a log in which
+            # the engine never runs at all (avionics only).
+            return "GROUND_START", Counter(known_phase).most_common(1)[0][0], uncertain
+
+    # Rule 2 — IN_FLIGHT needs an in-flight phase *and* flying airspeed.
+    n_flight = sum(1 for c, v in zip(row_classes, ias_rows) if c == "IN_FLIGHT" and v > TAXI_IAS_CEILING_KT)
     if n_flight >= min_event_duration_s:
         cls = "IN_FLIGHT"
     else:
+        # Rule 3 — majority. An in-flight phase label at or below taxi
+        # airspeed counts as GROUND here too: phase label alone never makes
+        # a run IN_FLIGHT (the same reading as LANDING_ROLL < 5 kt above).
+        row_classes = ["GROUND" if c == "IN_FLIGHT" and v <= TAXI_IAS_CEILING_KT else c
+                       for c, v in zip(row_classes, ias_rows)]
         counts = Counter(row_classes)
         top = max(counts.values())
         cls = next(c for c in row_classes if counts[c] == top)
@@ -417,6 +448,10 @@ def extract_engine_ecu_runs(
 
     times = df["datetime"]
     known_phase, substituted = _known_phases(df["phase"])
+    # Engine-state context for rule 1: did the engine run at any row before
+    # each position?
+    run_mask = (df["rpm"].fillna(0) > _RPM_RUNNING).to_numpy() if "rpm" in df.columns else np.zeros(len(df), bool)
+    running_before = np.concatenate([[False], np.cumsum(run_mask)[:-1] > 0]) if len(df) else run_mask
     spans = _merge_runs(_raw_runs(ecu_active_series(df)), times, merge_gap_s)
 
     fname = df["_source_file"].iloc[0] if "_source_file" in df.columns else ""
@@ -431,6 +466,7 @@ def extract_engine_ecu_runs(
         cls, phase, uncertain = classify_ecu_run(
             seg, known_phase.iloc[a:b + 1], substituted.iloc[a:b + 1],
             min_dur_s, lc_max_s, rpm_min, rpm_max, takeoff_not_detected,
+            engine_ran_before=bool(running_before[a]),
         )
         co_alerts: list[str] = []
         for cas_val in seg["cas_alert"].dropna():

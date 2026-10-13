@@ -70,27 +70,33 @@ def test_criterion_3_named_blips_are_sub_threshold_only(log, start):
 
 
 @requires_flight_logs
-@pytest.mark.xfail(strict=True, reason=(
-    "Spec 01 v0.19 reads 2026-06-04 21:17:17 as a GROUND CAN dropout; the phase "
-    "detector puts 3 of its 5 rows in SHUTDOWN (rpm and oil pressure stop, the "
-    "log ends), so the majority rule makes it GROUND_SHUTDOWN. Reported, not tuned."))
-def test_criterion_3_0604_run_is_ground():
-    fa = _analyze_log("log_20260604_210855_KAWO.csv")
-    run = next(r for r in fa.ecu_runs if r["start_utc"].endswith("21:17:17"))
-    assert run["classification"] == "GROUND"
+@pytest.mark.parametrize("log,start", [
+    ("log_20260604_210855_KAWO.csv", "21:17:17"),   # engine cut, log ends (v0.20 correction)
+    ("log_20260417_112526_KTOA.csv", "12:13:55"),   # engine cut while still labelled LANDING_ROLL
+    ("log_20260422_183751_KTOA.csv", "19:08:23"),   # engine cut while still labelled LANDING_ROLL
+    ("log_20260617_143425_KAWO.csv", "17:25:09"),   # engine cut while still labelled DESCENT at 0 kt
+])
+def test_criterion_3_late_phase_and_log_end_shutdowns(log, start):
+    """Spec 01 §12 criterion 3 (v0.20), rule 1: these are GROUND_SHUTDOWN."""
+    fa = _analyze_log(log)
+    run = next(r for r in fa.ecu_runs if r["start_utc"].endswith(start))
+    assert run["classification"] == "GROUND_SHUTDOWN"
 
 
 @requires_flight_logs
-@pytest.mark.xfail(strict=True, reason=(
-    "Three shutdown runs (2026-04-17, 2026-04-22, 2026-06-17) start in the last "
-    "4-11 rows the phase detector still labels LANDING_ROLL (taxiing at 7-9 kt) "
-    "or DESCENT (0 kt) before SHUTDOWN; ≥ min_event_duration_s of in-flight "
-    "phase makes them IN_FLIGHT under §8.6's rule. Reported, not tuned."))
-def test_criterion_3_no_in_flight_runs_on_any_flight(real_flight_analyses):
-    if not real_flight_analyses:
+def test_criterion_3_no_in_flight_run_on_any_log():
+    """Spec 01 §12 criterion 3: IN_FLIGHT = 0 on every log the loader can
+    read, ground sessions included — not just the deduplicated flights."""
+    logs = sorted(LOGS_DIR.glob("*.csv"))
+    if not logs:
         pytest.skip("no local flight logs")
-    flights = analyze_ecu(real_flight_analyses).to_dict()["flights"]
-    assert [f["flight_id"] for f in flights if f["counts"]["IN_FLIGHT"]] == []
+    cfg = load_engine_config("916iS")
+    in_flight = [
+        (p.name, r["start_utc"]) for p in logs
+        for r in analyze_flight(p.read_bytes(), p.name, cfg, "916iS").ecu_runs
+        if r["classification"] == "IN_FLIGHT"
+    ]
+    assert in_flight == []
 
 
 @requires_flight_logs

@@ -147,6 +147,39 @@ threshold — mirroring the go-around logic already in `APPROACH`.
 
 ---
 
+### B6. In-flight phase labels persist through taxi-in and the engine cut — DESCENT at 0 kt, LANDING_ROLL while taxiing
+**Type:** Code (`phases.py`) — needs the CLAUDE.md phase-regression snapshot
+Found by the ENGINE ECU classification work (Spec 01 v0.19/v0.20). After landing,
+`phases.py` can keep an in-flight label through the taxi-in and up to — sometimes past — the
+engine cut, switching to `SHUTDOWN` only once rpm has stopped. Examples on the project log set:
+
+- 2026-04-17 12:13:55 — taxiing in at 7–9 kt ground speed, idle ~2,240 rpm, still
+  `LANDING_ROLL` until the engine is cut 4 rows later.
+- 2026-04-22 19:08:23 — the same, 7–8 kt at ~1,930 rpm, `LANDING_ROLL` for 5 rows to the cut.
+- 2026-06-17 17:25:09 — stopped (0 kt ground speed) at ~2,340 rpm and labelled `DESCENT`;
+  `DESCENT` continues for 9 rows after the cut, then one `TAXI` row, then `SHUTDOWN` (the
+  same flight also appears as a duplicate export).
+
+Why: an airborne state (`DESCENT`/`APPROACH`) only returns to the ground through the
+on-ground test — smoothed IAS < 30 kt **and** rpm < 2,000 for 10 s. Taxiing in at 2,300–2,600
+rpm never passes it, so the whole taxi-in stays `DESCENT` until the engine is cut, and the
+10 s dwell then adds the trailing rows. `LANDING_ROLL` exits to `TAXI` only on IAS < 5 kt,
+but the IAS channel reads ~13–15 kt at rest on these logs, so it leaves only on rpm < 500 —
+which lags the cut because rpm is median-smoothed (5 samples, missing readings as 0). Anything
+keyed on phase sees these rows, and the taxi-in before them, as in flight. The ENGINE ECU
+classifier works around it (Spec 01 §8.6 v0.20 rule 1: a run in which the engine stops and
+stays stopped is `GROUND_SHUTDOWN` whatever the labels), but other phase consumers —
+exceedance phase windows, airborne-time metrics, Spec 09 §6.6's "post-shutdown rows labelled
+DESCENT/APPROACH" note — inherit it.
+
+**Likely fix:** an on-ground test that doesn't depend on rpm < 2,000 (taxi power is above
+it) — e.g. ground speed near zero or GPS-derived taxi speed with low IAS — and a `SHUTDOWN`
+transition from any phase when rpm stops (below the running threshold or missing) at
+on-ground IAS. Snapshot before and after (`notebooks/06_phase_regression.py`) and confirm
+every changed log is intended.
+
+---
+
 ### B1, B2 — Ground session edge cases
 **Type:** Code
 Low urgency post-v0.8.0 loader filtering. Investigate if needed.

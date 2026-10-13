@@ -398,8 +398,8 @@
     },
     {
       "flight_id": "0e8784425c25c656",
-      "classification": "IN_FLIGHT",
-      "phase": "LANDING_ROLL",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
       "phase_uncertain": false,
       "start_utc": "2026-04-17T12:13:55",
       "end_utc": "2026-04-17T12:15:25",
@@ -655,8 +655,8 @@
     },
     {
       "flight_id": "f98a62808a81935a",
-      "classification": "IN_FLIGHT",
-      "phase": "LANDING_ROLL",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
       "phase_uncertain": false,
       "start_utc": "2026-04-22T19:08:23",
       "end_utc": "2026-04-22T19:09:02",
@@ -2829,8 +2829,8 @@
     },
     {
       "flight_id": "90132d8dd417225c",
-      "classification": "IN_FLIGHT",
-      "phase": "DESCENT",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
       "phase_uncertain": false,
       "start_utc": "2026-06-17T17:25:09",
       "end_utc": "2026-06-17T17:26:51",
@@ -4646,8 +4646,8 @@
     "GROUND_START": 56,
     "LANE_CHECK": 67,
     "GROUND": 0,
-    "IN_FLIGHT": 3,
-    "GROUND_SHUTDOWN": 34
+    "IN_FLIGHT": 0,
+    "GROUND_SHUTDOWN": 37
   },
   "sub_threshold_blips": 15,
   "flights": [
@@ -4681,8 +4681,8 @@
         "GROUND_START": 2,
         "LANE_CHECK": 2,
         "GROUND": 0,
-        "IN_FLIGHT": 1,
-        "GROUND_SHUTDOWN": 0
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
       },
       "sub_threshold_blips": 0,
       "lane_check": "both"
@@ -4705,8 +4705,8 @@
         "GROUND_START": 1,
         "LANE_CHECK": 2,
         "GROUND": 0,
-        "IN_FLIGHT": 1,
-        "GROUND_SHUTDOWN": 0
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
       },
       "sub_threshold_blips": 1,
       "lane_check": "both"
@@ -4909,8 +4909,8 @@
         "GROUND_START": 1,
         "LANE_CHECK": 2,
         "GROUND": 0,
-        "IN_FLIGHT": 1,
-        "GROUND_SHUTDOWN": 0
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
       },
       "sub_threshold_blips": 1,
       "lane_check": "both"
@@ -5096,56 +5096,7 @@
       "lane_check": "both"
     }
   ],
-  "events": [
-    {
-      "flight_id": "0e8784425c25c656",
-      "classification": "IN_FLIGHT",
-      "start_utc": "2026-04-17T12:13:55",
-      "duration_s": 91.0,
-      "phase": "LANDING_ROLL",
-      "phase_uncertain": false,
-      "co_alerts": [
-        "FUEL PRESS",
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "ALT FAIL",
-        "RAGL FAIL"
-      ],
-      "oil_nan_frac": 1.0
-    },
-    {
-      "flight_id": "f98a62808a81935a",
-      "classification": "IN_FLIGHT",
-      "start_utc": "2026-04-22T19:08:23",
-      "duration_s": 40.0,
-      "phase": "LANDING_ROLL",
-      "phase_uncertain": false,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "RAGL FAIL",
-        "FUEL PRESS",
-        "ALT FAIL"
-      ],
-      "oil_nan_frac": 0.975
-    },
-    {
-      "flight_id": "90132d8dd417225c",
-      "classification": "IN_FLIGHT",
-      "start_utc": "2026-06-17T17:25:09",
-      "duration_s": 103.0,
-      "phase": "DESCENT",
-      "phase_uncertain": false,
-      "co_alerts": [
-        "ALT FAIL",
-        "FUEL PRESS",
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "RAGL FAIL"
-      ],
-      "oil_nan_frac": 0.9809523809523809
-    }
-  ],
+  "events": [],
   "provenance": {
     "engine_version": "0.29.0",
     "schema_version": "0.1.0",

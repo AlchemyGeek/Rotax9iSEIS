@@ -1,6 +1,6 @@
 """
 Unit tests for ENGINE ECU run extraction and classification (cas.py,
-Spec 01 §8.6 v0.19). Synthetic data, plus the Spec 01 Q6 excerpts in
+Spec 01 §8.6 v0.19/v0.20). Synthetic data, plus the Spec 01 Q6 excerpts in
 tests/fixtures/ecu/ — short windows of real logs, scrubbed to engine
 channels, CAS and the phase label on a fixed fake date (no tail number,
 GPS, airport or real time).
@@ -117,11 +117,54 @@ def test_unknown_phase_takes_nearest_preceding_known_phase_and_is_uncertain():
     assert ext.runs[0]["phase_uncertain"] is True
 
 
-def test_old_heuristics_are_gone_engine_off_in_taxi_is_still_ground():
-    # The old classifier called any run with < 30 % rpm > 500 "start-up";
-    # phase alone decides now.
-    df = _flight([("TAXI", 30, 0, 0, 0)], ecu=[(5, 15)])
+# ── Rule 1: engine state (v0.20) ─────────────────────────────────────────────
+
+def _cut_mid_run(late_phase, late_ias, late_gs):
+    """Engine running in `late_phase`, then cut: rpm stops reading while the
+    phase detector keeps `late_phase` for 8 rows before SHUTDOWN. The alert
+    starts 2 rows before the cut and lasts to the end of the log."""
+    df = _flight([("TAXI", 20, 1800, 10, 5), (late_phase, 10, 2200, late_ias, late_gs),
+                  (late_phase, 8, np.nan, late_ias, late_gs), ("SHUTDOWN", 12, np.nan, late_ias, 0)],
+                 ecu=[(28, 50)])
+    return df
+
+
+@pytest.mark.parametrize("late_phase,ias,gs", [("LANDING_ROLL", 15, 8), ("DESCENT", 14, 0)])
+def test_rule_1_engine_cut_mid_run_is_shutdown_whatever_the_phase_labels(late_phase, ias, gs):
+    ext = extract_engine_ecu_runs(_cut_mid_run(late_phase, ias, gs), CFG)
+    assert _classes(ext) == [("GROUND_SHUTDOWN", "SHUTDOWN")]
+
+
+def test_rule_1_does_not_apply_to_an_rpm_dropout_at_flying_airspeed():
+    # rpm stops reading in CRUISE at 100 kt — a data dropout (or an engine
+    # stop in flight), not a shutdown on the ground.
+    df = _flight([("CRUISE", 20, 5000, 100, 100), ("CRUISE", 10, np.nan, 100, 100)], ecu=[(25, 30)])
+    assert _classes(extract_engine_ecu_runs(df, CFG)) == [("IN_FLIGHT", "CRUISE")]
+
+
+def test_rule_1_run_before_the_engine_first_runs_is_ground_start_whatever_the_label():
+    df = _flight([("TAXI", 20, 0, 0, 0), ("TAXI", 30, 1800, 5, 5)], ecu=[(5, 15)])
+    assert _classes(extract_engine_ecu_runs(df, CFG)) == [("GROUND_START", "TAXI")]
+
+
+def test_rule_1_engine_never_runs_is_ground_start():
+    df = _flight([("PRE_START", 30, 0, 0, 0)], ecu=[(5, 15)])
+    assert _classes(extract_engine_ecu_runs(df, CFG)) == [("GROUND_START", "PRE_START")]
+
+
+# ── Rule 2: IN_FLIGHT needs airspeed (v0.20) ──────────────────────────────────
+
+def test_rule_2_in_flight_label_at_taxi_speed_does_not_win():
+    # 4 rows labelled DESCENT at 0 kt (≥ min duration) inside a TAXI run with
+    # the engine running: the label alone doesn't make it IN_FLIGHT.
+    df = _flight([("TAXI", 20, 1800, 10, 5), ("DESCENT", 4, 1800, 10, 0), ("TAXI", 20, 1800, 10, 5)],
+                 ecu=[(14, 30)])
     assert _classes(extract_engine_ecu_runs(df, CFG)) == [("GROUND", "TAXI")]
+
+
+def test_rule_3_mostly_in_flight_labels_at_taxi_speed_are_ground():
+    df = _flight([("DESCENT", 30, 1800, 10, 0)], ecu=[(5, 15)])
+    assert _classes(extract_engine_ecu_runs(df, CFG)) == [("GROUND", "DESCENT")]
 
 
 # ── Finding-9 guard ───────────────────────────────────────────────────────────
@@ -199,14 +242,12 @@ def test_excerpt_ground_taxi_run():
     assert _classes(ext) == [("GROUND", "TAXI"), ("GROUND", "TAXI")]
 
 
-def test_excerpt_0604_run_ends_at_shutdown():
-    """Spec 01 v0.19 reads this 5 s run (non-zero oil_nan_frac) as a GROUND
-    CAN dropout at idle. The phase detector puts 3 of its 5 rows in
-    SHUTDOWN — rpm and oil pressure both stop and the log ends — so the
-    majority rule makes it GROUND_SHUTDOWN. Recorded as found, not tuned."""
-    ext = extract_engine_ecu_runs(_excerpt("ground_start_shutdown_0604"), load_engine_config("916iS"))
+def test_excerpt_late_phase_shutdown_is_ground_shutdown():
+    """Spec 01 v0.20 rule 1: the engine is cut while the phase detector still
+    labels the rows DESCENT (at 0 kt); the run continues into SHUTDOWN. The
+    v0.19 IN_FLIGHT-wins rule made this IN_FLIGHT."""
+    ext = extract_engine_ecu_runs(_excerpt("late_phase_shutdown_0617"), load_engine_config("916iS"))
     assert _classes(ext) == [("GROUND_SHUTDOWN", "SHUTDOWN")]
-    assert ext.runs[0]["duration_s"] == 5 and ext.runs[0]["oil_nan_frac"] > 0
 
 
 def test_ecu_classes_are_the_five():
