@@ -51,9 +51,9 @@ At full takeoff power the turbocharger should deliver a manifold pressure (MAP) 
 ## engine_ecu_inflight
 title: Engine computer alerts in flight
 applies_to: all
-last_reviewed: 2026-10-05
+last_reviewed: 2026-10-13
 
-The ENGINE ECU caution can appear on the ground at expected moments, such as when the avionics power up, during the lane check and at shutdown, and those aren't flagged. This topic separates them from alerts that occur while the engine is running in flight, which are not expected. Each one deserves a look: check the data connections between the engine computer and the display, and have the engine computer's fault log read with Rotax's B.U.D.S. software at the next maintenance.
+The ENGINE ECU caution comes from the engine computer, and when it appears matters more than that it appears. This topic sorts each occurrence by the flight phase it happens in. At start, while the avionics and the engine computer come up, during the lane check, when each lane is tested on its own, and at shutdown, it is expected and is not flagged. An occurrence on the ground with the engine running, while taxiing or idling, is listed as a ground event but is not flagged here either. Only an occurrence in flight, from the takeoff roll to the landing roll, is flagged; it is not expected, and it is worth having the engine computer's fault log read at the next maintenance. Occurrences shorter than {profile:cas.min_event_duration_s} are counted separately and not treated as events, since a single reading can be a logging artefact.
 
 ## limit_exceedances
 title: Operators Manual limits

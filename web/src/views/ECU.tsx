@@ -9,10 +9,11 @@ import type { Annotation, EcuAnalysis, EcuClassification, EcuRun } from "../type
 const client = getEngineClient();
 
 const CLASS_COLOR: Record<EcuClassification, string> = {
-  POWERUP: "#6366F1",
+  GROUND_START: "#6366F1",
   LANE_CHECK: "#0EA5E9",
-  SHUTDOWN: "#374151",
+  GROUND: "var(--severity-warning)",
   IN_FLIGHT: "var(--severity-limit)",
+  GROUND_SHUTDOWN: "#374151",
 };
 
 // Fixture-mode fallback only — real flight_ids are opaque hex, so a real
@@ -295,7 +296,7 @@ export function ECU() {
   }, [runs]);
 
   const pairExample = useMemo(() => runs.find((r) => r.lane_check_pair), [runs]);
-  const powerupCount = ecu.counts.POWERUP ?? 0;
+  const routineCount = (ecu.counts.GROUND_START ?? 0) + (ecu.counts.LANE_CHECK ?? 0) + (ecu.counts.GROUND_SHUTDOWN ?? 0);
 
   return (
     <NavShell>
@@ -311,8 +312,9 @@ export function ECU() {
           </span>
           <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, maxWidth: 780 }}>
             An <strong>event</strong> here means an ENGINE ECU alert classified <span className="mono">IN_FLIGHT</span> — not
-            the ground-context occurrences during POWERUP, LANE_CHECK, or SHUTDOWN, which are routine on nearly every flight
-            ({powerupCount} of {runs.length} runs) and are rolled up below instead of expanded per-event.
+            the ground-context occurrences during GROUND_START, LANE_CHECK, GROUND, or GROUND_SHUTDOWN — start, lane check and
+            shutdown are routine on nearly every flight ({routineCount} of {runs.length} runs) — which are rolled up below instead
+            of expanded per-event.
           </div>
         </div>
 

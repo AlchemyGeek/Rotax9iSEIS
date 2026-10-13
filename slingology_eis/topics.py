@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .cas import analyze_inflight_pattern
+from .cas import ECU_CLASSES
 from .fleet import confidence_label
 
 
@@ -343,24 +343,34 @@ def coolant_temp_peak(coolant_max, b: dict, rule_triggers: list, om_limit: Optio
     return {"analysis": analysis, "insights": insights}
 
 
+# How each ENGINE ECU class reads in the analysis line (Spec 01 §8.6).
+_ECU_CLASS_PHRASE = {
+    "GROUND_START": "at start",
+    "LANE_CHECK": "in the lane check",
+    "GROUND": "on the ground with the engine running",
+    "IN_FLIGHT": "in flight",
+    "GROUND_SHUTDOWN": "at shutdown",
+}
+
+
 def engine_ecu_inflight(ecu_runs: list[dict]) -> dict:
     """
-    Returns {"analysis": str, "events": list[dict]}. `events` is
-    analyze_inflight_pattern()'s per-event structure (cas.py) — the
-    renderer reconstructs the per-event/per-alert detail lines from it.
+    Returns {"analysis": str, "events": list[dict]} (Spec 01 §8.5, v0.19).
+    The analysis line counts this flight's ENGINE ECU runs by class;
+    `events` is only the IN_FLIGHT runs — the topic's insights. GROUND
+    runs are counted in the line (and are EcuAnalysis events) but never
+    become this topic's insight.
     """
-    inflight = [r for r in ecu_runs if r["classification"] == "IN_FLIGHT"]
-    if not inflight:
-        return {
-            "analysis": "No IN-FLIGHT ENGINE ECU events — all occurrences are "
-                        "expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN).",
-            "events": [],
-        }
-    pattern = analyze_inflight_pattern(inflight)
+    counts = {c: sum(1 for r in ecu_runs if r["classification"] == c) for c in ECU_CLASSES}
+    if not any(counts.values()):
+        return {"analysis": "No ENGINE ECU alerts this flight.", "events": []}
+    parts = [f"{n} {_ECU_CLASS_PHRASE[c]}" for c, n in counts.items() if n]
+    analysis = "ENGINE ECU: " + " · ".join(parts) + "."
+    if not counts["IN_FLIGHT"]:
+        analysis += " None in flight."
     return {
-        "analysis": f"{len(inflight)} IN-FLIGHT ENGINE ECU event(s) detected "
-                    f"— requires investigation.",
-        "events": pattern["events"],
+        "analysis": analysis,
+        "events": [r for r in ecu_runs if r["classification"] == "IN_FLIGHT"],
     }
 
 

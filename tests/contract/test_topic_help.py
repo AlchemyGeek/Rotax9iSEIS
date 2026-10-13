@@ -88,3 +88,16 @@ def test_acceptance_11_a_help_section_for_a_topic_not_in_the_register_fails(regi
     entries = load_help_entries()
     orphans = {eid for eid in entries if eid != "flight_summary" and eid not in register_ids}
     assert not orphans, f"help section(s) with no register entry: {orphans}"
+
+
+def test_engine_ecu_help_is_aircraft_neutral(rules):
+    """Spec 10 §9 item 11 / Spec 01 §8.6: the ENGINE ECU help names the
+    classes in plain language and may suggest a fault-log read, but carries
+    no wiring/connector guidance and no single-aircraft finding."""
+    results, _ = get_topic_help(None, "916iS", load_engine_config("916iS"), rules)
+    text = next(r for r in results if r.id == "engine_ecu_inflight").text.lower()
+    for banned in ("wiring", "wire", "connector", "pin ", "can bus", "hic", "gea", "j244",
+                   "b.u.d.s", "buds", "reseat", "n117", "this aircraft", "your aircraft has"):
+        assert banned not in text, banned
+    for phrase in ("start", "lane check", "shutdown", "taxiing", "in flight", "fault log"):
+        assert phrase in text, phrase

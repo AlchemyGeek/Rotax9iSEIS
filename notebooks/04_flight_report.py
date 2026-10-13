@@ -27,7 +27,7 @@ from slingology_eis.loader import load_log
 from slingology_eis.phases import detect_phases, overboost_time
 from slingology_eis.egt import egt_health
 from slingology_eis.limits import check_exceedances, load_engine_config
-from slingology_eis.cas import extract_engine_ecu_runs
+from slingology_eis.cas import extract_engine_ecu_runs, takeoff_not_detected
 from slingology_eis import topics
 
 BASELINES_PATH    = _TOOLKIT / "data" / "reports" / "baselines.json"
@@ -221,35 +221,28 @@ def _main():
 
     # ── ENGINE ECU ────────────────────────────────────────────────────────────
     section("ENGINE ECU")
-    ecu_runs = extract_engine_ecu_runs(df, engine_config=engine_cfg)
+    # Spec 01 §8.6: runs classified by flight phase. The analysis line counts
+    # them by class; IN_FLIGHT runs are the topic's insights and GROUND runs
+    # are listed as events — both with their phase and co-active alerts.
+    ecu_runs = extract_engine_ecu_runs(
+        df, engine_config=engine_cfg, takeoff_not_detected=takeoff_not_detected(df)[0],
+    ).runs
     ecu_result = topics.engine_ecu_inflight(ecu_runs)
     analysis_line(ecu_result["analysis"])
-    if ecu_result["events"]:
-        for event in ecu_result["events"]:
-            co = event["co_alerts"]
-            direct = set(event["direct_correlation_alerts"])
-            oil_nan = event["oil_nan_frac"]
-            oil_str = f"  oil_NaN:{oil_nan * 100:.0f}%" if oil_nan is not None else ""
-            print(f"    ⚡ {event['start_time']:%H:%M:%S}  {event['duration_s']:.0f}s{oil_str}")
-            if co:
-                for alert in co:
-                    if alert in direct:
-                        insight_line(
-                            f"⚠ Co-active: {alert} — only IN-FLIGHT event with a "
-                            f"direct engine-parameter correlation. Verify oil pressure "
-                            f"was genuine, not a CAN dropout."
-                        )
-                    else:
-                        print(f"      · Co-active: {alert}")
-            else:
-                print(
-                    "      · No co-active alerts — ENGINE ECU isolated "
-                    "→ CAN fault, not ECU hardware."
-                )
-        print(
-            "    Run 02_engine_ecu_correlation.py for full CAN bus "
-            "pattern analysis and recommended actions."
-        )
+    for run in ecu_runs:
+        if run["classification"] not in ("IN_FLIGHT", "GROUND"):
+            continue
+        oil_nan = run["oil_nan_frac"]
+        oil_str = f"  oil pressure missing {oil_nan * 100:.0f}% of rows" if oil_nan else ""
+        uncertain = " (phase uncertain)" if run["phase_uncertain"] else ""
+        line = (f"{run['classification']}  {run['start_time']:%H:%M:%S}  {run['duration_s']:.0f}s  "
+                f"phase {run['phase']}{uncertain}{oil_str}")
+        if run["classification"] == "IN_FLIGHT":
+            insight_line(f"⚠ {line}")
+        else:
+            print(f"    · {line}")
+        for alert in run["co_alerts"]:
+            print(f"      · Co-active: {alert}")
 
     # ── CLIMB THERMAL RATE ───────────────────────────────────────────────────
     section("CLIMB THERMAL RATE")

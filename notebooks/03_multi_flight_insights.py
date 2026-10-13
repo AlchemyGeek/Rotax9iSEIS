@@ -125,9 +125,8 @@ def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, ou
         if len(inflight_ecu):
             for _, row in inflight_ecu.iterrows():
                 warnings.append(
-                    f"⚠ IN-FLIGHT ENGINE ECU event — {row['source_file']} "
-                    f"({row['inflight_ecu_count']:.0f} event(s)). "
-                    f"Run 02_engine_ecu_correlation.py for full analysis."
+                    f"⚠ In-flight ENGINE ECU event — {row['source_file']} "
+                    f"({row['inflight_ecu_count']:.0f} event(s))."
                 )
         else:
             checks.append("✓ No IN-FLIGHT ENGINE ECU events across all flights.")
@@ -496,9 +495,9 @@ def main():
     print(f"  added at the pump is the more accurate ground-truth consumption figure.)")
 
     subsection("ENGINE ECU anomaly tracking")
-    print(f"  For full ENGINE ECU classification (powerup/lane-check/shutdown/")
-    print(f"  in-flight), run 02_engine_ecu_correlation.py — that script applies")
-    print(f"  the dedicated classifier this summary doesn't duplicate.")
+    print(f"  ENGINE ECU runs are classified per flight by flight phase (ground start,")
+    print(f"  lane check, ground, in flight, ground shutdown) — see each flight's")
+    print(f"  report; this summary lists only flights with an in-flight event, above.")
 
     # ═══════════════════════════════════════════════════════════════════════
     section("Saving outputs")

@@ -41,6 +41,8 @@ def normalize_status_cell(cell: str) -> str:
         return "Removed"
     if _ADMITTED_RE.search(cell) and "to leave the topic set" in cell:
         return "Removed"
+    if _ADMITTED_RE.search(cell) and "provisional" in cell:
+        return "Admitted (provisional)"  # Spec 10 D18 (v0.10)
     if _ADMITTED_RE.search(cell):
         return "Admitted"
     raise ValueError(f"can't normalize §5.2 status cell: {cell!r}")

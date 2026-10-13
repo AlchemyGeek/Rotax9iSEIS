@@ -113,7 +113,8 @@ _register("takeoff_map", [
 _register("events", [
     ("cas_inflight_anomaly_count", None,
      "Raw in-flight ENGINE ECU CAS occurrences (heuristic count, not classified)"),
-    ("inflight_ecu_count", None, "Count of classified IN_FLIGHT ENGINE ECU runs"),
+    ("inflight_ecu_count", None, "Count of ENGINE ECU runs classified IN_FLIGHT (by flight phase)"),
+    ("ground_ecu_count", None, "Count of ENGINE ECU runs classified GROUND (engine running on the ground, not start, lane check or shutdown)"),
 ])
 
 

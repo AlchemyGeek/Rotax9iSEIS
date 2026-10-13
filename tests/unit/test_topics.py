@@ -296,24 +296,27 @@ def test_limit_exceedances_present():
     assert result["insights"] == [{"trigger": "threshold", "text": "⚠ RPM above 5800 for 10s"}]
 
 
-def test_engine_ecu_inflight_no_events():
+def test_engine_ecu_inflight_counts_by_class_and_does_not_fire_on_ground():
+    """Spec 01 §8.5 (v0.19): the analysis line counts runs by class; only
+    IN_FLIGHT runs are the topic's events — GROUND is counted, never fired."""
     result = topics.engine_ecu_inflight([
-        {"classification": "POWERUP"}, {"classification": "LANE_CHECK"},
+        {"classification": "GROUND_START"}, {"classification": "GROUND_START"},
+        {"classification": "LANE_CHECK"}, {"classification": "GROUND"},
+        {"classification": "GROUND_SHUTDOWN"},
     ])
     assert result["events"] == []
-    assert "No IN-FLIGHT" in result["analysis"]
+    assert result["analysis"] == (
+        "ENGINE ECU: 2 at start · 1 in the lane check · 1 on the ground with the engine running · "
+        "1 at shutdown. None in flight."
+    )
 
 
-def test_engine_ecu_inflight_delegates_to_cas_analysis():
-    import pandas as pd
-    runs = [{
-        "classification": "IN_FLIGHT",
-        "source_file": "x.csv",
-        "start_time": pd.Timestamp("2026-01-01 12:00:00"),
-        "duration_s": 1,
-        "oil_nan_frac": 0.0,
-        "co_alerts": ["OIL PRESS"],
-    }]
-    result = topics.engine_ecu_inflight(runs)
-    assert "1 IN-FLIGHT" in result["analysis"]
-    assert result["events"][0]["direct_correlation_alerts"] == ["OIL PRESS"]
+def test_engine_ecu_inflight_fires_only_on_in_flight_runs():
+    run = {"classification": "IN_FLIGHT", "start_utc": "2000-01-01T00:10:00", "duration_s": 6}
+    result = topics.engine_ecu_inflight([{"classification": "GROUND"}, run])
+    assert result["events"] == [run]
+    assert result["analysis"] == "ENGINE ECU: 1 on the ground with the engine running · 1 in flight."
+
+
+def test_engine_ecu_inflight_no_runs():
+    assert topics.engine_ecu_inflight([]) == {"analysis": "No ENGINE ECU alerts this flight.", "events": []}

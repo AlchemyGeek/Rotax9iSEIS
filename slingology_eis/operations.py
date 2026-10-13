@@ -21,7 +21,7 @@ from collections import Counter
 import pandas as pd
 
 from . import __version__
-from .cas import analyze_inflight_pattern, extract_engine_ecu_runs, parse_cas
+from .cas import ECU_CLASSES, extract_engine_ecu_runs, parse_cas, takeoff_not_detected
 from .contract import CONTRACT_VERSION, Diagnostic, Provenance, content_hash, engine_profile_ref
 from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
 from .limits import check_exceedances, engine_running_s, limit_catalog, per_limit_metrics
@@ -35,7 +35,6 @@ from . import filters as _filters
 # Airborne time (RPM > 3000 & IAS > 30kt — the same proxy loader.py's
 # ground-session filter uses) beyond which a flight with no TAKEOFF_ROLL/
 # CLIMB phase is flagged, rather than assumed to be a ground session.
-_TAKEOFF_NOT_DETECTED_THRESHOLD_ROWS = 180  # 3 minutes at 1 Hz
 
 # Spec 01 §8.4 / Spec 12 §11.1. The one definition of BaselineConfig's
 # defaults — update_fleet's own fallback and workspace.py's persisted-
@@ -94,6 +93,8 @@ def _serialize_cas_event(e, t0) -> dict:
 def _serialize_ecu_run(r, t0) -> dict:
     return {
         "classification": r["classification"],
+        "phase": r["phase"],
+        "phase_uncertain": bool(r["phase_uncertain"]),
         "start_utc": r["start_time"].isoformat() if r["start_time"] is not None else None,
         "end_utc": r["end_time"].isoformat() if r.get("end_time") is not None else None,
         "elapsed_s": _elapsed_s(r["start_time"], t0),
@@ -168,6 +169,12 @@ class FlightAnalysis:
     exceedances: list[dict] = field(default_factory=list)
     cas_events: list[dict] = field(default_factory=list)
     ecu_runs: list[dict] = field(default_factory=list)
+    # Spec 01 §8.6 (v0.19): ENGINE ECU runs shorter than the profile's
+    # cas.min_event_duration_s (counted, not runs) and this flight's lane
+    # check — "both" | "single" | "none". Defaults cover analyses stored
+    # before v0.19 until they are re-analysed.
+    ecu_sub_threshold_blips: int = 0
+    ecu_lane_check: str = "none"
     quality: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
     available_channels: list[str] = field(default_factory=list)
@@ -193,6 +200,8 @@ class FlightAnalysis:
             "exceedances": self.exceedances,
             "cas_events": self.cas_events,
             "ecu_runs": self.ecu_runs,
+            "ecu_sub_threshold_blips": self.ecu_sub_threshold_blips,
+            "ecu_lane_check": self.ecu_lane_check,
             "quality": self.quality,
             "provenance": self.provenance,
             "available_channels": self.available_channels,
@@ -255,15 +264,15 @@ def analyze_flight(
         overboost_max_block_s=metrics.get("overboost_max_block_s", {}).get("value"),
     ))
     cas_events = [_serialize_cas_event(e, t0) for e in parse_cas(df)]
-    ecu_runs = [_serialize_ecu_run(r, t0) for r in extract_engine_ecu_runs(df, engine_config=engine_config)]
+
+    takeoff_missing, airborne_rows = takeoff_not_detected(df)
+    # Spec 01 §8.6: classification by phase; the finding-9 guard needs to
+    # know whether this flight's takeoff went undetected.
+    ecu = extract_engine_ecu_runs(df, engine_config=engine_config, takeoff_not_detected=takeoff_missing)
+    ecu_runs = [_serialize_ecu_run(r, t0) for r in ecu.runs]
 
     quality: list[Diagnostic] = []
-    if "rpm" in df.columns and "ias_kt" in df.columns:
-        airborne_rows = int(((df["rpm"].fillna(0) > 3000) & (df["ias_kt"].fillna(0) > 30)).sum())
-    else:
-        airborne_rows = 0
-    if (airborne_rows > _TAKEOFF_NOT_DETECTED_THRESHOLD_ROWS
-            and "TAKEOFF_ROLL" not in phases_present and "CLIMB" not in phases_present):
+    if takeoff_missing:
         quality.append(Diagnostic(
             code="PHASE_TAKEOFF_NOT_DETECTED", severity="warn", scope="flight",
             message="Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
@@ -318,6 +327,8 @@ def analyze_flight(
         exceedances=exceedances,
         cas_events=cas_events,
         ecu_runs=ecu_runs,
+        ecu_sub_threshold_blips=ecu.sub_threshold_blips,
+        ecu_lane_check=ecu.lane_check,
         quality=[d.to_dict() for d in quality],
         provenance=provenance.to_dict(),
         available_channels=available_channels,
@@ -328,14 +339,20 @@ def analyze_flight(
 @dataclass
 class EcuAnalysis:
     """
-    Spec 01 §7 `analyze_ecu` / §8.6. A fleet-level aggregation over
+    Spec 01 §7 `analyze_ecu` / §8.6 (v0.19). A fleet-level aggregation over
     already-computed FlightAnalysis.ecu_runs — no raw data, no engine
     config: classification already happened per-flight in analyze_flight.
+    `counts` carries all five classes (zero where none); `flights` carries
+    each flight's counts, sub-threshold blips and lane check; `events`
+    is the per-event co-active-alert detail (BACKLOG B3) for every GROUND
+    and IN_FLIGHT run — never a pooled table.
     """
     flight_ids: list[str]
     runs: list[dict]
     counts: dict[str, int]
-    inflight_pattern: dict
+    sub_threshold_blips: int
+    flights: list[dict]
+    events: list[dict]
     provenance: dict
 
     def to_dict(self) -> dict:
@@ -343,7 +360,9 @@ class EcuAnalysis:
             "flight_ids": self.flight_ids,
             "runs": self.runs,
             "counts": self.counts,
-            "inflight_pattern": self.inflight_pattern,
+            "sub_threshold_blips": self.sub_threshold_blips,
+            "flights": self.flights,
+            "events": self.events,
             "provenance": self.provenance,
         }
 
@@ -355,17 +374,28 @@ _ECU_CONTEXT_FIELDS = (
 )
 
 
+def _ecu_inflight_text(run: dict) -> str:
+    """The engine_ecu_inflight insight text for one IN_FLIGHT run."""
+    t = run.get("start_utc")
+    when = datetime.fromisoformat(t).strftime("%H:%M:%S") if t else "?"
+    text = f"ENGINE ECU in flight at {when} for {run.get('duration_s', 0):.0f} s ({run.get('phase', '?')})."
+    if run.get("phase_uncertain"):
+        text += " Flight phase uncertain here."
+    return text
+
+
 def _ecu_run_output(r: dict) -> dict:
     """
     The API-facing per-run shape (Spec 01 §8.6's `runs[]`) — channel means
     grouped under `context`, separate from the run's own identity/timing,
-    since a co-active-alert correlation check (B3) is judged against the
-    context, not the classification. `all_runs`' flat shape stays as-is
-    for analyze_inflight_pattern's own internal use, above/below this.
+    since a co-active-alert check (B3) is judged against the context, not
+    the classification.
     """
     return {
         "flight_id": r["flight_id"],
         "classification": r["classification"],
+        "phase": r.get("phase"),
+        "phase_uncertain": bool(r.get("phase_uncertain", False)),
         "start_utc": r.get("start_utc"),
         "end_utc": r.get("end_utc"),
         "duration_s": r["duration_s"],
@@ -376,38 +406,42 @@ def _ecu_run_output(r: dict) -> dict:
     }
 
 
+def _class_counts(runs: list[dict]) -> dict[str, int]:
+    c = Counter(r["classification"] for r in runs)
+    return {k: c.get(k, 0) for k in ECU_CLASSES}
+
+
 def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
     """
-    Aggregate ECU runs across flights: per-classification counts and,
-    per BACKLOG B3, per-event co-active-alert analysis for IN_FLIGHT runs
-    (cas.analyze_inflight_pattern) rather than a pooled table.
+    Aggregate ENGINE ECU runs across flights (Spec 01 §8.6): counts for
+    the five classes, sub-threshold blips, each flight's lane check, and
+    per-event co-active alerts for every GROUND and IN_FLIGHT run.
     """
     all_runs: list[dict] = []
+    flights: list[dict] = []
     for fa in flight_analyses:
-        for run in fa.ecu_runs:
-            r = dict(run)
-            r["flight_id"] = fa.flight_id
-            all_runs.append(r)
+        runs = [{**run, "flight_id": fa.flight_id} for run in fa.ecu_runs]
+        all_runs.extend(runs)
+        flights.append({
+            "flight_id": fa.flight_id,
+            "counts": _class_counts(runs),
+            "sub_threshold_blips": fa.ecu_sub_threshold_blips,
+            "lane_check": fa.ecu_lane_check,
+        })
 
-    counts = dict(Counter(r["classification"] for r in all_runs))
-
-    inflight_for_pattern = [
+    events = [
         {
-            "source_file": r["flight_id"],
-            "start_time": r["start_utc"],
+            "flight_id": r["flight_id"],
+            "classification": r["classification"],
+            "start_utc": r.get("start_utc"),
             "duration_s": r["duration_s"],
-            "oil_nan_frac": r["oil_nan_frac"],
-            "co_alerts": r["co_alerts"],
+            "phase": r.get("phase"),
+            "phase_uncertain": bool(r.get("phase_uncertain", False)),
+            "co_alerts": r.get("co_alerts") or [],
+            "oil_nan_frac": r.get("oil_nan_frac"),
         }
-        for r in all_runs if r["classification"] == "IN_FLIGHT"
+        for r in all_runs if r["classification"] in ("GROUND", "IN_FLIGHT")
     ]
-    inflight_pattern = analyze_inflight_pattern(inflight_for_pattern)
-    # analyze_inflight_pattern's events reuse the key "source_file" for
-    # whatever identity string was passed in; here that's a flight_id,
-    # not a filename — rename for honesty in this aggregate's output.
-    for event in inflight_pattern["events"]:
-        event["flight_id"] = event.pop("source_file")
-
     runs_output = [_ecu_run_output(r) for r in all_runs]
 
     flight_ids = [fa.flight_id for fa in flight_analyses]
@@ -422,8 +456,10 @@ def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
     return EcuAnalysis(
         flight_ids=flight_ids,
         runs=runs_output,
-        counts=counts,
-        inflight_pattern=inflight_pattern,
+        counts=_class_counts(all_runs),
+        sub_threshold_blips=sum(f["sub_threshold_blips"] for f in flights),
+        flights=flights,
+        events=events,
         provenance=provenance,
     )
 
@@ -2126,27 +2162,16 @@ def evaluate_insights(
     # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time/map_at_takeoff
     # above: this topic's own insights only get built when enabled.
     if r_data.get("engine_ecu_inflight", {}).get("enabled", True):
-        # FlightAnalysis.ecu_runs is keyed start_utc/duration_s/... (Spec 01
-        # §8.3 shape); topics.engine_ecu_inflight -> cas.analyze_inflight_pattern
-        # expects source_file/start_time (§8.6-adjacent, cas.py's own shape).
-        # Adapt rather than let the mismatch silently produce a None timestamp.
-        adapted_runs = [
-            {**r, "source_file": flight_id, "start_time": r.get("start_utc")}
-            for r in flight_analysis.ecu_runs
-        ]
-        raw = topics.engine_ecu_inflight(adapted_runs)
-
-        # analyze_inflight_pattern() (cas.py) rebuilds its own event dicts and
-        # drops elapsed_s along the way (it's also used fleet-wide, where one
-        # flight's elapsed time isn't meaningful) — look the run back up by its
-        # start_utc, which survives, to recover it for the series_window below.
-        _ecu_runs_by_start = {r["start_utc"]: r for r in flight_analysis.ecu_runs}
+        # Spec 01 §8.5 (v0.19): fires only on an IN_FLIGHT run — the
+        # topic's events are exactly those runs, straight from
+        # FlightAnalysis.ecu_runs.
+        raw = topics.engine_ecu_inflight(flight_analysis.ecu_runs)
 
         def _ecu_insight(e: dict) -> dict:
-            iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16]
-            run = _ecu_runs_by_start.get(e["start_time"]) or {}
-            elapsed_s = run.get("elapsed_s")
-            duration_s = run.get("duration_s") or e.get("duration_s") or 0
+            iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight",
+                                "start_utc": e.get("start_utc"), "duration_s": e.get("duration_s")})[:16]
+            elapsed_s = e.get("elapsed_s")
+            duration_s = e.get("duration_s") or 0
             # Zoom to the moment on this flight's own chart, like every other
             # insight (RPM + oil pressure — the pair a CAN-dropout/oil-NaN
             # signature actually shows up in). The ecu_run reference stays as a
@@ -2168,12 +2193,12 @@ def evaluate_insights(
                     "marker_start_s": elapsed_s,
                     "marker_end_s": elapsed_s + max(duration_s, 1),
                 })
-            evidence.append({"kind": "ecu_run", "ref": str(e["start_time"])})
+            evidence.append({"kind": "ecu_run", "ref": str(e.get("start_utc"))})
             d = {
                 "id": iid,
                 "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
                 "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
-                "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
+                "message": {"text": _ecu_inflight_text(e)},
                 "evidence": evidence,
                 "confidence": _confidence(0),
             }

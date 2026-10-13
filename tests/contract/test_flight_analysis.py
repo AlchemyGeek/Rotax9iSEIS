@@ -192,7 +192,9 @@ def test_analyze_flight_kacv_ecu_runs_match_golden_classification():
     runs = fa.to_dict()["ecu_runs"]
     from collections import Counter
     counts = Counter(r["classification"] for r in runs)
-    assert counts == {"POWERUP": 2, "LANE_CHECK": 2, "SHUTDOWN": 1}
+    assert counts == {"GROUND_START": 2, "LANE_CHECK": 2, "GROUND_SHUTDOWN": 1}
+    assert fa.ecu_lane_check == "both"
+    assert all("phase" in r and isinstance(r["phase_uncertain"], bool) for r in runs)
 
 
 @requires_flight_logs

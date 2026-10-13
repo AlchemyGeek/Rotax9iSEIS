@@ -413,9 +413,11 @@ def cmd_ecu(args) -> int:
         _print_json(d)
     else:
         print(f"Flights analysed: {len(fas)}")
-        print(f"Classification counts: {d['counts']}")
-        for e in d["inflight_pattern"]["events"]:
-            print(f"  ⚡ IN_FLIGHT  flight={e['flight_id']}  {e['start_time']}  co_alerts={e['co_alerts']}")
+        print(f"Classification counts: {d['counts']}  sub-threshold blips: {d['sub_threshold_blips']}")
+        for e in d["events"]:
+            print(f"  {e['classification']}  flight={e['flight_id']}  {e['start_utc']}  "
+                  f"{e['duration_s']:.0f}s  phase={e['phase']}{' (uncertain)' if e['phase_uncertain'] else ''}  "
+                  f"co_alerts={e['co_alerts']}")
     return 0
 
 

@@ -4,10 +4,16 @@ Stage 0 characterization test (Spec 01 §11, §12 criterion 3).
 Locks down extract_engine_ecu_runs() across the whole fleet against a
 frozen golden snapshot of data/reports/engine_ecu_runs.csv (as built by
 notebooks/02_engine_ecu_correlation.py's main loop).
+
+Spec 01 v0.19: a new golden, classified by flight phase. The pre-v0.19
+golden (POWERUP/SHUTDOWN/IN_FLIGHT residual) was a known-defect baseline
+(§11 stage 0); keep it locally as engine_ecu_runs_pre_v019.csv if wanted,
+it is not read here.
 """
 import pandas as pd
 
-from slingology_eis.cas import extract_engine_ecu_runs
+from slingology_eis.cas import extract_engine_ecu_runs, takeoff_not_detected
+from slingology_eis.phases import detect_phases
 from slingology_eis.limits import load_engine_config
 from slingology_eis.loader import deduplicate_flights, find_duplicate_flights, load_directory
 
@@ -24,7 +30,10 @@ def test_ecu_runs_match_golden():
     engine_cfg = load_engine_config()
     all_runs = []
     for df, _info in flights:
-        all_runs.extend(extract_engine_ecu_runs(df, engine_config=engine_cfg))
+        df = detect_phases(df, verbose=False)
+        all_runs.extend(extract_engine_ecu_runs(
+            df, engine_config=engine_cfg, takeoff_not_detected=takeoff_not_detected(df)[0],
+        ).runs)
 
     actual = pd.DataFrame(all_runs)
     golden = pd.read_csv(GOLDEN_DIR / "engine_ecu_runs.csv")

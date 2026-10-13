@@ -7,14 +7,14 @@
       "values": {
         "{limit:egt_split_high_flow}": {
           "value": 392.0,
-          "unit": "\u00b0F"
+          "unit": "°F"
         },
         "{profile:egt_spread.high_flow_threshold_lph}": {
           "value": 3.0,
           "unit": "L/h"
         }
       },
-      "text": "Your engine computer sets the fuel and spark for each cylinder, so the four exhaust gas temperatures (EGTs) should keep a consistent pattern from flight to flight. This topic measures the spread between the hottest and the coolest cylinder in cruise. It compares that spread with your own past flights in similar outside air temperature, and with the Operators Manual limit of 392.0\u00b0F (which applies when fuel flow is above 3.0 L/h). It also watches whether the spread is slowly growing as engine hours build up. A widening spread can point to an injector, spark plug or ignition problem. A single unusual flight is worth noting; a spread that keeps growing over several flights is worth raising with your mechanic. When one cylinder on its own explains the change, it's reported under Cylinder EGT deviation instead, so you see it once.",
+      "text": "Your engine computer sets the fuel and spark for each cylinder, so the four exhaust gas temperatures (EGTs) should keep a consistent pattern from flight to flight. This topic measures the spread between the hottest and the coolest cylinder in cruise. It compares that spread with your own past flights in similar outside air temperature, and with the Operators Manual limit of 392.0°F (which applies when fuel flow is above 3.0 L/h). It also watches whether the spread is slowly growing as engine hours build up. A widening spread can point to an injector, spark plug or ignition problem. A single unusual flight is worth noting; a spread that keeps growing over several flights is worth raising with your mechanic. When one cylinder on its own explains the change, it's reported under Cylinder EGT deviation instead, so you see it once.",
       "applies": true,
       "validated": true,
       "last_reviewed": "2026-10-02"
@@ -41,10 +41,10 @@
       "values": {
         "{limit:oil_temp_max}": {
           "value": 248.0,
-          "unit": "\u00b0F"
+          "unit": "°F"
         }
       },
-      "text": "This shows the highest oil temperature reached during the flight and compares it with your usual peak on flights in similar outside air temperature. Short flights often end before the engine is fully warm, so a lower peak after a short hop is normal. A peak well above your usual can point to reduced oil cooling, for example less airflow through the oil cooler, a partial blockage, or a long climb on a hot day. A peak well below your usual on a full-length flight can mean the oil isn't getting warm enough. If the oil went past the Operators Manual limit of 248.0\u00b0F, that's reported once, under Operators Manual limits, and this card shows the same badge.",
+      "text": "This shows the highest oil temperature reached during the flight and compares it with your usual peak on flights in similar outside air temperature. Short flights often end before the engine is fully warm, so a lower peak after a short hop is normal. A peak well above your usual can point to reduced oil cooling, for example less airflow through the oil cooler, a partial blockage, or a long climb on a hot day. A peak well below your usual on a full-length flight can mean the oil isn't getting warm enough. If the oil went past the Operators Manual limit of 248.0°F, that's reported once, under Operators Manual limits, and this card shows the same badge.",
       "applies": true,
       "validated": true,
       "last_reviewed": "2026-10-05"
@@ -56,10 +56,10 @@
       "values": {
         "{limit:coolant_temp_max}": {
           "value": 248.0,
-          "unit": "\u00b0F"
+          "unit": "°F"
         }
       },
-      "text": "The cylinder heads are liquid-cooled through the radiator, and this shows the highest coolant temperature reached during the flight, compared with your usual peak on flights in similar outside air temperature. Short flights often end before the engine is fully warm, so a lower peak after a short hop is normal. A peak well above your usual can point to the cooling system: airflow through the radiator, coolant level, the pressure cap or the thermostat. A peak well below your usual on a full-length flight is less common and worth a look at the sensor. If the coolant went past the Operators Manual limit of 248.0\u00b0F, that's reported once, under Operators Manual limits, and this card shows the same badge.",
+      "text": "The cylinder heads are liquid-cooled through the radiator, and this shows the highest coolant temperature reached during the flight, compared with your usual peak on flights in similar outside air temperature. Short flights often end before the engine is fully warm, so a lower peak after a short hop is normal. A peak well above your usual can point to the cooling system: airflow through the radiator, coolant level, the pressure cap or the thermostat. A peak well below your usual on a full-length flight is less common and worth a look at the sensor. If the coolant went past the Operators Manual limit of 248.0°F, that's reported once, under Operators Manual limits, and this card shows the same badge.",
       "applies": true,
       "validated": true,
       "last_reviewed": "2026-10-05"
@@ -109,12 +109,17 @@
     {
       "id": "engine_ecu_inflight",
       "title": "Engine computer alerts in flight",
-      "template": "The ENGINE ECU caution can appear on the ground at expected moments, such as when the avionics power up, during the lane check and at shutdown, and those aren't flagged. This topic separates them from alerts that occur while the engine is running in flight, which are not expected. Each one deserves a look: check the data connections between the engine computer and the display, and have the engine computer's fault log read with Rotax's B.U.D.S. software at the next maintenance.",
-      "values": {},
-      "text": "The ENGINE ECU caution can appear on the ground at expected moments, such as when the avionics power up, during the lane check and at shutdown, and those aren't flagged. This topic separates them from alerts that occur while the engine is running in flight, which are not expected. Each one deserves a look: check the data connections between the engine computer and the display, and have the engine computer's fault log read with Rotax's B.U.D.S. software at the next maintenance.",
+      "template": "The ENGINE ECU caution comes from the engine computer, and when it appears matters more than that it appears. This topic sorts each occurrence by the flight phase it happens in. At start, while the avionics and the engine computer come up, during the lane check, when each lane is tested on its own, and at shutdown, it is expected and is not flagged. An occurrence on the ground with the engine running, while taxiing or idling, is listed as a ground event but is not flagged here either. Only an occurrence in flight, from the takeoff roll to the landing roll, is flagged; it is not expected, and it is worth having the engine computer's fault log read at the next maintenance. Occurrences shorter than {profile:cas.min_event_duration_s} are counted separately and not treated as events, since a single reading can be a logging artefact.",
+      "values": {
+        "{profile:cas.min_event_duration_s}": {
+          "value": 3,
+          "unit": "s"
+        }
+      },
+      "text": "The ENGINE ECU caution comes from the engine computer, and when it appears matters more than that it appears. This topic sorts each occurrence by the flight phase it happens in. At start, while the avionics and the engine computer come up, during the lane check, when each lane is tested on its own, and at shutdown, it is expected and is not flagged. An occurrence on the ground with the engine running, while taxiing or idling, is listed as a ground event but is not flagged here either. Only an occurrence in flight, from the takeoff roll to the landing roll, is flagged; it is not expected, and it is worth having the engine computer's fault log read at the next maintenance. Occurrences shorter than 3 s are counted separately and not treated as events, since a single reading can be a logging artefact.",
       "applies": true,
-      "validated": true,
-      "last_reviewed": "2026-10-05"
+      "validated": false,
+      "last_reviewed": "2026-10-13"
     },
     {
       "id": "limit_exceedances",

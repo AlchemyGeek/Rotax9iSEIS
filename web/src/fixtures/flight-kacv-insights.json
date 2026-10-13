@@ -8,7 +8,7 @@
     {
       "topic_id": "egt_spread",
       "analysis": {
-        "text": "Cruise mean 53\u00b0F. Your average: 59\u00b0F \u00b1 5\u00b0F (49 flights). OM limit: 392\u00b0F."
+        "text": "Cruise mean 53°F. Your average: 59°F ± 5°F (49 flights). OM limit: 392°F."
       },
       "insights": [],
       "metric_ids": [
@@ -18,7 +18,7 @@
     {
       "topic_id": "oil_temp_peak",
       "analysis": {
-        "text": "Peak 213\u00b0F. Your average: 202\u00b0F \u00b1 12\u00b0F (49 flights). OM limit: 248\u00b0F."
+        "text": "Peak 213°F. Your average: 202°F ± 12°F (49 flights). OM limit: 248°F."
       },
       "insights": [],
       "metric_ids": [
@@ -34,7 +34,7 @@
     {
       "topic_id": "coolant_temp_peak",
       "analysis": {
-        "text": "Peak 179\u00b0F. Your average: 182\u00b0F \u00b1 7\u00b0F (49 flights). OM limit: 248\u00b0F."
+        "text": "Peak 179°F. Your average: 182°F ± 7°F (49 flights). OM limit: 248°F."
       },
       "insights": [],
       "metric_ids": [
@@ -50,7 +50,7 @@
     {
       "topic_id": "egt_cyl_deviation",
       "analysis": {
-        "text": "Vs. mean of the other cylinders: Cyl 1 -28\u00b0F (avg -31), Cyl 2 -6\u00b0F (avg -9), Cyl 3 -9\u00b0F (avg -7), Cyl 4 +43\u00b0F (avg +47) (49 flights)."
+        "text": "Vs. mean of the other cylinders: Cyl 1 -28°F (avg -31), Cyl 2 -6°F (avg -9), Cyl 3 -9°F (avg -7), Cyl 4 +43°F (avg +47) (49 flights)."
       },
       "insights": [],
       "metric_ids": [
@@ -80,7 +80,7 @@
     {
       "topic_id": "map_at_takeoff",
       "analysis": {
-        "text": "Observed MAP at takeoff: 44.2 inHg at -16 ft PA, 15\u00b0C. Model expected: 45.0 inHg (n=47, GOOD, R\u00b2=0.74)."
+        "text": "Observed MAP at takeoff: 44.2 inHg at -16 ft PA, 15°C. Model expected: 45.0 inHg (n=47, GOOD, R²=0.74)."
       },
       "insights": [],
       "metric_ids": [
@@ -92,7 +92,7 @@
     {
       "topic_id": "engine_ecu_inflight",
       "analysis": {
-        "text": "No IN-FLIGHT ENGINE ECU events \u2014 all occurrences are expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN)."
+        "text": "ENGINE ECU: 2 at start · 2 in the lane check · 1 at shutdown. None in flight."
       },
       "insights": [],
       "metric_ids": [
@@ -112,7 +112,7 @@
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Idle RPM minimum: 1 event, worst 1730.0 rpm (min 1800.0 rpm), 40 s past the limit."
+            "text": "⚠ [CAUTION] Idle RPM minimum: 1 event, worst 1730.0 rpm (min 1800.0 rpm), 40 s past the limit."
           },
           "evidence": [
             {
@@ -149,7 +149,7 @@
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [WARNING] Takeoff RPM (5-min limit): 2 events, worst 5820.0 rpm (max 5800.0 rpm), 2 s past the limit."
+            "text": "⚠ [WARNING] Takeoff RPM (5-min limit): 2 events, worst 5820.0 rpm (max 5800.0 rpm), 2 s past the limit."
           },
           "evidence": [
             {
@@ -203,7 +203,7 @@
           "trigger": "threshold",
           "severity": "limit",
           "message": {
-            "text": "\u26a0 [CAUTION] Fuel pressure maximum: 7 events, worst 50.4 psi (max 46.0 psi), 3 h 3 min past the limit."
+            "text": "⚠ [CAUTION] Fuel pressure maximum: 7 events, worst 50.4 psi (max 46.0 psi), 3 h 3 min past the limit."
           },
           "evidence": [
             {

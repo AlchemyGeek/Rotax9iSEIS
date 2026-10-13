@@ -41,10 +41,12 @@
   "runs": [
     {
       "flight_id": "ebb63d351dccbac8",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-08T14:18:13",
       "end_utc": "2026-04-08T14:18:53",
-      "duration_s": 41,
+      "duration_s": 41.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -70,10 +72,12 @@
     },
     {
       "flight_id": "ebb63d351dccbac8",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-08T14:19:15",
       "end_utc": "2026-04-08T14:19:35",
-      "duration_s": 21,
+      "duration_s": 21.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -101,9 +105,11 @@
     {
       "flight_id": "ebb63d351dccbac8",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-08T14:31:43",
       "end_utc": "2026-04-08T14:31:46",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -124,9 +130,11 @@
     {
       "flight_id": "ebb63d351dccbac8",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-08T14:31:54",
       "end_utc": "2026-04-08T14:32:00",
-      "duration_s": 7,
+      "duration_s": 7.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -146,10 +154,12 @@
     },
     {
       "flight_id": "ebb63d351dccbac8",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-08T15:09:05",
       "end_utc": "2026-04-08T15:09:37",
-      "duration_s": 33,
+      "duration_s": 33.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -175,10 +185,12 @@
     },
     {
       "flight_id": "e0d5de55bc6f39fb",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-09T12:51:01",
       "end_utc": "2026-04-09T12:51:20",
-      "duration_s": 20,
+      "duration_s": 20.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -205,10 +217,12 @@
     },
     {
       "flight_id": "e0d5de55bc6f39fb",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-09T12:51:34",
       "end_utc": "2026-04-09T12:52:05",
-      "duration_s": 32,
+      "duration_s": 32.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -235,56 +249,12 @@
     },
     {
       "flight_id": "e0d5de55bc6f39fb",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-04-09T12:56:29",
-      "end_utc": "2026-04-09T12:56:29",
-      "duration_s": 1,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4110.0,
-        "mean_power_pct": 35.0,
-        "mean_oil_press_psi": 59.0,
-        "mean_oil_temp_f": 126.0,
-        "mean_coolant_temp_f": 156.0,
-        "mean_main_volts": 13.5,
-        "mean_batt_amps": 8.0,
-        "mean_fuel_press_psi": 46.4,
-        "mean_ias_kt": 15.9,
-        "mean_baro_alt_ft": 176.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "e0d5de55bc6f39fb",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-04-09T12:56:41",
-      "end_utc": "2026-04-09T12:56:41",
-      "duration_s": 1,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4070.0,
-        "mean_power_pct": 35.0,
-        "mean_oil_press_psi": 59.0,
-        "mean_oil_temp_f": 127.0,
-        "mean_coolant_temp_f": 156.0,
-        "mean_main_volts": 13.5,
-        "mean_batt_amps": 8.0,
-        "mean_fuel_press_psi": 46.4,
-        "mean_ias_kt": 17.2,
-        "mean_baro_alt_ft": 177.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "e0d5de55bc6f39fb",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-09T13:15:49",
       "end_utc": "2026-04-09T13:16:28",
-      "duration_s": 40,
+      "duration_s": 40.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -310,10 +280,12 @@
     },
     {
       "flight_id": "0e8784425c25c656",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-17T11:25:29",
       "end_utc": "2026-04-17T11:25:31",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -339,10 +311,12 @@
     },
     {
       "flight_id": "0e8784425c25c656",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-17T11:25:54",
       "end_utc": "2026-04-17T11:27:36",
-      "duration_s": 103,
+      "duration_s": 103.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -371,9 +345,11 @@
     {
       "flight_id": "0e8784425c25c656",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-17T11:34:27",
       "end_utc": "2026-04-17T11:34:31",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [
         "NO AOA CAL"
       ],
@@ -396,9 +372,11 @@
     {
       "flight_id": "0e8784425c25c656",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-17T11:34:42",
       "end_utc": "2026-04-17T11:34:44",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [
         "NO AOA CAL"
       ],
@@ -420,10 +398,12 @@
     },
     {
       "flight_id": "0e8784425c25c656",
-      "classification": "SHUTDOWN",
+      "classification": "IN_FLIGHT",
+      "phase": "LANDING_ROLL",
+      "phase_uncertain": false,
       "start_utc": "2026-04-17T12:13:55",
       "end_utc": "2026-04-17T12:15:25",
-      "duration_s": 91,
+      "duration_s": 91.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -449,10 +429,12 @@
     },
     {
       "flight_id": "c355c8f176ece094",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-21T21:34:03",
       "end_utc": "2026-04-21T21:35:05",
-      "duration_s": 63,
+      "duration_s": 63.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -479,10 +461,12 @@
     },
     {
       "flight_id": "c355c8f176ece094",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-21T21:35:13",
       "end_utc": "2026-04-21T21:35:27",
-      "duration_s": 15,
+      "duration_s": 15.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -509,9 +493,11 @@
     {
       "flight_id": "c355c8f176ece094",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-21T21:43:59",
       "end_utc": "2026-04-21T21:44:04",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -532,9 +518,11 @@
     {
       "flight_id": "c355c8f176ece094",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-21T21:44:12",
       "end_utc": "2026-04-21T21:44:19",
-      "duration_s": 8,
+      "duration_s": 8.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -554,10 +542,12 @@
     },
     {
       "flight_id": "c355c8f176ece094",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-21T23:53:08",
       "end_utc": "2026-04-21T23:53:21",
-      "duration_s": 14,
+      "duration_s": 14.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -582,38 +572,12 @@
     },
     {
       "flight_id": "f98a62808a81935a",
-      "classification": "POWERUP",
-      "start_utc": "2026-04-22T18:37:55",
-      "end_utc": "2026-04-22T18:37:56",
-      "duration_s": 2,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 0.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": null,
-        "mean_oil_temp_f": null,
-        "mean_coolant_temp_f": null,
-        "mean_main_volts": 13.2,
-        "mean_batt_amps": -1.0,
-        "mean_fuel_press_psi": -0.3,
-        "mean_ias_kt": 15.15,
-        "mean_baro_alt_ft": 0.0,
-        "oil_nan_frac": 1.0
-      }
-    },
-    {
-      "flight_id": "f98a62808a81935a",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-22T18:38:16",
       "end_utc": "2026-04-22T18:38:35",
-      "duration_s": 20,
+      "duration_s": 20.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -642,9 +606,11 @@
     {
       "flight_id": "f98a62808a81935a",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-22T18:45:34",
       "end_utc": "2026-04-22T18:45:37",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -665,9 +631,11 @@
     {
       "flight_id": "f98a62808a81935a",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-22T18:45:45",
       "end_utc": "2026-04-22T18:45:47",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -687,10 +655,12 @@
     },
     {
       "flight_id": "f98a62808a81935a",
-      "classification": "SHUTDOWN",
+      "classification": "IN_FLIGHT",
+      "phase": "LANDING_ROLL",
+      "phase_uncertain": false,
       "start_utc": "2026-04-22T19:08:23",
       "end_utc": "2026-04-22T19:09:02",
-      "duration_s": 40,
+      "duration_s": 40.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -716,10 +686,12 @@
     },
     {
       "flight_id": "afa3994b502aa2d1",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T13:58:24",
       "end_utc": "2026-04-23T14:00:35",
-      "duration_s": 132,
+      "duration_s": 132.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -747,10 +719,12 @@
     },
     {
       "flight_id": "afa3994b502aa2d1",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T14:00:45",
       "end_utc": "2026-04-23T14:01:08",
-      "duration_s": 24,
+      "duration_s": 24.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -778,9 +752,11 @@
     {
       "flight_id": "afa3994b502aa2d1",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T14:12:31",
       "end_utc": "2026-04-23T14:12:35",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -801,9 +777,11 @@
     {
       "flight_id": "afa3994b502aa2d1",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T14:12:43",
       "end_utc": "2026-04-23T14:12:48",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -823,10 +801,12 @@
     },
     {
       "flight_id": "afa3994b502aa2d1",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T19:17:43",
       "end_utc": "2026-04-23T19:18:55",
-      "duration_s": 73,
+      "duration_s": 73.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -851,10 +831,12 @@
     },
     {
       "flight_id": "584e022a47517397",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:06:19",
       "end_utc": "2026-04-23T20:07:57",
-      "duration_s": 99,
+      "duration_s": 99.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -880,10 +862,12 @@
     },
     {
       "flight_id": "584e022a47517397",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:08:07",
       "end_utc": "2026-04-23T20:08:15",
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -909,9 +893,11 @@
     {
       "flight_id": "584e022a47517397",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:15:35",
       "end_utc": "2026-04-23T20:15:38",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -932,9 +918,11 @@
     {
       "flight_id": "584e022a47517397",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:15:46",
       "end_utc": "2026-04-23T20:15:51",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -954,10 +942,12 @@
     },
     {
       "flight_id": "584e022a47517397",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-24T00:35:05",
       "end_utc": "2026-04-24T00:36:11",
-      "duration_s": 67,
+      "duration_s": 67.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -983,10 +973,12 @@
     },
     {
       "flight_id": "d9cf4cb3ad16129e",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-30T18:42:31",
       "end_utc": "2026-04-30T18:43:32",
-      "duration_s": 62,
+      "duration_s": 62.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1013,10 +1005,12 @@
     },
     {
       "flight_id": "d9cf4cb3ad16129e",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-30T18:43:41",
       "end_utc": "2026-04-30T18:43:46",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -1043,9 +1037,11 @@
     {
       "flight_id": "d9cf4cb3ad16129e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-30T18:48:57",
       "end_utc": "2026-04-30T18:48:59",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1066,9 +1062,11 @@
     {
       "flight_id": "d9cf4cb3ad16129e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-30T18:49:07",
       "end_utc": "2026-04-30T18:49:15",
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1088,10 +1086,12 @@
     },
     {
       "flight_id": "d9cf4cb3ad16129e",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-30T20:02:22",
       "end_utc": "2026-04-30T20:03:14",
-      "duration_s": 53,
+      "duration_s": 53.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1116,10 +1116,12 @@
     },
     {
       "flight_id": "c3e1129443d78b39",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T18:26:17",
       "end_utc": "2026-05-08T18:27:53",
-      "duration_s": 97,
+      "duration_s": 97.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1146,10 +1148,12 @@
     },
     {
       "flight_id": "c3e1129443d78b39",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T18:28:02",
       "end_utc": "2026-05-08T18:28:08",
-      "duration_s": 7,
+      "duration_s": 7.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1175,9 +1179,11 @@
     {
       "flight_id": "c3e1129443d78b39",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T18:38:17",
       "end_utc": "2026-05-08T18:38:22",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1198,9 +1204,11 @@
     {
       "flight_id": "c3e1129443d78b39",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T18:38:29",
       "end_utc": "2026-05-08T18:38:33",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1220,10 +1228,12 @@
     },
     {
       "flight_id": "c3e1129443d78b39",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T19:09:23",
       "end_utc": "2026-05-08T19:10:03",
-      "duration_s": 41,
+      "duration_s": 41.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1249,10 +1259,12 @@
     },
     {
       "flight_id": "9c371069cd31b889",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T20:37:01",
       "end_utc": "2026-05-08T20:38:54",
-      "duration_s": 114,
+      "duration_s": 114.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1279,10 +1291,12 @@
     },
     {
       "flight_id": "9c371069cd31b889",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T20:39:03",
       "end_utc": "2026-05-08T20:39:14",
-      "duration_s": 12,
+      "duration_s": 12.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1308,9 +1322,11 @@
     {
       "flight_id": "9c371069cd31b889",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T20:50:36",
       "end_utc": "2026-05-08T20:50:41",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1331,9 +1347,11 @@
     {
       "flight_id": "9c371069cd31b889",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T20:50:50",
       "end_utc": "2026-05-08T20:50:58",
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1353,10 +1371,12 @@
     },
     {
       "flight_id": "9c371069cd31b889",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T22:43:55",
       "end_utc": "2026-05-08T22:44:40",
-      "duration_s": 46,
+      "duration_s": 46.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -1382,10 +1402,12 @@
     },
     {
       "flight_id": "2ecf6193fb4bba2f",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T22:58:58",
       "end_utc": "2026-05-08T23:00:03",
-      "duration_s": 65,
+      "duration_s": 66.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1412,10 +1434,12 @@
     },
     {
       "flight_id": "2ecf6193fb4bba2f",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T23:00:11",
       "end_utc": "2026-05-08T23:00:22",
-      "duration_s": 12,
+      "duration_s": 12.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -1442,9 +1466,11 @@
     {
       "flight_id": "2ecf6193fb4bba2f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T23:02:55",
       "end_utc": "2026-05-08T23:02:57",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1465,9 +1491,11 @@
     {
       "flight_id": "2ecf6193fb4bba2f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T23:03:05",
       "end_utc": "2026-05-08T23:03:08",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1487,10 +1515,12 @@
     },
     {
       "flight_id": "2ecf6193fb4bba2f",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-08T23:29:28",
       "end_utc": "2026-05-08T23:30:25",
-      "duration_s": 58,
+      "duration_s": 58.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1516,10 +1546,12 @@
     },
     {
       "flight_id": "39d4610e6a691915",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T19:55:24",
       "end_utc": "2026-05-18T19:58:38",
-      "duration_s": 195,
+      "duration_s": 195.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1548,9 +1580,11 @@
     {
       "flight_id": "39d4610e6a691915",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T20:05:01",
       "end_utc": "2026-05-18T20:05:04",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1571,9 +1605,11 @@
     {
       "flight_id": "39d4610e6a691915",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T20:05:13",
       "end_utc": "2026-05-18T20:05:16",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1593,10 +1629,12 @@
     },
     {
       "flight_id": "39d4610e6a691915",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T20:48:31",
       "end_utc": "2026-05-18T20:49:07",
-      "duration_s": 37,
+      "duration_s": 37.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -1622,10 +1660,12 @@
     },
     {
       "flight_id": "df3c2e9ffe08091e",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T21:11:54",
       "end_utc": "2026-05-18T21:13:36",
-      "duration_s": 103,
+      "duration_s": 103.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1652,9 +1692,11 @@
     {
       "flight_id": "df3c2e9ffe08091e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T21:16:20",
       "end_utc": "2026-05-18T21:16:22",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1675,9 +1717,11 @@
     {
       "flight_id": "df3c2e9ffe08091e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T21:16:29",
       "end_utc": "2026-05-18T21:16:32",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1697,10 +1741,12 @@
     },
     {
       "flight_id": "df3c2e9ffe08091e",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-18T21:49:51",
       "end_utc": "2026-05-18T21:51:29",
-      "duration_s": 99,
+      "duration_s": 99.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1725,10 +1771,12 @@
     },
     {
       "flight_id": "c924536e435145ed",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-20T18:03:48",
       "end_utc": "2026-05-20T18:04:51",
-      "duration_s": 64,
+      "duration_s": 64.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1756,9 +1804,11 @@
     {
       "flight_id": "c924536e435145ed",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-20T18:09:49",
       "end_utc": "2026-05-20T18:09:59",
-      "duration_s": 11,
+      "duration_s": 11.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1779,9 +1829,11 @@
     {
       "flight_id": "c924536e435145ed",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-20T18:10:13",
       "end_utc": "2026-05-20T18:10:16",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1801,10 +1853,12 @@
     },
     {
       "flight_id": "c924536e435145ed",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-20T19:45:27",
       "end_utc": "2026-05-20T19:46:24",
-      "duration_s": 58,
+      "duration_s": 58.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1830,10 +1884,12 @@
     },
     {
       "flight_id": "a603d96498fb1db0",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T14:31:30",
       "end_utc": "2026-05-27T14:33:16",
-      "duration_s": 106,
+      "duration_s": 107.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1860,39 +1916,12 @@
     },
     {
       "flight_id": "a603d96498fb1db0",
-      "classification": "POWERUP",
-      "start_utc": "2026-05-27T14:33:25",
-      "end_utc": "2026-05-27T14:33:26",
-      "duration_s": 2,
-      "co_alerts": [
-        "OIL PRESS",
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 225.0,
-        "mean_power_pct": 0.0,
-        "mean_oil_press_psi": 0.0,
-        "mean_oil_temp_f": 58.0,
-        "mean_coolant_temp_f": 58.0,
-        "mean_main_volts": 12.8,
-        "mean_batt_amps": -4.5,
-        "mean_fuel_press_psi": 17.15,
-        "mean_ias_kt": 13.850000000000001,
-        "mean_baro_alt_ft": 143.0,
-        "oil_nan_frac": 0.5
-      }
-    },
-    {
-      "flight_id": "a603d96498fb1db0",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T14:43:11",
       "end_utc": "2026-05-27T14:43:14",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1913,9 +1942,11 @@
     {
       "flight_id": "a603d96498fb1db0",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T14:43:22",
       "end_utc": "2026-05-27T14:43:25",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -1935,10 +1966,12 @@
     },
     {
       "flight_id": "a603d96498fb1db0",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T17:14:43",
       "end_utc": "2026-05-27T17:17:06",
-      "duration_s": 142,
+      "duration_s": 144.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -1963,10 +1996,12 @@
     },
     {
       "flight_id": "076889019f6a405b",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T20:03:44",
       "end_utc": "2026-05-27T20:06:29",
-      "duration_s": 166,
+      "duration_s": 166.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1993,39 +2028,12 @@
     },
     {
       "flight_id": "076889019f6a405b",
-      "classification": "IN_FLIGHT",
-      "start_utc": "2026-05-27T20:06:38",
-      "end_utc": "2026-05-27T20:06:38",
-      "duration_s": 1,
-      "co_alerts": [
-        "OIL PRESS",
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 510.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": 2.0,
-        "mean_oil_temp_f": 103.0,
-        "mean_coolant_temp_f": 104.0,
-        "mean_main_volts": 13.0,
-        "mean_batt_amps": -7.0,
-        "mean_fuel_press_psi": 31.3,
-        "mean_ias_kt": 14.9,
-        "mean_baro_alt_ft": 1977.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "076889019f6a405b",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T20:16:28",
       "end_utc": "2026-05-27T20:16:30",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2046,9 +2054,11 @@
     {
       "flight_id": "076889019f6a405b",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T20:16:40",
       "end_utc": "2026-05-27T20:16:42",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2068,10 +2078,12 @@
     },
     {
       "flight_id": "076889019f6a405b",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-05-27T22:23:57",
       "end_utc": "2026-05-27T22:25:38",
-      "duration_s": 102,
+      "duration_s": 102.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2096,10 +2108,12 @@
     },
     {
       "flight_id": "bd03e79c9a3aa5c1",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T17:58:01",
       "end_utc": "2026-06-02T17:58:42",
-      "duration_s": 42,
+      "duration_s": 42.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2127,9 +2141,11 @@
     {
       "flight_id": "bd03e79c9a3aa5c1",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T18:06:32",
       "end_utc": "2026-06-02T18:06:36",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2150,9 +2166,11 @@
     {
       "flight_id": "bd03e79c9a3aa5c1",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T18:06:41",
       "end_utc": "2026-06-02T18:06:45",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2172,10 +2190,12 @@
     },
     {
       "flight_id": "bd03e79c9a3aa5c1",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T18:41:31",
       "end_utc": "2026-06-02T18:41:43",
-      "duration_s": 13,
+      "duration_s": 13.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -2199,10 +2219,12 @@
     },
     {
       "flight_id": "5c45821c81da250e",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T20:34:00",
       "end_utc": "2026-06-02T20:35:08",
-      "duration_s": 69,
+      "duration_s": 69.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2231,9 +2253,11 @@
     {
       "flight_id": "5c45821c81da250e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T20:37:47",
       "end_utc": "2026-06-02T20:37:51",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [
         "PITOT HEAT"
       ],
@@ -2256,9 +2280,11 @@
     {
       "flight_id": "5c45821c81da250e",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T20:37:58",
       "end_utc": "2026-06-02T20:38:06",
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [
         "PITOT HEAT"
       ],
@@ -2280,10 +2306,12 @@
     },
     {
       "flight_id": "5c45821c81da250e",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-02T21:19:13",
       "end_utc": "2026-06-02T21:20:51",
-      "duration_s": 99,
+      "duration_s": 99.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2309,10 +2337,12 @@
     },
     {
       "flight_id": "5b686ab1daabc3f5",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-04T21:31:04",
       "end_utc": "2026-06-04T21:32:04",
-      "duration_s": 61,
+      "duration_s": 61.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2340,10 +2370,12 @@
     },
     {
       "flight_id": "5b686ab1daabc3f5",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-04T21:32:14",
       "end_utc": "2026-06-04T21:32:18",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -2372,9 +2404,11 @@
     {
       "flight_id": "5b686ab1daabc3f5",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-04T21:36:08",
       "end_utc": "2026-06-04T21:36:10",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [
         "SET BARO"
       ],
@@ -2397,9 +2431,11 @@
     {
       "flight_id": "5b686ab1daabc3f5",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-04T21:36:18",
       "end_utc": "2026-06-04T21:36:22",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [
         "SET BARO"
       ],
@@ -2421,10 +2457,12 @@
     },
     {
       "flight_id": "5b686ab1daabc3f5",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-04T21:58:20",
       "end_utc": "2026-06-04T21:59:32",
-      "duration_s": 73,
+      "duration_s": 73.0,
       "co_alerts": [
         "SET BARO",
         "FUEL PRESS",
@@ -2451,10 +2489,12 @@
     },
     {
       "flight_id": "2b2945dbdee75885",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-08T18:00:31",
       "end_utc": "2026-06-08T18:01:54",
-      "duration_s": 84,
+      "duration_s": 84.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2483,9 +2523,11 @@
     {
       "flight_id": "2b2945dbdee75885",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-08T18:09:36",
       "end_utc": "2026-06-08T18:09:42",
-      "duration_s": 7,
+      "duration_s": 7.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2506,9 +2548,11 @@
     {
       "flight_id": "2b2945dbdee75885",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-08T18:09:52",
       "end_utc": "2026-06-08T18:09:56",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2528,10 +2572,12 @@
     },
     {
       "flight_id": "2b2945dbdee75885",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-08T19:12:57",
       "end_utc": "2026-06-08T19:13:38",
-      "duration_s": 42,
+      "duration_s": 42.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -2557,10 +2603,12 @@
     },
     {
       "flight_id": "f2e63159ec0d6632",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-13T19:37:31",
       "end_utc": "2026-06-13T19:38:25",
-      "duration_s": 55,
+      "duration_s": 55.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2587,10 +2635,12 @@
     },
     {
       "flight_id": "f2e63159ec0d6632",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-13T19:38:34",
       "end_utc": "2026-06-13T19:38:42",
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2617,9 +2667,11 @@
     {
       "flight_id": "f2e63159ec0d6632",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-13T19:43:50",
       "end_utc": "2026-06-13T19:43:55",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2640,9 +2692,11 @@
     {
       "flight_id": "f2e63159ec0d6632",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-13T19:44:03",
       "end_utc": "2026-06-13T19:44:06",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2662,10 +2716,12 @@
     },
     {
       "flight_id": "f2e63159ec0d6632",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-13T21:26:29",
       "end_utc": "2026-06-13T21:26:46",
-      "duration_s": 18,
+      "duration_s": 18.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -2691,10 +2747,12 @@
     },
     {
       "flight_id": "90132d8dd417225c",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-17T14:34:25",
       "end_utc": "2026-06-17T14:34:57",
-      "duration_s": 33,
+      "duration_s": 33.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2721,39 +2779,12 @@
     },
     {
       "flight_id": "90132d8dd417225c",
-      "classification": "POWERUP",
-      "start_utc": "2026-06-17T14:35:08",
-      "end_utc": "2026-06-17T14:35:09",
-      "duration_s": 2,
-      "co_alerts": [
-        "OIL PRESS",
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "RAGL FAIL",
-        "FUEL PRESS"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 0.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": null,
-        "mean_oil_temp_f": 64.0,
-        "mean_coolant_temp_f": 64.0,
-        "mean_main_volts": 12.85,
-        "mean_batt_amps": -4.5,
-        "mean_fuel_press_psi": 25.299999999999997,
-        "mean_ias_kt": 14.4,
-        "mean_baro_alt_ft": 193.0,
-        "oil_nan_frac": 1.0
-      }
-    },
-    {
-      "flight_id": "90132d8dd417225c",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-17T14:41:32",
       "end_utc": "2026-06-17T14:41:36",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2774,9 +2805,11 @@
     {
       "flight_id": "90132d8dd417225c",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-17T14:41:44",
       "end_utc": "2026-06-17T14:41:48",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2796,10 +2829,12 @@
     },
     {
       "flight_id": "90132d8dd417225c",
-      "classification": "SHUTDOWN",
+      "classification": "IN_FLIGHT",
+      "phase": "DESCENT",
+      "phase_uncertain": false,
       "start_utc": "2026-06-17T17:25:09",
-      "end_utc": "2026-06-17T17:26:53",
-      "duration_s": 105,
+      "end_utc": "2026-06-17T17:26:51",
+      "duration_s": 103.0,
       "co_alerts": [
         "ALT FAIL",
         "FUEL PRESS",
@@ -2825,10 +2860,12 @@
     },
     {
       "flight_id": "0c530710a1c60e1c",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-18T14:04:58",
       "end_utc": "2026-06-18T14:06:40",
-      "duration_s": 103,
+      "duration_s": 103.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2855,38 +2892,12 @@
     },
     {
       "flight_id": "0c530710a1c60e1c",
-      "classification": "POWERUP",
-      "start_utc": "2026-06-18T14:06:48",
-      "end_utc": "2026-06-18T14:06:49",
-      "duration_s": 2,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 0.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": null,
-        "mean_oil_temp_f": 65.0,
-        "mean_coolant_temp_f": 65.0,
-        "mean_main_volts": 12.95,
-        "mean_batt_amps": -4.5,
-        "mean_fuel_press_psi": 10.55,
-        "mean_ias_kt": 15.45,
-        "mean_baro_alt_ft": 2531.0,
-        "oil_nan_frac": 1.0
-      }
-    },
-    {
-      "flight_id": "0c530710a1c60e1c",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-18T14:12:49",
       "end_utc": "2026-06-18T14:12:52",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2907,9 +2918,11 @@
     {
       "flight_id": "0c530710a1c60e1c",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-18T14:13:00",
       "end_utc": "2026-06-18T14:13:02",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -2929,10 +2942,12 @@
     },
     {
       "flight_id": "0c530710a1c60e1c",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-18T17:44:37",
       "end_utc": "2026-06-18T17:45:30",
-      "duration_s": 54,
+      "duration_s": 54.0,
       "co_alerts": [
         "ALT FAIL",
         "FUEL PRESS",
@@ -2958,10 +2973,12 @@
     },
     {
       "flight_id": "8cf33695e94227bf",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-06-22T17:53:25",
       "end_utc": "2026-06-22T17:54:09",
-      "duration_s": 45,
+      "duration_s": 45.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -2988,38 +3005,12 @@
     },
     {
       "flight_id": "8cf33695e94227bf",
-      "classification": "POWERUP",
-      "start_utc": "2026-06-22T17:54:18",
-      "end_utc": "2026-06-22T17:54:18",
-      "duration_s": 1,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 0.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": null,
-        "mean_oil_temp_f": 68.0,
-        "mean_coolant_temp_f": 68.0,
-        "mean_main_volts": 12.9,
-        "mean_batt_amps": -5.0,
-        "mean_fuel_press_psi": 19.4,
-        "mean_ias_kt": 14.6,
-        "mean_baro_alt_ft": 120.0,
-        "oil_nan_frac": 1.0
-      }
-    },
-    {
-      "flight_id": "8cf33695e94227bf",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-22T18:00:27",
       "end_utc": "2026-06-22T18:00:30",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3040,9 +3031,11 @@
     {
       "flight_id": "8cf33695e94227bf",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-06-22T18:00:37",
       "end_utc": "2026-06-22T18:00:40",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3062,10 +3055,12 @@
     },
     {
       "flight_id": "8cf33695e94227bf",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-06-22T18:23:24",
       "end_utc": "2026-06-22T18:23:44",
-      "duration_s": 21,
+      "duration_s": 21.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -3090,10 +3085,12 @@
     },
     {
       "flight_id": "abbcb5dde18f399f",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-03T19:27:19",
       "end_utc": "2026-07-03T19:28:30",
-      "duration_s": 72,
+      "duration_s": 72.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3120,37 +3117,12 @@
     },
     {
       "flight_id": "abbcb5dde18f399f",
-      "classification": "POWERUP",
-      "start_utc": "2026-07-03T19:28:39",
-      "end_utc": "2026-07-03T19:28:39",
-      "duration_s": 1,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 250.0,
-        "mean_power_pct": 1.0,
-        "mean_oil_press_psi": 0.0,
-        "mean_oil_temp_f": 66.0,
-        "mean_coolant_temp_f": 67.0,
-        "mean_main_volts": 12.7,
-        "mean_batt_amps": -7.0,
-        "mean_fuel_press_psi": 38.0,
-        "mean_ias_kt": 14.1,
-        "mean_baro_alt_ft": 103.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "abbcb5dde18f399f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-03T19:33:58",
       "end_utc": "2026-07-03T19:34:01",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3171,9 +3143,11 @@
     {
       "flight_id": "abbcb5dde18f399f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-03T19:34:08",
       "end_utc": "2026-07-03T19:34:12",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3193,10 +3167,12 @@
     },
     {
       "flight_id": "abbcb5dde18f399f",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-03T20:35:22",
       "end_utc": "2026-07-03T20:40:29",
-      "duration_s": 308,
+      "duration_s": 308.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3221,10 +3197,12 @@
     },
     {
       "flight_id": "68d91c240953f50f",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T15:23:31",
       "end_utc": "2026-07-06T15:24:25",
-      "duration_s": 55,
+      "duration_s": 55.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3251,37 +3229,12 @@
     },
     {
       "flight_id": "68d91c240953f50f",
-      "classification": "POWERUP",
-      "start_utc": "2026-07-06T15:24:33",
-      "end_utc": "2026-07-06T15:24:33",
-      "duration_s": 1,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 440.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": 0.0,
-        "mean_oil_temp_f": 63.0,
-        "mean_coolant_temp_f": 63.0,
-        "mean_main_volts": 12.7,
-        "mean_batt_amps": -7.0,
-        "mean_fuel_press_psi": 34.7,
-        "mean_ias_kt": 14.2,
-        "mean_baro_alt_ft": 220.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "68d91c240953f50f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T15:30:30",
       "end_utc": "2026-07-06T15:30:33",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3302,9 +3255,11 @@
     {
       "flight_id": "68d91c240953f50f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T15:30:41",
       "end_utc": "2026-07-06T15:30:46",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3324,10 +3279,12 @@
     },
     {
       "flight_id": "68d91c240953f50f",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T15:49:56",
       "end_utc": "2026-07-06T15:50:19",
-      "duration_s": 24,
+      "duration_s": 24.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -3353,10 +3310,12 @@
     },
     {
       "flight_id": "6ab567cc2f46e677",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T18:42:23",
       "end_utc": "2026-07-06T18:42:35",
-      "duration_s": 13,
+      "duration_s": 13.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3382,9 +3341,11 @@
     {
       "flight_id": "6ab567cc2f46e677",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T18:46:28",
       "end_utc": "2026-07-06T18:46:32",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3405,9 +3366,11 @@
     {
       "flight_id": "6ab567cc2f46e677",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T18:46:40",
       "end_utc": "2026-07-06T18:46:43",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3427,10 +3390,12 @@
     },
     {
       "flight_id": "6ab567cc2f46e677",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-06T19:02:54",
       "end_utc": "2026-07-06T19:04:08",
-      "duration_s": 75,
+      "duration_s": 75.0,
       "co_alerts": [
         "FUEL PRESS",
         "NAV ON BKUP",
@@ -3456,10 +3421,12 @@
     },
     {
       "flight_id": "eefe8c71499d54b9",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-08T16:28:31",
       "end_utc": "2026-07-08T16:31:39",
-      "duration_s": 189,
+      "duration_s": 189.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3487,10 +3454,12 @@
     },
     {
       "flight_id": "eefe8c71499d54b9",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-08T16:31:47",
       "end_utc": "2026-07-08T16:32:15",
-      "duration_s": 29,
+      "duration_s": 29.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -3518,9 +3487,11 @@
     {
       "flight_id": "eefe8c71499d54b9",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-08T16:39:27",
       "end_utc": "2026-07-08T16:39:34",
-      "duration_s": 8,
+      "duration_s": 8.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3541,9 +3512,11 @@
     {
       "flight_id": "eefe8c71499d54b9",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-08T16:39:44",
       "end_utc": "2026-07-08T16:39:49",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3563,10 +3536,12 @@
     },
     {
       "flight_id": "eefe8c71499d54b9",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-08T17:31:00",
       "end_utc": "2026-07-08T17:31:05",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3592,10 +3567,12 @@
     },
     {
       "flight_id": "f6ac8353a8589aa4",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-14T21:15:31",
       "end_utc": "2026-07-14T21:16:05",
-      "duration_s": 35,
+      "duration_s": 35.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3623,10 +3600,12 @@
     },
     {
       "flight_id": "f6ac8353a8589aa4",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-14T21:16:13",
       "end_utc": "2026-07-14T21:16:50",
-      "duration_s": 38,
+      "duration_s": 38.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3654,9 +3633,11 @@
     {
       "flight_id": "f6ac8353a8589aa4",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-14T21:21:35",
       "end_utc": "2026-07-14T21:21:38",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [
         "SET BARO"
       ],
@@ -3679,9 +3660,11 @@
     {
       "flight_id": "f6ac8353a8589aa4",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-14T21:21:43",
       "end_utc": "2026-07-14T21:21:46",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [
         "SET BARO"
       ],
@@ -3703,10 +3686,12 @@
     },
     {
       "flight_id": "f6ac8353a8589aa4",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-14T22:58:52",
       "end_utc": "2026-07-14T23:02:42",
-      "duration_s": 231,
+      "duration_s": 231.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -3731,10 +3716,12 @@
     },
     {
       "flight_id": "62843b1a45406ade",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T11:22:01",
       "end_utc": "2026-07-17T11:23:02",
-      "duration_s": 62,
+      "duration_s": 62.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3761,10 +3748,12 @@
     },
     {
       "flight_id": "62843b1a45406ade",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T11:23:13",
       "end_utc": "2026-07-17T11:23:15",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3790,9 +3779,11 @@
     {
       "flight_id": "62843b1a45406ade",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T11:30:42",
       "end_utc": "2026-07-17T11:30:45",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3813,9 +3804,11 @@
     {
       "flight_id": "62843b1a45406ade",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T11:30:53",
       "end_utc": "2026-07-17T11:30:56",
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3835,10 +3828,12 @@
     },
     {
       "flight_id": "62843b1a45406ade",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T16:22:48",
       "end_utc": "2026-07-17T16:24:14",
-      "duration_s": 87,
+      "duration_s": 87.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3863,10 +3858,12 @@
     },
     {
       "flight_id": "f52342eb6fc37071",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T18:01:49",
       "end_utc": "2026-07-17T18:02:30",
-      "duration_s": 42,
+      "duration_s": 42.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3892,10 +3889,12 @@
     },
     {
       "flight_id": "f52342eb6fc37071",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T18:02:39",
       "end_utc": "2026-07-17T18:02:59",
-      "duration_s": 21,
+      "duration_s": 21.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -3923,9 +3922,11 @@
     {
       "flight_id": "f52342eb6fc37071",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T18:11:59",
       "end_utc": "2026-07-17T18:12:04",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3946,9 +3947,11 @@
     {
       "flight_id": "f52342eb6fc37071",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T18:12:12",
       "end_utc": "2026-07-17T18:12:16",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -3968,10 +3971,12 @@
     },
     {
       "flight_id": "f52342eb6fc37071",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-17T23:11:51",
       "end_utc": "2026-07-17T23:12:55",
-      "duration_s": 65,
+      "duration_s": 65.0,
       "co_alerts": [
         "ALT FAIL",
         "FUEL PRESS",
@@ -3997,10 +4002,12 @@
     },
     {
       "flight_id": "3e6575a23df359a6",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-18T14:16:57",
       "end_utc": "2026-07-18T14:19:09",
-      "duration_s": 133,
+      "duration_s": 133.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4028,12 +4035,14 @@
     {
       "flight_id": "3e6575a23df359a6",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-18T14:25:45",
-      "end_utc": "2026-07-18T14:25:45",
-      "duration_s": 1,
+      "end_utc": "2026-07-18T14:25:52",
+      "duration_s": 8.0,
       "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
+      "lane_check_pair": false,
+      "lane_check_note": "",
       "context": {
         "mean_rpm": 4160.0,
         "mean_power_pct": 34.0,
@@ -4050,33 +4059,12 @@
     },
     {
       "flight_id": "3e6575a23df359a6",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-18T14:25:49",
-      "end_utc": "2026-07-18T14:25:52",
-      "duration_s": 4,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4122.5,
-        "mean_power_pct": 35.0,
-        "mean_oil_press_psi": 57.0,
-        "mean_oil_temp_f": 143.0,
-        "mean_coolant_temp_f": 164.0,
-        "mean_main_volts": 13.4,
-        "mean_batt_amps": 9.0,
-        "mean_fuel_press_psi": 45.8,
-        "mean_ias_kt": 19.55,
-        "mean_baro_alt_ft": 896.5,
-        "oil_nan_frac": 0.5
-      }
-    },
-    {
-      "flight_id": "3e6575a23df359a6",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-18T16:37:31",
       "end_utc": "2026-07-18T16:39:39",
-      "duration_s": 129,
+      "duration_s": 129.0,
       "co_alerts": [
         "FUEL PRESS",
         "NO RAGL",
@@ -4102,10 +4090,12 @@
     },
     {
       "flight_id": "3c8493c674d56815",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T14:03:32",
       "end_utc": "2026-07-22T14:15:19",
-      "duration_s": 708,
+      "duration_s": 708.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4134,36 +4124,15 @@
     },
     {
       "flight_id": "3c8493c674d56815",
-      "classification": "POWERUP",
-      "start_utc": "2026-07-22T14:15:28",
-      "end_utc": "2026-07-22T14:15:28",
-      "duration_s": 1,
+      "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
+      "start_utc": "2026-07-22T14:19:41",
+      "end_utc": "2026-07-22T14:19:48",
+      "duration_s": 8.0,
       "co_alerts": [],
       "lane_check_pair": false,
       "lane_check_note": "",
-      "context": {
-        "mean_rpm": 250.0,
-        "mean_power_pct": null,
-        "mean_oil_press_psi": 0.0,
-        "mean_oil_temp_f": 63.0,
-        "mean_coolant_temp_f": 64.0,
-        "mean_main_volts": 12.3,
-        "mean_batt_amps": -13.0,
-        "mean_fuel_press_psi": 28.7,
-        "mean_ias_kt": 14.0,
-        "mean_baro_alt_ft": 781.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "3c8493c674d56815",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-22T14:19:41",
-      "end_utc": "2026-07-22T14:19:42",
-      "duration_s": 2,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
       "context": {
         "mean_rpm": 4000.0,
         "mean_power_pct": 31.5,
@@ -4180,33 +4149,12 @@
     },
     {
       "flight_id": "3c8493c674d56815",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-22T14:19:45",
-      "end_utc": "2026-07-22T14:19:48",
-      "duration_s": 4,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 3912.5,
-        "mean_power_pct": 30.75,
-        "mean_oil_press_psi": 57.0,
-        "mean_oil_temp_f": 121.0,
-        "mean_coolant_temp_f": 151.0,
-        "mean_main_volts": 13.5,
-        "mean_batt_amps": 10.0,
-        "mean_fuel_press_psi": 46.4,
-        "mean_ias_kt": 16.75,
-        "mean_baro_alt_ft": 786.75,
-        "oil_nan_frac": 0.5
-      }
-    },
-    {
-      "flight_id": "3c8493c674d56815",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T17:29:14",
       "end_utc": "2026-07-22T17:30:20",
-      "duration_s": 67,
+      "duration_s": 67.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -4231,10 +4179,12 @@
     },
     {
       "flight_id": "6509deccbb08e9f5",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T19:09:37",
       "end_utc": "2026-07-22T19:12:06",
-      "duration_s": 150,
+      "duration_s": 150.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4261,10 +4211,12 @@
     },
     {
       "flight_id": "6509deccbb08e9f5",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T19:12:16",
       "end_utc": "2026-07-22T19:12:20",
-      "duration_s": 5,
+      "duration_s": 5.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4290,12 +4242,14 @@
     {
       "flight_id": "6509deccbb08e9f5",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T19:16:36",
       "end_utc": "2026-07-22T19:16:38",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
+      "lane_check_pair": false,
+      "lane_check_note": "",
       "context": {
         "mean_rpm": 4046.6666666666665,
         "mean_power_pct": 33.333333333333336,
@@ -4312,33 +4266,12 @@
     },
     {
       "flight_id": "6509deccbb08e9f5",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-22T19:16:46",
-      "end_utc": "2026-07-22T19:16:47",
-      "duration_s": 2,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4080.0,
-        "mean_power_pct": 35.0,
-        "mean_oil_press_psi": 58.0,
-        "mean_oil_temp_f": 137.0,
-        "mean_coolant_temp_f": 161.0,
-        "mean_main_volts": 13.4,
-        "mean_batt_amps": 7.0,
-        "mean_fuel_press_psi": 45.7,
-        "mean_ias_kt": 14.1,
-        "mean_baro_alt_ft": 1184.5,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "6509deccbb08e9f5",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-22T22:06:43",
       "end_utc": "2026-07-22T22:09:27",
-      "duration_s": 165,
+      "duration_s": 165.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -4363,10 +4296,12 @@
     },
     {
       "flight_id": "52ed07baad5f7668",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T12:36:11",
       "end_utc": "2026-07-23T12:42:02",
-      "duration_s": 350,
+      "duration_s": 352.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4393,10 +4328,12 @@
     },
     {
       "flight_id": "52ed07baad5f7668",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T12:42:11",
       "end_utc": "2026-07-23T12:42:16",
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4422,9 +4359,11 @@
     {
       "flight_id": "52ed07baad5f7668",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T12:50:58",
       "end_utc": "2026-07-23T12:51:00",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -4445,9 +4384,11 @@
     {
       "flight_id": "52ed07baad5f7668",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T12:51:07",
       "end_utc": "2026-07-23T12:51:09",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -4467,10 +4408,12 @@
     },
     {
       "flight_id": "52ed07baad5f7668",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T16:38:06",
       "end_utc": "2026-07-23T16:40:40",
-      "duration_s": 154,
+      "duration_s": 155.0,
       "co_alerts": [
         "ALT FAIL",
         "FUEL PRESS",
@@ -4496,10 +4439,12 @@
     },
     {
       "flight_id": "4b0d94be7f9a9f86",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T17:53:52",
       "end_utc": "2026-07-23T17:58:15",
-      "duration_s": 264,
+      "duration_s": 264.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4525,10 +4470,12 @@
     },
     {
       "flight_id": "4b0d94be7f9a9f86",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T17:58:26",
       "end_utc": "2026-07-23T17:58:45",
-      "duration_s": 20,
+      "duration_s": 20.0,
       "co_alerts": [
         "OIL PRESS",
         "EFIS ON BKUP",
@@ -4554,56 +4501,12 @@
     },
     {
       "flight_id": "4b0d94be7f9a9f86",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-23T18:10:22",
-      "end_utc": "2026-07-23T18:10:23",
-      "duration_s": 2,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4140.0,
-        "mean_power_pct": 30.0,
-        "mean_oil_press_psi": 54.0,
-        "mean_oil_temp_f": 176.0,
-        "mean_coolant_temp_f": 181.0,
-        "mean_main_volts": 13.3,
-        "mean_batt_amps": 9.5,
-        "mean_fuel_press_psi": 45.7,
-        "mean_ias_kt": 18.450000000000003,
-        "mean_baro_alt_ft": 3853.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "4b0d94be7f9a9f86",
-      "classification": "LANE_CHECK",
-      "start_utc": "2026-07-23T18:10:31",
-      "end_utc": "2026-07-23T18:10:31",
-      "duration_s": 1,
-      "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
-      "context": {
-        "mean_rpm": 4150.0,
-        "mean_power_pct": 32.0,
-        "mean_oil_press_psi": 54.0,
-        "mean_oil_temp_f": 177.0,
-        "mean_coolant_temp_f": 180.0,
-        "mean_main_volts": 13.4,
-        "mean_batt_amps": 10.0,
-        "mean_fuel_press_psi": 45.6,
-        "mean_ias_kt": 14.0,
-        "mean_baro_alt_ft": 3847.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "4b0d94be7f9a9f86",
-      "classification": "POWERUP",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-07-23T22:11:58",
       "end_utc": "2026-07-23T22:12:14",
-      "duration_s": 17,
+      "duration_s": 17.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -4627,10 +4530,12 @@
     },
     {
       "flight_id": "54b85ee48c519d3f",
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-08-10T18:59:55",
       "end_utc": "2026-08-10T19:00:32",
-      "duration_s": 38,
+      "duration_s": 38.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -4657,38 +4562,12 @@
     },
     {
       "flight_id": "54b85ee48c519d3f",
-      "classification": "IN_FLIGHT",
-      "start_utc": "2026-08-10T19:00:40",
-      "end_utc": "2026-08-10T19:00:40",
-      "duration_s": 1,
-      "co_alerts": [
-        "EFIS ON BKUP",
-        "NAV ON BKUP",
-        "FUEL PRESS",
-        "RAGL FAIL"
-      ],
-      "lane_check_pair": false,
-      "lane_check_note": "",
-      "context": {
-        "mean_rpm": 1110.0,
-        "mean_power_pct": 9.0,
-        "mean_oil_press_psi": 0.0,
-        "mean_oil_temp_f": 66.0,
-        "mean_coolant_temp_f": 66.0,
-        "mean_main_volts": 12.7,
-        "mean_batt_amps": -6.0,
-        "mean_fuel_press_psi": 33.9,
-        "mean_ias_kt": 14.3,
-        "mean_baro_alt_ft": 39.0,
-        "oil_nan_frac": 0.0
-      }
-    },
-    {
-      "flight_id": "54b85ee48c519d3f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-08-10T19:06:03",
       "end_utc": "2026-08-10T19:06:05",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -4709,9 +4588,11 @@
     {
       "flight_id": "54b85ee48c519d3f",
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-08-10T19:06:12",
       "end_utc": "2026-08-10T19:06:14",
-      "duration_s": 3,
+      "duration_s": 3.0,
       "co_alerts": [],
       "lane_check_pair": true,
       "lane_check_note": "paired",
@@ -4731,10 +4612,12 @@
     },
     {
       "flight_id": "54b85ee48c519d3f",
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-08-10T19:29:54",
       "end_utc": "2026-08-10T19:31:14",
-      "duration_s": 81,
+      "duration_s": 81.0,
       "co_alerts": [
         "FUEL PRESS",
         "EFIS ON BKUP",
@@ -4760,52 +4643,511 @@
     }
   ],
   "counts": {
-    "POWERUP": 80,
-    "LANE_CHECK": 74,
-    "SHUTDOWN": 21,
-    "IN_FLIGHT": 2
+    "GROUND_START": 56,
+    "LANE_CHECK": 67,
+    "GROUND": 0,
+    "IN_FLIGHT": 3,
+    "GROUND_SHUTDOWN": 34
   },
-  "inflight_pattern": {
-    "events": [
-      {
-        "start_time": "2026-05-27T20:06:38",
-        "duration_s": 1,
-        "oil_nan_frac": 0.0,
-        "co_alerts": [
-          "OIL PRESS",
-          "EFIS ON BKUP",
-          "NAV ON BKUP",
-          "FUEL PRESS",
-          "RAGL FAIL"
-        ],
-        "direct_correlation_alerts": [
-          "OIL PRESS"
-        ],
-        "flight_id": "076889019f6a405b"
+  "sub_threshold_blips": 15,
+  "flights": [
+    {
+      "flight_id": "ebb63d351dccbac8",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
       },
-      {
-        "start_time": "2026-08-10T19:00:40",
-        "duration_s": 1,
-        "oil_nan_frac": 0.0,
-        "co_alerts": [
-          "EFIS ON BKUP",
-          "NAV ON BKUP",
-          "FUEL PRESS",
-          "RAGL FAIL"
-        ],
-        "direct_correlation_alerts": [],
-        "flight_id": "54b85ee48c519d3f"
-      }
-    ],
-    "oil_nan_pattern": "mixed",
-    "recommended_actions": [
-      "Inspect Rotax Display CAN at GEA-24 (J244 pins 17 & 33)",
-      "Inspect & reseat HIC A and HIC B connector bodies",
-      "Pull B.U.D.S. fault log \u2014 both Lane A and Lane B"
-    ]
-  },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "e0d5de55bc6f39fb",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 0,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 2,
+      "lane_check": "none"
+    },
+    {
+      "flight_id": "0e8784425c25c656",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 1,
+        "GROUND_SHUTDOWN": 0
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "c355c8f176ece094",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "f98a62808a81935a",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 1,
+        "GROUND_SHUTDOWN": 0
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "afa3994b502aa2d1",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "584e022a47517397",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "d9cf4cb3ad16129e",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "c3e1129443d78b39",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "9c371069cd31b889",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "2ecf6193fb4bba2f",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "39d4610e6a691915",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "df3c2e9ffe08091e",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "c924536e435145ed",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "a603d96498fb1db0",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "076889019f6a405b",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "bd03e79c9a3aa5c1",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "5c45821c81da250e",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "5b686ab1daabc3f5",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "2b2945dbdee75885",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "f2e63159ec0d6632",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "90132d8dd417225c",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 1,
+        "GROUND_SHUTDOWN": 0
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "0c530710a1c60e1c",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "8cf33695e94227bf",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "abbcb5dde18f399f",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "68d91c240953f50f",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "6ab567cc2f46e677",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "eefe8c71499d54b9",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "f6ac8353a8589aa4",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "62843b1a45406ade",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "f52342eb6fc37071",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "3e6575a23df359a6",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 1,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "single"
+    },
+    {
+      "flight_id": "3c8493c674d56815",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 1,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "single"
+    },
+    {
+      "flight_id": "6509deccbb08e9f5",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 1,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "single"
+    },
+    {
+      "flight_id": "52ed07baad5f7668",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 0,
+      "lane_check": "both"
+    },
+    {
+      "flight_id": "4b0d94be7f9a9f86",
+      "counts": {
+        "GROUND_START": 2,
+        "LANE_CHECK": 0,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 2,
+      "lane_check": "none"
+    },
+    {
+      "flight_id": "54b85ee48c519d3f",
+      "counts": {
+        "GROUND_START": 1,
+        "LANE_CHECK": 2,
+        "GROUND": 0,
+        "IN_FLIGHT": 0,
+        "GROUND_SHUTDOWN": 1
+      },
+      "sub_threshold_blips": 1,
+      "lane_check": "both"
+    }
+  ],
+  "events": [
+    {
+      "flight_id": "0e8784425c25c656",
+      "classification": "IN_FLIGHT",
+      "start_utc": "2026-04-17T12:13:55",
+      "duration_s": 91.0,
+      "phase": "LANDING_ROLL",
+      "phase_uncertain": false,
+      "co_alerts": [
+        "FUEL PRESS",
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "ALT FAIL",
+        "RAGL FAIL"
+      ],
+      "oil_nan_frac": 1.0
+    },
+    {
+      "flight_id": "f98a62808a81935a",
+      "classification": "IN_FLIGHT",
+      "start_utc": "2026-04-22T19:08:23",
+      "duration_s": 40.0,
+      "phase": "LANDING_ROLL",
+      "phase_uncertain": false,
+      "co_alerts": [
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "RAGL FAIL",
+        "FUEL PRESS",
+        "ALT FAIL"
+      ],
+      "oil_nan_frac": 0.975
+    },
+    {
+      "flight_id": "90132d8dd417225c",
+      "classification": "IN_FLIGHT",
+      "start_utc": "2026-06-17T17:25:09",
+      "duration_s": 103.0,
+      "phase": "DESCENT",
+      "phase_uncertain": false,
+      "co_alerts": [
+        "ALT FAIL",
+        "FUEL PRESS",
+        "EFIS ON BKUP",
+        "NAV ON BKUP",
+        "RAGL FAIL"
+      ],
+      "oil_nan_frac": 0.9809523809523809
+    }
+  ],
   "provenance": {
-    "engine_version": "0.11.0",
+    "engine_version": "0.29.0",
     "schema_version": "0.1.0",
     "source_keys": [
       "0db4d83ea14aff74",

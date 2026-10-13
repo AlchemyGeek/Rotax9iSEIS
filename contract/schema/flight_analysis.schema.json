@@ -94,9 +94,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["classification", "start_utc", "elapsed_s", "duration_s", "co_alerts", "oil_nan_frac", "lane_check_pair", "lane_check_note"],
+        "required": ["classification", "phase", "phase_uncertain", "start_utc", "elapsed_s", "duration_s", "co_alerts", "oil_nan_frac", "lane_check_pair", "lane_check_note"],
         "properties": {
-          "classification": { "type": "string", "enum": ["POWERUP", "SHUTDOWN", "LANE_CHECK", "IN_FLIGHT"] },
+          "classification": { "type": "string", "enum": ["GROUND_START", "LANE_CHECK", "GROUND", "IN_FLIGHT", "GROUND_SHUTDOWN"], "description": "Spec 01 §8.6 (v0.19): by the flight phase the run overlaps." },
+          "phase": { "type": "string", "description": "The flight phase that decided the classification." },
+          "phase_uncertain": { "type": "boolean", "description": "Phase came from UNKNOWN rows, or the finding-9 guard reclassified the run IN_FLIGHT." },
           "start_utc": { "type": ["string", "null"] },
           "elapsed_s": { "type": ["number", "null"] },
           "duration_s": { "type": "number" },
@@ -108,6 +110,14 @@
           "mean_ias_kt": { "type": ["number", "null"] }
         }
       }
+    },
+    "ecu_sub_threshold_blips": {
+      "type": "integer",
+      "description": "Spec 01 §8.6 (v0.19): ENGINE ECU runs shorter than the profile's cas.min_event_duration_s after merging — counted, not runs."
+    },
+    "ecu_lane_check": {
+      "type": "string", "enum": ["both", "single", "none"],
+      "description": "Spec 01 §8.6 (v0.19): this flight's lane check — a paired LANE_CHECK, a single one, or none."
     },
     "quality": {
       "type": "array",

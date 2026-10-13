@@ -154,6 +154,7 @@ class FlightMetrics:
     takeoff_pressure_alt_ft: Optional[float] = None
     takeoff_oat_c: Optional[float] = None
     inflight_ecu_count: int = 0
+    ground_ecu_count: int = 0
 
 
 def build_flight_metrics(
@@ -276,12 +277,12 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
             takeoff_oat_c = round(float(to_rows["oat_c"].median()), 1) \
                 if "oat_c" in to_rows.columns else None
 
-    # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
-    from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
-    _ecu_runs = _extract_ecu(df, engine_config=engine_config)
-    inflight_ecu_count = sum(
-        1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
-    )
+    # ── ENGINE ECU counts by flight phase (Spec 01 §8.6) ──────────────
+    from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu, takeoff_not_detected
+    _ecu_runs = _extract_ecu(df, engine_config=engine_config,
+                             takeoff_not_detected=takeoff_not_detected(df)[0]).runs
+    inflight_ecu_count = sum(1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT")
+    ground_ecu_count = sum(1 for r in _ecu_runs if r["classification"] == "GROUND")
 
     # ── Density altitude / OAT — cruise-phase median ──────────────────────
     cruise_rows = df[df["phase"] == "CRUISE"] if "phase" in df.columns else pd.DataFrame()
@@ -340,6 +341,7 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         takeoff_pressure_alt_ft=takeoff_pressure_alt_ft,
         takeoff_oat_c=takeoff_oat_c,
         inflight_ecu_count=inflight_ecu_count,
+        ground_ecu_count=ground_ecu_count,
     )
 
 

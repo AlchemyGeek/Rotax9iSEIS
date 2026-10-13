@@ -566,7 +566,9 @@ export interface FleetAnalysis {
 
 // ── ECU (Spec 01 §8.6) ───────────────────────────────────────────────────────
 
-export type EcuClassification = "POWERUP" | "LANE_CHECK" | "SHUTDOWN" | "IN_FLIGHT";
+// Spec 01 §8.6 (v0.19): by the flight phase the run overlaps.
+export type EcuClassification = "GROUND_START" | "LANE_CHECK" | "GROUND" | "IN_FLIGHT" | "GROUND_SHUTDOWN";
+export type EcuCounts = Record<EcuClassification, number>;
 
 export interface EcuRunContext {
   mean_rpm: number | null;
@@ -588,19 +590,31 @@ export interface EcuRun {
   end_utc: string | null;
   duration_s: number;
   classification: EcuClassification;
+  phase: string;
+  phase_uncertain: boolean;
   lane_check_pair: boolean;
   lane_check_note: string;
   co_alerts: string[];
   context: EcuRunContext;
 }
 
-export interface EcuInflightEvent {
+// Per-event co-active alerts for every GROUND and IN_FLIGHT run (B3).
+export interface EcuEvent {
   flight_id: string;
-  start_time: string | null;
+  classification: "GROUND" | "IN_FLIGHT";
+  start_utc: string | null;
   duration_s: number;
-  oil_nan_frac: number | null;
+  phase: string;
+  phase_uncertain: boolean;
   co_alerts: string[];
-  direct_correlation_alerts: string[];
+  oil_nan_frac: number | null;
+}
+
+export interface EcuFlightSummary {
+  flight_id: string;
+  counts: EcuCounts;
+  sub_threshold_blips: number;
+  lane_check: "both" | "single" | "none";
 }
 
 // Matches analyze_ecu()'s real, schema-validated output shape exactly
@@ -610,12 +624,10 @@ export interface EcuInflightEvent {
 export interface EcuAnalysis {
   flight_ids: string[];
   runs: EcuRun[];
-  counts: Record<string, number>;
-  inflight_pattern: {
-    events: EcuInflightEvent[];
-    oil_nan_pattern: "strong" | "mixed" | null;
-    recommended_actions: string[];
-  };
+  counts: EcuCounts;
+  sub_threshold_blips: number;
+  flights: EcuFlightSummary[];
+  events: EcuEvent[];
   provenance: { engine_version: string; schema_version: string | null; source_keys: string[]; flight_analysis_keys: string[] };
 }
 

@@ -8,42 +8,11 @@
     {
       "topic_id": "engine_ecu_inflight",
       "analysis": {
-        "template": "",
+        "template": "ENGINE ECU: 1 at start · 2 in the lane check · 1 at shutdown. None in flight.",
         "values": {},
-        "text": "1 in-flight ENGINE ECU event, 20:06:38."
+        "text": "ENGINE ECU: 1 at start · 2 in the lane check · 1 at shutdown. None in flight."
       },
-      "insight": {
-        "id": "in_ecu_inflight_ksff",
-        "topic_id": "engine_ecu_inflight",
-        "rule_id": "engine_ecu_inflight",
-        "trigger": "threshold",
-        "severity": "warning",
-        "message": {
-          "template": "",
-          "values": {
-            "oil_press_psi": 2
-          },
-          "text": "In-flight ENGINE ECU event at 20:06:38 \u2014 oil pressure read 2 psi at the same moment, a real engine-parameter correlation, not just an avionics-backup indication."
-        },
-        "evidence": [
-          {
-            "kind": "ecu_run",
-            "ref": "run_20260527_200638_KSFF"
-          },
-          {
-            "kind": "series_window",
-            "channels": [
-              "oil_press_psi"
-            ],
-            "start_s": 143,
-            "end_s": 145
-          }
-        ],
-        "confidence": {
-          "level": "GOOD",
-          "n": 1
-        }
-      },
+      "insight": null,
       "metric_ids": [
         "cas_inflight_anomaly_count"
       ]
@@ -67,7 +36,7 @@
             "total_s": 274,
             "limit_s": 300
           },
-          "text": "Overboost recorded \u2014 274s total, one continuous block, closest to the 300s OM limit of any flight in the fleet."
+          "text": "Overboost recorded — 274s total, one continuous block, closest to the 300s OM limit of any flight in the fleet."
         },
         "evidence": [
           {
@@ -91,7 +60,7 @@
       "analysis": {
         "template": "",
         "values": {},
-        "text": "Mean spread 54.8\u00b0F, max 70\u00b0F \u2014 within normal range."
+        "text": "Mean spread 54.8°F, max 70°F — within normal range."
       },
       "metric_ids": [
         "egt_spread_mean_f",

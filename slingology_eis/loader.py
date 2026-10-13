@@ -363,9 +363,9 @@ def load_directory(
         labels the rest of the flight, not a second, cruder opinion.
 
         Pass skip_ground_sessions=False only if you specifically need to
-        examine ground sessions (e.g. for ENGINE ECU powerup behavior
+        examine ground sessions (e.g. for ENGINE ECU start-up behavior
         in isolation from flight operations — but note that full flights
-        contain all the same POWERUP/LANE_CHECK/SHUTDOWN patterns and are
+        contain all the same GROUND_START/LANE_CHECK/GROUND_SHUTDOWN patterns and are
         sufficient to establish those baselines without the noise). This
         also disables the short-flight and time-gap checks below, and
         exclusions.json is neither read nor written.

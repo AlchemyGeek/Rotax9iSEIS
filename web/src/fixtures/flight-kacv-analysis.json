@@ -185,32 +185,32 @@
     "egt_spread_mean_f": {
       "id": "egt_spread_mean_f",
       "value": 53.3,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt_spread_max_f": {
       "id": "egt_spread_max_f",
       "value": 65.0,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt1_deviation_f": {
       "id": "egt1_deviation_f",
       "value": -28.2,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt2_deviation_f": {
       "id": "egt2_deviation_f",
       "value": -5.5,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt3_deviation_f": {
       "id": "egt3_deviation_f",
       "value": -9.0,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt4_deviation_f": {
       "id": "egt4_deviation_f",
       "value": 42.7,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt_hottest_cyl": {
       "id": "egt_hottest_cyl",
@@ -219,7 +219,7 @@
     "egt_hottest_margin_f": {
       "id": "egt_hottest_margin_f",
       "value": 36.1,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "egt_rank_order": {
       "id": "egt_rank_order",
@@ -247,7 +247,7 @@
     "oil_temp_max_f": {
       "id": "oil_temp_max_f",
       "value": 213.0,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "oil_temp_below_optimal_pct": {
       "id": "oil_temp_below_optimal_pct",
@@ -257,17 +257,17 @@
     "coolant_temp_max_f": {
       "id": "coolant_temp_max_f",
       "value": 179.0,
-      "unit": "\u00b0F"
+      "unit": "°F"
     },
     "climb_oil_rise_f_per_min": {
       "id": "climb_oil_rise_f_per_min",
       "value": -0.12,
-      "unit": "\u00b0F/min"
+      "unit": "°F/min"
     },
     "climb_coolant_rise_f_per_min": {
       "id": "climb_coolant_rise_f_per_min",
       "value": -0.1,
-      "unit": "\u00b0F/min"
+      "unit": "°F/min"
     },
     "climb_vs_bucket_dominant": {
       "id": "climb_vs_bucket_dominant",
@@ -291,7 +291,7 @@
     "cruise_oat_c": {
       "id": "cruise_oat_c",
       "value": 3.2,
-      "unit": "\u00b0C"
+      "unit": "°C"
     },
     "da_band": {
       "id": "da_band",
@@ -314,7 +314,7 @@
     "takeoff_oat_c": {
       "id": "takeoff_oat_c",
       "value": 15.3,
-      "unit": "\u00b0C"
+      "unit": "°C"
     },
     "cas_inflight_anomaly_count": {
       "id": "cas_inflight_anomaly_count",
@@ -322,6 +322,10 @@
     },
     "inflight_ecu_count": {
       "id": "inflight_ecu_count",
+      "value": 0
+    },
+    "ground_ecu_count": {
+      "id": "ground_ecu_count",
       "value": 0
     },
     "lim_rpm_idle_min_peak_excess": {
@@ -380,7 +384,7 @@
     "lim_oil_temp_takeoff_min_peak_excess": {
       "id": "lim_oil_temp_takeoff_min_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_oil_temp_takeoff_min_time_above_pct": {
@@ -391,7 +395,7 @@
     "lim_oil_temp_max_peak_excess": {
       "id": "lim_oil_temp_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_oil_temp_max_time_above_pct": {
@@ -402,7 +406,7 @@
     "lim_coolant_temp_max_peak_excess": {
       "id": "lim_coolant_temp_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_coolant_temp_max_time_above_pct": {
@@ -413,7 +417,7 @@
     "lim_egt1_max_peak_excess": {
       "id": "lim_egt1_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt1_max_time_above_pct": {
@@ -424,7 +428,7 @@
     "lim_egt2_max_peak_excess": {
       "id": "lim_egt2_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt2_max_time_above_pct": {
@@ -435,7 +439,7 @@
     "lim_egt3_max_peak_excess": {
       "id": "lim_egt3_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt3_max_time_above_pct": {
@@ -446,7 +450,7 @@
     "lim_egt4_max_peak_excess": {
       "id": "lim_egt4_max_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt4_max_time_above_pct": {
@@ -511,7 +515,7 @@
     "lim_egt_split_high_flow_peak_excess": {
       "id": "lim_egt_split_high_flow_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt_split_high_flow_time_above_pct": {
@@ -522,7 +526,7 @@
     "lim_egt_split_low_flow_peak_excess": {
       "id": "lim_egt_split_low_flow_peak_excess",
       "value": null,
-      "unit": "\u00b0F",
+      "unit": "°F",
       "missing": "NOT_APPLICABLE"
     },
     "lim_egt_split_low_flow_time_above_pct": {
@@ -551,7 +555,7 @@
       "start_utc": "2026-04-23T20:09:56",
       "elapsed_s": 220.0,
       "duration_s": 40.0,
-      "note": "Engine must idle at or above 1,800 rpm \u2014 the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
+      "note": "Engine must idle at or above 1,800 rpm — the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
     },
     {
       "limit_id": "rpm_takeoff_max",
@@ -891,11 +895,13 @@
   ],
   "ecu_runs": [
     {
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:06:19",
       "end_utc": "2026-04-23T20:07:57",
       "elapsed_s": 3.0,
-      "duration_s": 99,
+      "duration_s": 99.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -918,11 +924,13 @@
       "mean_baro_alt_ft": 219.7171717171717
     },
     {
-      "classification": "POWERUP",
+      "classification": "GROUND_START",
+      "phase": "PRE_START",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:08:07",
       "end_utc": "2026-04-23T20:08:15",
       "elapsed_s": 111.0,
-      "duration_s": 9,
+      "duration_s": 9.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -945,10 +953,12 @@
     },
     {
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:15:35",
       "end_utc": "2026-04-23T20:15:38",
       "elapsed_s": 559.0,
-      "duration_s": 4,
+      "duration_s": 4.0,
       "co_alerts": [],
       "oil_nan_frac": 0.0,
       "lane_check_pair": true,
@@ -966,10 +976,12 @@
     },
     {
       "classification": "LANE_CHECK",
+      "phase": "TAXI",
+      "phase_uncertain": false,
       "start_utc": "2026-04-23T20:15:46",
       "end_utc": "2026-04-23T20:15:51",
       "elapsed_s": 570.0,
-      "duration_s": 6,
+      "duration_s": 6.0,
       "co_alerts": [],
       "oil_nan_frac": 0.8333333333333334,
       "lane_check_pair": true,
@@ -986,11 +998,13 @@
       "mean_baro_alt_ft": 207.5
     },
     {
-      "classification": "SHUTDOWN",
+      "classification": "GROUND_SHUTDOWN",
+      "phase": "SHUTDOWN",
+      "phase_uncertain": false,
       "start_utc": "2026-04-24T00:35:05",
       "end_utc": "2026-04-24T00:36:11",
       "elapsed_s": 16129.0,
-      "duration_s": 67,
+      "duration_s": 67.0,
       "co_alerts": [
         "EFIS ON BKUP",
         "NAV ON BKUP",
@@ -1013,6 +1027,8 @@
       "mean_baro_alt_ft": 132.8507462686567
     }
   ],
+  "ecu_sub_threshold_blips": 0,
+  "ecu_lane_check": "both",
   "quality": [],
   "provenance": {
     "engine_version": "0.28.0",
@@ -1141,7 +1157,7 @@
       "id": "oil_temp_takeoff_min",
       "param": "oil_temp_f",
       "label": "Oil temp minimum (takeoff)",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MIN",
       "limit_value": 122.0,
       "severity": "WARNING",
@@ -1153,7 +1169,7 @@
       "id": "oil_temp_max",
       "param": "oil_temp_f",
       "label": "Oil temp maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 248.0,
       "severity": "WARNING",
@@ -1165,7 +1181,7 @@
       "id": "oil_temp_optimal_low",
       "param": "oil_temp_f",
       "label": "Oil temp optimal band (low)",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MIN",
       "limit_value": 194.0,
       "severity": "CAUTION",
@@ -1177,7 +1193,7 @@
       "id": "coolant_temp_max",
       "param": "coolant_temp_f",
       "label": "Coolant temp maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 248.0,
       "severity": "WARNING",
@@ -1189,7 +1205,7 @@
       "id": "egt1_max",
       "param": "egt1_f",
       "label": "EGT1 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 1742.0,
       "severity": "WARNING",
@@ -1201,7 +1217,7 @@
       "id": "egt2_max",
       "param": "egt2_f",
       "label": "EGT2 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 1742.0,
       "severity": "WARNING",
@@ -1213,7 +1229,7 @@
       "id": "egt3_max",
       "param": "egt3_f",
       "label": "EGT3 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 1742.0,
       "severity": "WARNING",
@@ -1225,7 +1241,7 @@
       "id": "egt4_max",
       "param": "egt4_f",
       "label": "EGT4 maximum",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 1742.0,
       "severity": "WARNING",
@@ -1297,7 +1313,7 @@
       "id": "egt_split_high_flow",
       "param": "egt_spread_f",
       "label": "EGT Split (high fuel flow)",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 392.0,
       "severity": "WARNING",
@@ -1308,7 +1324,7 @@
       "id": "egt_split_low_flow",
       "param": "egt_spread_f",
       "label": "EGT Split (low fuel flow)",
-      "unit": "\u00b0F",
+      "unit": "°F",
       "limit_type": "MAX",
       "limit_value": 932.0,
       "severity": "WARNING",

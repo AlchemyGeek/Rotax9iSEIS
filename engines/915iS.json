@@ -21,6 +21,12 @@
   "_exceedance_merge_gap_s_note": "Spec 09 §6.2: an exceedance event ends only after the reading has stayed within the limit this many seconds; shorter dips are absorbed into the event.",
   "exceedance_merge_gap_s": 30,
 
+  "_cas_note": "Spec 01 \u00a78.6: ENGINE ECU run extraction. Runs separated by less than merge_gap_s are merged; runs shorter than min_event_duration_s after merging are not events (counted as sub-threshold blips \u2014 at 1 Hz a one-row CAS token is indistinguishable from a sampling artefact). Distinct from exceedance_merge_gap_s. Not OM values.",
+  "cas": {
+    "merge_gap_s": 5,
+    "min_event_duration_s": 3
+  },
+
   "limits": [
 
     {

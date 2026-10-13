@@ -129,9 +129,11 @@ export function sourceFilename(sourceKey: string): string {
 // ── The KSFF flight (Spec 03 v0.9 §5.4) ──────────────────────────────────
 // A second real Flight view fixture, hand-authored to the current contract
 // shape rather than generated (no raw KSFF log exists), specifically so the
-// ECU view's one genuine oil-pressure-correlated IN_FLIGHT event links to
-// its own real flight instead of the generic KACV stand-in every event
-// used to fall back to — the exact bug Spec 03 v0.9 documents and fixes.
+// ECU view's events link to their own real flight instead of the generic
+// KACV stand-in every event used to fall back to — the exact bug Spec 03
+// v0.9 documents and fixes. (Its 20:06:38 run, once the example IN_FLIGHT
+// event, is a 1 s sub-threshold blip under Spec 01 v0.19; ecu_runs now
+// carries the flight's real runs.)
 //
 // Two shape quirks in the hand-authored source, reconciled here rather
 // than left to drift into a second convention:
