@@ -353,25 +353,24 @@ _ECU_CLASS_PHRASE = {
 }
 
 
-def engine_ecu_inflight(ecu_runs: list[dict]) -> dict:
+_LANE_CHECK_SUMMARY = {"both": "both lanes", "single": "one lane only", "none": "not detected"}
+
+
+def engine_ecu_inflight(ecu_runs: list[dict], sub_threshold_blips: int = 0, lane_check: str = "none") -> dict:
     """
-    Returns {"analysis": str, "events": list[dict]} (Spec 01 §8.5, v0.19).
-    The analysis line counts this flight's ENGINE ECU runs by class;
-    `events` is only the IN_FLIGHT runs — the topic's insights. GROUND
-    runs are counted in the line (and are EcuAnalysis events) but never
-    become this topic's insight.
+    Returns {"analysis": str} (Spec 01 §8.5 v0.21). The topic references
+    its events rather than reporting them: GROUND and IN_FLIGHT runs are
+    CAS events owned by limit_exceedances. The line counts this flight's
+    runs by class, the sub-threshold blips, and the lane-check summary
+    (informational — never an insight).
     """
     counts = {c: sum(1 for r in ecu_runs if r["classification"] == c) for c in ECU_CLASSES}
-    if not any(counts.values()):
-        return {"analysis": "No ENGINE ECU alerts this flight.", "events": []}
     parts = [f"{n} {_ECU_CLASS_PHRASE[c]}" for c, n in counts.items() if n]
-    analysis = "ENGINE ECU: " + " · ".join(parts) + "."
-    if not counts["IN_FLIGHT"]:
-        analysis += " None in flight."
-    return {
-        "analysis": analysis,
-        "events": [r for r in ecu_runs if r["classification"] == "IN_FLIGHT"],
-    }
+    if sub_threshold_blips:
+        parts.append(f"{sub_threshold_blips} brief blip{'s' if sub_threshold_blips != 1 else ''} not counted")
+    analysis = ("ENGINE ECU: " + " · ".join(parts) + ".") if parts else "No ENGINE ECU alerts this flight."
+    analysis += f" Lane check: {_LANE_CHECK_SUMMARY.get(lane_check, lane_check)}."
+    return {"analysis": analysis}
 
 
 def climb_thermal_rate(oil_rise, b: dict, rule_triggers: list) -> dict:
@@ -405,6 +404,51 @@ def _fmt_duration(seconds: float) -> str:
     return f"{s // 3600} h {(s % 3600) // 60} min"
 
 
+# Spec 01 §8.6 / Spec 03 §5.2 (v0.21): why a GROUND run isn't a lane
+# check, in the pilot's words.
+NOT_LANE_CHECK_PHRASE = {
+    "rpm_below_band": "below the lane-check band",
+    "rpm_above_band": "above the lane-check band",
+    "too_long": "longer than a lane check",
+    "moving": "while moving, so not a lane check",
+    "unpaired": "no second lane run",
+}
+
+
+def cas_event_phrase(e: dict) -> str:
+    """One CAS event in words: "ENGINE ECU during TAXI, 7 s, 2,550 rpm —
+    below the lane-check band" (Spec 09 §10.1, Spec 03 §5.2)."""
+    cas_id = e.get("cas_id", "ENGINE ECU")
+    if e["classification"] == "IN_FLIGHT":
+        text = f"{cas_id} in flight ({e['phase']}), {e['duration_s']:.0f} s"
+    else:
+        text = f"{cas_id} during {e['phase']}, {e['duration_s']:.0f} s"
+    rpm = (e.get("context") or {}).get("rpm")
+    if rpm:
+        text += f", {rpm:,.0f} rpm"
+    reason = NOT_LANE_CHECK_PHRASE.get(e.get("not_lane_check_reason") or "")
+    if reason:
+        text += f" — {reason}"
+    if e.get("phase_uncertain"):
+        text += " (flight phase uncertain)"
+    return text
+
+
+def _cas_group_text(g: dict) -> str:
+    events, kind = g["events"], g.get("kind", "exceedance")
+    phrases = [cas_event_phrase(e) for e in events]
+    if len(events) == 1:
+        body = phrases[0]
+    else:
+        cas_id = g["limit"]["cas_id"]
+        body = f"{cas_id}, {len(events)} events: " + "; ".join(p[len(cas_id) + 1:] for p in phrases)
+    if kind == "filtered":
+        return f"{body} — within your filter ({g.get('filter_text', '')})."
+    if kind == "breach":
+        return f"⚠ {body} — beyond your filter ({g.get('filter_text', '')})."
+    return f"⚠ {body}."
+
+
 def limit_exceedance_groups(groups: list[dict]) -> dict:
     """
     Spec 09 §10.1: one insight per limit per flight — or, for a filtered
@@ -421,9 +465,17 @@ def limit_exceedance_groups(groups: list[dict]) -> dict:
     insights = []
     total = suppressed = 0
     limits_seen = set()
+    cas_events = 0
     for i, g in enumerate(groups):
         lim, events = g["limit"], g["events"]
         kind = g.get("kind", "exceedance")
+        if lim.get("kind") == "cas":
+            # Spec 09 v0.18 §10.1: a classified CAS alert's events.
+            cas_events += len(events)
+            if kind == "filtered":
+                suppressed += len(events)
+            insights.append({"trigger": "threshold", "text": _cas_group_text(g), "group": i})
+            continue
         limits_seen.add(lim.get("id", lim["label"]))
         total += len(events)
         worst = max(events, key=lambda e: e.get("excess") if e.get("excess") is not None else
@@ -453,9 +505,16 @@ def limit_exceedance_groups(groups: list[dict]) -> dict:
                     f"{_fmt_duration(time_above)} past the limit.")
         insights.append({"trigger": "threshold", "text": text, "group": i})
     n_limits = len(limits_seen)
-    analysis = (f"{n_limits} OM limit{'s' if n_limits != 1 else ''} exceeded this flight "
-                f"({total} event{'s' if total != 1 else ''}"
-                + (f", {suppressed} within your filters" if suppressed else "") + "):")
+    if n_limits:
+        analysis = (f"{n_limits} OM limit{'s' if n_limits != 1 else ''} exceeded this flight "
+                    f"({total} event{'s' if total != 1 else ''}"
+                    + (f", {suppressed} within your filters" if suppressed else "") + "):")
+        if cas_events:
+            analysis = analysis[:-1] + f"; {cas_events} alert event{'s' if cas_events != 1 else ''}:"
+    else:
+        analysis = (f"No OM hard-limit exceedances this flight; {cas_events} alert "
+                    f"event{'s' if cas_events != 1 else ''}"
+                    + (f", {suppressed} within your filters" if suppressed else "") + ":")
     return {"analysis": analysis, "insights": insights}
 
 

@@ -296,27 +296,29 @@ def test_limit_exceedances_present():
     assert result["insights"] == [{"trigger": "threshold", "text": "⚠ RPM above 5800 for 10s"}]
 
 
-def test_engine_ecu_inflight_counts_by_class_and_does_not_fire_on_ground():
-    """Spec 01 §8.5 (v0.19): the analysis line counts runs by class; only
-    IN_FLIGHT runs are the topic's events — GROUND is counted, never fired."""
+def test_engine_ecu_inflight_counts_by_class_blips_and_lane_check():
+    """Spec 01 §8.5 (v0.21): a referencing topic — an analysis line with the
+    class counts, blips and the lane-check summary; no events, no insight."""
     result = topics.engine_ecu_inflight([
         {"classification": "GROUND_START"}, {"classification": "GROUND_START"},
         {"classification": "LANE_CHECK"}, {"classification": "GROUND"},
         {"classification": "GROUND_SHUTDOWN"},
-    ])
-    assert result["events"] == []
-    assert result["analysis"] == (
+    ], sub_threshold_blips=1, lane_check="single")
+    assert result == {"analysis": (
         "ENGINE ECU: 2 at start · 1 in the lane check · 1 on the ground with the engine running · "
-        "1 at shutdown. None in flight."
-    )
-
-
-def test_engine_ecu_inflight_fires_only_on_in_flight_runs():
-    run = {"classification": "IN_FLIGHT", "start_utc": "2000-01-01T00:10:00", "duration_s": 6}
-    result = topics.engine_ecu_inflight([{"classification": "GROUND"}, run])
-    assert result["events"] == [run]
-    assert result["analysis"] == "ENGINE ECU: 1 on the ground with the engine running · 1 in flight."
+        "1 at shutdown · 1 brief blip not counted. Lane check: one lane only."
+    )}
 
 
 def test_engine_ecu_inflight_no_runs():
-    assert topics.engine_ecu_inflight([]) == {"analysis": "No ENGINE ECU alerts this flight.", "events": []}
+    assert topics.engine_ecu_inflight([]) == {
+        "analysis": "No ENGINE ECU alerts this flight. Lane check: not detected."
+    }
+
+
+def test_cas_event_phrase_names_class_and_reason():
+    e = {"cas_id": "ENGINE ECU", "classification": "GROUND", "phase": "TAXI", "duration_s": 7,
+         "context": {"rpm": 2550.0}, "not_lane_check_reason": "rpm_below_band", "phase_uncertain": False}
+    assert topics.cas_event_phrase(e) == "ENGINE ECU during TAXI, 7 s, 2,550 rpm — below the lane-check band"
+    flight = {**e, "classification": "IN_FLIGHT", "phase": "CRUISE", "not_lane_check_reason": None}
+    assert topics.cas_event_phrase(flight) == "ENGINE ECU in flight (CRUISE), 7 s, 2,550 rpm"

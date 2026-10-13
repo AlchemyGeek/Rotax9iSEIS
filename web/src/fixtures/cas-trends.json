@@ -1,0 +1,198 @@
+{
+  "panel": {
+    "panel": "cas:ENGINE ECU",
+    "cas_id": "ENGINE ECU",
+    "filtered": false,
+    "metrics": [
+      {
+        "metric_id": "cas_engine_ecu_events",
+        "role": "primary",
+        "worsening": "higher",
+        "phrasing": {
+          "higher": "occurring on more flights than it used to",
+          "lower": "occurring on fewer flights than it used to"
+        }
+      }
+    ]
+  },
+  "metric": {
+    "metric_id": "cas_engine_ecu_events",
+    "baseline": {
+      "n": 8,
+      "mean": 0.5,
+      "std": 0.93,
+      "min": 0.0,
+      "max": 2.0,
+      "confidence": {
+        "level": "LOW",
+        "n": 8
+      }
+    },
+    "trend": {
+      "n": 8,
+      "slope": null,
+      "r_squared": null,
+      "direction": "insufficient_data",
+      "x": "engine_hours",
+      "confidence": {
+        "level": "LOW",
+        "n": 8
+      }
+    },
+    "points": [
+      {
+        "flight_id": "b8b8edef0d406f34",
+        "date": "2026-01-01",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "4f1e929325b05868",
+        "date": "2026-01-02",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "c4af7205106917e6",
+        "date": "2026-01-03",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "4bb827061597da2d",
+        "date": "2026-01-04",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "406553ae00a1d6a9",
+        "date": "2026-01-05",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "082e0e30107a9279",
+        "date": "2026-01-06",
+        "x": 20.1,
+        "value": 0
+      },
+      {
+        "flight_id": "73da172dc63e7379",
+        "date": "2026-01-07",
+        "x": 20.1,
+        "value": 2
+      },
+      {
+        "flight_id": "3c0d6e994448776a",
+        "date": "2026-01-08",
+        "x": 20.1,
+        "value": 2
+      }
+    ],
+    "outliers": [],
+    "frequency": {
+      "recent": {
+        "events": 2,
+        "flights": 8
+      },
+      "reference": {
+        "events": 0,
+        "flights": 0
+      },
+      "delta": null,
+      "z": null,
+      "qualifies": false
+    },
+    "events": [
+      {
+        "flight_id": "b8b8edef0d406f34",
+        "date": "2026-01-01",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "4f1e929325b05868",
+        "date": "2026-01-02",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "c4af7205106917e6",
+        "date": "2026-01-03",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "4bb827061597da2d",
+        "date": "2026-01-04",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "406553ae00a1d6a9",
+        "date": "2026-01-05",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "082e0e30107a9279",
+        "date": "2026-01-06",
+        "x": 20.1,
+        "has_event": false
+      },
+      {
+        "flight_id": "73da172dc63e7379",
+        "date": "2026-01-07",
+        "x": 20.1,
+        "has_event": true,
+        "cas_events": [
+          {
+            "classification": "GROUND",
+            "phase": "TAXI",
+            "duration_s": 7.0,
+            "not_lane_check_reason": "rpm_below_band"
+          },
+          {
+            "classification": "IN_FLIGHT",
+            "phase": "CRUISE",
+            "duration_s": 6.0
+          }
+        ]
+      },
+      {
+        "flight_id": "3c0d6e994448776a",
+        "date": "2026-01-08",
+        "x": 20.1,
+        "has_event": true,
+        "cas_events": [
+          {
+            "classification": "GROUND",
+            "phase": "TAXI",
+            "duration_s": 7.0,
+            "not_lane_check_reason": "rpm_below_band"
+          },
+          {
+            "classification": "IN_FLIGHT",
+            "phase": "CRUISE",
+            "duration_s": 6.0
+          }
+        ]
+      }
+    ],
+    "unit": "s",
+    "readiness": {
+      "kind": "rare",
+      "count": 2
+    }
+  },
+  "flight_ids": [
+    "b8b8edef0d406f34",
+    "4f1e929325b05868",
+    "c4af7205106917e6",
+    "4bb827061597da2d",
+    "406553ae00a1d6a9",
+    "082e0e30107a9279",
+    "73da172dc63e7379",
+    "3c0d6e994448776a"
+  ]
+}

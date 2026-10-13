@@ -1,5 +1,5 @@
 {
-  "version": "1.7",
+  "version": "1.8",
   "rules": {
     "egt_spread": {
       "enabled": true,
@@ -84,13 +84,8 @@
     },
     "engine_ecu_inflight": {
       "enabled": true,
-      "triggers": [
-        {
-          "type": "threshold",
-          "condition": "any_inflight",
-          "severity": "warning"
-        }
-      ]
+      "_comment": "Spec 01 v0.21 / Spec 10 D19: a referencing topic — no trigger; its GROUND/IN_FLIGHT runs are CAS events reported by limit_exceedances.",
+      "triggers": []
     },
     "limit_exceedances": {
       "enabled": true,
@@ -100,7 +95,11 @@
           "condition": "any_exceedance",
           "severity": "limit"
         }
-      ]
+      ],
+      "cas": {
+        "_comment": "Spec 09 v0.18 §10.1: display label for classified CAS alert events (ENGINE ECU GROUND/IN_FLIGHT); no policy branches on it.",
+        "severity": "watch"
+      }
     },
     "climb_thermal_rate": {
       "enabled": false,

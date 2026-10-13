@@ -29,12 +29,12 @@ function panelRank(panel: TrendsPanel, ranks: Map<string, number>): number | nul
 }
 
 // §9.1 tier 3: "every limit whose only badge is never exceeded" — a
-// non-limit (register) panel is never tier 3, and a limit panel only
+// non-limit (register) panel is never tier 3, and a limit or CAS panel only
 // qualifies when *every* one of its sub-metrics (peak_excess,
 // time_above_pct, block_s — they always share one readiness, Session
 // C's Pass 3) reads no_events.
 function isNeverExceeded(panel: TrendsPanel, fleet: FleetAnalysis): boolean {
-  if (!panel.limit_id) return false;
+  if (!panel.limit_id && !panel.cas_id) return false;
   return panel.metrics.every((m) => fleet.metrics[m.metric_id]?.readiness?.kind === "no_events");
 }
 

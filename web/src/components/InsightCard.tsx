@@ -1,5 +1,7 @@
 import { useState } from "react";
-import type { Insight, InsightEvent } from "../types/contract";
+import type { CasInsightEvent, Insight, InsightEvent } from "../types/contract";
+import { isCasInsightEvent } from "../types/contract";
+import { casEventRowText } from "../lib/casEvent";
 import { SeverityBadge } from "./SeverityBadge";
 import { NoteSection, NoteToggle } from "./NoteEditor";
 
@@ -28,10 +30,12 @@ function fmtDuration(s: number): string {
 // each zooming the chart to its own window (evidence[i]). `index` is the
 // event's position in insight.events/evidence, not its position in this
 // (possibly phase-filtered) list — onEventClick keys off the former.
+// A CAS event row (Spec 03 §5.2 v0.14) reads like a limit row but says
+// the alert, phase and class instead of a value and excess.
 function EventRows({
   items, unit, limitType, onEventClick,
 }: {
-  items: { event: InsightEvent; index: number }[];
+  items: { event: InsightEvent | CasInsightEvent; index: number }[];
   unit?: string;
   limitType?: "MIN" | "MAX";
   onEventClick?: (index: number) => void;
@@ -61,11 +65,15 @@ function EventRows({
           }}
         >
           <span>{fmtClock(ev.elapsed_s)}</span>
-          <span>
-            {ev.observed_value.toFixed(1)}
-            {unit ? ` ${unit}` : ""}
-            {ev.excess !== null && ` (${ev.excess.toFixed(1)} ${limitType === "MIN" ? "under" : "over"})`}
-          </span>
+          {isCasInsightEvent(ev) ? (
+            <span style={{ fontFamily: "inherit" }}>{casEventRowText(ev, { withDuration: false })}</span>
+          ) : (
+            <span>
+              {ev.observed_value.toFixed(1)}
+              {unit ? ` ${unit}` : ""}
+              {ev.excess !== null && ` (${ev.excess.toFixed(1)} ${limitType === "MIN" ? "under" : "over"})`}
+            </span>
+          )}
           <span>{fmtDuration(ev.duration_s)}</span>
         </div>
       ))}
@@ -104,11 +112,8 @@ export function InsightCard({
   // Spec 09 §12.1: "Filter this limit…" / "Edit filter…" on limit cards.
   filterAction?: { label: string; onClick: () => void };
   // A second, explicit destination alongside the default "View evidence"
-  // zoom — e.g. ENGINE ECU's "See in ECU page →", which jumps to and
-  // highlights the matching run there instead of zooming this flight's
-  // own chart (the primary click's job since evidence[0] became a
-  // series_window). Caller decides when this applies; this component
-  // just renders it next to filterAction.
+  // zoom. Caller decides when this applies; this component just renders
+  // it next to filterAction.
   secondaryAction?: { label: string; onClick: () => void };
   // Spec 14 §7.3 (v0.4): "edit trigger ↓" — jumps to this topic's card in
   // Analysis and opens its triggers disclosure. The editor lives there

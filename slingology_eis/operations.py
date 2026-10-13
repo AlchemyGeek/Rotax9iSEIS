@@ -21,7 +21,7 @@ from collections import Counter
 import pandas as pd
 
 from . import __version__
-from .cas import ECU_CLASSES, extract_engine_ecu_runs, parse_cas, takeoff_not_detected
+from .cas import CAS_EVENT_CLASSES, CLASSIFIED_CAS_IDS, ECU_CLASSES, extract_engine_ecu_runs, parse_cas, takeoff_not_detected
 from .contract import CONTRACT_VERSION, Diagnostic, Provenance, content_hash, engine_profile_ref
 from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
 from .limits import check_exceedances, engine_running_s, limit_catalog, per_limit_metrics
@@ -64,6 +64,8 @@ def _elapsed_s(t, t0) -> Optional[float]:
 def _serialize_exceedance(e, t0) -> dict:
     start_utc = e.started_at.isoformat()
     return {
+        # Spec 01 §8.6 (v0.21): one event list, `source` says which kind.
+        "source": "limit",
         # Spec 09 §11.1: limit_id identifies the limit (stable across
         # engine versions); event_id identifies this event within the
         # flight, for annotations and drill-down.
@@ -78,6 +80,40 @@ def _serialize_exceedance(e, t0) -> dict:
         "duration_s": e.duration_s,
         "note": e.note,
     }
+
+
+def cas_metric_id(cas_id: str) -> str:
+    """Per-flight / fleet metric id for a classified CAS alert's event
+    count, e.g. "cas_engine_ecu_events"."""
+    return "cas_" + cas_id.lower().replace(" ", "_") + "_events"
+
+
+def _cas_event_from_run(r: dict, t0) -> dict:
+    """A GROUND or IN_FLIGHT ENGINE ECU run as an event in the flight's
+    event list (`exceedances`, `source: "cas"`) — Spec 01 §8.6 v0.21."""
+    start_utc = r["start_time"].isoformat()
+    ev = {
+        "source": "cas",
+        "cas_id": "ENGINE ECU",
+        "event_id": f"ENGINE ECU@{start_utc}",
+        "classification": r["classification"],
+        "phase": r["phase"],
+        "phase_uncertain": bool(r["phase_uncertain"]),
+        "start_utc": start_utc,
+        "elapsed_s": _elapsed_s(r["start_time"], t0),
+        "duration_s": r["duration_s"],
+        "context": {
+            "rpm": r.get("running_rpm"),
+            "ias_kt": r.get("mean_ias_kt"),
+            "oil_nan_frac": r.get("oil_nan_frac"),
+            "co_alerts": list(r.get("co_alerts") or []),
+        },
+    }
+    if r.get("not_lane_check_reason"):
+        ev["not_lane_check_reason"] = r["not_lane_check_reason"]
+        if r["not_lane_check_reason"] in ("rpm_below_band", "rpm_above_band") and r.get("lane_check_band_rpm"):
+            ev["lane_check_band_rpm"] = [float(v) for v in r["lane_check_band_rpm"]]
+    return ev
 
 
 def _serialize_cas_event(e, t0) -> dict:
@@ -270,6 +306,19 @@ def analyze_flight(
     # know whether this flight's takeoff went undetected.
     ecu = extract_engine_ecu_runs(df, engine_config=engine_config, takeoff_not_detected=takeoff_missing)
     ecu_runs = [_serialize_ecu_run(r, t0) for r in ecu.runs]
+    # Spec 01 §8.6 (v0.21): GROUND/IN_FLIGHT runs join the same event list
+    # as limit exceedances. Ground-context classes never become events.
+    exceedances.extend(_cas_event_from_run(r, t0) for r in ecu.runs if r["classification"] in CAS_EVENT_CLASSES)
+    # Spec 12 §5.8 (v0.10): per-flight event count per classified CAS
+    # alert, the base of its Trends frequency panel — present on every
+    # flight that logs CAS at all, so "eligible flight" means the same
+    # thing as for a limit's time_above_pct.
+    for cas_id in CLASSIFIED_CAS_IDS:
+        mid = cas_metric_id(cas_id)
+        if "cas_alert" in channels_present:
+            metrics[mid] = {"id": mid, "value": sum(1 for e in exceedances if e.get("cas_id") == cas_id)}
+        else:
+            metrics[mid] = {"id": mid, "value": None, "missing": "CHANNEL_MISSING"}
 
     quality: list[Diagnostic] = []
     if takeoff_missing:
@@ -784,6 +833,7 @@ def update_fleet(
         BASELINE_METRIC_DEFS
         + [("takeoff_map_residual_inhg", "takeoff_map_residual_inhg", None)]
         + limit_baseline_metric_defs([lim for fa in flight_analyses for lim in fa.limits])
+        + [(cas_metric_id(c), cas_metric_id(c), None) for c in CLASSIFIED_CAS_IDS]
     )
     # Pass 1: baseline/trend/points/outliers for every metric. A z-mode
     # filter's own reference validity (Spec 09 §7.3) needs a fleet's
@@ -924,15 +974,26 @@ def update_fleet(
     min_flights = baseline_config.get("recent_window_min_flights", DEFAULT_BASELINE_CONFIG["recent_window_min_flights"])
     max_flights = baseline_config.get("recent_window_max_flights", DEFAULT_BASELINE_CONFIG["recent_window_max_flights"])
     frequency_delta = baseline_config.get("frequency_delta", _filters.FREQUENCY_DELTA)
+    cas_events_by_flight = {fa.flight_id: [e for e in fa.exceedances if e.get("source") == "cas"]
+                            for fa in flight_analyses}
+    # Targets for the pass: every limit, and (Spec 12 v0.10 §3.7 G1) every
+    # classified CAS alert — whose one metric is its per-flight event count
+    # and whose frequency is the panel's only signal (G2).
+    freq_targets = []
     for lid, limit in limits_by_id.items():
         ob = _filters.is_overboost(limit)
         full_key = f"limit_{lid}_block_s" if ob else f"limit_{lid}_time_above_pct"
-        if full_key not in metrics_out:
-            continue
         sibling_keys = [k for k in (
             f"limit_{lid}_peak_excess", f"limit_{lid}_time_above_pct", f"limit_{lid}_block_s",
             "overboost_time" if ob else None,
         ) if k and k in metrics_out]
+        freq_targets.append((lid, limit, ob, full_key, sibling_keys))
+    for cas_id in CLASSIFIED_CAS_IDS:
+        key = cas_metric_id(cas_id)
+        freq_targets.append((_filters.cas_target_key(cas_id), _filters.cas_pseudo_limit(cas_id), False, key, [key]))
+    for lid, limit, ob, full_key, sibling_keys in freq_targets:
+        if full_key not in metrics_out:
+            continue
         filtered = lid in valid_filters
 
         points = metrics_out[full_key]["points"]
@@ -961,6 +1022,16 @@ def update_fleet(
             {"flight_id": p["flight_id"], "date": p["date"], "x": p["x"], "has_event": has_event(p.get("value"))}
             for p in _chronological([p for p in points if p.get("value") is not None])
         ]
+        if _filters.is_cas(limit):
+            # Spec 12 v0.10 §8.4: a CAS tick's tooltip names each event's
+            # class and, when set, why it isn't a lane check.
+            for ev in events:
+                if ev["has_event"]:
+                    ev["cas_events"] = [
+                        {"classification": e["classification"], "phase": e["phase"], "duration_s": e["duration_s"],
+                         **({"not_lane_check_reason": e["not_lane_check_reason"]} if e.get("not_lane_check_reason") else {})}
+                        for e in cas_events_by_flight.get(ev["flight_id"], []) if e.get("cas_id") == limit["cas_id"]
+                    ]
 
         for k in sibling_keys:
             metrics_out[k]["frequency"] = freq
@@ -1531,9 +1602,32 @@ def build_trends_panels(
             "_most_recent_hours": most_recent_hours,
         }
 
+    # Spec 12 v0.10 §3.7 G1–G3: one generated panel per classified CAS
+    # alert, from its per-flight event count — the event strip and the
+    # frequency header only (G2), no excess metric. Like a limit panel it
+    # is present whenever its eligible flights exist; with no events and no
+    # filter its readiness is no_events and the page groups it with the
+    # never-exceeded limits (G3).
+    _CAS_PHRASING = {
+        "higher": "occurring on more flights than it used to",
+        "lower": "occurring on fewer flights than it used to",
+    }
+    for cas_id in CLASSIFIED_CAS_IDS:
+        key = cas_metric_id(cas_id)
+        entry = fleet.metrics.get(key)
+        if not entry or not entry["baseline"]["n"]:
+            continue
+        target = _filters.cas_target_key(cas_id)
+        with_events = [p["x"] for p in entry.get("points", []) if p.get("value") and p.get("x") is not None]
+        panels[target] = {
+            "panel": target, "cas_id": cas_id, "filtered": target in filtered_limit_ids,
+            "metrics": [{"metric_id": key, "role": "primary", "worsening": "higher", "phrasing": _CAS_PHRASING}],
+            "_most_recent_hours": max(with_events, default=-1.0),
+        }
+
     # §8.2 panel order: the four register-declared panels in their fixed
-    # order, then one entry per limit — filtered first, then by most
-    # recent exceedance (descending).
+    # order, then one entry per limit or CAS alert — filtered first, then
+    # by most recent exceedance (descending).
     fixed_order = {"cylinder_balance": 0, "thermal": 1, "boost_power": 2, "fuel": 3}
 
     def _sort_key(p):
@@ -1623,11 +1717,46 @@ def _event_id(e: dict) -> str:
 
 
 def _events_by_limit(exceedances: list[dict]) -> dict[str, list[dict]]:
-    """Exceedances grouped by limit, groups in order of each limit's first
-    event (exceedances are already sorted by start time)."""
+    """Events grouped by target — a limit_id, or "cas:<cas_id>" for a CAS
+    event (Spec 09 v0.18) — groups in order of each target's first event
+    (limit events are sorted by start time; CAS events follow them)."""
     out: dict[str, list[dict]] = {}
     for e in exceedances:
-        out.setdefault(exceedance_limit_id(e), []).append(e)
+        out.setdefault(_filters.event_target_key(e), []).append(e)
+    return out
+
+
+def _cas_event_window(e: dict) -> dict:
+    """series_window evidence for a CAS event — rpm and oil pressure, the
+    pair a CAN dropout or an engine cut shows up in."""
+    elapsed_s, duration_s = e.get("elapsed_s") or 0, e["duration_s"]
+    pad = max(duration_s * 0.5, 15)
+    return {
+        "kind": "series_window",
+        "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
+        "start_s": max(0, elapsed_s - pad),
+        "end_s": elapsed_s + duration_s + pad,
+        "marker_start_s": elapsed_s,
+        "marker_end_s": elapsed_s + max(duration_s, 1),
+    }
+
+
+def _cas_event_summary(e: dict, suppressed_by: Optional[str] = None) -> dict:
+    out = {
+        "event_id": e["event_id"],
+        "start_utc": e["start_utc"],
+        "elapsed_s": e["elapsed_s"],
+        "duration_s": e["duration_s"],
+        "classification": e["classification"],
+        "phase": e["phase"],
+        "phase_uncertain": e["phase_uncertain"],
+        "rpm": e["context"].get("rpm"),
+        "suppressed_by": suppressed_by,
+    }
+    if e.get("not_lane_check_reason"):
+        out["not_lane_check_reason"] = e["not_lane_check_reason"]
+    if e.get("lane_check_band_rpm"):
+        out["lane_check_band_rpm"] = e["lane_check_band_rpm"]
     return out
 
 
@@ -1890,7 +2019,7 @@ def evaluate_insights(
     # Spec 09: limits resolve through the catalogue the flight was checked
     # against. Empty for a pre-Spec-09 analysis — topics then fall back to
     # the legacy numeric thresholds until the flight is re-analysed.
-    limits_by_id = {lim["id"]: lim for lim in flight_analysis.limits}
+    limits_by_id = _filters.with_cas_targets({lim["id"]: lim for lim in flight_analysis.limits})
     events_by_limit = _events_by_limit(flight_analysis.exceedances)
 
     # Spec 09 §7: classify each filtered limit's events. `unsuppressed`
@@ -1927,7 +2056,7 @@ def evaluate_insights(
         a diagnostic rather than silently comparing against nothing.
         """
         refs = r_data.get(topic_id, {}).get("limit_refs") or []
-        if not refs or not limits_by_id:
+        if not refs or not flight_analysis.limits:
             return None, None
         ref = refs[0]
         om_limit = limits_by_id.get(ref)
@@ -2162,62 +2291,25 @@ def evaluate_insights(
     # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time/map_at_takeoff
     # above: this topic's own insights only get built when enabled.
     if r_data.get("engine_ecu_inflight", {}).get("enabled", True):
-        # Spec 01 §8.5 (v0.19): fires only on an IN_FLIGHT run — the
-        # topic's events are exactly those runs, straight from
-        # FlightAnalysis.ecu_runs.
-        raw = topics.engine_ecu_inflight(flight_analysis.ecu_runs)
-
-        def _ecu_insight(e: dict) -> dict:
-            iid = content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight",
-                                "start_utc": e.get("start_utc"), "duration_s": e.get("duration_s")})[:16]
-            elapsed_s = e.get("elapsed_s")
-            duration_s = e.get("duration_s") or 0
-            # Zoom to the moment on this flight's own chart, like every other
-            # insight (RPM + oil pressure — the pair a CAN-dropout/oil-NaN
-            # signature actually shows up in). The ecu_run reference stays as a
-            # second evidence entry so "See in ECU page" can still jump to and
-            # highlight the matching run there (ECU.tsx's runRefKey) — a
-            # deliberate second destination, not a replaced one.
-            evidence = []
-            if elapsed_s is not None:
-                pad = max(duration_s * 0.5, 15)
-                evidence.append({
-                    "kind": "series_window",
-                    "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
-                    "start_s": max(0, elapsed_s - pad),
-                    "end_s": elapsed_s + duration_s + pad,
-                    # The event's own, unpadded bounds — a marker at the exact
-                    # moment, distinct from the padded window above (padding is
-                    # for zoom context; a one-row alert would otherwise be
-                    # invisible inside its own ~30s of surrounding padding).
-                    "marker_start_s": elapsed_s,
-                    "marker_end_s": elapsed_s + max(duration_s, 1),
-                })
-            evidence.append({"kind": "ecu_run", "ref": str(e.get("start_utc"))})
-            d = {
-                "id": iid,
-                "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
-                "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
-                "message": {"text": _ecu_inflight_text(e)},
-                "evidence": evidence,
-                "confidence": _confidence(0),
-            }
-            if iid in notes_by_insight_id:
-                d["note"] = notes_by_insight_id[iid]
-            return d
-
-        ecu_insights = [_ecu_insight(e) for e in raw["events"]]
-        ecu_topic = {
+        # Spec 01 §8.5 (v0.21) / Spec 10 §4.1 (D19): a referencing topic.
+        # The GROUND / IN_FLIGHT runs are CAS events owned by
+        # limit_exceedances; this topic emits no insight — its analysis
+        # line gives the class counts and the lane-check summary, and its
+        # limit_refs (resolved below) point at the CAS insight, mirroring
+        # its badge as overboost_time does for its limit.
+        raw = topics.engine_ecu_inflight(
+            flight_analysis.ecu_runs,
+            sub_threshold_blips=flight_analysis.ecu_sub_threshold_blips,
+            lane_check=flight_analysis.ecu_lane_check,
+        )
+        topics_out.append({
             "topic_id": "engine_ecu_inflight",
             "analysis": {"text": raw["analysis"]},
-            "insights": ecu_insights,
-            "metric_ids": ["inflight_ecu_count"],
+            "insights": [],
+            "metric_ids": ["inflight_ecu_count", "ground_ecu_count"],
             "enabled": True,
-            # Spec 14 §7.3 — this trigger has no numeric setting (condition
-            # "any_inflight"); met is simply whether it fired on this flight.
-            "trigger_status": [{"type": "threshold", "met": len(ecu_insights) > 0, "detail": None}],
-        }
-        topics_out.append(ecu_topic)
+            "trigger_status": [],
+        })
     else:
         topics_out.append(_disabled_topic("engine_ecu_inflight"))
 
@@ -2239,7 +2331,7 @@ def evaluate_insights(
         groups = []
         for lid, evs in events_by_limit.items():
             first = evs[0]
-            lim = limits_by_id.get(lid) or {
+            lim = limits_by_id.get(lid) if first.get("source") == "cas" else limits_by_id.get(lid) or {
                 "id": lid, "label": first["label"], "unit": first["unit"], "limit_type": first["limit_type"],
                 "limit_value": first["limit_value"], "severity": first["severity"],
             }
@@ -2268,22 +2360,44 @@ def evaluate_insights(
                 severity = "watch" if g["limit"].get("severity") == "WARNING" else "info"
             else:
                 severity = _severity_for(rules, "limit_exceedances", ins["trigger"])
-            limit_insight = {
-                "id": iid,
-                "topic_id": "limit_exceedances",
-                "rule_id": "limit_exceedances.threshold",
-                "trigger": ins["trigger"],
-                "severity": severity,
-                "message": {"text": ins["text"]},
-                "evidence": [_event_window(e) for e in g["events"]],
-                "confidence": _confidence(0),
-                "limit_id": g["limit_id"],
-                "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
-                # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
-                # can say up front when it can't.
-                "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
-                               if g["limit_id"] in limits_by_id else False),
-            }
+            if _filters.is_cas(g["limit"]):
+                # Spec 09 v0.18 §10.1 / Spec 10 §4.1: a CAS target's insight —
+                # same shape as a limit's; its severity is the rule set's
+                # display label (`cas`), nothing branches on it.
+                cas_sev = (r_data.get("limit_exceedances", {}).get("cas") or {}).get("severity", "watch")
+                limit_insight = {
+                    "id": iid,
+                    "topic_id": "limit_exceedances",
+                    "rule_id": "limit_exceedances.cas",
+                    "trigger": ins["trigger"],
+                    "severity": "info" if kind == "filtered" else cas_sev,
+                    "message": {"text": ins["text"]},
+                    "evidence": ([_cas_event_window(e) for e in g["events"]]
+                                 + [{"kind": "cas_event", "ref": e["event_id"]} for e in g["events"]]),
+                    "confidence": _confidence(0),
+                    "source": "cas",
+                    "cas_id": g["limit"]["cas_id"],
+                    "events": [_cas_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+                    "filterable": True,
+                }
+            else:
+                limit_insight = {
+                    "id": iid,
+                    "topic_id": "limit_exceedances",
+                    "rule_id": "limit_exceedances.threshold",
+                    "trigger": ins["trigger"],
+                    "severity": severity,
+                    "message": {"text": ins["text"]},
+                    "evidence": [_event_window(e) for e in g["events"]],
+                    "confidence": _confidence(0),
+                    "source": "limit",
+                    "limit_id": g["limit_id"],
+                    "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+                    # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
+                    # can say up front when it can't.
+                    "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
+                                   if g["limit_id"] in limits_by_id else False),
+                }
             if kind != "exceedance":
                 limit_insight["filter"] = {"filter_id": g["filter"]["id"],
                                            "outcome": "breach" if kind == "breach" else "suppressed"}
@@ -2326,13 +2440,29 @@ def evaluate_insights(
             continue
         resolved = []
         for lid in refs:
-            candidates = [li for li in limit_insights if li["limit_id"] == lid]
+            candidates = [li for li in limit_insights if li.get("limit_id") == lid]
             best = max(
                 candidates,
                 key=lambda li: 0 if (li.get("filter") or {}).get("outcome") == "suppressed" else 1,
             ) if candidates else None
             resolved.append({"limit_id": lid, "insight_id": best["id"] if best else None})
         t["limit_refs"] = resolved
+
+    # Spec 01 §8.5 (v0.21): engine_ecu_inflight references its CAS events
+    # the same way — one entry per classified CAS alert, resolved to this
+    # flight's insight for it (breach preferred over filtered), or None.
+    for t in topics_out:
+        if t["topic_id"] != "engine_ecu_inflight" or not t.get("enabled", True):
+            continue
+        refs = []
+        for cas_id in CLASSIFIED_CAS_IDS:
+            candidates = [li for li in limit_insights if li.get("cas_id") == cas_id]
+            best = max(
+                candidates,
+                key=lambda li: 0 if (li.get("filter") or {}).get("outcome") == "suppressed" else 1,
+            ) if candidates else None
+            refs.append({"cas_id": cas_id, "insight_id": best["id"] if best else None})
+        t["limit_refs"] = refs
 
     # header_warnings carries the flight's own quality diagnostics (e.g.
     # PHASE_NO_CRUISE — the "no stable cruise phase" banner the old text

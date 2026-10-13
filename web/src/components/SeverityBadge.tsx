@@ -24,8 +24,7 @@ const SIZES = {
 };
 
 // One lookup table for severity -> color/shape, reused everywhere
-// severity appears (insight list, Analysis cards, chart markers, ECU
-// table) — Spec 03 §6.1: "a pilot should learn the color meaning once."
+// severity appears (insight list, Analysis cards, chart markers) — Spec 03 §6.1: "a pilot should learn the color meaning once."
 export function SeverityBadge({ severity, size = "md" }: { severity: InsightSeverity; size?: "sm" | "md" }) {
   const s = SIZES[size];
   return (

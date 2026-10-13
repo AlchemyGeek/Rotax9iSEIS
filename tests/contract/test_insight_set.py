@@ -81,7 +81,7 @@ def test_no_flight_has_more_than_one_insight_per_limit(real_flight_analyses, rea
     for fa in real_flight_analyses:
         iset = evaluate_insights(fa, real_fleet_analysis, rules)
         limit_topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
-        limit_ids = [i["limit_id"] for i in limit_topic["insights"]]
+        limit_ids = [i["limit_id"] for i in limit_topic["insights"] if i.get("source") == "limit"]
         assert len(limit_ids) == len(set(limit_ids)), (fa.flight_id, limit_ids)
 
 
@@ -447,7 +447,7 @@ def test_one_limit_insight_per_limit_matching_exceedances(real_flight_analyses, 
     for fa in real_flight_analyses:
         iset = evaluate_insights(fa, real_fleet_analysis, rules)
         topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
-        limit_ids = [i["limit_id"] for i in topic["insights"]]
+        limit_ids = [i["limit_id"] for i in topic["insights"] if i.get("source") == "limit"]
         assert len(limit_ids) == len(set(limit_ids)), fa.flight_id
         events = sorted(e["event_id"] for i in topic["insights"] for e in i["events"])
         assert events == sorted(e["event_id"] for e in fa.exceedances), fa.flight_id
@@ -469,12 +469,12 @@ def test_topic_thresholds_match_limit_events(real_flight_analyses, real_fleet_an
             if not has_baseline(topic_id):
                 continue
             fired = any(i["trigger"] == "threshold" for i in by_topic[topic_id]["insights"])
-            assert fired == any(e["limit_id"] == limit_id for e in fa.exceedances), (fa.flight_id, topic_id)
+            assert fired == any(e.get("limit_id") == limit_id for e in fa.exceedances), (fa.flight_id, topic_id)
         # v0.12 (Spec 09 §6.4/§10.3): a block past the limit is an ordinary
         # limit_exceedances event now, not an overboost_time insight —
         # overboost_time only ever reports a close call for the same flight.
         ob_max = fa.metrics.get("overboost_max_block_s", {}).get("value")
-        ob_exceeded_event = any(e["limit_id"] == "overboost" for e in fa.exceedances)
+        ob_exceeded_event = any(e.get("limit_id") == "overboost" for e in fa.exceedances)
         assert ob_exceeded_event == (ob_max is not None and ob_max > 300), fa.flight_id
         ob_time_insights = by_topic["overboost_time"]["insights"]
         assert all("Close call" in i["message"]["text"] for i in ob_time_insights), fa.flight_id
@@ -576,8 +576,8 @@ def test_topic_card_enabled_and_structural_trigger_status_on_real_flights(real_f
     """Spec 14 §7.3 — every evaluated topic on a real flight carries
     `enabled` and a non-empty trigger_status for topics with configured
     triggers (overboost_time ships with none, so its list may be empty);
-    engine_ecu_inflight/limit_exceedances' structural triggers report met
-    as exactly whether they fired."""
+    limit_exceedances' structural trigger reports met as exactly whether it
+    fired; engine_ecu_inflight has none (Spec 10 D19)."""
     if not real_flight_analyses:
         pytest.skip("no local flight logs")
     fa = real_flight_analyses[0]
@@ -587,9 +587,10 @@ def test_topic_card_enabled_and_structural_trigger_status_on_real_flights(real_f
         assert isinstance(topic["enabled"], bool), topic_id
         assert isinstance(topic["trigger_status"], list), topic_id
 
+    # Spec 01 v0.21 / Spec 10 D19: a referencing topic — no trigger, no
+    # insight; its GROUND/IN_FLIGHT runs are limit_exceedances' CAS events.
     ecu = by_topic["engine_ecu_inflight"]
-    ecu_status = ecu["trigger_status"][0]
-    assert ecu_status["met"] == (len(ecu["insights"]) > 0)
+    assert ecu["trigger_status"] == [] and ecu["insights"] == []
 
     lim = by_topic["limit_exceedances"]
     lim_status = lim["trigger_status"][0]

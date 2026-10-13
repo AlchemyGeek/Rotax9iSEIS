@@ -53,25 +53,60 @@
     },
     "exceedances": {
       "type": "array",
+      "description": "Spec 01 §8.6 (v0.21): the flight's one event list — OM-limit exceedances (source: limit) and classified CAS alert occurrences (source: cas).",
       "items": {
-        "type": "object",
-        "required": ["param", "label", "unit", "severity", "limit_type", "limit_value", "observed_value", "start_utc", "elapsed_s", "duration_s"],
-        "properties": {
-          "param": { "type": "string" },
-          "label": { "type": "string" },
-          "unit": { "type": "string" },
-          "severity": { "type": "string" },
-          "limit_type": { "type": "string", "enum": ["MIN", "MAX"] },
-          "limit_value": { "type": "number" },
-          "observed_value": { "type": "number" },
-          "start_utc": { "type": "string" },
-          "elapsed_s": { "type": ["number", "null"] },
-          "duration_s": { "type": "number" },
-          "note": { "type": "string" },
-          "limit_id": { "type": ["string", "null"], "description": "Spec 09 §6.1: the limit's stable id." },
-          "event_id": { "type": "string", "description": "Spec 09 §11.1: limit_id@start_utc." },
-          "excess": { "type": ["number", "null"], "description": "Spec 09 §4: how far past the limit, in engine units." }
-        }
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["source", "param", "label", "unit", "severity", "limit_type", "limit_value", "observed_value", "start_utc", "elapsed_s", "duration_s"],
+            "properties": {
+              "source": { "const": "limit" },
+              "param": { "type": "string" },
+              "label": { "type": "string" },
+              "unit": { "type": "string" },
+              "severity": { "type": "string" },
+              "limit_type": { "type": "string", "enum": ["MIN", "MAX"] },
+              "limit_value": { "type": "number" },
+              "observed_value": { "type": "number" },
+              "start_utc": { "type": "string" },
+              "elapsed_s": { "type": ["number", "null"] },
+              "duration_s": { "type": "number" },
+              "note": { "type": "string" },
+              "limit_id": { "type": ["string", "null"], "description": "Spec 09 §6.1: the limit's stable id." },
+              "event_id": { "type": "string", "description": "Spec 09 §11.1: limit_id@start_utc." },
+              "excess": { "type": ["number", "null"], "description": "Spec 09 §4: how far past the limit, in engine units." }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["source", "cas_id", "event_id", "classification", "phase", "phase_uncertain", "start_utc", "elapsed_s", "duration_s", "context"],
+            "additionalProperties": false,
+            "properties": {
+              "source": { "const": "cas" },
+              "cas_id": { "type": "string", "enum": ["ENGINE ECU"] },
+              "event_id": { "type": "string", "description": "cas_id@start_utc — stable for annotations and filters." },
+              "classification": { "type": "string", "enum": ["GROUND", "IN_FLIGHT"] },
+              "phase": { "type": "string" },
+              "phase_uncertain": { "type": "boolean" },
+              "start_utc": { "type": "string" },
+              "elapsed_s": { "type": ["number", "null"] },
+              "duration_s": { "type": "number" },
+              "context": {
+                "type": "object",
+                "required": ["rpm", "ias_kt", "oil_nan_frac", "co_alerts"],
+                "additionalProperties": false,
+                "properties": {
+                  "rpm": { "type": ["number", "null"], "description": "Mean rpm over the run's engine-running rows." },
+                  "ias_kt": { "type": ["number", "null"] },
+                  "oil_nan_frac": { "type": ["number", "null"] },
+                  "co_alerts": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "unpaired", "too_long", "moving"] },
+              "lane_check_band_rpm": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "The profile's lane-check rpm band [min, max]; present when not_lane_check_reason is an rpm miss, so a row can name it." }
+            }
+          }
+        ]
       }
     },
     "cas_events": {

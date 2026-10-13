@@ -278,7 +278,9 @@ export function Trends() {
               </span>
             )}
             {panel.filtered && (
-              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--accent)" }}>filtered</span>
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--accent)" }}>
+                {panel.cas_id && panel.filter_max_event_s != null ? `events ≤ ${panel.filter_max_event_s} s filtered` : "filtered"}
+              </span>
             )}
             {panelBadgeSummary && (
               <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)", border: "1px solid var(--border)", borderRadius: 999, padding: "1px 6px" }}>
@@ -339,10 +341,14 @@ export function Trends() {
                       <EventStrip
                         events={metric.events}
                         frequency={metric.frequency}
+                        verb={panel.cas_id ? "occurred" : "exceeded"}
                         highlightFlight={highlightFlight}
                         onOpenFlight={(id) => navigate(`/flights/${id}`)}
                       />
                     )}
+                    {/* Spec 12 v0.10 G2: a CAS panel is the event strip
+                        and its frequency header only — no magnitude. */}
+                    {!panel.cas_id && (
                     <TrendsPanelStrip
                       metricId={m.metric_id}
                       metric={metric}
@@ -366,6 +372,7 @@ export function Trends() {
                       onPreviewUnpin={() => client.previewClearReference(m.metric_id)}
                       pinBusy={pinBusy === m.metric_id}
                     />
+                    )}
                     {panel.panel === "boost_power" && m.metric_id === "takeoff_map_residual_inhg" && takeoffMapModel && (
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
                         takeoff-MAP model: n={String(takeoffMapModel.n)} &middot; R&sup2;={String(takeoffMapModel.r_squared)}

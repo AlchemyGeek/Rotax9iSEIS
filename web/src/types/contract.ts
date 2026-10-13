@@ -32,7 +32,31 @@ export interface Phase {
   end_s: number;
 }
 
+// Spec 01 §8.6 (v0.21): FlightAnalysis.exceedances is the flight's one
+// event list — OM-limit exceedances (source "limit") and classified CAS
+// alert occurrences (source "cas"). Narrow on `source` before reading
+// limit fields.
+export type FlightEvent = ExceedanceEvent | CasEvent;
+
+export type NotLaneCheckReason = "rpm_below_band" | "rpm_above_band" | "unpaired" | "too_long" | "moving";
+
+export interface CasEvent {
+  source: "cas";
+  cas_id: string;
+  event_id: string;
+  classification: "GROUND" | "IN_FLIGHT";
+  phase: string;
+  phase_uncertain: boolean;
+  start_utc: string;
+  elapsed_s: number | null;
+  duration_s: number;
+  context: { rpm: number | null; ias_kt: number | null; oil_nan_frac: number | null; co_alerts: string[] };
+  not_lane_check_reason?: NotLaneCheckReason;
+  lane_check_band_rpm?: [number, number];
+}
+
 export interface ExceedanceEvent {
+  source?: "limit"; // absent on analyses written before engine 0.29
   param: string;
   label: string;
   unit: string;
@@ -53,6 +77,9 @@ export interface ExceedanceEvent {
 // Spec 09: one entry of the engine profile's limit catalogue, carried on
 // FlightAnalysis.limits.
 export interface LimitDef {
+  // A CAS target's pseudo entry (Spec 09 v0.18): kind "cas", no limit value.
+  kind?: "cas";
+  cas_id?: string;
   id: string;
   param: string;
   label: string;
@@ -104,9 +131,13 @@ export interface FlightAnalysis {
   };
   phases: Phase[];
   metrics: Record<string, MetricValue>;
-  exceedances: ExceedanceEvent[];
+  exceedances: FlightEvent[];
   cas_events: unknown[];
-  ecu_runs: unknown[];
+  // Spec 01 §8.6: the classifier's full output, every class — the CAS
+  // event's expanded view lists it for research.
+  ecu_runs: EcuRunRecord[];
+  ecu_sub_threshold_blips?: number;
+  ecu_lane_check?: "both" | "single" | "none";
   quality: Diagnostic[];
   provenance: Provenance;
   available_channels: string[];
@@ -121,7 +152,7 @@ export type Evidence =
   | { kind: "metric"; metric_id: string }
   | { kind: "baseline_point"; metric_id: string; flight_id: string }
   | { kind: "series_window"; channels: string[]; start_s: number; end_s: number; marker_start_s?: number; marker_end_s?: number }
-  | { kind: "exceedance" | "ecu_run"; ref: string };
+  | { kind: "exceedance" | "cas_event"; ref: string };
 
 // comparison (Spec 01 §8.4 v0.13, R8): only baseline_deviation insights
 // carry one — which leave-one-out baseline the flight was actually
@@ -143,13 +174,36 @@ export interface Insight {
   evidence: Evidence[];
   confidence: { level: string; n: number };
   note?: string;
-  // Spec 09 §10.1/§11.3 — limit_exceedances insights: one per limit per
-  // flight, carrying its events (evidence[i] is events[i]'s window).
+  // Spec 09 §10.1/§11.3 — limit_exceedances insights: one per target per
+  // flight (a limit, or from v0.18 a classified CAS alert), carrying its
+  // events (evidence[i] is events[i]'s window).
+  source?: "limit" | "cas";
   limit_id?: string;
+  cas_id?: string;
   filter?: { filter_id: string; outcome: "suppressed" | "breach" };
-  events?: InsightEvent[];
+  events?: (InsightEvent | CasInsightEvent)[];
   // Spec 09 §6.3: false when this limit can't be filtered (the editor says why).
   filterable?: boolean;
+}
+
+// A CAS event as carried on its limit_exceedances insight — no observed
+// value or excess (Spec 01 v0.21).
+export interface CasInsightEvent {
+  event_id: string;
+  start_utc?: string;
+  elapsed_s: number | null;
+  duration_s: number;
+  classification: "GROUND" | "IN_FLIGHT";
+  phase: string;
+  phase_uncertain: boolean;
+  rpm?: number | null;
+  not_lane_check_reason?: NotLaneCheckReason;
+  lane_check_band_rpm?: [number, number];
+  suppressed_by: "duration" | null;
+}
+
+export function isCasInsightEvent(e: InsightEvent | CasInsightEvent): e is CasInsightEvent {
+  return "classification" in e;
 }
 
 export interface InsightEvent {
@@ -181,7 +235,8 @@ export interface TopicResult {
   // this flight's limit_exceedances insight for that limit, or null if
   // none fired. Drives the mirrored badge (Spec 03 §5.2); never an
   // insight of its own.
-  limit_refs?: { limit_id: string; insight_id: string | null }[];
+  // engine_ecu_inflight's references name its CAS alert instead (v0.21).
+  limit_refs?: { limit_id?: string; cas_id?: string; insight_id: string | null }[];
   // Spec 14 §7.3 — the topic's enabled flag from rules/active.json and
   // its triggers' met/detail status, for the topic card's disclosure.
   enabled?: boolean;
@@ -409,6 +464,9 @@ export interface EventTick {
   date: string;
   x: number | null;
   has_event: boolean;
+  // Spec 12 v0.10 §8.4: on a CAS alert's metric, the flight's events for
+  // the tick tooltip.
+  cas_events?: { classification: "GROUND" | "IN_FLIGHT"; phase: string; duration_s: number; not_lane_check_reason?: NotLaneCheckReason }[];
 }
 
 export interface FleetMetric {
@@ -483,9 +541,12 @@ export interface TrendsDeclaration {
 // default for a generated limit panel, R3.2) — the web never reads
 // register.json directly.
 export interface TrendsPanel {
-  panel: string; // "cylinder_balance" | "thermal" | "boost_power" | "fuel" | "limit:<id>"
+  panel: string; // "cylinder_balance" | "thermal" | "boost_power" | "fuel" | "limit:<id>" | "cas:<cas_id>"
   limit_id?: string; // present only for a generated "limit:<id>" panel
+  cas_id?: string; // present only for a generated "cas:<cas_id>" panel (Spec 12 v0.10)
   filtered?: boolean;
+  filter_max_event_s?: number; // CAS panel with a duration filter: shown as a header note
+
   metrics: {
     metric_id: string;
     role: "primary" | "context";
@@ -570,72 +631,29 @@ export interface FleetAnalysis {
 export type EcuClassification = "GROUND_START" | "LANE_CHECK" | "GROUND" | "IN_FLIGHT" | "GROUND_SHUTDOWN";
 export type EcuCounts = Record<EcuClassification, number>;
 
-export interface EcuRunContext {
-  mean_rpm: number | null;
-  mean_power_pct: number | null;
-  mean_oil_press_psi: number | null;
-  mean_oil_temp_f: number | null;
-  mean_coolant_temp_f: number | null;
-  mean_main_volts: number | null;
-  mean_batt_amps: number | null;
-  mean_fuel_press_psi: number | null;
-  mean_ias_kt: number | null;
-  mean_baro_alt_ft: number | null;
-  oil_nan_frac: number | null;
-}
-
-export interface EcuRun {
-  flight_id: string;
-  start_utc: string | null;
-  end_utc: string | null;
-  duration_s: number;
+// One FlightAnalysis.ecu_runs entry (Spec 01 §8.6) — the classifier's
+// full output, shown in a CAS event's expanded view for research.
+export interface EcuRunRecord {
   classification: EcuClassification;
   phase: string;
   phase_uncertain: boolean;
-  lane_check_pair: boolean;
-  lane_check_note: string;
-  co_alerts: string[];
-  context: EcuRunContext;
-}
-
-// Per-event co-active alerts for every GROUND and IN_FLIGHT run (B3).
-export interface EcuEvent {
-  flight_id: string;
-  classification: "GROUND" | "IN_FLIGHT";
   start_utc: string | null;
+  end_utc: string | null;
+  elapsed_s: number | null;
   duration_s: number;
-  phase: string;
-  phase_uncertain: boolean;
   co_alerts: string[];
   oil_nan_frac: number | null;
-}
-
-export interface EcuFlightSummary {
-  flight_id: string;
-  counts: EcuCounts;
-  sub_threshold_blips: number;
-  lane_check: "both" | "single" | "none";
-}
-
-// Matches analyze_ecu()'s real, schema-validated output shape exactly
-// (contract/schema/ecu_analysis.schema.json) — an earlier draft of this
-// type (fleet_key/run_counts/params_hash) never matched what the engine
-// actually produces; this is the corrected version, not a redesign.
-export interface EcuAnalysis {
-  flight_ids: string[];
-  runs: EcuRun[];
-  counts: EcuCounts;
-  sub_threshold_blips: number;
-  flights: EcuFlightSummary[];
-  events: EcuEvent[];
-  provenance: { engine_version: string; schema_version: string | null; source_keys: string[]; flight_analysis_keys: string[] };
+  lane_check_pair: boolean;
+  lane_check_note: string;
+  mean_rpm: number | null;
+  mean_ias_kt: number | null;
 }
 
 // ── Annotations (Spec 02 §6.5) ────────────────────────────────────────────────
 
 export type AnnotationRef =
   | { kind: "insight"; insight_id: string }
-  | { kind: "exceedance" | "ecu_run" | "cas_event"; ref: string };
+  | { kind: "exceedance" | "ecu_run" | "cas_event"; ref: string }; // ecu_run: notes made in the retired ECU view
 
 export interface Annotation {
   id: string;
@@ -947,9 +965,22 @@ export interface SeriesFixture {
 
 export type FilterMagnitudeMode = "absolute" | "percent" | "z";
 
+// Spec 09 v0.18 §4: what a filter attaches to.
+export type FilterTarget = { kind: "limit"; limit_id: string } | { kind: "cas"; cas_id: string };
+
+export function targetKey(t: FilterTarget): string {
+  return t.kind === "cas" ? `cas:${t.cas_id}` : t.limit_id;
+}
+
+// How a target is named to the pilot: a CAS target is "ENGINE ECU (alert)"
+// so it isn't mistaken for an OM limit (Spec 09 v0.18, Spec 14 Journal).
+export function targetLabel(t: FilterTarget, limitLabel?: string | null): string {
+  return t.kind === "cas" ? `${t.cas_id} (alert)` : limitLabel ?? t.limit_id;
+}
+
 export interface LimitFilter {
   id: string;
-  limit_id: string;
+  target: FilterTarget;
   magnitude?: { mode: FilterMagnitudeMode; value: number };
   duration?: { max_event_s: number };
   note: string;
@@ -965,7 +996,7 @@ export interface LimitFilter {
 }
 
 // What the filter editor sends: a new filter has no id and no reference yet.
-export type LimitFilterDraft = Pick<LimitFilter, "limit_id" | "magnitude" | "duration" | "note" | "created_from"> & { id?: string };
+export type LimitFilterDraft = Pick<LimitFilter, "target" | "magnitude" | "duration" | "note" | "created_from"> & { id?: string };
 
 export interface FilterPolicy {
   filterable: boolean;
@@ -988,18 +1019,20 @@ export interface BaselineStats {
 }
 
 export interface FilterProposal {
-  limit: LimitDef;
+  target: FilterTarget;
+  limit: LimitDef; // for a CAS target: its pseudo catalogue entry (kind "cas", duration-only policy)
   policy: FilterPolicy;
   // Filtering a limit exceeded on only a few reference flights is allowed
   // but not advisable; message says why, in pilot terms.
   advisory?: { advisable: boolean; flights_exceeded: number; flights_considered: number; message: string | null };
   live: {
-    magnitude_metric: string;
-    magnitude: BaselineStats;
+    magnitude_metric?: string;
+    magnitude?: BaselineStats;
     time_above_pct?: BaselineStats;
     share_with_events?: number | null;
+    longest_event_s?: number | null; // CAS targets
   };
-  suggested: { magnitude?: { mode: FilterMagnitudeMode; value: number } };
+  suggested: { magnitude?: { mode: FilterMagnitudeMode; value: number }; duration?: { max_event_s: number } };
   reference: { flight_ids: string[]; n_with_events: number; collecting: boolean };
   z_available: boolean;
   z_n_min: number;
@@ -1007,7 +1040,7 @@ export interface FilterProposal {
 }
 
 export interface FilterPreview {
-  limit_id: string;
+  target: FilterTarget;
   valid: boolean;
   diagnostics: Diagnostic[];
   flights_considered: number;
@@ -1029,6 +1062,7 @@ export interface FilterPreview {
 export interface FilterListEntry {
   filter: LimitFilter;
   limit: LimitDef | null;
+  target_label: string;
   policy: FilterPolicy | null;
   valid: boolean;
   diagnostics: Diagnostic[];
@@ -1041,7 +1075,7 @@ export type FilterStatus = "breached" | "drifting" | "review_due" | "quiet" | "c
 // `time_above_pct` are the §5 per-limit metrics for each included flight.
 export interface FilterHealth {
   filter_id: string;
-  limit_id: string;
+  target: FilterTarget;
   valid: boolean;
   status: FilterStatus;
   reasons: string[];
@@ -1089,5 +1123,5 @@ export interface FilterHealth {
 
 export interface CopyFiltersResult {
   copied: { filter: LimitFilter; valid: boolean; diagnostics: Diagnostic[] }[];
-  skipped: { limit_id: string; reason: string }[];
+  skipped: { target: FilterTarget; reason: string }[];
 }

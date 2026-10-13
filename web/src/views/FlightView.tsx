@@ -25,15 +25,23 @@ import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { colors as themeColors } from "../theme/colors";
 import { TopicRulesPanel } from "../components/TopicRulesPanel";
 import { InlineHelp } from "../components/InlineHelp";
+import { CasEventDetails } from "../components/CasEventDetails";
+import { isCasInsightEvent } from "../types/contract";
 import type {
-  Annotation, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FlightAnalysis,
+  Annotation, CasEvent, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FilterTarget, FlightAnalysis,
   Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, RuleSet, SeriesFixture, SlotGroupEntry, TopicResult,
 } from "../types/contract";
 
 // Spec 14 §7.1 — only these trigger kinds compare the flight against the
-// reference; a threshold insight (an OM limit, an ECU event) has nothing
+// reference; a threshold insight (an OM limit, a CAS event) has nothing
 // to do with it, so it gets no exclude action.
 const REFERENCE_DRIVEN_TRIGGERS = new Set<Insight["trigger"]>(["baseline_deviation", "trend"]);
+
+const LANE_CHECK_TEXT: Record<NonNullable<FlightAnalysis["ecu_lane_check"]>, string> = {
+  both: "both lanes ✓",
+  single: "one lane only",
+  none: "not detected",
+};
 
 const SEVERITY_RANK: Record<InsightSeverity, number> = { limit: 0, warning: 1, watch: 2, info: 3 };
 const client = getEngineClient();
@@ -346,10 +354,9 @@ export function FlightView() {
       } catch {
         if (!cancelled) {
           // No live server, or this id doesn't exist there — a fixture
-          // flight matching the requested id (e.g. an ECU event card
-          // linking to the real KSFF flight, Spec 03 v0.9 §5.4) wins over
-          // the generic KACV default, so every event card lands on its
-          // own actual flight instead of a stand-in that can't show it.
+          // flight matching the requested id (e.g. an annotation linking
+          // to a fixture flight) wins over the generic KACV default, so a
+          // link lands on its own actual flight instead of a stand-in.
           const known = fixtureFlightById(flightId);
           const fa = known?.analysis ?? fixtureFlight;
           const series = known ? known.series : kacvSeries;
@@ -574,8 +581,12 @@ export function FlightView() {
   // cards filter their own limit; the overboost threshold filters the
   // profile's overboost limit.
   const [filterEditorFor, setFilterEditorFor] = useState<string | null>(null);
-  const filterLimitId = (insight: Insight, topicId: string) =>
-    insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
+  // A CAS card (Spec 09 v0.18) filters its alert, duration-only.
+  const filterTargetFor = (insight: Insight, topicId: string): FilterTarget | undefined => {
+    if (insight.source === "cas" && insight.cas_id) return { kind: "cas", cas_id: insight.cas_id };
+    const limitId = insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
+    return limitId ? { kind: "limit", limit_id: limitId } : undefined;
+  };
 
   // Spec 14 §7.3 — the topic card's own triggers disclosure/editor reads
   // and applies against these; it's the one rule-editing entry point
@@ -788,6 +799,16 @@ export function FlightView() {
       <TopicHelpButton help={topicHelpById["flight_summary"]} engine={engineProfileId} units={unitsSystem} />
     </div>
   );
+  // Spec 03 §5.4 (v0.14): lane-check pairing, informational only — no
+  // severity, no insight. "single" can't say which lane from the G3X log
+  // (the alert names neither), so it reads "one lane only".
+  // A log without the CAS channel has nothing to say about it either way.
+  const laneCheck = flightAnalysis.metrics.cas_engine_ecu_events?.missing ? undefined : flightAnalysis.ecu_lane_check;
+  const laneCheckLine = laneCheck ? (
+    <div className="mono" data-testid="lane-check-line" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>
+      Lane check: {LANE_CHECK_TEXT[laneCheck]}
+    </div>
+  ) : null;
 
   useEffect(() => {
     setVisibleWindow([0, flightAnalysis.phases.at(-1)?.end_s ?? 0]);
@@ -871,25 +892,8 @@ export function FlightView() {
         navigate(`/trends?metric=${ev.metric_id}&flight=${flightAnalysis.flight_id}`);
         return;
       }
-      if (ev.kind === "ecu_run") {
-        // No in-chart home for this (an ECU run isn't a chart-window
-        // concept) — off to the ECU page, same destination
-        // Annotations.tsx's refTarget already sends an ecu_run
-        // annotation to. ev.ref is the run's own start_utc (the same
-        // value op_evaluate_insights serializes it from, and the same
-        // field ECU.tsx's runRefKey already keys annotations on) — passed
-        // through so that page can find and highlight this exact run
-        // instead of leaving the pilot to recognize it among several.
-        navigate(`/ecu?flight=${encodeURIComponent(flightAnalysis.flight_id)}&run=${encodeURIComponent(ev.ref)}`);
-        return;
-      }
-      if (ev.kind === "exceedance") {
-        // Never actually produced by the engine today (limit-exceedance
-        // insights use series_window evidence instead) — kept as a safe
-        // fallback rather than silently doing nothing if that changes.
-        navigate("/ecu");
-        return;
-      }
+      // "exceedance" / "cas_event" evidence only names the event; each
+      // is preceded by its own series_window, which does the zooming.
     }
   }
 
@@ -1030,6 +1034,7 @@ export function FlightView() {
             </div>
           )}
           {flightSummaryLine}
+          {laneCheckLine}
         </div>
 
         {/* Body */}
@@ -1094,8 +1099,11 @@ export function FlightView() {
             <div style={{ flexGrow: 1, overflowY: "auto", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
               {filteredFlatInsights.map(({ insight, topicId }) => {
                 const existing = annotationByInsightId.get(insight.id);
-                const limitId = usingFixture ? undefined : filterLimitId(insight, topicId);
-                const peak = insight.events?.length ? Math.max(...insight.events.map((e) => e.excess ?? 0)) : null;
+                const target = usingFixture ? undefined : filterTargetFor(insight, topicId);
+                const isCas = insight.source === "cas";
+                const peak = !isCas && insight.events?.length
+                  ? Math.max(...insight.events.map((e) => (isCasInsightEvent(e) ? 0 : e.excess ?? 0)))
+                  : null;
                 return (
                   <div key={insight.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <InsightCard
@@ -1107,14 +1115,19 @@ export function FlightView() {
                     unit={limitFor(insight)?.unit}
                     limitType={limitFor(insight)?.limit_type}
                     filterAction={
-                      limitId
-                        ? { label: insight.filter ? "Edit filter…" : insight.filterable === false ? "Why can't I filter this?" : "Filter this limit…", onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id) }
+                      target
+                        ? {
+                            label: insight.filter
+                              ? "Edit filter…"
+                              : insight.filterable === false
+                                ? "Why can't I filter this?"
+                                : isCas ? "Filter by duration…" : "Filter this limit…",
+                            onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id),
+                          }
                         : undefined
                     }
                     secondaryAction={
-                      topicId === "engine_ecu_inflight" && insight.evidence.some((ev) => ev.kind === "ecu_run")
-                        ? { label: "See in ECU page →", onClick: () => handleEvidenceClick(insight, insight.evidence.findIndex((ev) => ev.kind === "ecu_run")) }
-                        : !usingFixture && REFERENCE_DRIVEN_TRIGGERS.has(insight.trigger) && !referenceState?.excluded
+                      !usingFixture && REFERENCE_DRIVEN_TRIGGERS.has(insight.trigger) && !referenceState?.excluded
                           ? { label: "Exclude this flight from reference →", onClick: () => setExcludeDialogFor(insight.id) }
                           : undefined
                     }
@@ -1128,9 +1141,15 @@ export function FlightView() {
                     onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
                     onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
                   />
-                  {limitId && filterEditorFor === insight.id && (
+                  {isCas && (
+                    <CasEventDetails
+                      events={flightAnalysis.exceedances.filter((e): e is CasEvent => e.source === "cas" && e.cas_id === insight.cas_id)}
+                      ecuRuns={flightAnalysis.ecu_runs ?? []}
+                    />
+                  )}
+                  {target && filterEditorFor === insight.id && (
                     <FilterEditor
-                      limitId={limitId}
+                      target={target}
                       flightPeak={peak}
                       createdFrom={{ flight_id: flightAnalysis.flight_id, insight_id: insight.id }}
                       onSaved={() => {

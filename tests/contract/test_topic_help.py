@@ -99,5 +99,5 @@ def test_engine_ecu_help_is_aircraft_neutral(rules):
     for banned in ("wiring", "wire", "connector", "pin ", "can bus", "hic", "gea", "j244",
                    "b.u.d.s", "buds", "reseat", "n117", "this aircraft", "your aircraft has"):
         assert banned not in text, banned
-    for phrase in ("start", "lane check", "shutdown", "taxiing", "in flight", "fault log"):
+    for phrase in ("start", "lane check", "shutdown", "on the ground", "in flight", "fault log", "filter"):
         assert phrase in text, phrase

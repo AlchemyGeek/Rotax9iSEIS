@@ -42,5 +42,6 @@ export const PANEL_LABELS: Record<string, string> = {
 
 export function panelLabel(panel: string): string {
   if (panel.startsWith("limit:")) return `Limit: ${panel.slice("limit:".length).replace(/_/g, " ")}`;
+  if (panel.startsWith("cas:")) return `Alert: ${panel.slice("cas:".length)}`;
   return PANEL_LABELS[panel] ?? panel.replace(/_/g, " ");
 }

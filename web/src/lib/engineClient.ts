@@ -10,7 +10,7 @@ import type {
   ChartPresetsResult,
   CopyFiltersResult,
   Diagnostic,
-  EcuAnalysis,
+  FilterTarget,
   EngineLimitsResult,
   ExclusionsResult,
   SettingsChangelogEntry,
@@ -95,9 +95,8 @@ export interface EngineClient {
   getFleet(): Promise<FleetAnalysis>;
   rebuildFleet(): Promise<FleetAnalysis>;
   getFlightSeries(flightId: string, channels: string[]): Promise<SeriesResult>;
-  analyzeEcuWorkspace(): Promise<EcuAnalysis>;
 
-  // Spec 02 §6.5 annotations — pilot notes on a specific insight or ECU
+  // Spec 02 §6.5 annotations — pilot notes on a specific insight or
   // event, never a chart point or config (Spec 03's "not a valid ref
   // target" reasoning).
   listAnnotations(flightId?: string): Promise<{ annotations: Annotation[] }>;
@@ -106,7 +105,8 @@ export interface EngineClient {
 
   // Spec 09 limit filters (§11.5).
   listFilters(): Promise<{ filters: FilterListEntry[] }>;
-  proposeFilter(limitId: string): Promise<FilterProposal>;
+  // Spec 09 v0.18: a filter targets a limit or a classified CAS alert.
+  proposeFilter(target: FilterTarget): Promise<FilterProposal>;
   previewFilter(filter: LimitFilterDraft): Promise<FilterPreview>;
   saveFilter(filter: LimitFilterDraft): Promise<LimitFilter>;
   deleteFilter(id: string): Promise<{ deleted: boolean }>;
@@ -306,10 +306,6 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<SeriesResult>("get_flight_series", { flight_id: flightId, channels });
   }
 
-  analyzeEcuWorkspace() {
-    return this.rpc<EcuAnalysis>("analyze_ecu_workspace", {});
-  }
-
   listAnnotations(flightId?: string) {
     return this.rpc<{ annotations: Annotation[] }>("list_annotations", flightId ? { flight_id: flightId } : {});
   }
@@ -326,8 +322,8 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ filters: FilterListEntry[] }>("list_filters", {});
   }
 
-  proposeFilter(limitId: string) {
-    return this.rpc<FilterProposal>("propose_filter", { limit_id: limitId });
+  proposeFilter(target: FilterTarget) {
+    return this.rpc<FilterProposal>("propose_filter", { target });
   }
 
   previewFilter(filter: LimitFilterDraft) {

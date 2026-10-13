@@ -64,7 +64,7 @@ describe("Journal", () => {
         at: "2026-10-01T00:00:00Z", status: "open", ref_id: "ann_1",
       },
       {
-        id: "jnl_2", kind: "limit_filter", what: "Filter: fuel_press_max", where: { limit_id: "fuel_press_max" },
+        id: "jnl_2", kind: "limit_filter", what: "Filter: fuel_press_max", where: { target: { kind: "limit", limit_id: "fuel_press_max" } },
         at: "2026-10-05T00:00:00Z", status: "open", ref_id: "flt_1", note: "sender reads high",
       },
       {
@@ -76,12 +76,18 @@ describe("Journal", () => {
         at: "2026-10-09T00:00:00Z", status: "open", ref_id: "f2", reason: "ground run, not a flight",
         effect: "changed the verdict on 1 other flight",
       },
+      {
+        // Spec 14 v0.7: a CAS filter's target is named "<alert> (alert)".
+        id: "jnl_5", kind: "limit_filter", what: "Filter: ENGINE ECU (alert)",
+        where: { target: { kind: "cas", cas_id: "ENGINE ECU" } },
+        at: "2026-09-01T00:00:00Z", status: "open", ref_id: "flt_2", note: "low-rpm lane check on a cold day",
+      },
     ];
     state.annotations = [
       { id: "ann_1", flight_id: "f1", ref: { kind: "insight", insight_id: "ins_1" }, note: "checking density altitude", created_at: "2026-10-01T00:00:00Z" },
     ];
     state.health = [
-      { filter_id: "flt_1", limit_id: "fuel_press_max", valid: true, status: "drifting", reasons: ["event frequency up"], diagnostics: [], series: [], hours_since_review: null },
+      { filter_id: "flt_1", target: { kind: "limit", limit_id: "fuel_press_max" }, valid: true, status: "drifting", reasons: ["event frequency up"], diagnostics: [], series: [], hours_since_review: null },
     ];
   });
 
@@ -97,6 +103,12 @@ describe("Journal", () => {
     expect(titles[1]).toBe("egt_spread");
     expect(titles[2]).toBe("Filter: fuel_press_max");
     expect(screen.getByText("checking density altitude")).toBeTruthy();
+  });
+
+  it("names a CAS filter's target as the alert", async () => {
+    renderJournal();
+    const row = await screen.findByTestId("journal-entry-jnl_5");
+    expect(within(row).getByText("Filter: ENGINE ECU (alert)")).toBeTruthy();
   });
 
   it("pins a Drifting change notice to the top while unresolved", async () => {

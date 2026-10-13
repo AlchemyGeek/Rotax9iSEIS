@@ -221,28 +221,16 @@ def _main():
 
     # ── ENGINE ECU ────────────────────────────────────────────────────────────
     section("ENGINE ECU")
-    # Spec 01 §8.6: runs classified by flight phase. The analysis line counts
-    # them by class; IN_FLIGHT runs are the topic's insights and GROUND runs
-    # are listed as events — both with their phase and co-active alerts.
-    ecu_runs = extract_engine_ecu_runs(
+    # Spec 01 §8.6 / Spec 10 D19: runs classified by flight phase. This topic
+    # explains (counts by class, lane check); its GROUND and IN_FLIGHT runs
+    # are CAS events, reported under LIMIT EXCEEDANCES below.
+    ecu = extract_engine_ecu_runs(
         df, engine_config=engine_cfg, takeoff_not_detected=takeoff_not_detected(df)[0],
-    ).runs
-    ecu_result = topics.engine_ecu_inflight(ecu_runs)
+    )
+    ecu_runs = ecu.runs
+    ecu_result = topics.engine_ecu_inflight(
+        ecu_runs, sub_threshold_blips=ecu.sub_threshold_blips, lane_check=ecu.lane_check)
     analysis_line(ecu_result["analysis"])
-    for run in ecu_runs:
-        if run["classification"] not in ("IN_FLIGHT", "GROUND"):
-            continue
-        oil_nan = run["oil_nan_frac"]
-        oil_str = f"  oil pressure missing {oil_nan * 100:.0f}% of rows" if oil_nan else ""
-        uncertain = " (phase uncertain)" if run["phase_uncertain"] else ""
-        line = (f"{run['classification']}  {run['start_time']:%H:%M:%S}  {run['duration_s']:.0f}s  "
-                f"phase {run['phase']}{uncertain}{oil_str}")
-        if run["classification"] == "IN_FLIGHT":
-            insight_line(f"⚠ {line}")
-        else:
-            print(f"    · {line}")
-        for alert in run["co_alerts"]:
-            print(f"      · Co-active: {alert}")
 
     # ── CLIMB THERMAL RATE ───────────────────────────────────────────────────
     section("CLIMB THERMAL RATE")
@@ -257,6 +245,12 @@ def _main():
     section("LIMIT EXCEEDANCES")
     exceedances = check_exceedances(df, engine_cfg)
     render_topic(topics.limit_exceedances(exceedances))
+    # Spec 10 D19: classified CAS alert events, one line each.
+    for run in ecu_runs:
+        if run["classification"] in ("GROUND", "IN_FLIGHT"):
+            insight_line("⚠ " + topics.cas_event_phrase({**run, "context": {"rpm": run.get("running_rpm")}}))
+            for alert in run["co_alerts"]:
+                print(f"      · Co-active: {alert}")
 
     print("\n" + "═" * 70 + "\n")
 

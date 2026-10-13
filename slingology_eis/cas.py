@@ -226,6 +226,12 @@ def ecu_active_series(df: pd.DataFrame) -> pd.Series:
 
 ECU_CLASSES = ("GROUND_START", "LANE_CHECK", "GROUND", "IN_FLIGHT", "GROUND_SHUTDOWN")
 
+# Spec 01 §8.6 (v0.21): classified CAS alerts — the ones whose GROUND /
+# IN_FLIGHT runs become events, filter targets and Trends panels. Today
+# only ENGINE ECU; others join through Spec 10 §8.
+CLASSIFIED_CAS_IDS = ("ENGINE ECU",)
+CAS_EVENT_CLASSES = ("GROUND", "IN_FLIGHT")
+
 _PHASE_CLASS = {
     "PRE_START": "GROUND_START", "ENGINE_START": "GROUND_START", "WARMUP": "GROUND_START",
     "TAXI": "GROUND",
@@ -391,9 +397,7 @@ def classify_ecu_run(
     phases_in_class = [p for p, c in zip(known_phase, row_classes) if c == cls]
     phase = Counter(phases_in_class).most_common(1)[0][0] if phases_in_class else known_phase.iloc[0]
 
-    rpm = seg["rpm"].fillna(0) if "rpm" in seg.columns else pd.Series(0, index=seg.index)
-    running = rpm[rpm > _RPM_RUNNING]
-    mean_rpm = float(running.mean()) if len(running) else 0.0
+    mean_rpm = _running_rpm_mean(seg)
     mean_ias = float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else 0.0
 
     if (cls != "IN_FLIGHT" and phase in _LANE_CHECK_PHASES
@@ -406,6 +410,40 @@ def classify_ecu_run(
         cls, uncertain = "IN_FLIGHT", True
 
     return cls, phase, uncertain
+
+
+def not_lane_check_reason(
+    seg: pd.DataFrame, classification: str, phase: str,
+    lane_check_max_duration_s: float, runup_rpm_min: float, runup_rpm_max: float,
+) -> Optional[str]:
+    """Spec 01 §8.6 (v0.21): why a GROUND run in WARMUP/TAXI is not a lane
+    check, when it misses the signature on exactly one count —
+    rpm_below_band / rpm_above_band / too_long / moving. None otherwise
+    (two or more misses: it isn't close to a lane check). Pairing is not
+    part of the classification signature here (an unpaired run that
+    passes is a single LANE_CHECK), so "unpaired" never arises."""
+    if classification != "GROUND" or phase not in _LANE_CHECK_PHASES:
+        return None
+    rpm = _running_rpm_mean(seg)
+    mean_ias = float(seg["ias_kt"].fillna(0).mean()) if "ias_kt" in seg.columns else 0.0
+    misses = []
+    if rpm < runup_rpm_min:
+        misses.append("rpm_below_band")
+    elif rpm > runup_rpm_max:
+        misses.append("rpm_above_band")
+    if len(seg) > lane_check_max_duration_s:
+        misses.append("too_long")
+    if mean_ias > _LANE_CHECK_MAX_IAS_KT:
+        misses.append("moving")
+    return misses[0] if len(misses) == 1 else None
+
+
+def _running_rpm_mean(seg: pd.DataFrame) -> float:
+    """Mean rpm over the run's engine-running rows (what a lane check is
+    held at), 0 when the engine never ran in it."""
+    rpm = seg["rpm"].fillna(0) if "rpm" in seg.columns else pd.Series(0, index=seg.index)
+    running = rpm[rpm > _RPM_RUNNING]
+    return float(running.mean()) if len(running) else 0.0
 
 
 def extract_engine_ecu_runs(
@@ -482,6 +520,9 @@ def extract_engine_ecu_runs(
             "classification":  cls,
             "phase":           phase,
             "phase_uncertain": uncertain,
+            "not_lane_check_reason": not_lane_check_reason(seg, cls, phase, lc_max_s, rpm_min, rpm_max),
+            "running_rpm":     round(_running_rpm_mean(seg), 1),
+            "lane_check_band_rpm": [rpm_min, rpm_max],
             "co_alerts":       co_alerts,
             "oil_nan_frac":    float(seg["oil_press_psi"].isna().mean()) if "oil_press_psi" in seg.columns else None,
             "start_idx":       df.index[a],

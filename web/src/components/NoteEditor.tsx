@@ -9,11 +9,11 @@ function NoteIcon({ filled }: { filled: boolean }) {
   );
 }
 
-// Shared by Flight view's insight cards and ECU's IN_FLIGHT event cards
+// Shared by Flight view's insight cards and other note-bearing rows
 // (Spec 02 §6.5) — same pilot-note affordance either way: a persistent
 // icon indicator (filled once a note exists), expanding in place to an
 // inline textarea rather than a separate dialog/page. `NoteToggle` is the
-// small icon alone, for callers (like ECU) that want it in their own
+// small icon alone, for callers that want it in their own
 // header row instead of NoteSection's default top-right placement.
 export function NoteToggle({ note, expanded, onToggle }: { note?: string; expanded: boolean; onToggle: (e: React.MouseEvent) => void }) {
   return (

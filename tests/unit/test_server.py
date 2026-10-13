@@ -101,7 +101,7 @@ def _flying_rows(n_cruise: int = 700, field_elev_ft: float = 100.0) -> list[tupl
 
 
 def _flying_log_bytes(date: str = "2026-01-01", extra_header: str = "",
-                       row_extra_fn=None, n_cruise: int = 700, meta: str = _META) -> bytes:
+                       row_extra_fn=None, n_cruise: int = 700, meta: str = _META, rpm_override=None) -> bytes:
     """
     Build G3X CSV bytes for a synthetic flight that clears the
     airborne-phase gate. extra_header is additional column header text
@@ -123,6 +123,8 @@ def _flying_log_bytes(date: str = "2026-01-01", extra_header: str = "",
               "Baro Altitude (ft),Vertical Speed (ft/min),Fuel Flow (gal/hour)" + extra_header + "\n")
     lines = []
     for i, (rpm, ias, alt, vs) in enumerate(_flying_rows(n_cruise=n_cruise)):
+        if rpm_override is not None and rpm_override(i) is not None:
+            rpm = rpm_override(i)
         time = f"12:{i // 60:02d}:{i % 60:02d}"
         extra = row_extra_fn(i) if row_extra_fn else ""
         lines.append(f"{date},{time},{rpm},{ias},{alt},{vs},6.5{extra}\n")
@@ -1365,13 +1367,11 @@ def test_get_flight_attaches_note_to_matching_insight(server):
     assert all("note" not in i for i in others)
 
 
-def test_ecu_insight_zooms_the_flight_chart_and_keeps_the_ecu_page_link(server):
-    # An ENGINE ECU insight's evidence used to be ecu_run-only (navigate
-    # away with nothing to zoom to on this flight's own chart). It now
-    # leads with a series_window around the event — "View evidence" zooms
-    # here like every other insight — and keeps the ecu_run reference as a
-    # second entry so "See in ECU page" can still jump there and highlight
-    # the matching run.
+def test_engine_ecu_in_flight_is_a_cas_event_owned_by_limit_exceedances(server):
+    """Spec 01 v0.21 / Spec 10 §4.1 (D19): an ENGINE ECU run in cruise is an
+    IN_FLIGHT CAS event in the flight's event list; limit_exceedances reports
+    it (series_window to zoom the chart + cas_event evidence); the ECU topic
+    emits no insight — it references the event and mirrors its badge."""
     alert_start, alert_end = _FLYING_PREAMBLE_LEN + 5, _FLYING_PREAMBLE_LEN + 25
     log = _flying_log_bytes(
         extra_header=",Oil Press (PSI),CAS Alert",
@@ -1382,14 +1382,23 @@ def test_ecu_insight_zooms_the_flight_chart_and_keeps_the_ecu_page_link(server):
     assert imp["ok"], imp
     flight_id = imp["result"]["results"][0]["flight_id"]
 
-    got = rpc(server, "get_flight", {"flight_id": flight_id})
-    ecu_topic = next(t for t in got["result"]["insight_set"]["topics"] if t["topic_id"] == "engine_ecu_inflight")
-    assert ecu_topic["insights"], "fixture flight should produce an ECU insight"
-    evidence = ecu_topic["insights"][0]["evidence"]
-    assert evidence[0]["kind"] == "series_window"
-    assert evidence[0]["channels"] == ["rpm", "oil_press_psi"]
-    assert evidence[0]["start_s"] < evidence[0]["end_s"]
-    assert evidence[1]["kind"] == "ecu_run"
+    got = rpc(server, "get_flight", {"flight_id": flight_id})["result"]
+    cas = [e for e in got["flight_analysis"]["exceedances"] if e["source"] == "cas"]
+    assert [(e["cas_id"], e["classification"]) for e in cas] == [("ENGINE ECU", "IN_FLIGHT")]
+    assert cas[0]["context"]["co_alerts"] == ["OIL PRESS"]
+
+    topics = {t["topic_id"]: t for t in got["insight_set"]["topics"]}
+    ins = [i for i in topics["limit_exceedances"]["insights"] if i.get("source") == "cas"]
+    assert len(ins) == 1 and ins[0]["cas_id"] == "ENGINE ECU" and ins[0]["severity"] == "watch"
+    kinds = [e["kind"] for e in ins[0]["evidence"]]
+    assert kinds == ["series_window", "cas_event"]
+    assert ins[0]["evidence"][0]["channels"] == ["rpm", "oil_press_psi"]
+    assert ins[0]["evidence"][1]["ref"] == cas[0]["event_id"]
+    assert all(e["kind"] != "ecu_run" for t in topics.values() for i in t["insights"] for e in i["evidence"])
+
+    ecu = topics["engine_ecu_inflight"]
+    assert ecu["insights"] == []
+    assert ecu["limit_refs"] == [{"cas_id": "ENGINE ECU", "insight_id": ins[0]["id"]}]
 
 
 def test_limit_filter_round_trip(registry_server):
@@ -1404,7 +1413,7 @@ def test_limit_filter_round_trip(registry_server):
     def limit_insights():
         r = rpc(registry_server, "get_flight", {"flight_id": flight_id})["result"]["insight_set"]
         return [i for t in r["topics"] if t["topic_id"] == "limit_exceedances" for i in t["insights"]
-                if i["limit_id"] == "fuel_press_max"]
+                if i.get("limit_id") == "fuel_press_max"]
 
     before = limit_insights()
     assert len(before) == 1 and "filter" not in before[0]
@@ -1510,9 +1519,129 @@ def test_copy_filters_between_workspaces(registry_server):
     assert c["filter"]["copied_from"] == {"workspace_id": source["id"], "filter_id": src_filter["id"]}
 
     again = rpc(registry_server, "copy_filters", {"source_workspace_id": source["id"]})["result"]
-    assert again["copied"] == [] and again["skipped"][0]["limit_id"] == "fuel_press_max"
+    assert again["copied"] == [] and again["skipped"][0]["target"] == {"kind": "limit", "limit_id": "fuel_press_max"}
     assert other["id"] != target["id"]
 
+
+
+def _ground_ecu_log(date="2026-01-01", rpm_during=2550):
+    """A synthetic flight with one ENGINE ECU run on the ground at taxi
+    (rpm_during) before the takeoff — a GROUND CAS event whose only miss
+    against the lane-check signature is the rpm band. Scrubbed by
+    construction: no real data."""
+    alert = range(16, 23)   # 7 rows inside TAXI (rows 15-24), engine running, 10 kt
+    return _flying_log_bytes(
+        date=date,
+        extra_header=",CAS Alert",
+        row_extra_fn=lambda i: f",{'ENGINE ECU' if i in alert else ''}",
+        rpm_override=lambda i: rpm_during if i in alert else None,
+    )
+
+
+def test_cas_filter_round_trip_and_journal_naming(registry_server):
+    """Spec 09 v0.18: a filter on a CAS target — duration only; a magnitude
+    condition is ignored (not stored); unknown cas_id is refused; the
+    Journal names the target "ENGINE ECU (alert)"; the filtered event turns
+    the CAS insight quiet."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    imp = rpc(registry_server, "import_files", {"files": [{"content_base64": base64.b64encode(_ground_ecu_log()).decode(),
+                                                           "filename": "log_20260101_120000_TEST.csv"}]})
+    assert imp["ok"], imp
+    flight_id = imp["result"]["results"][0]["flight_id"]
+    fa = rpc(registry_server, "get_flight", {"flight_id": flight_id})["result"]["flight_analysis"]
+    cas = [e for e in fa["exceedances"] if e["source"] == "cas"]
+    assert [(e["classification"], e.get("not_lane_check_reason")) for e in cas] == [("GROUND", "rpm_below_band")]
+
+    target = {"kind": "cas", "cas_id": "ENGINE ECU"}
+    draft = rpc(registry_server, "propose_filter", {"target": target})["result"]
+    assert draft["target"] == target and draft["policy"]["magnitude_modes"] == []
+    assert draft["suggested"] == {"duration": {"max_event_s": float(cas[0]["duration_s"])}}
+
+    bad = rpc(registry_server, "save_filter", {"filter": {"target": {"kind": "cas", "cas_id": "OIL PRESS"},
+                                                          "duration": {"max_event_s": 10}}})
+    assert bad["ok"] is False and "not a classified CAS alert" in bad["error"]["message"]
+
+    saved = rpc(registry_server, "save_filter", {"filter": {
+        "target": target, "duration": {"max_event_s": 10}, "magnitude": {"mode": "absolute", "value": 1},
+        "note": "taxi lane check below band"}})["result"]
+    assert saved["target"] == target and "magnitude" not in saved and "limit_id" not in saved
+
+    entry = next(e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["ref_id"] == saved["id"])
+    assert entry["what"] == "Filter: ENGINE ECU (alert)" and entry["where"] == {"target": target}
+
+    ins = [i for t in rpc(registry_server, "get_flight", {"flight_id": flight_id})["result"]["insight_set"]["topics"]
+           if t["topic_id"] == "limit_exceedances" for i in t["insights"] if i.get("source") == "cas"]
+    assert len(ins) == 1 and ins[0]["severity"] == "info" and ins[0]["filter"]["outcome"] == "suppressed"
+    assert ins[0]["events"][0]["suppressed_by"] == "duration"
+
+    listed = rpc(registry_server, "list_filters", {})["result"]["filters"]
+    assert listed[0]["target_label"] == "ENGINE ECU (alert)" and listed[0]["valid"]
+
+
+def _ground_and_flight_ecu_log(date: str) -> bytes:
+    """Synthetic (scrubbed by construction) flight with one GROUND ENGINE ECU
+    run during TAXI at 2,550 rpm and one IN_FLIGHT run in cruise."""
+    taxi = range(16, 23)
+    cruise = range(_FLYING_PREAMBLE_LEN + 100, _FLYING_PREAMBLE_LEN + 106)
+    return _flying_log_bytes(
+        date=date, extra_header=",CAS Alert",
+        row_extra_fn=lambda i: f",{'ENGINE ECU' if i in taxi or i in cruise else ''}",
+        rpm_override=lambda i: 2550 if i in taxi else None,
+    )
+
+
+def test_trends_cas_panel_from_events(registry_server):
+    """Spec 12 v0.10 §3.7: a generated panel per classified CAS alert — the
+    event-count metric only (event strip + frequency header; no excess
+    strip) — present when the alert has events on eligible flights."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    files = []
+    for day in range(1, 9):
+        date = f"2026-01-{day:02d}"
+        log = _ground_and_flight_ecu_log(date) if day in (7, 8) else _flying_log_bytes(
+            date=date, extra_header=",CAS Alert", row_extra_fn=lambda i: ",")
+        files.append({"content_base64": base64.b64encode(log).decode(), "filename": f"log_202601{day:02d}_120000_TEST.csv"})
+    assert rpc(registry_server, "import_files", {"files": files})["ok"]
+
+    panels = rpc(registry_server, "get_trends_panels", {})["result"]["panels"]
+    cas = [p for p in panels if p.get("cas_id") == "ENGINE ECU"]
+    assert len(cas) == 1 and cas[0]["panel"] == "cas:ENGINE ECU"
+    assert [m["metric_id"] for m in cas[0]["metrics"]] == ["cas_engine_ecu_events"]
+
+    fleet = rpc(registry_server, "get_fleet", {})["result"]
+    metric = fleet["metrics"]["cas_engine_ecu_events"]
+    assert [e["has_event"] for e in metric["events"]] == [False] * 6 + [True] * 2
+    assert "frequency" in metric          # the panel's only change signal (G2)
+    assert metric.get("shift") is None    # no excess, no shift
+
+    flights = rpc(registry_server, "list_flights", {})["result"]
+    with_events = 0
+    for f in flights["flights"] if isinstance(flights, dict) else flights:
+        fid = f["flight_id"]
+        topics = rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["insight_set"]["topics"]
+        cas_ins = [i for t in topics if t["topic_id"] == "limit_exceedances" for i in t["insights"] if i.get("source") == "cas"]
+        if cas_ins:
+            with_events += 1
+            assert [e["classification"] for e in cas_ins[0]["events"]] == ["GROUND", "IN_FLIGHT"]
+            assert cas_ins[0]["events"][0]["not_lane_check_reason"] == "rpm_below_band"
+    assert with_events == 2
+
+
+def test_old_filters_json_migrates_to_target_shape(registry_server, tmp_path):
+    """Spec 09 v0.18 §9: a pre-v0.18 record (top-level limit_id) loads as
+    target {kind: "limit"} and is written back in the new shape."""
+    from slingology_eis import workspace as ws_mod
+    store = {"version": "1", "filters": [{
+        "id": "flt_old", "limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5},
+        "note": "sender", "reference": {"flight_ids": [], "set_at": "2026-01-01T00:00:00Z"},
+        "created_at": "2026-01-01T00:00:00Z", "history": []}]}
+    (tmp_path / "filters.json").write_text(json.dumps(store))
+    loaded = ws_mod.load_filters(tmp_path)["filters"][0]
+    assert loaded["target"] == {"kind": "limit", "limit_id": "fuel_press_max"} and "limit_id" not in loaded
+    assert loaded["id"] == "flt_old" and loaded["magnitude"] == {"mode": "absolute", "value": 1.5}
+    ws_mod.review_filter(tmp_path, "flt_old", 10.0)   # any save writes the store back
+    on_disk = json.loads((tmp_path / "filters.json").read_text())["filters"][0]
+    assert on_disk["target"] == {"kind": "limit", "limit_id": "fuel_press_max"} and "limit_id" not in on_disk
 
 
 def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(registry_server):

@@ -612,8 +612,16 @@ def op_get_trends_panels(params: dict, ctx: dict) -> Any:
 
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
     register = _help.load_register() or {"topics": []}
-    filtered_limit_ids = {f["limit_id"] for f in ws.load_filters(ctx["workspace_dir"])["filters"]}
-    return {"panels": build_trends_panels(fleet, register, filtered_limit_ids)}
+    filters = ws.load_filters(ctx["workspace_dir"])["filters"]
+    filtered_limit_ids = {_filters.target_key(f) for f in filters}
+    panels = build_trends_panels(fleet, register, filtered_limit_ids)
+    # Spec 12 v0.10 G2: a CAS panel shows its duration filter as a header
+    # note, not a band — the web needs the duration to say so.
+    durations = {_filters.target_key(f): (f.get("duration") or {}).get("max_event_s") for f in filters}
+    for p in panels:
+        if p.get("cas_id") and durations.get(p["panel"]) is not None:
+            p["filter_max_event_s"] = durations[p["panel"]]
+    return {"panels": panels}
 
 
 def op_get_flight_series(params: dict, ctx: dict) -> Any:
@@ -1039,21 +1047,38 @@ def _latest_engine_hours(flight_analyses: list[FlightAnalysis]) -> Optional[floa
     return max(hours) if hours else None
 
 
+def _target_limits(engine_cfg: dict) -> dict:
+    """The engine profile's limits plus the classified CAS alerts, keyed
+    by filter target key (Spec 09 v0.18 §4)."""
+    return _filters.with_cas_targets({lim["id"]: lim for lim in limit_catalog(engine_cfg)})
+
+
+def _target_of(params: dict) -> dict:
+    """A request's filter target: {kind, ...}, or a bare limit_id."""
+    if params.get("target"):
+        return params["target"]
+    if params.get("limit_id"):
+        return {"kind": "limit", "limit_id": params["limit_id"]}
+    raise RpcError("BAD_PARAMS", "a filter target (target or limit_id) is required")
+
+
 def op_list_filters(params: dict, ctx: dict) -> Any:
-    """The workspace's filters, each with its limit, whether it currently
-    applies (the engine's own validation) and a summary of its band."""
+    """The workspace's filters, each with its target's catalogue entry
+    (a limit, or a CAS alert's pseudo entry), whether it currently applies
+    (the engine's own validation) and a summary of its conditions."""
     engine_cfg, _ = _current_engine(ctx)
-    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
+    limits = _target_limits(engine_cfg)
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
     out = []
     for f in _workspace_filters(ctx):
         diags = _filters.validate_filter(f, limits, fleet)
-        lim = limits.get(f.get("limit_id"))
+        lim = limits.get(_filters.target_key(f))
         out.append({
             "filter": f,
             "limit": lim,
+            "target_label": _filters.target_label(f["target"], lim["label"] if lim else None),
             "policy": _filters.resolve_filter_policy(lim) if lim else None,
-            "valid": not diags,
+            "valid": not [d for d in diags if d["code"] != "FILTER_CAS_MAGNITUDE"],
             "diagnostics": diags,
             "summary": _filters.band_text(f, lim) if lim else "",
         })
@@ -1063,21 +1088,23 @@ def op_list_filters(params: dict, ctx: dict) -> Any:
 def op_propose_filter(params: dict, ctx: dict) -> Any:
     engine_cfg, _ = _current_engine(ctx)
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
+    target = _target_of(params)
     try:
         draft = _filters.propose_limit_filter(_load_workspace_flights(ctx["workspace_dir"]), fleet,
-                                              params["limit_id"], engine_cfg)
+                                              target, engine_cfg)
     except ValueError as e:
         raise RpcError("NOT_FOUND", str(e))
-    draft["existing"] = next((f for f in _workspace_filters(ctx) if f.get("limit_id") == params["limit_id"]), None)
+    key = _filters.target_key({"target": target})
+    draft["existing"] = next((f for f in _workspace_filters(ctx) if _filters.target_key(f) == key), None)
     return draft
 
 
 def op_preview_filter(params: dict, ctx: dict) -> Any:
     fleet = _get_or_build_fleet(ctx["workspace_dir"])
-    draft = dict(params["filter"])
+    draft = _filters.migrate_filter(dict(params["filter"]))
     if not draft.get("reference"):
         engine_cfg, _ = _current_engine(ctx)
-        lim = next((l for l in limit_catalog(engine_cfg) if l["id"] == draft.get("limit_id")), None)
+        lim = _target_limits(engine_cfg).get(_filters.target_key(draft))
         if lim is not None:
             draft["reference"] = {"flight_ids": _filters.select_reference(fleet, lim)}
     return _filters.preview_limit_filter(_load_workspace_flights(ctx["workspace_dir"]), fleet,
@@ -1087,22 +1114,28 @@ def op_preview_filter(params: dict, ctx: dict) -> Any:
 def op_save_filter(params: dict, ctx: dict) -> Any:
     """Validate first (§7.3) — an invalid filter is refused, not stored —
     then save. A new filter, or an edit to its band or duration, takes a
-    fresh reference of the most recent flights (§8.1)."""
+    fresh reference of the most recent flights (§8.1). A CAS filter's
+    magnitude condition is not stored (FILTER_CAS_MAGNITUDE: ignored)."""
     workspace_dir = ctx["workspace_dir"]
     engine_cfg, _ = _current_engine(ctx)
     fleet = _get_or_build_fleet(workspace_dir)
-    fields = dict(params["filter"])
-    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
-    lim = limits.get(fields.get("limit_id"))
+    fields = _filters.migrate_filter(dict(params["filter"]))
+    if not fields.get("target"):
+        raise RpcError("BAD_PARAMS", "a filter target is required")
+    limits = _target_limits(engine_cfg)
+    key = _filters.target_key(fields)
+    lim = limits.get(key)
+    if lim is not None and _filters.is_cas(lim):
+        fields.pop("magnitude", None)
     existing = ws.get_filter(workspace_dir, fields["id"]) if fields.get("id") else None
     if fields.get("id") and existing is None:
         raise RpcError("NOT_FOUND", f"no filter {fields['id']}")
     if existing is None:
-        other = next((f for f in _workspace_filters(ctx) if f.get("limit_id") == fields.get("limit_id")), None)
+        other = next((f for f in _workspace_filters(ctx) if _filters.target_key(f) == key), None)
         if other is not None:
-            raise RpcError("ALREADY_EXISTS", f"{fields.get('limit_id')} already has a filter; edit it instead")
-    elif existing["limit_id"] != fields.get("limit_id"):
-        raise RpcError("BAD_PARAMS", "a filter's limit can't be changed")
+            raise RpcError("ALREADY_EXISTS", f"{_filters.target_label(fields['target'])} already has a filter; edit it instead")
+    elif _filters.target_key(existing) != key:
+        raise RpcError("BAD_PARAMS", "a filter's target can't be changed")
 
     new_reference = None
     if lim is not None and (existing is None or ws.filter_conditions_changed(existing, fields)):
@@ -1120,8 +1153,9 @@ def op_save_filter(params: dict, ctx: dict) -> Any:
     saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=new_reference, engine_hours=hours)
     if existing is None:
         ws.append_journal_entry(
-            workspace_dir, kind="limit_filter", what=f"Filter: {lim['label'] if lim else saved['limit_id']}",
-            where={"limit_id": saved["limit_id"]}, note=saved.get("note"),
+            workspace_dir, kind="limit_filter",
+            what=f"Filter: {_filters.target_label(saved['target'], lim['label'] if lim else None)}",
+            where={"target": saved["target"]}, note=saved.get("note"),
             ref_id=saved["id"],
         )
     return saved
@@ -1161,9 +1195,9 @@ def op_rebaseline_filter(params: dict, ctx: dict) -> Any:
     if flt is None:
         raise RpcError("NOT_FOUND", f"no filter {params['id']}")
     engine_cfg, _ = _current_engine(ctx)
-    lim = next((l for l in limit_catalog(engine_cfg) if l["id"] == flt["limit_id"]), None)
+    lim = _target_limits(engine_cfg).get(_filters.target_key(flt))
     if lim is None:
-        raise RpcError("NOT_FOUND", f"no limit {flt['limit_id']} in this engine profile")
+        raise RpcError("NOT_FOUND", f"no target {_filters.target_label(flt['target'])} in this engine profile")
     ref = _filters.select_reference(_get_or_build_fleet(workspace_dir), lim)
     return ws.rebaseline_filter(workspace_dir, params["id"], ref)
 
@@ -1173,7 +1207,7 @@ def op_copy_filters(params: dict, ctx: dict) -> Any:
     §9 "Copy filters from…": copy another workspace's filters into the
     active one — only between workspaces with the same engine model.
     Copies get new ids and a fresh reference from this workspace's own
-    flights; a limit this workspace already filters is skipped, not
+    flights; a target this workspace already filters is skipped, not
     overwritten. A copy that doesn't validate here (e.g. a z filter
     without enough reference flights with events) is still copied, and
     reported, so the pilot can fix or remove it. Nothing is automatic.
@@ -1196,25 +1230,25 @@ def op_copy_filters(params: dict, ctx: dict) -> Any:
                        f"filters are only copied between workspaces with the same engine model")
 
     engine_cfg = load_engine_config(target_model)
-    limits = {lim["id"]: lim for lim in limit_catalog(engine_cfg)}
+    limits = _target_limits(engine_cfg)
     fleet = _get_or_build_fleet(workspace_dir)
     hours = _latest_engine_hours(_load_workspace_flights(workspace_dir))
-    already = {f["limit_id"] for f in _workspace_filters(ctx)}
+    already = {_filters.target_key(f) for f in _workspace_filters(ctx)}
     copied, skipped = [], []
     for f in ws.load_filters(source_dir)["filters"]:
-        lid = f.get("limit_id")
-        if lid in already:
-            skipped.append({"limit_id": lid, "reason": "this workspace already filters this limit"})
+        key = _filters.target_key(f)
+        if key in already:
+            skipped.append({"target": f["target"], "reason": "this workspace already filters this target"})
             continue
-        lim = limits.get(lid)
+        lim = limits.get(key)
         if lim is None:
-            skipped.append({"limit_id": lid, "reason": "no such limit in this engine profile"})
+            skipped.append({"target": f["target"], "reason": "no such limit or alert in this engine profile"})
             continue
-        fields = {k: f[k] for k in ("limit_id", "magnitude", "duration", "note") if f.get(k) is not None}
+        fields = {k: f[k] for k in ("target", "magnitude", "duration", "note") if f.get(k) is not None}
         fields["copied_from"] = {"workspace_id": source_id, "filter_id": f.get("id")}
         saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=_filters.select_reference(fleet, lim),
                                engine_hours=hours)
-        already.add(lid)
+        already.add(key)
         diags = _filters.validate_filter(saved, limits, fleet)
         copied.append({"filter": saved, "valid": not diags, "diagnostics": diags})
     return {"copied": copied, "skipped": skipped}

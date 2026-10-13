@@ -45,6 +45,7 @@ from typing import Any, Callable, Optional
 from . import __version__
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
+from .filters import target_label
 from .limits import load_engine_config, resolve_min_flight_duration_min
 from .loader import (
     find_duplicate_flights,
@@ -972,6 +973,7 @@ def load_workspace_rules(ws_dir: Path, shipped_rules: dict) -> dict:
         rules = upgrade_to_limit_refs(rules)
         rules = upgrade_phase_a_rules(rules)
         rules = upgrade_map_condition(rules)
+        rules = upgrade_cas_events(rules)
         return rules
     return shipped_rules
 
@@ -1117,6 +1119,23 @@ def upgrade_map_condition(rules: dict) -> dict:
                 "Workspace rules/active.json had map_at_takeoff's 'vs_om_expected'+'tolerance_hpa' "
                 "trigger — upgraded to 'vs_personal_model'+'z' (Spec 10 §6.1/D5).",
             )
+    return rules
+
+
+def upgrade_cas_events(rules: dict) -> dict:
+    """
+    Spec 01 v0.21 / Spec 10 D19 (rules v1.8): engine_ecu_inflight no longer
+    fires (its GROUND/IN_FLIGHT runs are CAS events owned by
+    limit_exceedances), so its trigger goes; limit_exceedances gains the
+    `cas` display-label entry. Upgraded in memory, like the others.
+    """
+    r = rules.get("rules") or {}
+    ecu = r.get("engine_ecu_inflight")
+    if isinstance(ecu, dict) and ecu.get("triggers"):
+        ecu["triggers"] = []
+    lim = r.get("limit_exceedances")
+    if isinstance(lim, dict):
+        lim.setdefault("cas", {"severity": "watch"})
     return rules
 
 
@@ -1847,8 +1866,8 @@ def backfill_journal_from_existing(ws_dir: Path) -> None:
         for f in load_filters(ws_dir)["filters"]:
             if not has_open_journal_entry(ws_dir, kind="limit_filter", ref_id=f["id"]):
                 append_journal_entry(
-                    ws_dir, kind="limit_filter", what=f"Filter: {f['limit_id']}",
-                    where={"limit_id": f["limit_id"]}, note=f.get("note"), ref_id=f["id"],
+                    ws_dir, kind="limit_filter", what=f"Filter: {target_label(f['target'])}",
+                    where={"target": f["target"]}, note=f.get("note"), ref_id=f["id"],
                     at=f.get("created_at"), backfilled=True,
                 )
         for a in load_annotations(ws_dir)["annotations"]:
@@ -1953,10 +1972,16 @@ _FILTER_EDITABLE_KEYS = ("magnitude", "duration", "note")
 
 
 def load_filters(ws_dir: Path) -> dict:
+    """filters.json, every record in the Spec 09 v0.18 shape: a pre-v0.18
+    record (top-level limit_id) is migrated to target {kind: "limit"} on
+    read; any save writes the new shape."""
+    from .filters import migrate_filter
     f = ws_dir / "filters.json"
     if not f.exists():
         return {"version": _FILTERS_VERSION, "filters": []}
-    return json.loads(f.read_text())
+    store = json.loads(f.read_text())
+    store["filters"] = [migrate_filter(x) for x in store.get("filters", [])]
+    return store
 
 
 def _save_filter_store(ws_dir: Path, store: dict) -> None:
@@ -1971,7 +1996,8 @@ def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[
                 engine_hours: Optional[float] = None) -> dict:
     """
     Create (no `id` in `fields`) or edit a filter. `fields` carries
-    limit_id, magnitude and/or duration, note and optionally created_from.
+    target ({kind: "limit", limit_id} | {kind: "cas", cas_id}), magnitude
+    and/or duration, note and optionally created_from.
     `reference_flight_ids` is the reference the caller chose (§8.1): given
     on create, and on an edit that changes the band or duration, which
     resets the reference. A condition absent from `fields` is removed.
@@ -1983,7 +2009,7 @@ def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[
     if existing is None:
         flt = {
             "id": _new_id("flt"),
-            "limit_id": fields["limit_id"],
+            "target": _filter_target(fields),
             **{k: fields[k] for k in _FILTER_CONDITION_KEYS if fields.get(k)},
             "note": fields.get("note") or "",
             "reference": {"flight_ids": list(reference_flight_ids or []), "set_at": now},
@@ -2018,6 +2044,13 @@ def save_filter(ws_dir: Path, fields: dict, reference_flight_ids: Optional[list[
     existing["history"].append({"at": now, "action": "edited", "before": before, "after": after})
     _save_filter_store(ws_dir, store)
     return existing
+
+
+def _filter_target(fields: dict) -> dict:
+    """A save's target, accepting a bare limit_id from an older caller."""
+    if fields.get("target"):
+        return fields["target"]
+    return {"kind": "limit", "limit_id": fields["limit_id"]}
 
 
 def filter_conditions_changed(old: dict, fields: dict) -> bool:

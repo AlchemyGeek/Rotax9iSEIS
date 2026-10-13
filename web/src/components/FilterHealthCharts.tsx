@@ -136,7 +136,7 @@ export function FilterHealthCharts({
   stratifyKind?: string | null;
 }) {
   const [byWeather, setByWeather] = useState(false);
-  const isOverboost = health.limit_id === "overboost";
+  const isOverboost = health.target.kind === "limit" && health.target.limit_id === "overboost";
   const magField = isOverboost ? "block_s" : "peak_excess";
   const band = health.resolved_band?.value;
   // The reference flights only matter to the pilot when the filter is

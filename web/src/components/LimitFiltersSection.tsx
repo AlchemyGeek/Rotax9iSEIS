@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../lib/engineClient";
 import type { FilterHealth, FilterListEntry, FilterStatus, LimitFilter, WorkspaceRegistryEntry } from "../types/contract";
+import { targetLabel } from "../types/contract";
 import { FilterEditor } from "./FilterEditor";
 import { FilterHealthCharts } from "./FilterHealthCharts";
 import { notifyFiltersChanged } from "../lib/filterAttention";
@@ -121,7 +122,7 @@ function CopyFilters({ onCopied }: { onCopied: () => void }) {
       setResult(
         `Copied ${r.copied.length} filter${r.copied.length === 1 ? "" : "s"}` +
           (invalid ? ` (${invalid} not applied here — see below)` : "") +
-          (r.skipped.length ? `; skipped ${r.skipped.map((s) => `${s.limit_id} (${s.reason})`).join(", ")}` : "") +
+          (r.skipped.length ? `; skipped ${r.skipped.map((s) => `${targetLabel(s.target)} (${s.reason})`).join(", ")}` : "") +
           ".",
       );
       onCopied();
@@ -244,14 +245,14 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
           No filters. To accept a known, consistent exceedance, open a flight and use “Filter this limit…” on its limit card.
         </div>
       )}
-      {entries.map(({ filter, limit, valid, diagnostics, summary }) => {
+      {entries.map(({ filter, limit, valid, diagnostics, summary, target_label }) => {
         const h = health[filter.id];
         return (
           <div key={filter.id} style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {h && <StatusBadge status={h.status} />}
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{limit?.label ?? filter.limit_id}</span>
-              {limit && (
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{target_label ?? targetLabel(filter.target, limit?.label)}</span>
+              {limit && filter.target.kind !== "cas" && (
                 <span className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
                   OM {limit.limit_type === "MIN" ? "min" : "max"} {limit.limit_value} {limit.unit} · {limit.severity}
                 </span>
@@ -259,7 +260,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
               {!valid && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: "var(--severity-limit)" }}>NOT APPLIED</span>}
               <a
                 href="#"
-                onClick={(e) => { e.preventDefault(); navigate(`/trends?panel=limit:${filter.limit_id}`); }}
+                onClick={(e) => { e.preventDefault(); navigate(`/trends?panel=${encodeURIComponent(filter.target.kind === "cas" ? `cas:${filter.target.cas_id}` : `limit:${filter.target.limit_id}`)}`); }}
                 style={{ marginLeft: "auto", fontSize: 11 }}
                 title="See this limit's panel on Trends — the filter band and its reference shift"
               >
@@ -294,7 +295,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 {diagnostics.map((d) => d.message).join(" ")} The limit reports unfiltered until this is fixed.
               </div>
             )}
-            {h && limit && h.series.length > 0 && (
+            {h && limit && filter.target.kind !== "cas" && h.series.length > 0 && (
               <FilterHealthCharts health={h} unit={limit.unit} limitValue={limit.limit_value} stratifyKind={limit.stratify_by} />
             )}
             <div style={{ display: "flex", gap: 14, fontSize: 11, color: "var(--text-tertiary)", alignItems: "center", flexWrap: "wrap" }}>
@@ -341,7 +342,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
             {historyOpen === filter.id && <History history={filter.history} />}
             {editing === filter.id && (
               <FilterEditor
-                limitId={filter.limit_id}
+                target={filter.target}
                 onSaved={() => {
                   setEditing(null);
                   void refresh();

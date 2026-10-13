@@ -1,8 +1,9 @@
 """
 filters.py — limit filters (Spec 09 §6.3, §7, §8.1).
 
-A filter is the pilot's statement about one OM limit: "on my aircraft,
-this limit is exceeded in a way I understand and accept." It tolerates
+A filter is the pilot's statement about one target — an OM limit or,
+from Spec 09 v0.18, a classified CAS alert: "on my aircraft, this is
+exceeded in a way I understand and accept." It tolerates
 events by magnitude (how far past the limit) and/or by duration (how long
 each event lasted); an event needs only one reason to be tolerated
 (§4, either-filter). Tolerated events are suppressed, not deleted.
@@ -31,6 +32,77 @@ DEFAULT_REVIEW_INTERVAL_H = {"CAUTION": 50, "WARNING": 25}
 
 MAGNITUDE_MODES = ("absolute", "percent", "z")
 OVERBOOST_PARAM = "overboost"
+
+
+# ── Targets (§4, v0.18) ─────────────────────────────────────────────────────
+# A filter's target is a limit or a classified CAS alert. Internally both
+# are keyed by one string — the limit_id, or "cas:<cas_id>" — so the
+# per-target machinery below (validation, one-filter-per-target, event
+# classification) needs no second code path. A CAS target is represented
+# by a pseudo catalogue entry with a duration-only policy.
+
+CAS_KEY_PREFIX = "cas:"
+
+
+def cas_target_key(cas_id: str) -> str:
+    return CAS_KEY_PREFIX + cas_id
+
+
+def target_key(filter_: dict) -> Optional[str]:
+    """The target key of a filter: its limit_id, or "cas:<cas_id>"."""
+    t = filter_.get("target") or {}
+    if t.get("kind") == "cas":
+        return cas_target_key(t.get("cas_id", ""))
+    if t.get("kind") == "limit":
+        return t.get("limit_id")
+    return filter_.get("limit_id")  # pre-v0.18 record not yet migrated
+
+
+def event_target_key(event: dict) -> str:
+    """The target key of an event in FlightAnalysis.exceedances."""
+    if event.get("source") == "cas":
+        return cas_target_key(event["cas_id"])
+    return event.get("limit_id") or f"legacy:{event['param']}:{event['limit_type']}:{event['label']}"
+
+
+def is_cas(limit: dict) -> bool:
+    return limit.get("kind") == "cas"
+
+
+def cas_pseudo_limit(cas_id: str) -> dict:
+    """Catalogue-shaped entry for a CAS target: no value, no excess; the
+    filter policy allows the duration condition only (§7)."""
+    return {
+        "id": cas_target_key(cas_id), "kind": "cas", "cas_id": cas_id,
+        "label": f"{cas_id} (alert)", "unit": "s", "severity": "CAUTION",
+        "filter_policy": {"magnitude_modes": [], "duration_allowed": True, "note_required": False},
+    }
+
+
+def with_cas_targets(limits_by_id: dict) -> dict:
+    """limits_by_id plus a pseudo entry for every classified CAS alert."""
+    from .cas import CLASSIFIED_CAS_IDS
+    out = dict(limits_by_id)
+    for cas_id in CLASSIFIED_CAS_IDS:
+        out[cas_target_key(cas_id)] = cas_pseudo_limit(cas_id)
+    return out
+
+
+def target_label(target: dict, limit_label: Optional[str] = None) -> str:
+    """How a filter's target is named to the pilot (Journal, lists): a CAS
+    target is "ENGINE ECU (alert)" so it isn't mistaken for an OM limit."""
+    if (target or {}).get("kind") == "cas":
+        return f"{target['cas_id']} (alert)"
+    return limit_label or (target or {}).get("limit_id", "?")
+
+
+def migrate_filter(filter_: dict) -> dict:
+    """§9 migration: a pre-v0.18 record (top-level limit_id) gets
+    target {kind: "limit"}. Records already in the new shape pass through."""
+    if "target" in filter_ or "limit_id" not in filter_:
+        return filter_
+    out = {k: v for k, v in filter_.items() if k != "limit_id"}
+    return {"id": out.pop("id", None), "target": {"kind": "limit", "limit_id": filter_["limit_id"]}, **out}
 
 
 def is_overboost(limit: dict) -> bool:
@@ -174,10 +246,26 @@ def select_reference(fleet, limit: dict, reference_n: int = REFERENCE_N) -> list
     """
     from .operations import _chronological
 
-    key = limit_metric_key(limit, "block_s" if is_overboost(limit) else "time_above_pct")
-    points = (fleet.metrics.get(key) or {}).get("points", [])
+    points = (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])
     seq = _chronological([p for p in points if p.get("value") is not None])
     return [p["flight_id"] for p in seq[-reference_n:]]
+
+
+def coverage_metric(limit: dict) -> str:
+    """The target's metric with a point on every eligible flight: a CAS
+    alert's per-flight event count, overboost's block, else the limit's
+    time-above share."""
+    if is_cas(limit):
+        from .operations import cas_metric_id
+        return cas_metric_id(limit["cas_id"])
+    return limit_metric_key(limit, "block_s" if is_overboost(limit) else "time_above_pct")
+
+
+def insight_target_key(insight: dict) -> Optional[str]:
+    """Target key of a limit_exceedances insight (limit or CAS)."""
+    if insight.get("source") == "cas":
+        return cas_target_key(insight["cas_id"])
+    return insight.get("limit_id")
 
 
 # ── Validation (§7.3) ───────────────────────────────────────────────────────
@@ -202,8 +290,10 @@ def resolved_band(filter_: dict, limit: dict, frozen: Optional[dict] = None) -> 
 
 
 def _diag(code: str, message: str, filter_: dict, **refs) -> dict:
+    key = target_key(filter_) or ""
+    target_ref = {"cas_id": key[len(CAS_KEY_PREFIX):]} if key.startswith(CAS_KEY_PREFIX) else {"limit_id": key or None}
     return Diagnostic(code=code, severity="warn", scope="fleet", message=message,
-                      refs={"filter_id": filter_.get("id"), "limit_id": filter_.get("limit_id"), **refs}).to_dict()
+                      refs={"filter_id": filter_.get("id"), **target_ref, **refs}).to_dict()
 
 
 def _number(v) -> bool:
@@ -216,8 +306,10 @@ def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]
     empty means the filter is valid and applies. `limits_by_id` is the
     catalogue by id; `fleet` is needed only to check a z reference's n.
     """
-    lid = filter_.get("limit_id")
+    lid = target_key(filter_)
     limit = limits_by_id.get(lid)
+    if limit is None and (lid or "").startswith(CAS_KEY_PREFIX):
+        return [_diag("FILTER_UNKNOWN_CAS", f"Filter for {lid[len(CAS_KEY_PREFIX):]!r}: not a classified CAS alert.", filter_)]
     if limit is None:
         return [_diag("FILTER_UNKNOWN_LIMIT", f"Filter for {lid!r}: no such limit in this engine profile.", filter_)]
     policy = resolve_filter_policy(limit)
@@ -227,8 +319,15 @@ def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]
 
     diags = []
     magnitude, duration = filter_.get("magnitude"), filter_.get("duration")
+    if is_cas(limit) and magnitude:
+        # §7.3 / §11.4: a CAS event has no excess, so magnitude can't
+        # apply; the condition is ignored (not fatal) and the duration
+        # condition, if any, still stands.
+        diags.append(_diag("FILTER_CAS_MAGNITUDE", f"{label}: a magnitude condition doesn't apply to an alert; ignored.", filter_))
+        magnitude = None
     if not magnitude and not duration:
-        diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a filter needs a magnitude or a duration condition.", filter_))
+        need = "a duration condition" if is_cas(limit) else "a magnitude or a duration condition"
+        diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a filter needs {need}.", filter_))
     if magnitude:
         mode, value = magnitude.get("mode"), magnitude.get("value")
         if mode not in policy["magnitude_modes"]:
@@ -267,15 +366,20 @@ def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]
 
 def active_filters(filters: list[dict], limits_by_id: dict, fleet=None) -> tuple[dict[str, dict], list[dict]]:
     """
-    ({limit_id: valid filter}, diagnostics). With several filters on one
-    limit only the newest counts (FILTER_MULTIPLE_FOR_LIMIT); an invalid
-    filter is ignored — the limit reports unfiltered — with its
-    diagnostics.
+    ({target key: valid filter}, diagnostics). With several filters on
+    one target only the newest counts (FILTER_MULTIPLE_FOR_LIMIT); an
+    invalid filter is ignored — the target reports unfiltered — with its
+    diagnostics. A CAS filter's magnitude condition is dropped from the
+    returned filter (FILTER_CAS_MAGNITUDE, a warning, not invalidity).
+    `limits_by_id` gains the CAS pseudo-targets here, so callers pass the
+    plain limit catalogue.
     """
+    limits_by_id = with_cas_targets(limits_by_id)
     diags: list[dict] = []
     by_limit: dict[str, list[dict]] = {}
     for f in filters or []:
-        by_limit.setdefault(f.get("limit_id"), []).append(f)
+        f = migrate_filter(f)
+        by_limit.setdefault(target_key(f), []).append(f)
     out: dict[str, dict] = {}
     for lid, fs in by_limit.items():
         fs = sorted(fs, key=lambda f: f.get("updated_at") or f.get("created_at") or "")
@@ -284,10 +388,10 @@ def active_filters(filters: list[dict], limits_by_id: dict, fleet=None) -> tuple
                                f"More than one filter for {lid!r}; only the newest applies.", older))
         newest = fs[-1]
         problems = validate_filter(newest, limits_by_id, fleet)
-        if problems:
-            diags.extend(problems)
-        else:
-            out[lid] = newest
+        diags.extend(problems)
+        if all(p["code"] == "FILTER_CAS_MAGNITUDE" for p in problems):
+            out[lid] = ({k: v for k, v in newest.items() if k != "magnitude"}
+                        if is_cas(limits_by_id[lid]) else newest)
     return out, diags
 
 
@@ -347,7 +451,7 @@ def validate_limit_filter(filter_: dict, engine_config: dict, fleet=None) -> lis
     """§11.2 `validate_limit_filter`: diagnostics for one filter; empty =
     valid. The host calls it before saving; evaluate_insights applies the
     same checks to every filter it's given."""
-    return validate_filter(filter_, _catalog_by_id(engine_config), fleet)
+    return validate_filter(migrate_filter(filter_), with_cas_targets(_catalog_by_id(engine_config)), fleet)
 
 
 def _round_up(x: float) -> float:
@@ -370,33 +474,63 @@ def filter_advisory(fleet, limit: dict, reference_ids: list[str]) -> dict:
     a plain-language message saying why.
     """
     ob = is_overboost(limit)
-    key = limit_metric_key(limit, "block_s" if ob else "time_above_pct")
-    points = {p["flight_id"]: p.get("value") for p in (fleet.metrics.get(key) or {}).get("points", [])}
+    points = {p["flight_id"]: p.get("value") for p in (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])}
     values = [points[fid] for fid in reference_ids if points.get(fid) is not None]
     exceeded = sum(1 for v in values if (v > limit["limit_value"] if ob else v > 0))
     advisable = exceeded >= ADVISABLE_MIN_FLIGHTS
     message = None
     if not advisable:
-        message = (f"Not advisable: {limit['label']} was exceeded on {exceeded} of your last {len(values)} "
-                   f"flights. Filters are meant for exceedances that happen regularly; an occasional one is "
+        what = "occurred" if is_cas(limit) else "was exceeded"
+        kind = "events" if is_cas(limit) else "exceedances"
+        message = (f"Not advisable: {limit['label']} {what} on {exceeded} of your last {len(values)} "
+                   f"flights. Filters are meant for {kind} that happen regularly; an occasional one is "
                    f"usually worth looking at each time. You can still save this filter.")
     return {"advisable": advisable, "flights_exceeded": exceeded, "flights_considered": len(values),
             "message": message}
 
 
-def propose_limit_filter(flight_analyses: list, fleet, limit_id: str, engine_config: dict) -> dict:
+def propose_limit_filter(flight_analyses: list, fleet, target, engine_config: dict) -> dict:
     """
     §11.2 `propose_limit_filter`: a pre-filled draft for the filter
-    editor — the limit and its policy (allowed modes, caps, whether a note
-    is required), the live baseline of this limit's metrics, a suggested
-    absolute band (the aircraft's worst excess so far, rounded up, within
-    any cap), the proposed reference flights and whether z is available.
+    editor — the target and its policy (allowed modes, caps, whether a
+    note is required), the live baseline of its metrics, a suggestion,
+    the proposed reference flights and whether z is available. `target`
+    is {kind: "limit", limit_id} | {kind: "cas", cas_id} (v0.18), or a
+    bare limit id. For a limit the suggestion is an absolute band (the
+    aircraft's worst excess so far, rounded up, within any cap); for a CAS
+    target, a duration condition (the longest event on the reference
+    flights, rounded up) — the only condition a CAS target has.
     """
-    limits = _catalog_by_id(engine_config)
-    limit = limits.get(limit_id)
+    if isinstance(target, str):
+        target = {"kind": "limit", "limit_id": target}
+    limits = with_cas_targets(_catalog_by_id(engine_config))
+    key = target_key({"target": target})
+    limit = limits.get(key)
     if limit is None:
-        raise ValueError(f"unknown limit {limit_id!r}")
+        raise ValueError(f"unknown target {target!r}")
     policy = resolve_filter_policy(limit)
+    if is_cas(limit):
+        reference_ids = select_reference(fleet, limit)
+        ref_set = set(reference_ids)
+        durations = [e["duration_s"] for fa in flight_analyses if fa.flight_id in ref_set
+                     for e in fa.exceedances if event_target_key(e) == key]
+        cov = [p for p in (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])
+               if p.get("value") is not None]
+        longest = max(durations, default=None)
+        return {
+            "advisory": filter_advisory(fleet, limit, reference_ids),
+            "target": target,
+            "limit": limit,
+            "policy": policy,
+            "live": {"share_with_events": (sum(1 for p in cov if p["value"]) / len(cov)) if cov else None,
+                     "longest_event_s": longest},
+            "suggested": {"duration": {"max_event_s": float(math.ceil(longest))}} if longest else {},
+            "reference": {"flight_ids": reference_ids, "n_with_events": len({fa.flight_id for fa in flight_analyses
+                          if fa.flight_id in ref_set and any(event_target_key(e) == key for e in fa.exceedances)}),
+                          "collecting": len(reference_ids) < REFERENCE_MIN_N},
+            "z_available": False,
+            "z_n_min": N_MIN,
+        }
     mag_key = _magnitude_metric(limit)
     live_mag = (fleet.metrics.get(mag_key) or {}).get("baseline") or {"n": 0}
     live = {"magnitude_metric": mag_key, "magnitude": live_mag}
@@ -418,6 +552,7 @@ def propose_limit_filter(flight_analyses: list, fleet, limit_id: str, engine_con
     frozen = frozen_baseline(fleet, mag_key, reference_ids)
     return {
         "advisory": filter_advisory(fleet, limit, reference_ids),
+        "target": target,
         "limit": limit,
         "policy": policy,
         "live": live,
@@ -441,20 +576,23 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
 
     included_ids = set(fleet.flight_ids)
     included = [fa for fa in flight_analyses if fa.flight_id in included_ids]
-    limit_id = draft.get("limit_id")
-    candidate = [f for f in filters if f.get("limit_id") != limit_id and f.get("id") != draft.get("id")]
+    draft = migrate_filter(draft)
+    key = target_key(draft)
+    filters = [migrate_filter(f) for f in filters]
+    candidate = [f for f in filters if target_key(f) != key and f.get("id") != draft.get("id")]
     draft = {**draft, "id": draft.get("id") or "draft"}
     candidate.append(draft)
-    limits = {lim["id"]: lim for fa in included[:1] for lim in fa.limits}
+    limits = with_cas_targets({lim["id"]: lim for fa in included[:1] for lim in fa.limits})
     diagnostics = validate_filter(draft, limits, fleet) if limits else []
 
     def _limit_counts(iset) -> tuple[int, int, int]:
-        """(events, suppressed, breaches) for limit_id on one flight."""
+        """(events, suppressed, breaches) for the draft's target on one flight."""
         topic = next((t for t in iset.topics if t["topic_id"] == "limit_exceedances"), {"insights": []})
-        evs = [e for i in topic["insights"] if i.get("limit_id") == limit_id for e in i.get("events", [])]
+        mine = [i for i in topic["insights"] if insight_target_key(i) == key]
+        evs = [e for i in mine for e in i.get("events", [])]
         suppressed = sum(1 for e in evs if e["suppressed_by"])
-        breaches = sum(len(i.get("events", [])) for i in topic["insights"]
-                       if i.get("limit_id") == limit_id and (i.get("filter") or {}).get("outcome") == "breach")
+        breaches = sum(len(i.get("events", [])) for i in mine
+                       if (i.get("filter") or {}).get("outcome") == "breach")
         return len(evs), suppressed, breaches
 
     def _topic_ids(iset) -> dict:
@@ -480,8 +618,8 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
         })
     flights.sort(key=lambda f: f["date"] or "")
     return {
-        "limit_id": limit_id,
-        "valid": not diagnostics,
+        "target": draft.get("target"),
+        "valid": not [d for d in diagnostics if d["code"] != "FILTER_CAS_MAGNITUDE"],
         "diagnostics": diagnostics,
         "flights_considered": len(included),
         "events_total": total_events,
@@ -586,6 +724,7 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
         limits = _catalog_by_id(engine_config)
     else:
         limits = {lim["id"]: lim for fa in flight_analyses[:1] for lim in fa.limits}
+    limits = with_cas_targets(limits)
     baseline_config = fleet.provenance.get("baseline_config") or {}
     included = set(fleet.flight_ids)
     fas = {fa.flight_id: fa for fa in flight_analyses if fa.flight_id in included}
@@ -596,20 +735,31 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
 
     out = []
     for f in filters:
-        lid = f.get("limit_id")
+        f = migrate_filter(f)
+        lid = target_key(f)
         limit = limits.get(lid)
         diags = validate_filter(f, limits, fleet) if limit else validate_filter(f, limits)
-        is_valid = limit is not None and valid.get(lid) is f
-        health = {"filter_id": f.get("id"), "limit_id": lid, "valid": is_valid, "status": "stable",
+        is_valid = limit is not None and (valid.get(lid) or {}).get("id") == f.get("id")
+        if is_valid and lid in valid:
+            f = valid[lid]   # a CAS filter's ignored magnitude is already dropped here
+        health = {"filter_id": f.get("id"), "target": f.get("target"), "valid": is_valid, "status": "stable",
                   "reasons": [], "diagnostics": diags, "series": [], "hours_since_review": None}
         if limit is None:
-            health["reasons"].append("The limit no longer exists in this engine profile.")
+            health["reasons"].append("The alert is not classified by this engine." if (lid or "").startswith(CAS_KEY_PREFIX)
+                                     else "The limit no longer exists in this engine profile.")
             out.append(health)
             continue
 
+        cas = is_cas(limit)
         ob = is_overboost(limit)
-        mag_key = _magnitude_metric(limit)
-        pct_key = None if ob else limit_metric_key(limit, "time_above_pct")
+        if cas:
+            # §8 (v0.18): a CAS target is monitored on event frequency only —
+            # its one fleet metric is the per-flight event count.
+            from .operations import cas_metric_id
+            mag_key = cas_metric_id(limit["cas_id"])
+        else:
+            mag_key = _magnitude_metric(limit)
+        pct_key = None if (ob or cas) else limit_metric_key(limit, "time_above_pct")
         mag_pts = _point_index(fleet, mag_key)
         pct_pts = _point_index(fleet, pct_key) if pct_key else {}
         # Every included flight with the limit's channel, oldest first.
@@ -620,19 +770,22 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
         frozen_mag = frozen_baseline(fleet, mag_key, ref_ids)
         frozen_pct = frozen_baseline(fleet, pct_key, ref_ids) if pct_key else None
         ref_pct_values = [pct_pts[fid]["value"] for fid in ref_ids if fid in pct_pts]
-        if ob:
+        if cas:
+            ref_counts = [mag_pts[fid]["value"] for fid in ref_ids if fid in mag_pts]
+            share_ref = (sum(1 for v in ref_counts if v) / len(ref_counts)) if ref_counts else None
+        elif ob:
             ref_block = [mag_pts[fid]["value"] for fid in ref_ids if fid in mag_pts]
             share_ref = (sum(1 for v in ref_block if v > limit["limit_value"]) / len(ref_block)) if ref_block else None
         else:
             share_ref = (sum(1 for v in ref_pct_values if v > 0) / len(ref_pct_values)) if ref_pct_values else None
         health["frozen_baseline"] = {
-            ("block_s" if ob else "peak_excess"): {k: v for k, v in frozen_mag.items()},
+            **({} if cas else {("block_s" if ob else "peak_excess"): {k: v for k, v in frozen_mag.items()}}),
             **({"time_above_pct": frozen_pct} if frozen_pct else {}),
             "share_with_events": share_ref,
         }
         health["reference"] = {"flight_ids": ref_ids, "collecting": collecting}
         health["resolved_band"] = ({"value": resolved_band(f, limit, frozen_mag), "unit": limit["unit"]}
-                                   if f.get("magnitude") else None)
+                                   if f.get("magnitude") and not cas else None)
         health["summary"] = band_text(f, limit, frozen_mag)
 
         # Per-flight series, with this filter's classification of each event.
@@ -644,7 +797,7 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
             band = flight_band(fa, limit) if fa else p.get("band")
             events = suppressed = breaches = 0
             if fa is not None:
-                evs = [e for e in fa.exceedances if e.get("limit_id") == lid]
+                evs = [e for e in fa.exceedances if event_target_key(e) == lid]
                 if ob:
                     block = fa.metrics.get("overboost_max_block_s", {}).get("value")
                     if block is not None and block > limit["limit_value"]:
@@ -665,7 +818,7 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
             series.append({
                 "flight_id": fid, "date": p.get("date"), "engine_hours": p.get("x"), "band": band,
                 "in_reference": fid in ref_set, "monitored": i > last_ref_pos,
-                ("block_s" if ob else "peak_excess"): (mag_pts.get(fid) or {}).get("value"),
+                **({} if cas else {("block_s" if ob else "peak_excess"): (mag_pts.get(fid) or {}).get("value")}),
                 **({"time_above_pct": (pct_pts.get(fid) or {}).get("value")} if pct_key else {}),
                 "events": events, "suppressed": suppressed, "breaches": breaches,
             })
@@ -691,12 +844,12 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
                 f"{_count(sum(s['breaches'] for s in breach_flights), 'event')} went beyond your filter, on "
                 f"{_count(len(breach_flights), 'flight')} since you {'last reviewed it' if reviewed_h is not None else 'set it'}.")
             fa = fas.get(last["flight_id"])
-            ev = next((e for e in (fa.exceedances if fa else []) if e.get("limit_id") == lid), None)
+            ev = next((e for e in (fa.exceedances if fa else []) if event_target_key(e) == lid), None)
             health["last_breach"] = {"flight_id": last["flight_id"],
                                      "event_id": ev.get("event_id") if ev else None}
 
         # Drifting: persistent excursions above the frozen baseline, or events getting more frequent.
-        if not collecting and len(monitored) >= DRIFT_PERSISTENCE:
+        if not collecting and len(monitored) >= DRIFT_PERSISTENCE and not cas:
             recent = monitored[-DRIFT_PERSISTENCE:]
             unit = limit.get("unit", "")
             past = "under" if limit.get("limit_type") == "MIN" else "over"
@@ -733,20 +886,23 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
                         "z": [None if math.isinf(z) else round(z, 2) for z in zs],
                         "z_threshold": z_thr, "comparison": cmp,
                     })
-            if share_ref is not None and len(monitored) >= FREQUENCY_WINDOW:
-                window = monitored[-FREQUENCY_WINDOW:]
-                with_events = sum(1 for s in window if s["events"])
-                share_now = with_events / len(window)
-                if share_now - share_ref >= FREQUENCY_DELTA:
-                    n_ref = len(ref_pct_values) if not ob else len([fid for fid in ref_ids if fid in mag_pts])
-                    reasons["drifting"].append(
-                        f"{limit['label']} is exceeded more often: on {with_events} of your last "
-                        f"{FREQUENCY_WINDOW} flights, against {round(share_ref * n_ref)} of {n_ref} "
-                        f"reference flights ({share_ref:.0%}).")
-                    health.setdefault("drift_details", []).append({
-                        "metric": "share_with_events", "values": [share_now], "typical": share_ref,
-                        "threshold_delta": FREQUENCY_DELTA, "window": FREQUENCY_WINDOW,
-                    })
+        if (not collecting and len(monitored) >= DRIFT_PERSISTENCE
+                and share_ref is not None and len(monitored) >= FREQUENCY_WINDOW):
+            window = monitored[-FREQUENCY_WINDOW:]
+            with_events = sum(1 for s in window if s["events"])
+            share_now = with_events / len(window)
+            if share_now - share_ref >= FREQUENCY_DELTA:
+                n_ref = (len(ref_pct_values) if not (ob or cas)
+                         else len([fid for fid in ref_ids if fid in mag_pts]))
+                verb = "occurs" if cas else "is exceeded"
+                reasons["drifting"].append(
+                    f"{limit['label']} {verb} more often: on {with_events} of your last "
+                    f"{FREQUENCY_WINDOW} flights, against {round(share_ref * n_ref)} of {n_ref} "
+                    f"reference flights ({share_ref:.0%}).")
+                health.setdefault("drift_details", []).append({
+                    "metric": "share_with_events", "values": [share_now], "typical": share_ref,
+                    "threshold_delta": FREQUENCY_DELTA, "window": FREQUENCY_WINDOW,
+                })
 
         policy = resolve_filter_policy(limit)
         if health["hours_since_review"] is not None and health["hours_since_review"] > policy["review_interval_h"]:
@@ -755,7 +911,8 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
                 f"{'last reviewed it' if reviewed_h is not None else 'set it'} (review every "
                 f"{policy['review_interval_h']:g} h for a {limit.get('severity', 'CAUTION')} limit).")
         if len(monitored) >= QUIET_WINDOW and not any(s["events"] for s in monitored[-QUIET_WINDOW:]):
-            reasons["quiet"].append(f"No exceedances on your last {QUIET_WINDOW} flights — you may no longer need this filter.")
+            reasons["quiet"].append(f"No {'events' if cas else 'exceedances'} on your last {QUIET_WINDOW} flights — "
+                                    f"you may no longer need this filter.")
         if collecting:
             reasons["collecting"].append(
                 f"Still learning what's normal: {len(ref_ids)} of the {REFERENCE_MIN_N} flights it needs so far.")

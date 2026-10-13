@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
-import type { FilterMagnitudeMode, FilterPreview, FilterProposal, LimitFilter, LimitFilterDraft } from "../types/contract";
+import type { FilterMagnitudeMode, FilterPreview, FilterProposal, FilterTarget, LimitFilter, LimitFilterDraft } from "../types/contract";
+import { targetKey } from "../types/contract";
 import { ScopeCaption } from "./ScopeCaption";
 import { APPLY_LABEL } from "../lib/scope";
 
@@ -43,14 +44,16 @@ const buttonStyle = (primary: boolean, enabled = true): React.CSSProperties => (
 // the modes the limit allows are offered, caps are shown and the note is
 // required where the policy says so. The engine validates again on save,
 // so a refused save shows its message rather than silently storing.
+// A CAS target (Spec 09 v0.18) is duration-only: no magnitude row, the
+// duration condition is on and pre-filled from the longest event.
 export function FilterEditor({
-  limitId,
+  target,
   flightPeak,
   createdFrom,
   onSaved,
   onCancel,
 }: {
-  limitId: string;
+  target: FilterTarget;
   flightPeak?: number | null;
   createdFrom?: { flight_id: string; insight_id: string };
   onSaved: (filter: LimitFilter | null) => void;
@@ -72,7 +75,7 @@ export function FilterEditor({
   useEffect(() => {
     let cancelled = false;
     client
-      .proposeFilter(limitId)
+      .proposeFilter(target)
       .then((p) => {
         if (cancelled) return;
         setProposal(p);
@@ -86,6 +89,10 @@ export function FilterEditor({
           setDurationOn(Boolean(existing.duration));
           if (existing.duration) setMaxEventS(existing.duration.max_event_s);
           setNote(existing.note);
+        } else if (p.target.kind === "cas") {
+          setMagnitudeOn(false);
+          setDurationOn(true);
+          if (p.suggested.duration) setMaxEventS(p.suggested.duration.max_event_s);
         } else {
           if (p.suggested.magnitude) setValue(p.suggested.magnitude.value);
           if (p.policy.max_duration_s !== null) setMaxEventS(p.policy.max_duration_s);
@@ -96,19 +103,20 @@ export function FilterEditor({
     return () => {
       cancelled = true;
     };
-  }, [limitId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the target, not its object identity
+  }, [targetKey(target)]);
 
   const draft: LimitFilterDraft | null = useMemo(() => {
     if (!proposal) return null;
     return {
       id: proposal.existing?.id,
-      limit_id: limitId,
-      magnitude: magnitudeOn ? { mode, value } : undefined,
+      target,
+      magnitude: magnitudeOn && target.kind !== "cas" ? { mode, value } : undefined,
       duration: durationOn && proposal.policy.duration_allowed ? { max_event_s: maxEventS } : undefined,
       note,
       created_from: proposal.existing ? undefined : createdFrom,
     };
-  }, [proposal, limitId, magnitudeOn, mode, value, durationOn, maxEventS, note, createdFrom]);
+  }, [proposal, target, magnitudeOn, mode, value, durationOn, maxEventS, note, createdFrom]);
 
   const draftKey = JSON.stringify(draft);
   const preview = previewFor && previewFor.key === draftKey ? previewFor.result : null;
@@ -125,6 +133,7 @@ export function FilterEditor({
   const sign = limit.limit_type === "MIN" ? "−" : "+";
   const liveMag = live.magnitude;
   const isOverboost = limit.id === "overboost";
+  const isCas = target.kind === "cas";
 
   if (!policy.filterable) {
     return (
@@ -148,9 +157,9 @@ export function FilterEditor({
   const overCap = policy.max_band_abs !== null && resolvedBand !== null && resolvedBand > policy.max_band_abs + 1e-9;
   const durationOverCap = policy.max_duration_s !== null && maxEventS > policy.max_duration_s;
   const noteMissing = policy.note_required && !note.trim();
-  const nothing = !magnitudeOn && !(durationOn && policy.duration_allowed);
+  const nothing = !(magnitudeOn && !isCas) && !(durationOn && policy.duration_allowed);
   const zUnavailable = mode === "z" && !proposal.z_available;
-  const canSave = !nothing && !overCap && !durationOverCap && !noteMissing && !zUnavailable && value > 0 && !busy;
+  const canSave = !nothing && !overCap && !durationOverCap && !noteMissing && !(zUnavailable && !isCas) && (isCas || value > 0) && !busy;
 
   async function runPreview() {
     if (!draft) return;
@@ -199,13 +208,23 @@ export function FilterEditor({
       style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, border: "1px solid var(--border)" }}
     >
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{proposal.existing ? "Edit filter" : "Filter this limit"}: {limit.label}</div>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{proposal.existing ? "Edit filter" : isCas ? "Filter this alert" : "Filter this limit"}: {limit.label}</div>
         <ScopeCaption scope="limit" />
+        {isCas ? (
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
+            An alert has no magnitude to tolerate — only how long it lasts. Hidden events still count in Trends' frequency.
+            {live.longest_event_s !== undefined && live.longest_event_s !== null && (
+              <> Longest across your flights: {fmt(live.longest_event_s, 0)} s
+                {live.share_with_events !== undefined && live.share_with_events !== null && <>, on {Math.round(live.share_with_events * 100)}% of flights</>}.</>
+            )}
+          </div>
+        ) : (
         <div className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
           OM {limit.limit_type === "MIN" ? "min" : "max"} {limit.limit_value} {unit}
           {flightPeak !== undefined && flightPeak !== null && <> · this flight {sign}{fmt(flightPeak)} {unit}</>}
         </div>
-        {liveMag.n > 0 && (
+        )}
+        {!isCas && liveMag && liveMag.n > 0 && (
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
             {isOverboost
               ? <>Across all your flights the longest block is typically {fmt(liveMag.mean, 0)} s, at most {fmt(liveMag.max, 0)} s ({liveMag.n} flights).</>
@@ -220,6 +239,7 @@ export function FilterEditor({
         </div>
       )}
 
+      {!isCas && (<>
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
         <input type="checkbox" checked={magnitudeOn} onChange={(e) => setMagnitudeOn(e.target.checked)} />
         <span>{isOverboost ? "A longer block is fine, by" : "A little past the limit is fine, by up to"}</span>
@@ -241,12 +261,13 @@ export function FilterEditor({
         </div>
       )}
       {overCap && <div style={{ fontSize: 11, color: "var(--severity-limit)", paddingLeft: 24 }}>Over the {policy.max_band_abs} {unit} cap for this limit.</div>}
+      </>)}
 
       {policy.duration_allowed && (
         <>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
             <input type="checkbox" checked={durationOn} onChange={(e) => setDurationOn(e.target.checked)} />
-            <span>Brief events are fine, lasting up to</span>
+            <span>{isCas ? "Brief alerts are fine, lasting up to" : "Brief events are fine, lasting up to"}</span>
           </label>
           {durationOn && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 24 }}>
@@ -260,7 +281,7 @@ export function FilterEditor({
           )}
         </>
       )}
-      {magnitudeOn && durationOn && policy.duration_allowed && (
+      {!isCas && magnitudeOn && durationOn && policy.duration_allowed && (
         <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>An event is hidden if either condition tolerates it.</div>
       )}
 

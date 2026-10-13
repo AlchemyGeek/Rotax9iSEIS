@@ -152,7 +152,21 @@
               "flight_id": { "type": "string" },
               "date": { "type": "string" },
               "x": { "type": ["number", "null"] },
-              "has_event": { "type": "boolean" }
+              "has_event": { "type": "boolean" },
+              "cas_events": {
+                "type": "array",
+                "description": "Spec 12 v0.10 §8.4: on a classified CAS alert's metric, the flight's events for the tick tooltip — class and, when set, why it isn't a lane check.",
+                "items": {
+                  "type": "object",
+                  "required": ["classification", "phase", "duration_s"],
+                  "properties": {
+                    "classification": { "type": "string", "enum": ["GROUND", "IN_FLIGHT"] },
+                    "phase": { "type": "string" },
+                    "duration_s": { "type": "number" },
+                    "not_lane_check_reason": { "type": "string" }
+                  }
+                }
+              }
             }
           }
         },

@@ -3,6 +3,7 @@ import type { EChartsOption } from "echarts";
 import { EChartBase } from "./EChartBase";
 import { colors, fontMono } from "../theme/colors";
 import type { EventTick, Frequency } from "../types/contract";
+import { ECU_CLASS_LABEL, NOT_LANE_CHECK_PHRASE } from "../lib/casEvent";
 
 // Spec 12 §8.4 — the event strip every limit panel (and overboost_time)
 // opens with: one tick per eligible flight, short/pale for no event,
@@ -12,6 +13,16 @@ import type { EventTick, Frequency } from "../types/contract";
 // is derived from `events` + `frequency.recent.flights` rather than
 // carried as its own hours_from/hours_to — `events` is already
 // chronological, so the last `recent.flights` entries *are* the window.
+// A CAS panel (Spec 12 v0.10 G2) is this strip and its header only; its
+// ticks carry the flight's alert events, named in the tooltip.
+
+function tickDetail(e: EventTick): string {
+  if (!e.cas_events?.length) return e.has_event ? "event" : "no event";
+  return e.cas_events
+    .map((c) => `${ECU_CLASS_LABEL[c.classification]} (${c.phase}), ${Math.round(c.duration_s)} s`
+      + (c.not_lane_check_reason ? ` — ${NOT_LANE_CHECK_PHRASE[c.not_lane_check_reason]}` : ""))
+    .join("<br/>");
+}
 
 const RECENT_WINDOW_FILL = "rgba(79,195,176,0.07)";
 const REFERENCE_FILL = "rgba(174,183,191,0.10)";
@@ -21,9 +32,11 @@ interface Props {
   frequency: Frequency;
   highlightFlight: string | null;
   onOpenFlight: (flightId: string) => void;
+  // "occurred" for an alert (it has no limit to exceed).
+  verb?: "exceeded" | "occurred";
 }
 
-export function EventStrip({ events, frequency, highlightFlight, onOpenFlight }: Props) {
+export function EventStrip({ events, frequency, highlightFlight, onOpenFlight, verb = "exceeded" }: Props) {
   const split = Math.max(0, events.length - frequency.recent.flights);
   const referenceEvents = events.slice(0, split);
   const recentEvents = events.slice(split);
@@ -42,7 +55,7 @@ export function EventStrip({ events, frequency, highlightFlight, onOpenFlight }:
       });
     }
 
-    const data = events.map((e) => [e.x, 1, e.flight_id, e.date, e.has_event]);
+    const data = events.map((e) => [e.x, 1, e.flight_id, e.date, e.has_event, tickDetail(e)]);
 
     return {
       animation: false,
@@ -52,7 +65,7 @@ export function EventStrip({ events, frequency, highlightFlight, onOpenFlight }:
         backgroundColor: colors.panelControl, borderColor: colors.border,
         textStyle: { color: colors.textPrimary, fontSize: 11, fontFamily: fontMono },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        formatter: (p: any) => (Array.isArray(p.data) ? `${p.data[3]} &middot; ${p.data[4] ? "event" : "no event"}` : ""),
+        formatter: (p: any) => (Array.isArray(p.data) ? `${p.data[3]} &middot; ${p.data[5]}` : ""),
       },
       xAxis: { type: "value", scale: true, show: false },
       yAxis: { type: "value", show: false, min: 0, max: 2 },
@@ -79,7 +92,7 @@ export function EventStrip({ events, frequency, highlightFlight, onOpenFlight }:
     } as EChartsOption;
   }, [events, recentEvents, referenceEvents, highlightFlight]);
 
-  const header = `exceeded on ${frequency.recent.events} of ${frequency.recent.flights} recent flight`
+  const header = `${verb} on ${frequency.recent.events} of ${frequency.recent.flights} recent flight`
     + `${frequency.recent.flights === 1 ? "" : "s"} · ${frequency.reference.events} of ${frequency.reference.flights} earlier`;
 
   return (

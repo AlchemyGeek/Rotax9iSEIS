@@ -298,9 +298,6 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
                 </span>
               )}
             </NavLink>
-            <NavLink to="/ecu" style={NAV_LINK_STYLE}>
-              ECU
-            </NavLink>
             <NavLink to="/journal" style={NAV_LINK_STYLE}>
               Journal
               {filterAttention > 0 && (

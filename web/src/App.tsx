@@ -2,7 +2,6 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { Trends } from "./views/Trends";
-import { ECU } from "./views/ECU";
 import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
 import { ChartSessionProvider } from "./lib/chartSession";
@@ -29,7 +28,8 @@ function App() {
               the URL redirects rather than 404ing for anyone with it
               bookmarked. */}
           <Route path="/baselines" element={<Navigate to="/settings?tab=reference" replace />} />
-          <Route path="/ecu" element={<ECU />} />
+          {/* Spec 03 v0.14 §5.4: the ECU view is retired — its content is CAS event rows and a Trends panel. */}
+          <Route path="/ecu" element={<Navigate to="/flights" replace />} />
           <Route path="/annotations" element={<Navigate to="/journal" replace />} />
           <Route path="/journal" element={<Journal />} />
           <Route path="/settings" element={<Settings />} />
