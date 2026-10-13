@@ -1803,15 +1803,15 @@
     },
     {
       "flight_id": "c924536e435145ed",
-      "classification": "LANE_CHECK",
+      "classification": "GROUND",
       "phase": "TAXI",
       "phase_uncertain": false,
       "start_utc": "2026-05-20T18:09:49",
       "end_utc": "2026-05-20T18:09:59",
       "duration_s": 11.0,
       "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
+      "lane_check_pair": false,
+      "lane_check_note": "",
       "context": {
         "mean_rpm": 3401.818181818182,
         "mean_power_pct": 23.454545454545453,
@@ -1835,8 +1835,8 @@
       "end_utc": "2026-05-20T18:10:16",
       "duration_s": 4.0,
       "co_alerts": [],
-      "lane_check_pair": true,
-      "lane_check_note": "paired",
+      "lane_check_pair": false,
+      "lane_check_note": "",
       "context": {
         "mean_rpm": 3885.0,
         "mean_power_pct": 31.75,
@@ -4644,8 +4644,8 @@
   ],
   "counts": {
     "GROUND_START": 56,
-    "LANE_CHECK": 67,
-    "GROUND": 0,
+    "LANE_CHECK": 66,
+    "GROUND": 1,
     "IN_FLIGHT": 0,
     "GROUND_SHUTDOWN": 37
   },
@@ -4811,13 +4811,13 @@
       "flight_id": "c924536e435145ed",
       "counts": {
         "GROUND_START": 1,
-        "LANE_CHECK": 2,
-        "GROUND": 0,
+        "LANE_CHECK": 1,
+        "GROUND": 1,
         "IN_FLIGHT": 0,
         "GROUND_SHUTDOWN": 1
       },
       "sub_threshold_blips": 0,
-      "lane_check": "both"
+      "lane_check": "single"
     },
     {
       "flight_id": "a603d96498fb1db0",
@@ -5096,7 +5096,18 @@
       "lane_check": "both"
     }
   ],
-  "events": [],
+  "events": [
+    {
+      "flight_id": "c924536e435145ed",
+      "classification": "GROUND",
+      "start_utc": "2026-05-20T18:09:49",
+      "duration_s": 11.0,
+      "phase": "TAXI",
+      "phase_uncertain": false,
+      "co_alerts": [],
+      "oil_nan_frac": 0.0
+    }
+  ],
   "provenance": {
     "engine_version": "0.29.0",
     "schema_version": "0.1.0",

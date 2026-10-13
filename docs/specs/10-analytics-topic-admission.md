@@ -1,7 +1,7 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.9 — for review. Decisions D1–D17 in §6.3, all closed (D7 revised in v0.7). Implemented: Phases A–D; Phase E (topic help) in progress.
+**Status:** Draft v0.11 — for review. Decisions D1–D18 in §6.3, all closed (D7 revised in v0.7; D18 added in v0.10). Implemented: Phases A–D; Phase E (topic help) in progress.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
@@ -20,6 +20,8 @@
 | 0.7 | **Two-layer framing** added to §1 (engine profile + aircraft model). **D16 and D17 closed** (OM states idle as a minimum; no OM transient overspeed; 10 rpm resolution justifies no tolerance — details in Spec 09 v0.15 §6.8). **D5:** fitted-range guard kept as min–max, accepting that under leave-one-out each axis's extreme flight is never judged (4/48 on current data). **D7 revised:** the Phase C measurement found no airborne time beyond which peaks stop depending on duration (oil r ≈ 0.6 at every candidate threshold, coolant no pattern, no flights under 10 min), so no threshold is applied; predicting the peak from flight length moves to Research. **Single-aircraft evidence made explicit:** E3 grades state engine type and aircraft count (§4), topic status is recorded per engine profile with an *Unverified* status for engines without validating data (§5.1, §8.1), and a re-audit is triggered by data from a new aircraft or engine type (§8.2). |
 | 0.8 | §9 item 11: help text must be **aircraft-neutral** — written for any aircraft with the engine, with no findings from one aircraft's data, no non-OM numbers, causes stated as possibilities. Applied to the drafts (`engine_ecu_inflight`'s single-aircraft sentence removed; the ±10 % fuel-flow figure, not OM-cited, removed). |
 | 0.9 | **Spec 12 adds a `trends` field** (§5.1, §5.2) — panel, role, worsening direction and phrasing for the Trends change page (Spec 12 §8.1). Declaration lives at `docs/specs/topics/register.json` (alongside `status`/`topic_spec`/`help`, D12's existing hybrid register — not a new document), one `trends` object per topic entry, `null` where a topic has no scalar fleet metric for a panel to draw (`cylinder_rank`, `engine_ecu_inflight`, `limit_exceedances`) or the metric it would use doesn't exist yet (`map_at_takeoff`, pending the takeoff-MAP residual). `update_fleet` reads it (via `slingology_eis.operations.resolve_worsening_direction`) for the change statistic's worsening direction (Spec 12 R1.6/R3.3); `operations.build_trends_panels` exposes panel layout to callers without a frontend metric list. §5.2's table gains a **Trends panel** column with the same values. |
+| 0.10 | **D18 — `engine_ecu_inflight` re-audited after Spec 01 v0.19.** The E3 evidence (v0.1: "4 genuine in-flight events"; v0.4: "5 IN_FLIGHT events in 50 flights, CAN-dropout pattern at idle") was a classifier defect — the runs are ground events, most of them single-row blips at engine start; the corrected result is zero in-flight events and one 5 s ground CAN dropout. Verdict changes from **Keep** to **Admitted (provisional)** (§8.1 stage; same footing `cylinder_rank` had: mechanism sound, positive case never seen; condition: first true positive or a deliberate test). The "clear action" sentence (CAN/HIC inspection, B.U.D.S.) is removed from the audit — it is single-aircraft maintenance guidance (§9 item 11) and the engine no longer emits it. §3 example, register row, audit table, §6.1, §6.2 and Appendix A updated; `register.json` status for 916iS becomes `Admitted (provisional)`. |
+| 0.11 | Lane-check RPM band sourced from the OM (4,000 rpm procedure RPM, ±500 rpm our tolerance; 912iS/916iS, 915iS at its OM's 2,500 rpm, 914iS unverified); D18 evidence recorded (full set, Spec 01 v0.20). |
 
 ---
 
@@ -61,7 +63,7 @@ It does three things the current documents don't: states the **admission criteri
   - **OM limit** — a number from the engine's Operators Manual (engine profile `limits`, or computed limits like EGT split and overboost).
   - **Personal baseline** — the aircraft's own history: leave-one-out mean/SD, optionally within a weather band (Spec 01 §8.4, R8), and/or an engine-hours trend.
   - **Empirical model** — a fitted relationship from the aircraft's own data (e.g. takeoff MAP from pressure altitude and OAT).
-  - **Classification** — a rule that sorts events into expected vs. not (e.g. ENGINE ECU POWERUP/LANE_CHECK/SHUTDOWN/IN_FLIGHT; learned hottest cylinder).
+  - **Classification** — a rule that sorts events into expected vs. not (e.g. ENGINE ECU `GROUND_START`/`LANE_CHECK`/`GROUND`/`IN_FLIGHT`/`GROUND_SHUTDOWN`; learned hottest cylinder).
 - **Minimum detectable change (MDC)** — for a baseline anchor, the smallest change in the metric the trigger can separate from flight-to-flight noise: `z × SD` of the metric across comparable flights (default `outlier_z_threshold` = 2.0, so MDC ≈ 2 SD).
 - **Topic spec** — the document that justifies and designs one topic (§9).
 - **Register** — the table of every topic, past and present, with its standing against the criteria (§5).
@@ -149,7 +151,7 @@ Status is the **current** state, **for the 916iS**. §6 gives the audit verdict 
 | `cruise_efficiency` | How far am I going per gallon in cruise? | planning (§4.2) | baseline · trend, DA band | Admitted — to leave the topic set (Q4) | `fuel` |
 | `cruise_fuel_flow` | Is cruise fuel burn normal? | planning (§4.2) | baseline, DA band | Admitted — to leave the topic set (Q4) | `fuel` |
 | `map_at_takeoff` | Is the turbo making expected boost at takeoff? | health | empirical model (MAP ~ PA, OAT); tolerance from model residuals (D5) | Admitted | null — pending the takeoff-MAP residual fleet metric (Spec 12 §8.2, not yet built) |
-| `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (cas.py) | Admitted | null — not a baselined scalar |
+| `engine_ecu_inflight` | Did the FADEC report a fault in flight? | health | classification (`cas.py`, phase-based since Spec 01 v0.19) | Admitted (provisional) — D18 | null — not a baselined scalar |
 | `limit_exceedances` | Did anything go outside an OM limit? | health + operational | OM limits (all, overboost included since v0.3, §4.1) | Admitted — owner of limit events | null — limit panels are generated per limit, not declared |
 | `climb_thermal_rate` | Did the engine heat up faster than usual in climb? | health | baseline | **Research** (decided v0.4, D2) — rule disabled; metrics still computed | `thermal` (context) |
 | `egt4_elevation` | (superseded by `egt_cyl_deviation` cylinder 4) | — | — | Deprecated in engine 0.14.0 (Spec 08); **Removed** (decided v0.4, D3) | null |
@@ -171,7 +173,7 @@ Each topic was checked against A1–A7 using the code at `fee6577`, the research
 | `cruise_efficiency` | ✓ | ◐ | ✓ | ✗ | ◐ | ◐ | ◐ | Move to flight summary (§4.2) |
 | `cruise_fuel_flow` | ✓ | ◐ | ✓ | ✗ | ◐ | ✓ | ◐ | Move to flight summary (§4.2); A5 model to Research |
 | `map_at_takeoff` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | ✓ by D5 | Keep; tolerance from model + range guard (D5) |
-| `engine_ecu_inflight` | ✓ | ✓ | ✓ | ✓ E1+E3 | ✓ | ✓ | n/a | Keep |
+| `engine_ecu_inflight` | ✓ | ✓ | ✓ | ✓ E1 (E3 withdrawn, D18) | ✓ | ✓ | n/a | Keep, provisional |
 | `limit_exceedances` | ✓ | ✓ | ✓ | ✓ E1 | ◐ | owner | n/a | Keep; owner of limit events; saturation per D6 |
 | `climb_thermal_rate` | ✓ | ✓ | ✓ | ✓ E2 | ◐ | ✓ | ✗ | **Research** (D2) |
 | `egt4_elevation` | — | — | — | — | — | ✗ | — | **Remove** (D3) |
@@ -237,7 +239,7 @@ The cruise-phase mean difference is the one to use: a real, interpretable spread
 - **Leave-one-out side effect (Phase C measurement, accepted v0.7):** a flight judged by a model fitted on all *other* flights is always outside their range if it is the dataset's extreme on either axis, so those flights are never judged — 4 of 48 on current data. Accepted: "never extrapolate" is the simplest rule that can be defended, and the range widens as more places and conditions are flown. A leverage-based guard was considered and not adopted. Measured leave-one-out residual SE: 0.71–0.75 inHg (2 × SE ≈ 1.45 inHg; 3 of 48 flights fire, against 2 at the old 1.5 inHg).
 - With the guard in place, thin altitude diversity (5 of 48 departures above 2,000 ft) limits *where* the topic can judge, not whether its judgments are sound. **Provisional status closed.**
 
-**`engine_ecu_inflight` — keep.** A classification anchor that separates expected FADEC behaviour (POWERUP, LANE_CHECK, SHUTDOWN) from IN_FLIGHT events (E1 for the alert's meaning, E3 for the classification: 5 IN_FLIGHT events in 50 flights, CAN-dropout pattern at idle). Clear action: inspect the Display CAN and HIC connectors, pull the B.U.D.S. fault log.
+**`engine_ecu_inflight` — keep, provisional (D18, v0.10).** A classification anchor separating expected FADEC behaviour (`GROUND_START`, `LANE_CHECK`, `GROUND_SHUTDOWN`) from `IN_FLIGHT` events (E1 for the alert's meaning). E3 is now **absent**: the five runs the v0.4 audit counted as in-flight were a classifier defect (Spec 01 v0.19 — no flight test, no minimum duration); the corrected result on all 115 logs is zero in-flight events and two short `GROUND` runs (Spec 01 v0.20; the 2026-06-04 run first read as a CAN dropout is a shutdown). The topic passes A1–A7 on mechanism (E2) and clears the noise test trivially (nothing fires), but its positive case has never been observed. Provisional until a true positive, or a deliberate test (§8.1 — e.g. an injected `IN_FLIGHT` excerpt), shows the phase-based classifier fires when it should and not otherwise. `GROUND` runs are not this topic's concern; how they surface is Spec 03's.
 
 **`limit_exceedances` — keep; owner of limit events.** Every OM limit in the engine profile, with phase-aware suppression and duration thresholds (E1). Under A6 it is the **owner** of limit-exceedance signals; other topics defer to it (§4.1).
 *Saturation (new, v0.4):* with no filters applied it produced 187 flight-level insights across 50 flights, almost all from five limits — `fuel_press_min` on **50/50** flights, `rpm_continuous_max` 49/50, `fuel_press_max` 40/50, `rpm_idle_min` 25/50, `volts_min` 23/50. (`rpm_continuous_max` is the saturation case already fixed at the source: Spec 09 v0.12 retires it because it had no time allowance, so every takeoff breached it. The audit ran on code that still has it; Phase 6 is not yet implemented. Its 2026-10-01 numbers also predate overboost becoming a `limit_exceedances` event.) A limit that fires on every flight tells the pilot nothing about *this* flight (A5 in practice), whatever its OM basis. The remedy belongs to Spec 09 (filters, phase rules, durations) — and saved filters already do this in the Flight view — but the register must record it: see Q8.
@@ -293,7 +295,8 @@ Bucketing confirms the physical effect (gentle → aggressive +6.1 °F/min) but 
 
 | Outcome | Topics |
 |---|---|
-| Keep as is | `egt_cyl_deviation`, `engine_ecu_inflight` |
+| Keep as is | `egt_cyl_deviation` |
+| Keep, provisional (D18) — no positive case; prior evidence withdrawn | `engine_ecu_inflight` |
 | Keep; saturation handled per D6 — our gaps fixed and test-enforced, pilot keeps existing tools | `limit_exceedances` |
 | Keep; reference the limit event, keep the close call (decided, §4.1, v0.3) | `overboost_time` |
 | Keep; drop the duplicate limit insight (decided, §4.1); no duration threshold (D7 revised) | `oil_temp_peak`, `coolant_temp_peak` |
@@ -327,6 +330,7 @@ Once decided, each change becomes a BACKLOG item with this register as its refer
 | D15 | `fuel_press_max` | **Cause 3a: allowlist entry + pilot filter**; profile keeps OM 46 psi; entry prompts a mechanic check (sender vs regulator). | 2026-10-03, v0.6 |
 | D16 | `rpm_idle_min` | **Closed.** OM states 1,800 rpm as a minimum (915 i A OM table; OM-916 per the research paper). Keep the minimum and the `min_rpm: 1000` gate; add the idle-established condition (applies only after rpm has reached 1,800 since engine start); N117ZS's steady 20–30 rpm low idle is cause 3a (allowlist entry, pilot filter); profile note states the real rationale for `min_duration_s`. | 2026-10-05, v0.7 |
 | D17 | `rpm_takeoff_max` | **Closed.** Cause 3a (prop-governor overshoot, constant-speed propeller confirmed). No OM transient allowance in the 5,800–5,900 rpm band; no resolution tolerance (10 rpm steps). Hard ceiling; pilot filter ≤ +30 rpm; allowlist entry citing the Maintenance Manual Line. | 2026-10-05, v0.7 |
+| D18 | `engine_ecu_inflight` | **Admitted (provisional).** Prior E3 evidence (4, then 5 "in-flight" ENGINE ECU runs) withdrawn — a classifier defect, corrected in Spec 01 v0.19 (phase-based classes, minimum duration). Zero in-flight events on the full set (115 logs); two short `GROUND` runs (Spec 01 v0.20). Condition to close: first true `IN_FLIGHT` positive, or a deliberate injected-excerpt test. Single-aircraft action text removed from the audit and the engine. Full set (115 logs, Spec 01 v0.20): 0 `IN_FLIGHT`; 2 `GROUND` runs, both in one stationary ground run (2026-10-05 KBVS, 7 s and 8 s, 15 s apart, ~2,550 rpm, oil-pressure dropout in the second) — consistent with a lane check performed below the OM's 4,000 rpm; no ground faults. With the lane-check band sourced from the OM (v0.11, 4,000 ± 500 rpm on the 916iS) a third `GROUND` run appears: 2026-05-20 18:09:49 (11 s), the first half of a paired lane check in which rpm fell from ~4,300 to ~2,600–3,160 while the lane was off, pulling the run's mean below the band. | 2026-10-13, v0.10; evidence v0.11 |
 
 ## 7. Coverage view
 
@@ -475,9 +479,9 @@ Source: `reports/spec10_audit_2026-10-01.md` (header). 50 admitted flights. MDC 
 | `climb_coolant_rise_f_per_min` | (unused) | none | 50 | −0.64 °F/min | 1.28 | 2.6 | — |
 | `overboost_max_block_s` | `overboost_time` | none | 50 | 71.2 s | 57.6 | n/a (limit) | — |
 
-Other counts: hottest cylinder stable 50/50, `hot_cyl_changed` 0; MAP model n 48, R² 0.75, 5 departures above 2,000 ft; IN_FLIGHT ECU events 5; overboost > 300 s: 1, ≥ 240 s: 2. OAT bands: 40 mild / 6 cold / 1 warm / 0 hot.
+Other counts: hottest cylinder stable 50/50, `hot_cyl_changed` 0; MAP model n 48, R² 0.75, 5 departures above 2,000 ft; IN_FLIGHT ECU events 5 under the pre-v0.19 classifier — **0 after D18**, with 2 `GROUND` runs (Spec 01 v0.20); overboost > 300 s: 1, ≥ 240 s: 2. OAT bands: 40 mild / 6 cold / 1 warm / 0 hot.
 
-Insights fired across 50 flights (unfiltered): `limit_exceedances` 187, `egt_cyl_deviation` 9, `engine_ecu_inflight` 5, `climb_thermal_rate` 4, `coolant_temp_peak` 3, `cruise_efficiency` 3, `egt_spread` 2, `cruise_fuel_flow` 2, `overboost_time` 2, `map_at_takeoff` 1, `oil_coolant_ratio` 1, `oil_temp_peak` 1. Every rule id except `egt4_elevation` (disabled) and `flight_phase_mix` (enabled, never evaluated) was emitted; nothing was emitted without a rule.
+Insights fired across 50 flights (unfiltered): `limit_exceedances` 187, `egt_cyl_deviation` 9, `engine_ecu_inflight` 5 (pre-v0.19 classifier; 0 after D18), `climb_thermal_rate` 4, `coolant_temp_peak` 3, `cruise_efficiency` 3, `egt_spread` 2, `cruise_fuel_flow` 2, `overboost_time` 2, `map_at_takeoff` 1, `oil_coolant_ratio` 1, `oil_temp_peak` 1. Every rule id except `egt4_elevation` (disabled) and `flight_phase_mix` (enabled, never evaluated) was emitted; nothing was emitted without a rule.
 
 ### A.2 What changed from the v0.1–v0.3 snapshot
 

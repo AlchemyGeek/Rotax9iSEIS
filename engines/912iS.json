@@ -247,11 +247,12 @@
 
   "phase_detection": {
     "idle_rpm_min": 1400,
-    "runup_rpm_min": 3000,
-    "runup_rpm_max": 5000,
+    "_runup_rpm_note": "Lane-check RPM band (ENGINE ECU LANE_CHECK detection, Spec 01 §8.6 — the only use of these two keys). 4,000 rpm is the OM procedure RPM: OM-912 i Series Ed.2 Rev.2, Chapter 3.6 Engine run-up, Lane and Ignition check (page 3-11/3-12). The ±500 rpm tolerance is ours, not the OM's: how pilots actually hold the run-up.",
+    "runup_rpm_min": 3500,
+    "runup_rpm_max": 4500,
     "takeoff_rpm_min": 4500,
     "overboost_rpm_threshold": 5500,
     "lane_check_max_duration_s": 15,
-    "note": "Values derived from operating limits above — not separately sourced. idle_rpm_min follows the OM idle floor (1,400). OM 3.5/3.6: warm-up at ~2,000 then 2,500 rpm; ignition check at 4,000 rpm; fuel pump check at 2,000 rpm (OM 3.7)."
+    "note": "Values derived from operating limits above — not separately sourced, except the run-up (lane-check) band: see _runup_rpm_note. idle_rpm_min follows the OM idle floor (1,400). OM 3.5/3.6: warm-up at ~2,000 then 2,500 rpm; ignition check at 4,000 rpm; fuel pump check at 2,000 rpm (OM 3.7)."
   }
 }

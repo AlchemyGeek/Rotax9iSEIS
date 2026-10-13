@@ -265,11 +265,12 @@
 
   "phase_detection": {
     "idle_rpm_min": 1800,
-    "runup_rpm_min": 3000,
-    "runup_rpm_max": 5000,
+    "_runup_rpm_note": "Lane-check RPM band (ENGINE ECU LANE_CHECK detection, Spec 01 §8.6 — the only use of these two keys). 2,500 rpm is the OM procedure RPM per this profile's existing OM-915 citation (lane/ignition check at 2,500 rpm; section not cited, OM not in this repo — to be confirmed). The ±500 rpm tolerance is ours, not the OM's: how pilots actually hold the run-up.",
+    "runup_rpm_min": 2000,
+    "runup_rpm_max": 3000,
     "takeoff_rpm_min": 4500,
     "overboost_rpm_threshold": 5500,
     "lane_check_max_duration_s": 15,
-    "note": "Values derived from operating limits above — not separately sourced. Mirrors 916iS; OM-915 lane/ignition check is performed at 2,500 rpm."
+    "note": "Values derived from operating limits above — not separately sourced, except the run-up (lane-check) band: see _runup_rpm_note. Mirrors 916iS; OM-915 lane/ignition check is performed at 2,500 rpm."
   }
 }

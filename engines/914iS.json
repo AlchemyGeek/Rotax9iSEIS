@@ -209,6 +209,7 @@
   },
   "phase_detection": {
     "idle_rpm_min": 1800,
+    "_runup_rpm_note": "PLACEHOLDER — lane-check RPM band (ENGINE ECU LANE_CHECK detection) not verified against the OM; no OM lane-check RPM is cited for this engine.",
     "runup_rpm_min": 3000,
     "runup_rpm_max": 5000,
     "takeoff_rpm_min": 4500,
