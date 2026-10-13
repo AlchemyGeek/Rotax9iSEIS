@@ -8,7 +8,6 @@ export const NOT_LANE_CHECK_PHRASE: Record<NotLaneCheckReason, string> = {
   rpm_above_band: "above the lane-check band",
   too_long: "longer than a lane check",
   moving: "while moving, so not a lane check",
-  unpaired: "no second lane run",
 };
 
 export const ECU_CLASS_LABEL: Record<EcuClassification, string> = {
@@ -21,17 +20,15 @@ export const ECU_CLASS_LABEL: Record<EcuClassification, string> = {
 
 const rpmFmt = (v: number) => Math.round(v).toLocaleString("en-US");
 
-function bandText(band: [number, number] | undefined): string {
-  if (!band) return "";
-  const [lo, hi] = band;
-  return ` (${rpmFmt((lo + hi) / 2)} ± ${rpmFmt((hi - lo) / 2)})`;
+function bandText(band: { rpm: number; tolerance: number } | undefined): string {
+  return band ? ` (${rpmFmt(band.rpm)} ± ${rpmFmt(band.tolerance)})` : "";
 }
 
-export function notLaneCheckText(ev: Pick<CasEvent, "not_lane_check_reason" | "lane_check_band_rpm">): string | null {
+export function notLaneCheckText(ev: Pick<CasEvent, "not_lane_check_reason" | "lane_check_band">): string | null {
   if (!ev.not_lane_check_reason) return null;
   const phrase = NOT_LANE_CHECK_PHRASE[ev.not_lane_check_reason];
   const isRpm = ev.not_lane_check_reason === "rpm_below_band" || ev.not_lane_check_reason === "rpm_above_band";
-  return phrase + (isRpm ? bandText(ev.lane_check_band_rpm) : "");
+  return phrase + (isRpm ? bandText(ev.lane_check_band) : "");
 }
 
 // "ENGINE ECU · TAXI · 7 s · 2,550 rpm — below the lane-check band (4,000 ± 500)"

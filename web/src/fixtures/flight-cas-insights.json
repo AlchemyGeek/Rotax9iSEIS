@@ -225,10 +225,10 @@
               "rpm": 2550.0,
               "suppressed_by": null,
               "not_lane_check_reason": "rpm_below_band",
-              "lane_check_band_rpm": [
-                3500.0,
-                4500.0
-              ]
+              "lane_check_band": {
+                "rpm": 4000.0,
+                "tolerance": 500.0
+              }
             },
             {
               "event_id": "ENGINE ECU@2026-01-08T12:02:36",

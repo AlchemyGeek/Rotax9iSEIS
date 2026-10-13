@@ -1,0 +1,74 @@
+{
+  "advisory": {
+    "advisable": false,
+    "flights_exceeded": 0,
+    "flights_considered": 0,
+    "message": "Not advisable: Oil temp maximum was exceeded on 0 of your last 0 flights. Filters are meant for exceedances that happen regularly; an occasional one is usually worth looking at each time. You can still save this filter."
+  },
+  "target": {
+    "kind": "limit",
+    "limit_id": "oil_temp_max"
+  },
+  "limit": {
+    "id": "oil_temp_max",
+    "param": "oil_temp_f",
+    "label": "Oil temp maximum",
+    "unit": "\u00b0F",
+    "limit_type": "MAX",
+    "limit_value": 248.0,
+    "severity": "WARNING",
+    "report_in_exceedances": true,
+    "stratify_by": "oat_band",
+    "min_rpm": null,
+    "note": "Maximum 120\u00b0C / 248\u00b0F normal operation"
+  },
+  "policy": {
+    "filterable": true,
+    "reason": null,
+    "severity": "WARNING",
+    "magnitude_modes": [
+      "absolute",
+      "percent",
+      "z"
+    ],
+    "duration_allowed": true,
+    "max_band_abs": null,
+    "max_duration_s": null,
+    "note_required": true,
+    "review_interval_h": 25
+  },
+  "live": {
+    "magnitude_metric": "limit_oil_temp_max_peak_excess",
+    "magnitude": {
+      "n": 0,
+      "mean": null,
+      "std": null,
+      "min": null,
+      "max": null,
+      "confidence": {
+        "level": "VERY_LOW",
+        "n": 0
+      }
+    },
+    "time_above_pct": {
+      "n": 0,
+      "mean": null,
+      "std": null,
+      "min": null,
+      "max": null,
+      "confidence": {
+        "level": "VERY_LOW",
+        "n": 0
+      }
+    },
+    "share_with_events": null
+  },
+  "suggested": {},
+  "reference": {
+    "flight_ids": [],
+    "n_with_events": 0,
+    "collecting": true
+  },
+  "z_available": false,
+  "z_n_min": 10
+}

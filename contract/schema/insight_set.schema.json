@@ -171,8 +171,8 @@
                   "phase": { "type": "string" },
                   "phase_uncertain": { "type": "boolean" },
                   "rpm": { "type": ["number", "null"] },
-                  "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "unpaired", "too_long", "moving"] },
-                  "lane_check_band_rpm": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+                  "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "too_long", "moving"] },
+                  "lane_check_band": { "type": "object", "required": ["rpm", "tolerance"], "additionalProperties": false, "properties": { "rpm": { "type": "number" }, "tolerance": { "type": "number" } }, "description": "The profile's lane-check rpm and tolerance; present when not_lane_check_reason is an rpm miss, so a row can print it." },
                   "suppressed_by": { "enum": ["duration", null] }
                 }
               }

@@ -353,7 +353,7 @@ _ECU_CLASS_PHRASE = {
 }
 
 
-_LANE_CHECK_SUMMARY = {"both": "both lanes", "single": "one lane only", "none": "not detected"}
+_LANE_CHECK_SUMMARY = {"both": "both lanes ✓", "single": "one lane only", "none": "not detected"}
 
 
 def engine_ecu_inflight(ecu_runs: list[dict], sub_threshold_blips: int = 0, lane_check: str = "none") -> dict:
@@ -411,7 +411,6 @@ NOT_LANE_CHECK_PHRASE = {
     "rpm_above_band": "above the lane-check band",
     "too_long": "longer than a lane check",
     "moving": "while moving, so not a lane check",
-    "unpaired": "no second lane run",
 }
 
 

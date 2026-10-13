@@ -111,8 +111,8 @@ def _cas_event_from_run(r: dict, t0) -> dict:
     }
     if r.get("not_lane_check_reason"):
         ev["not_lane_check_reason"] = r["not_lane_check_reason"]
-        if r["not_lane_check_reason"] in ("rpm_below_band", "rpm_above_band") and r.get("lane_check_band_rpm"):
-            ev["lane_check_band_rpm"] = [float(v) for v in r["lane_check_band_rpm"]]
+        if r["not_lane_check_reason"] in ("rpm_below_band", "rpm_above_band") and r.get("lane_check_band"):
+            ev["lane_check_band"] = {k: float(v) for k, v in r["lane_check_band"].items()}
     return ev
 
 
@@ -1755,8 +1755,8 @@ def _cas_event_summary(e: dict, suppressed_by: Optional[str] = None) -> dict:
     }
     if e.get("not_lane_check_reason"):
         out["not_lane_check_reason"] = e["not_lane_check_reason"]
-    if e.get("lane_check_band_rpm"):
-        out["lane_check_band_rpm"] = e["lane_check_band_rpm"]
+    if e.get("lane_check_band"):
+        out["lane_check_band"] = e["lane_check_band"]
     return out
 
 

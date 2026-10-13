@@ -296,6 +296,13 @@ def test_limit_exceedances_present():
     assert result["insights"] == [{"trigger": "threshold", "text": "⚠ RPM above 5800 for 10s"}]
 
 
+def test_engine_ecu_inflight_lane_check_both_reads_with_tick():
+    """Spec 01 v0.22: displayed as both lanes ✓ / one lane only / not detected."""
+    result = topics.engine_ecu_inflight(
+        [{"classification": "LANE_CHECK"}, {"classification": "LANE_CHECK"}], lane_check="both")
+    assert result["analysis"].endswith("Lane check: both lanes ✓.")
+
+
 def test_engine_ecu_inflight_counts_by_class_blips_and_lane_check():
     """Spec 01 §8.5 (v0.21): a referencing topic — an analysis line with the
     class counts, blips and the lane-check summary; no events, no insight."""

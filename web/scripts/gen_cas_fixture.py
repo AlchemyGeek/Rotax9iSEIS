@@ -50,12 +50,15 @@ def main() -> None:
         "flight_ids": fleet_d["flight_ids"],
     }
     proposal = _filters.propose_limit_filter(fas, fleet, TARGET, cfg)
+    # A limit target's proposal, for the "this limit" caption test.
+    limit_proposal = _filters.propose_limit_filter(fas, fleet, {"kind": "limit", "limit_id": "oil_temp_max"}, cfg)
 
     for name, obj in [
         ("flight-cas-analysis.json", fa.to_dict()),
         ("flight-cas-insights.json", iset.to_dict()),
         ("cas-trends.json", trends),
         ("cas-filter-proposal.json", proposal),
+        ("limit-filter-proposal.json", limit_proposal),
     ]:
         (OUT / name).write_text(json.dumps(json.loads(dumps(obj)), indent=2) + "\n")
         print("wrote", OUT / name)

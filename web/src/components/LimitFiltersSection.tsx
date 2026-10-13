@@ -7,7 +7,7 @@ import { FilterEditor } from "./FilterEditor";
 import { FilterHealthCharts } from "./FilterHealthCharts";
 import { notifyFiltersChanged } from "../lib/filterAttention";
 import { ScopeCaption } from "./ScopeCaption";
-import { APPLY_LABEL } from "../lib/scope";
+import { APPLY_LABEL, filterScope } from "../lib/scope";
 
 const STATUS_STYLE: Record<FilterStatus, { label: string; color: string }> = {
   breached: { label: "BREACHED", color: "var(--severity-limit)" },
@@ -314,7 +314,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
                 </span>
               )}
               <span style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-                <ScopeCaption scope="limit" />
+                <ScopeCaption scope={filterScope(filter.target)} />
                 {[
                   ["Edit", () => setEditing(editing === filter.id ? null : filter.id)],
                   ["Reset reference", () => act(() => client.rebaselineFilter(filter.id))],

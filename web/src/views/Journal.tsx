@@ -6,10 +6,10 @@ import { notifyFiltersChanged } from "../lib/filterAttention";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import { annotationStore as fixtureAnnotations } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
-import type { Annotation, FilterHealth, JournalEntry, JournalEntryKind } from "../types/contract";
+import type { Annotation, FilterHealth, FilterTarget, JournalEntry, JournalEntryKind } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
 import { ScopeCaption } from "../components/ScopeCaption";
-import type { Scope } from "../lib/scope";
+import { filterScope, type Scope } from "../lib/scope";
 
 const client = getEngineClient();
 
@@ -367,7 +367,7 @@ export function Journal() {
                           </button>
                         )}
                         {entry.status === "open" && !usingFixture && ENTRY_SCOPE[entry.kind] && (
-                          <ScopeCaption scope={ENTRY_SCOPE[entry.kind]!} />
+                          <ScopeCaption scope={entry.kind === "limit_filter" ? filterScope((entry.where as { target?: FilterTarget } | null)?.target) : ENTRY_SCOPE[entry.kind]!} />
                         )}
                         {entry.status === "open" && !usingFixture && (
                           <button onClick={() => reverseEntry(entry)} style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>

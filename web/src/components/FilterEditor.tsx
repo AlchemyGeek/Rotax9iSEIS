@@ -3,7 +3,7 @@ import { getEngineClient } from "../lib/engineClient";
 import type { FilterMagnitudeMode, FilterPreview, FilterProposal, FilterTarget, LimitFilter, LimitFilterDraft } from "../types/contract";
 import { targetKey } from "../types/contract";
 import { ScopeCaption } from "./ScopeCaption";
-import { APPLY_LABEL } from "../lib/scope";
+import { APPLY_LABEL, filterScope } from "../lib/scope";
 
 const client = getEngineClient();
 
@@ -209,7 +209,7 @@ export function FilterEditor({
     >
       <div>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{proposal.existing ? "Edit filter" : isCas ? "Filter this alert" : "Filter this limit"}: {limit.label}</div>
-        <ScopeCaption scope="limit" />
+        <ScopeCaption scope={filterScope(target)} />
         {isCas ? (
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
             An alert has no magnitude to tolerate — only how long it lasts. Hidden events still count in Trends' frequency.
@@ -325,7 +325,7 @@ export function FilterEditor({
           Preview
         </button>
         <button style={buttonStyle(true, canSave)} disabled={!canSave} onClick={save}>
-          {APPLY_LABEL.limit}
+          {APPLY_LABEL[filterScope(target)]}
         </button>
         <button style={buttonStyle(false)} onClick={onCancel}>Cancel</button>
         {proposal.existing && (

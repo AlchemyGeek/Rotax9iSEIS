@@ -102,8 +102,8 @@
                   "co_alerts": { "type": "array", "items": { "type": "string" } }
                 }
               },
-              "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "unpaired", "too_long", "moving"] },
-              "lane_check_band_rpm": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "The profile's lane-check rpm band [min, max]; present when not_lane_check_reason is an rpm miss, so a row can name it." }
+              "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "too_long", "moving"] },
+              "lane_check_band": { "type": "object", "required": ["rpm", "tolerance"], "additionalProperties": false, "properties": { "rpm": { "type": "number" }, "tolerance": { "type": "number" } }, "description": "The profile's lane-check rpm and tolerance; present when not_lane_check_reason is an rpm miss, so a row can print it." }
             }
           }
         ]

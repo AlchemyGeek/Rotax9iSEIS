@@ -420,8 +420,7 @@ def not_lane_check_reason(
     check, when it misses the signature on exactly one count —
     rpm_below_band / rpm_above_band / too_long / moving. None otherwise
     (two or more misses: it isn't close to a lane check). Pairing is not
-    part of the classification signature here (an unpaired run that
-    passes is a single LANE_CHECK), so "unpaired" never arises."""
+    a reason: a lone in-band run is a LANE_CHECK (lane_check "single")."""
     if classification != "GROUND" or phase not in _LANE_CHECK_PHASES:
         return None
     rpm = _running_rpm_mean(seg)
@@ -522,7 +521,7 @@ def extract_engine_ecu_runs(
             "phase_uncertain": uncertain,
             "not_lane_check_reason": not_lane_check_reason(seg, cls, phase, lc_max_s, rpm_min, rpm_max),
             "running_rpm":     round(_running_rpm_mean(seg), 1),
-            "lane_check_band_rpm": [rpm_min, rpm_max],
+            "lane_check_band": {"rpm": (rpm_min + rpm_max) / 2, "tolerance": (rpm_max - rpm_min) / 2},
             "co_alerts":       co_alerts,
             "oil_nan_frac":    float(seg["oil_press_psi"].isna().mean()) if "oil_press_psi" in seg.columns else None,
             "start_idx":       df.index[a],

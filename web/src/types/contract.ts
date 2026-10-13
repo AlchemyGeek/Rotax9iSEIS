@@ -38,7 +38,7 @@ export interface Phase {
 // limit fields.
 export type FlightEvent = ExceedanceEvent | CasEvent;
 
-export type NotLaneCheckReason = "rpm_below_band" | "rpm_above_band" | "unpaired" | "too_long" | "moving";
+export type NotLaneCheckReason = "rpm_below_band" | "rpm_above_band" | "too_long" | "moving";
 
 export interface CasEvent {
   source: "cas";
@@ -52,7 +52,7 @@ export interface CasEvent {
   duration_s: number;
   context: { rpm: number | null; ias_kt: number | null; oil_nan_frac: number | null; co_alerts: string[] };
   not_lane_check_reason?: NotLaneCheckReason;
-  lane_check_band_rpm?: [number, number];
+  lane_check_band?: { rpm: number; tolerance: number };
 }
 
 export interface ExceedanceEvent {
@@ -198,7 +198,7 @@ export interface CasInsightEvent {
   phase_uncertain: boolean;
   rpm?: number | null;
   not_lane_check_reason?: NotLaneCheckReason;
-  lane_check_band_rpm?: [number, number];
+  lane_check_band?: { rpm: number; tolerance: number };
   suppressed_by: "duration" | null;
 }
 

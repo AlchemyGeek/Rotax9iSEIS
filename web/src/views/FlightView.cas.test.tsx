@@ -80,6 +80,6 @@ describe("FlightView CAS events", () => {
     expect(within(editor).queryByText(/A little past the limit is fine/)).toBeNull();
     expect(within(editor).getByText("Brief alerts are fine, lasting up to")).toBeTruthy();
     expect((within(editor).getByRole("spinbutton") as HTMLInputElement).value).toBe("7");
-    expect(within(editor).getByText(/All flights in this workspace/)).toBeTruthy();
+    expect(within(editor).getByText("All flights in this workspace — this alert")).toBeTruthy();
   });
 });
