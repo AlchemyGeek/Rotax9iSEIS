@@ -2,8 +2,9 @@ import type { Insight, InsightSet } from "../types/contract";
 
 // Originally shared between the rule playground (Baselines.tsx, used for
 // Spec 14 §9 acceptance 6's side-by-side comparison, then removed —
-// step 5) and the insight card's own rule editor (retired v0.3, moved to
-// the topic card — TopicRulesPanel.tsx, still here). The two having
+// step 5) and the rule editor (the insight card's in v0.2, the topic
+// card's in v0.3–v0.8, the side panel RuleEditorPanel.tsx since Spec 14
+// v0.9). The two having
 // shared this one function rather than independent implementations is
 // what made "the card preview equals the retired playground's diff" true
 // by construction, not by coincidence.

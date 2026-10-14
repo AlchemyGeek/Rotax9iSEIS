@@ -1,64 +1,39 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InsightCard } from "../components/InsightCard";
 import { FilterEditor } from "../components/FilterEditor";
 import { notifyFiltersChanged } from "../lib/filterAttention";
-import { SeverityBadge } from "../components/SeverityBadge";
-import { ChannelTimeline } from "../components/ChannelTimeline";
-import { ChannelPicker } from "../components/ChannelPicker";
-import { PresetBar } from "../components/PresetBar";
-import { PhaseCaption } from "../components/PhaseCaption";
-import { PhaseMinimap } from "../components/PhaseMinimap";
 import { PhaseFilter } from "../components/PhaseFilter";
 import { fixtureFlightById, flightAnalysis as fixtureFlight, insightSet as fixtureInsights, kacvSeries, sourceFilename } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
 import { useTopicHelp } from "../lib/topicHelp";
 import { useAircraftSummary } from "../lib/aircraftSummary";
-import { TopicHelpButton, UnverifiedTag } from "../components/TopicHelpButton";
-import { toSeriesFixture } from "../lib/series";
-import { assignChannelColors } from "../lib/channels";
-import { useChartSession } from "../lib/chartSession";
-import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import { phaseAtTime } from "../lib/phases";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
-import { colors as themeColors } from "../theme/colors";
-import { TopicRulesPanel } from "../components/TopicRulesPanel";
 import { InlineHelp } from "../components/InlineHelp";
 import { CasEventDetails } from "../components/CasEventDetails";
+import { TimelinePanel } from "../components/TimelinePanel";
+import { FlightFacts } from "../components/FlightFacts";
+import { EventsTable } from "../components/EventsTable";
+import { TopicCards } from "../components/TopicCards";
+import { RuleEditorPanel } from "../components/RuleEditorPanel";
+import { useTimeline } from "../lib/useTimeline";
+import { flightFacts } from "../lib/flightFacts";
+import { buildEventRows, insightEventId, type EventRow } from "../lib/flightEvents";
+import { REFERENCE_DERIVED_TOPICS, topicCardModel } from "../lib/topicRoster";
 import { isCasInsightEvent } from "../types/contract";
 import type {
-  Annotation, CasEvent, ChannelRegistryEntry, ChartPreset, ExclusionEntry, FilterTarget, FlightAnalysis,
-  Insight, InsightSeverity, InsightSet, ReferenceChangeMarker, ReferenceState, RuleSet, SeriesFixture, SlotGroupEntry, TopicResult,
+  Annotation, CasEvent, FilterTarget, FlightAnalysis, Insight, InsightSeverity, InsightSet,
+  ReferenceChangeMarker, ReferenceState, RuleSet,
 } from "../types/contract";
 
 // Spec 14 §7.1 — only these trigger kinds compare the flight against the
 // reference; a threshold insight (an OM limit, a CAS event) has nothing
 // to do with it, so it gets no exclude action.
 const REFERENCE_DRIVEN_TRIGGERS = new Set<Insight["trigger"]>(["baseline_deviation", "trend"]);
-
-const LANE_CHECK_TEXT: Record<NonNullable<FlightAnalysis["ecu_lane_check"]>, string> = {
-  both: "both lanes ✓",
-  single: "one lane only",
-  none: "not detected",
-};
-
 const SEVERITY_RANK: Record<InsightSeverity, number> = { limit: 0, warning: 1, watch: 2, info: 3 };
 const client = getEngineClient();
-
-// Spec 03 v0.3 §5.2: when a topic has more than one fired insight, the
-// card (Analysis) and the list use the same one — its most severe.
-function topTopicInsight(topic: TopicResult): Insight | null {
-  if (!topic.insights.length) return null;
-  return [...topic.insights].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])[0];
-}
-
-function noInsightSummaryText(topics: TopicResult[]): string {
-  const names = topics.slice(0, 2).map((t) => t.topic_id.replace(/_/g, " "));
-  const remaining = topics.length - names.length;
-  const namesStr = remaining > 0 ? `${names.join(", ")}, and ${remaining} other${remaining === 1 ? "" : "s"}` : names.join(" and ");
-  return `${topics.length} topic${topics.length === 1 ? "" : "s"} ${topics.length === 1 ? "was" : "were"} analyzed with nothing to flag — ${namesStr}. See Analysis section for the full picture.`;
-}
 
 function refsMatch(a: Annotation["ref"], b: Annotation["ref"]): boolean {
   if (a.kind !== b.kind) return false;
@@ -67,62 +42,14 @@ function refsMatch(a: Annotation["ref"], b: Annotation["ref"]): boolean {
   return false;
 }
 
-// Order-independent — a preset's channels and the active slot list are
-// both "one entry per slot" (Spec 07 D3), just not necessarily in the
-// same order once channels have been added/removed by hand.
-function sameSlotSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const setB = new Set(b);
-  return a.every((id) => setB.has(id));
-}
-
-const FALLBACK_OVERVIEW_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
-
-// Spec 02 §5.6 / Spec 03 §5.2: cards whose comparison comes from history
-// (baseline, trend or model) carry the mixed-aircraft note in a blended
-// workspace; OM-limit and classification cards don't, since nothing
-// about them blends across aircraft.
-const HISTORY_DERIVED_TOPICS = new Set([
-  "egt_spread", "egt_cyl_deviation", "oil_temp_peak", "coolant_temp_peak", "map_at_takeoff",
-]);
-
-function expandSlotsWith(slots: string[], groups: SlotGroupEntry[]): string[] {
-  return slots.flatMap((id) => groups.find((sg) => sg.id === id)?.members ?? [id]);
-}
-
+// Spec 03 v0.16 §5.2 — Flight view. Layout, top to bottom: header (date,
+// facts row, reference state, change markers); insight list (left) and the
+// main column — timeline, Events, topic cards. The rule editor is a side
+// panel over all of it (Spec 14 v0.9 §7.3). A log the loader skipped is
+// not a flight and is not shown here (Log preview, §5.9).
 export function FlightView() {
-  const { flightId, filenameParam } = useParams();
-  // /skipped/:filenameParam (Spec 02 §5.11.5) — a log
-  // that never became a flight_id, previewed read-only on this same
-  // screen so a pilot can judge an auto-exclusion without first
-  // bringing the file into the workspace. encodeURIComponent'd by the
-  // Flights tab's row link since a filename can contain characters a
-  // raw path segment can't.
-  const skippedFilename = filenameParam ? decodeURIComponent(filenameParam) : null;
-  const mode: "flight" | "skipped" = skippedFilename ? "skipped" : "flight";
+  const { flightId } = useParams();
   const navigate = useNavigate();
-  const [zoomWindow, setZoomWindow] = useState<[number, number] | null>(null);
-  const [visibleWindow, setVisibleWindow] = useState<[number, number]>([0, 0]);
-  const [highlight, setHighlight] = useState<{ start_s: number; end_s: number; marker_s?: number } | null>(null);
-
-  // Spec 07 §4/§6/§7 chart state — the picker/preset bar/timeline all
-  // read from this rather than each other, so there is exactly one
-  // source of truth for "what's on the chart right now." Held in a
-  // context above the router (D7), not local state, so it survives
-  // navigating away from and back to Flight view within a session.
-  const {
-    initialized: chartInitialized, setInitialized: setChartInitialized,
-    activeSlots, setActiveSlots, presetId, setPresetId, chartState, setChartState,
-    channelColors, setChannelColors,
-    insightSnapshot, setInsightSnapshot, insightLabel, setInsightLabel,
-  } = useChartSession();
-  const [channelRegistry, setChannelRegistry] = useState<ChannelRegistryEntry[]>([]);
-  const [slotGroups, setSlotGroups] = useState<SlotGroupEntry[]>([]);
-  const [maxSlots, setMaxSlots] = useState(6);
-  const [presets, setPresets] = useState<ChartPreset[]>([]);
-  const [seriesCache, setSeriesCache] = useState<SeriesFixture>({ flight_id: "", channels: {} });
-  const [hasTimeline, setHasTimeline] = useState(true);
-  const [savePresetDraft, setSavePresetDraft] = useState<string | null>(null);
 
   const [flightAnalysis, setFlightAnalysis] = useState<FlightAnalysis>(fixtureFlight);
   const [insightSet, setInsightSet] = useState<InsightSet>(fixtureInsights);
@@ -130,146 +57,35 @@ export function FlightView() {
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  // Spec 14 §7.1 — "Contributes to reference / Excluded from reference
-  // (reason)" header state, and open "reference changed" markers (acceptance 8).
+  // Spec 14 §7.1 — reference contribution and open change markers.
   const [referenceState, setReferenceState] = useState<ReferenceState | null>(null);
   const [referenceChanges, setReferenceChanges] = useState<ReferenceChangeMarker[]>([]);
   const [excludeDialogFor, setExcludeDialogFor] = useState<string | null>(null); // insight id, or "header"
-  // Spec 14 §7.1 (v0.6): Include again opens the same dialog, not a one-click action.
   const [includeDialogOpen, setIncludeDialogOpen] = useState(false);
   const [excludeBusy, setExcludeBusy] = useState(false);
   const [unitsSystem, setUnitsSystem] = useState<"imperial" | "metric">("imperial");
-
-  // Skipped-log preview only (mode === "skipped") — why it was excluded,
-  // plus Include-button state. No insights/analysis section renders in
-  // this mode, so none of the insight-panel state above is used here.
-  const [skippedInfo, setSkippedInfo] = useState<ExclusionEntry | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [including, setIncluding] = useState(false);
-  const [includeError, setIncludeError] = useState<string | null>(null);
-
-  // Insights panel's phase filter (null = every phase) — persisted
-  // globally via AppSettings.flight_chart.phase_filter (same bucket as
-  // last_preset_id), so a selection carries across flights and sessions,
-  // not just within this one page visit.
+  const [resolvedRules, setResolvedRules] = useState<RuleSet | null>(null);
+  const [shippedRules, setShippedRules] = useState<RuleSet | null>(null);
+  // filter_id -> its band in words ("up to +1.5 psi"), for the Events
+  // section's collapsed "within your filter" lines.
+  const [filterSummaryById, setFilterSummaryById] = useState<Record<string, string>>({});
+  // Insight list phase filter (null = every phase), persisted globally.
   const [phaseFilter, setPhaseFilter] = useState<string[] | null>(null);
+  // The event a clicked insight or Events row points at — its row and
+  // chart marker are emphasised.
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
 
-  function expandSlots(slots: string[]): string[] {
-    return expandSlotsWith(slots, slotGroups);
-  }
-
-  function channelMetaFor(id: string, registry: ChannelRegistryEntry[]): { label: string; unit: string } | undefined {
-    const c = registry.find((r) => r.id === id);
-    return c ? { label: c.label, unit: c.unit ?? "" } : undefined;
-  }
-
-  // Spec 07 D7: chart state (a preset or a Modified set) carries across
-  // flights within a session — only resolved from
-  // AppSettings.flight_chart.last_preset_id the first time Flight view
-  // opens this session (chartInitialized, from the session context —
-  // survives this component unmounting/remounting via the Flights list).
+  const tl = useTimeline({ phases: flightAnalysis.phases, usingFixture });
 
   useEffect(() => {
     let cancelled = false;
-    setZoomWindow(null);
-    setHighlight(null);
-
-    // D7's Insight exception: an insight belongs to one flight, so
-    // moving to another leaves Insight and restores the state before it
-    // — computed as a plain local value (not read back from state) since
-    // the setState calls below don't apply until next render.
-    const carriedState =
-      chartState === "insight" && insightSnapshot
-        ? insightSnapshot
-        : { activeSlots, presetId, chartState: chartState as "preset" | "modified" };
-    if (chartState === "insight") {
-      setActiveSlots(carriedState.activeSlots);
-      setPresetId(carriedState.presetId);
-      setChartState(carriedState.chartState);
-    }
-    setInsightSnapshot(null);
-    setInsightLabel(undefined);
-    setSavePresetDraft(null);
-    setLoadError(null);
-    setIncludeError(null);
-
-    // Same Timeline/picker/presets machinery as a real flight — sourced
-    // from the watched-folder file on disk via the preview ops instead
-    // of a workspace flight_id, nothing persisted. No insightSet is
-    // fetched at all (not just left empty) — a skipped log was never
-    // run through evaluate_insights, so there is no "analysis" to show
-    // or quietly render as "nothing fired."
-    async function loadSkipped(filename: string) {
-      setLoading(true);
-      setSkippedInfo(null);
-      setAnnotations([]);
-      setUsingFixture(false);
-      try {
-        const [got, registryResult, presetsResult, appSettings, exclusionsResult] = await Promise.all([
-          client.previewExcludedLog(filename),
-          client.getChannelRegistry(),
-          client.getChartPresets(),
-          client.getAppSettings(),
-          client.listExclusions(),
-        ]);
-        if (cancelled) return;
-        setFlightAnalysis(got.flight_analysis);
-        setFilename(filename);
-        setSkippedInfo(exclusionsResult.entries.find((e) => e.filename === filename) ?? null);
-        setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
-        setUnitsSystem(appSettings.units ?? "imperial");
-
-        setChannelRegistry(registryResult.channels);
-        setSlotGroups(registryResult.slot_groups);
-        setMaxSlots(registryResult.max_chart_slots);
-        setPresets(presetsResult.presets);
-
-        let slotsToLoad: string[];
-        if (!chartInitialized) {
-          const lastPresetId = appSettings.flight_chart?.last_preset_id as string | undefined;
-          const initialPreset =
-            presetsResult.presets.find((p) => p.id === lastPresetId) ??
-            presetsResult.presets.find((p) => p.id === "overview") ??
-            presetsResult.presets[0] ?? null;
-          slotsToLoad = initialPreset?.channels ?? [];
-          setActiveSlots(slotsToLoad);
-          setPresetId(initialPreset?.id ?? null);
-          setChartState("preset");
-          setChartInitialized(true);
-        } else {
-          slotsToLoad = carriedState.activeSlots;
-        }
-        setSeriesCache({ flight_id: filename, channels: {} });
-
-        try {
-          const idsToFetch = expandSlotsWith(slotsToLoad, registryResult.slot_groups);
-          const raw = await client.getExcludedLogSeries(filename, idsToFetch);
-          if (!cancelled) {
-            const fixture = toSeriesFixture(filename, raw, (id) => channelMetaFor(id, registryResult.channels));
-            setSeriesCache({ flight_id: filename, channels: fixture.channels });
-            setHasTimeline(true);
-          }
-        } catch {
-          if (!cancelled) setHasTimeline(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setLoadError(`Couldn't load ${filename} — the server may be unreachable, or the file is no longer in a watched folder.`);
-          setHasTimeline(false);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
+    const carried = tl.beginFlight();
+    setActiveEventId(null);
 
     async function load() {
-      if (mode === "skipped") {
-        if (skippedFilename) await loadSkipped(skippedFilename);
-        return;
-      }
       if (!flightId) {
-        // No id in the URL: send to a real flight if one exists in this
-        // workspace, otherwise fall through to the bundled fixture below.
+        // No id in the URL: send to a real flight if one exists, otherwise
+        // stay on the bundled sample.
         try {
           const flights = await client.listFlights();
           if (!cancelled && flights.length > 0) {
@@ -277,7 +93,7 @@ export function FlightView() {
             return;
           }
         } catch {
-          // server unreachable — fixture is already the current state, nothing to do
+          // server unreachable — the fixture is already the current state
         }
         if (!cancelled) setUsingFixture(true);
         return;
@@ -298,53 +114,21 @@ export function FlightView() {
         setReferenceChanges(got.reference_changes);
         setResolvedRules(rulesResult.rules);
         setShippedRules(rulesResult.shipped_rules);
-        // A raw content-hash source_key is not a filename — if the server
-        // genuinely has no recorded filename for this flight (no import
-        // history at all, not just no persisted copy — that gap is
-        // server.py's _source_filename's job to close), say so plainly
-        // rather than showing what looks like a broken/garbled name.
+        // A raw content-hash source_key is not a filename — say so plainly.
         setFilename(got.source_filename ?? "unknown source file");
         setUsingFixture(false);
         setPhaseFilter(appSettings.flight_chart?.phase_filter ?? null);
         setUnitsSystem(appSettings.units ?? "imperial");
-
-        setChannelRegistry(registryResult.channels);
-        setSlotGroups(registryResult.slot_groups);
-        setMaxSlots(registryResult.max_chart_slots);
-        setPresets(presetsResult.presets);
-
-        let slotsToLoad: string[];
-        if (!chartInitialized) {
-          const lastPresetId = appSettings.flight_chart?.last_preset_id as string | undefined;
-          const initialPreset =
-            presetsResult.presets.find((p) => p.id === lastPresetId) ??
-            presetsResult.presets.find((p) => p.id === "overview") ??
-            presetsResult.presets[0] ?? null;
-          slotsToLoad = initialPreset?.channels ?? [];
-          setActiveSlots(slotsToLoad);
-          setPresetId(initialPreset?.id ?? null);
-          setChartState("preset");
-          setChartInitialized(true);
-        } else {
-          // Already had a selection this session (D7) — carry it into
-          // this flight unchanged; only the underlying series data (and
-          // per-flight availability) is flight-specific.
-          slotsToLoad = carriedState.activeSlots;
-        }
-        setSeriesCache({ flight_id: flightId, channels: {} });
-
-        try {
-          const idsToFetch = expandSlotsWith(slotsToLoad, registryResult.slot_groups);
-          const raw = await client.getFlightSeries(flightId, idsToFetch);
-          if (!cancelled) {
-            const fixture = toSeriesFixture(flightId, raw, (id) => channelMetaFor(id, registryResult.channels));
-            setSeriesCache({ flight_id: flightId, channels: fixture.channels });
-            setHasTimeline(true);
-          }
-        } catch {
-          if (!cancelled) setHasTimeline(false);
-        }
-
+        void loadFilterSummaries();
+        await tl.setupLive({
+          key: flightId,
+          fetch: (ids) => client.getFlightSeries(flightId, ids),
+          registry: registryResult,
+          presets: presetsResult.presets,
+          appSettings,
+          carried,
+          isCancelled: () => cancelled,
+        });
         try {
           const annRes = await client.listAnnotations(flightId);
           if (!cancelled) setAnnotations(annRes.annotations);
@@ -354,48 +138,15 @@ export function FlightView() {
       } catch {
         if (!cancelled) {
           // No live server, or this id doesn't exist there — a fixture
-          // flight matching the requested id (e.g. an annotation linking
-          // to a fixture flight) wins over the generic KACV default, so a
-          // link lands on its own actual flight instead of a stand-in.
+          // flight matching the id wins over the generic KACV default.
           const known = fixtureFlightById(flightId);
           const fa = known?.analysis ?? fixtureFlight;
-          const series = known ? known.series : kacvSeries;
           setFlightAnalysis(fa);
           setInsightSet(known?.insightSet ?? fixtureInsights);
           setFilename(sourceFilename(fa.source_keys[0]));
-          setAnnotations([]); // fixture mode has no server to persist notes through
+          setAnnotations([]);
           setUsingFixture(true);
-
-          // No live registry/presets endpoint to fall back to either — a
-          // small registry synthesized from whatever this fixture's own
-          // series actually carries keeps the picker functional, just
-          // limited to that fixture's channels rather than the full 36.
-          const syntheticRegistry: ChannelRegistryEntry[] = series
-            ? Object.entries(series.channels).map(([id, ch]) => ({
-                id, unit: ch.unit, description: ch.label, label: ch.label,
-                group: "flight", slot_group: null, companions: [], unit_variant_of: null,
-              }))
-            : [];
-          const overviewIds = FALLBACK_OVERVIEW_IDS.filter((id) => series?.channels[id]);
-          const syntheticPreset: ChartPreset = { id: "overview", label: "Overview", description: "", channels: overviewIds };
-          setChannelRegistry(syntheticRegistry);
-          setSlotGroups([]);
-          setMaxSlots(6);
-          setPresets(overviewIds.length ? [syntheticPreset] : []);
-
-          if (!chartInitialized) {
-            setActiveSlots(overviewIds);
-            setPresetId(overviewIds.length ? "overview" : null);
-            setChartState("preset");
-            setChartInitialized(true);
-          } else {
-            // D7 still applies in fixture mode: carry the selection over,
-            // restricted to whatever this particular fixture actually has.
-            const carried = carriedState.activeSlots.filter((id) => series?.channels[id]);
-            setActiveSlots(carried.length ? carried : overviewIds);
-          }
-          setSeriesCache(series ?? { flight_id: flightId, channels: {} });
-          setHasTimeline(series !== null);
+          tl.setupFixture(flightId, known ? known.series : kacvSeries, carried);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -406,151 +157,23 @@ export function FlightView() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flightId, skippedFilename, mode, navigate]);
+  }, [flightId, navigate]);
 
-  // Slot colors are assigned by identity, not position (Spec 07 §9) — a
-  // channel keeps its color for as long as it stays active, so this has
-  // to carry the previous assignment forward rather than recompute from
-  // nothing on every render.
-  const activeChannelIds = useMemo(() => expandSlots(activeSlots), [activeSlots, slotGroups]);
-  useEffect(() => {
-    setChannelColors((prev) => assignChannelColors(activeChannelIds, prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChannelIds]);
-  const colorFor = useMemo(() => (id: string) => channelColors[id] ?? themeColors.textSecondary, [channelColors]);
-
-  function ensureLoaded(ids: string[]) {
-    if (usingFixture) return; // fixture series is already fully present in the cache
-    const missing = ids.filter((id) => !seriesCache.channels[id]);
-    if (missing.length === 0) return;
-    const fetchSeries =
-      mode === "skipped" && skippedFilename
-        ? client.getExcludedLogSeries(skippedFilename, missing)
-        : flightId
-          ? client.getFlightSeries(flightId, missing)
-          : null;
-    if (!fetchSeries) return;
-    const seriesId = mode === "skipped" ? (skippedFilename as string) : (flightId as string);
-    fetchSeries
-      .then((raw) => {
-        const fixture = toSeriesFixture(seriesId, raw, (id) => channelMetaFor(id, channelRegistry));
-        setSeriesCache((prev) => ({ flight_id: seriesId, channels: { ...prev.channels, ...fixture.channels } }));
-      })
-      .catch(() => {
-        // leave the cache as-is — ChannelTimeline already skips channels it has no data for
-      });
-  }
-
-  function handleTogglePickerChannel(slotId: string) {
-    const isActive = activeSlots.includes(slotId);
-    let next: string[];
-    if (isActive) {
-      next = activeSlots.filter((id) => id !== slotId);
-    } else {
-      // Spec 07 §7.1: the EGT group and its own members are mutually
-      // exclusive on the chart — picking one swaps out the other rather
-      // than just adding a slot, so this can free a slot as often as it
-      // uses one (never blocked by a full chart either way).
-      const asGroup = slotGroups.find((sg) => sg.id === slotId);
-      const parentGroup = slotGroups.find((sg) => sg.members.includes(slotId) && activeSlots.includes(sg.id));
-      const base = asGroup
-        ? activeSlots.filter((id) => !asGroup.members.includes(id))
-        : parentGroup
-          ? activeSlots.filter((id) => id !== parentGroup.id)
-          : activeSlots;
-      if (base.length >= maxSlots) return; // picker already disables this; a no-op guard either way
-      next = [...base, slotId];
-    }
-    setActiveSlots(next);
-    ensureLoaded(expandSlots(next));
-    const basePreset = presets.find((p) => p.id === presetId);
-    setChartState(basePreset && sameSlotSet(basePreset.channels, next) ? "preset" : "modified");
-  }
-
-  function handleSelectPreset(id: string) {
-    const preset = presets.find((p) => p.id === id);
-    if (!preset) return;
-    setActiveSlots(preset.channels);
-    setPresetId(id);
-    setChartState("preset");
-    ensureLoaded(expandSlots(preset.channels));
-    if (!usingFixture) {
-      client
-        .getAppSettings()
-        .then((s) => client.saveAppSettings({ ...s, flight_chart: { ...(s.flight_chart ?? {}), last_preset_id: id } }))
-        .catch(() => {
-          // remembering the last preset is a convenience, not required for this session to work
-        });
-    }
-  }
-
-  function handleRevert() {
-    const basePreset = presets.find((p) => p.id === presetId);
-    if (!basePreset) return;
-    setActiveSlots(basePreset.channels);
-    setChartState("preset");
-    ensureLoaded(expandSlots(basePreset.channels));
-  }
-
-  async function handleConfirmSaveAsPreset() {
-    if (!savePresetDraft?.trim() || usingFixture) return;
+  async function loadFilterSummaries() {
     try {
-      const saved = await client.saveUserPreset({ label: savePresetDraft.trim(), channels: activeSlots });
-      const presetsRes = await client.getChartPresets();
-      setPresets(presetsRes.presets);
-      setPresetId(saved.id);
-      setChartState("preset");
-      setSavePresetDraft(null);
+      const res = await client.listFilters();
+      setFilterSummaryById(Object.fromEntries(res.filters.map((e) => [e.filter.id, e.summary])));
     } catch {
-      // leave the draft open so the pilot can see the field still has their text and retry
-    }
-  }
-
-  function handleBackFromInsight() {
-    if (!insightSnapshot) return;
-    setActiveSlots(insightSnapshot.activeSlots);
-    setPresetId(insightSnapshot.presetId);
-    setChartState(insightSnapshot.chartState);
-    ensureLoaded(expandSlots(insightSnapshot.activeSlots));
-    setInsightSnapshot(null);
-    setInsightLabel(undefined);
-    // Same reset "Full flight" does — restoring the channel selection
-    // isn't the same as leaving the insight's view behind; without this
-    // the zoom window and the evidence outline both silently survived
-    // the trip back to Overview.
-    setZoomWindow([0, fullEnd]);
-    setVisibleWindow([0, fullEnd]);
-    setHighlight(null);
-  }
-
-  // Brings a skipped log back — same override+rescan op the Flights
-  // tab's Skipped panel uses. Lands on the resulting real flight when
-  // the scan created one in this same round trip (the common case for a
-  // folder-scanned file); otherwise there's nothing new to show, so
-  // back to the Flights list.
-  async function handleIncludeSkipped() {
-    if (!skippedFilename) return;
-    setIncluding(true);
-    setIncludeError(null);
-    try {
-      const res = await client.includeExcludedLog(skippedFilename, "included from the flight preview");
-      const newId = res.scan_result?.new_flight_ids[0];
-      navigate(newId ? `/flights/${newId}` : "/flights", { replace: true });
-    } catch {
-      setIncludeError(`Couldn't include ${skippedFilename} — the server may be unreachable. Try again.`);
-    } finally {
-      setIncluding(false);
+      setFilterSummaryById({});
     }
   }
 
   async function refreshAnnotations() {
     if (!flightId || usingFixture) return;
     try {
-      const res = await client.listAnnotations(flightId);
-      setAnnotations(res.annotations);
+      setAnnotations((await client.listAnnotations(flightId)).annotations);
     } catch {
-      // leave whatever was already loaded — a save/delete that reached
-      // the server but couldn't refresh isn't worth losing the list over
+      // keep what's loaded
     }
   }
 
@@ -561,7 +184,7 @@ export function FlightView() {
       await client.saveAnnotation({ id: existing?.id, flightId, ref, note: text });
       await refreshAnnotations();
     } catch {
-      // server unreachable — nothing persisted, leave state as-is
+      // server unreachable — nothing persisted
     }
   }
 
@@ -570,29 +193,9 @@ export function FlightView() {
       await client.deleteAnnotation(annotationId);
       await refreshAnnotations();
     } catch {
-      // server unreachable — nothing persisted, leave state as-is
+      // server unreachable — nothing persisted
     }
   }
-
-  const limitFor = (insight: Insight) =>
-    insight.limit_id ? flightAnalysis.limits?.find((l) => l.id === insight.limit_id) : undefined;
-
-  // Spec 09 §12.1: which insight's filter editor is open, if any. Limit
-  // cards filter their own limit; the overboost threshold filters the
-  // profile's overboost limit.
-  const [filterEditorFor, setFilterEditorFor] = useState<string | null>(null);
-  // A CAS card (Spec 09 v0.18) filters its alert, duration-only.
-  const filterTargetFor = (insight: Insight, topicId: string): FilterTarget | undefined => {
-    if (insight.source === "cas" && insight.cas_id) return { kind: "cas", cas_id: insight.cas_id };
-    const limitId = insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
-    return limitId ? { kind: "limit", limit_id: limitId } : undefined;
-  };
-
-  // Spec 14 §7.3 — the topic card's own triggers disclosure/editor reads
-  // and applies against these; it's the one rule-editing entry point
-  // now (the insight card no longer has its own, separate control).
-  const [resolvedRules, setResolvedRules] = useState<RuleSet | null>(null);
-  const [shippedRules, setShippedRules] = useState<RuleSet | null>(null);
 
   async function reloadInsights() {
     if (!flightId) return;
@@ -606,14 +209,47 @@ export function FlightView() {
     }
   }
 
-  // Spec 14 §7.3 (v0.4) — "edit trigger ↓" on an insight card: the
-  // topic's TopicRulesPanel in Analysis opens and scrolls itself into
-  // view. n bumps on every request so a second click re-opens a
-  // disclosure closed since.
-  const [rulesJump, setRulesJump] = useState<{ topicId: string; n: number } | null>(null);
+  function afterFilterSaved() {
+    notifyFiltersChanged();
+    void loadFilterSummaries();
+    void reloadInsights();
+  }
+
+  const limitFor = (insight: Insight) =>
+    insight.limit_id ? flightAnalysis.limits?.find((l) => l.id === insight.limit_id) : undefined;
+
+  // Spec 09 §12.1: the insight card's filter action — a limit card filters
+  // its limit, a CAS card its alert, the overboost threshold the profile's
+  // overboost limit.
+  const [filterEditorFor, setFilterEditorFor] = useState<string | null>(null);
+  const filterTargetFor = (insight: Insight, topicId: string): FilterTarget | undefined => {
+    if (insight.source === "cas" && insight.cas_id) return { kind: "cas", cas_id: insight.cas_id };
+    const limitId = insight.limit_id ?? (topicId === "overboost_time" && insight.trigger === "threshold" ? "overboost" : undefined);
+    return limitId ? { kind: "limit", limit_id: limitId } : undefined;
+  };
+
+  // ── Rule editor panel (Spec 14 v0.9 §7.3) ────────────────────────────────
+  // The main column is the scroll container; its position is kept when the
+  // panel opens and put back when it closes (an Apply reloads the insights
+  // and can reflow the page under the panel).
+  const mainRef = useRef<HTMLDivElement>(null);
+  const savedScroll = useRef(0);
+  const [editor, setEditor] = useState<{ topicId: string; enable: boolean } | null>(null);
   const canEditRules = (topicId: string) =>
-    !usingFixture && mode === "flight" && Boolean(resolvedRules?.rules[topicId] && shippedRules)
-    && insightSet.topics.some((t) => t.topic_id === topicId);
+    !usingFixture && Boolean(resolvedRules?.rules[topicId] && shippedRules) && insightSet.topics.some((t) => t.topic_id === topicId);
+
+  function openEditor(topicId: string, opts?: { enable?: boolean }) {
+    savedScroll.current = mainRef.current?.scrollTop ?? 0;
+    setEditor({ topicId, enable: Boolean(opts?.enable) });
+  }
+
+  function closeEditor() {
+    setEditor(null);
+    const top = savedScroll.current;
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = top;
+    });
+  }
 
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);
@@ -648,64 +284,35 @@ export function FlightView() {
     }
   }
 
-  async function handleRevertExclusion(causeFlightId: string) {
+  async function handleRevertMarker(m: ReferenceChangeMarker) {
     try {
-      await client.includeFlight(causeFlightId);
+      if (m.cause_kind === "rule_edit") {
+        const res = await client.revertRuleEdit(m.cause_journal_entry_id);
+        setResolvedRules(res.rules);
+      } else if (m.cause_flight_id) {
+        await client.includeFlight(m.cause_flight_id);
+      }
       await reloadInsights();
     } catch {
       // server unreachable
     }
   }
 
-  async function handleRevertRuleEdit(journalEntryId: string) {
-    try {
-      const res = await client.revertRuleEdit(journalEntryId);
-      setResolvedRules(res.rules);
-      await reloadInsights();
-    } catch {
-      // server unreachable
-    }
-  }
-
-  // Spec 10 §4.1 (Spec 09 §10.2/§10.3, Spec 03 §5.2/§12.1): a topic that
-  // declares limit_refs shows the referenced limit_exceedances insight's
-  // own badge and links to it, instead of (or in addition to) any insight
-  // of its own — one card, mirroring the one real insight, never a second
-  // entry in the list.
+  // ── Insights ─────────────────────────────────────────────────────────────
   const insightsById = useMemo(() => {
     const map = new Map<string, Insight>();
     for (const topic of insightSet.topics) for (const ins of topic.insights) map.set(ins.id, ins);
     return map;
   }, [insightSet]);
 
-  function mirroredLimitInsight(t: TopicResult): Insight | null {
-    const ref = t.limit_refs?.[0];
-    if (!ref?.insight_id) return null;
-    return insightsById.get(ref.insight_id) ?? null;
-  }
-
   const flatInsights = useMemo(() => {
     const items: { insight: Insight; topicId: string }[] = [];
-    for (const topic of insightSet.topics) {
-      for (const insight of topic.insights) items.push({ insight, topicId: topic.topic_id });
-    }
+    for (const topic of insightSet.topics) for (const insight of topic.insights) items.push({ insight, topicId: topic.topic_id });
     return items.sort((a, b) => SEVERITY_RANK[a.insight.severity] - SEVERITY_RANK[b.insight.severity]);
   }, [insightSet]);
 
-  // A disabled topic (Spec 14 §7.3 v0.5) wasn't analysed — it isn't one
-  // of the topics "analysed with nothing to flag".
-  const noInsightTopics = useMemo(
-    () => insightSet.topics.filter((t) => t.insights.length === 0 && t.enabled !== false),
-    [insightSet],
-  );
-
-  // An insight's phase(s), from whichever of its events/evidence actually
-  // carry a time — an exceedance event's elapsed_s, or a series_window
-  // evidence's midpoint. null means nothing here is time-locatable at all
-  // (a pure baseline/trend insight evidenced only by other flights'
-  // points) — those are never excluded by the phase filter, since
-  // "doesn't apply to any specific phase" isn't the same as "doesn't
-  // match the selected phases."
+  // An insight's phase(s), from whichever of its events/evidence carry a
+  // time; null = nothing time-locatable (never hidden by the phase filter).
   function phasesForInsight(insight: Insight): Set<string> | null {
     const times: number[] = [];
     for (const e of insight.events ?? []) if (e.elapsed_s !== null) times.push(e.elapsed_s);
@@ -719,12 +326,7 @@ export function FlightView() {
     return set.size > 0 ? set : null;
   }
 
-  // Which of insight.events (by original index — InsightCard needs that
-  // exact index back via onEventClick, not a position in some shorter
-  // filtered list, since it's what evidence.slice() keys off) match the
-  // phase filter. null (no filter) means every index — the common case,
-  // not computed per card for nothing. An event with no elapsed_s can't
-  // be placed in any phase, so it's never hidden rather than guessed at.
+  // Original indices into insight.events that match the phase filter.
   function visibleEventIndices(insight: Insight): number[] | null {
     if (phaseFilter === null) return null;
     const events = insight.events ?? [];
@@ -742,8 +344,7 @@ export function FlightView() {
     if (phaseFilter === null) return flatInsights;
     return flatInsights.filter(({ insight }) => {
       const phases = phasesForInsight(insight);
-      if (phases === null) return true;
-      return [...phases].some((p) => phaseFilter.includes(p));
+      return phases === null || [...phases].some((p) => phaseFilter.includes(p));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flatInsights, phaseFilter, flightAnalysis.phases]);
@@ -755,7 +356,7 @@ export function FlightView() {
       .getAppSettings()
       .then((s) => client.saveAppSettings({ ...s, flight_chart: { ...(s.flight_chart ?? {}), phase_filter: next } }))
       .catch(() => {
-        // persisting the selection is a convenience, not required for this session to work
+        // persisting the selection is a convenience
       });
   }
 
@@ -765,121 +366,14 @@ export function FlightView() {
     return map;
   }, [annotations]);
 
-  const h = flightAnalysis.header;
-  const durationMin = flightAnalysis.metrics.duration_min?.value;
-  const durationStr = typeof durationMin === "number" ? `${Math.floor(durationMin / 60)}h ${Math.round(durationMin % 60)}m` : "—";
-  const hasPhaseWarning = flightAnalysis.quality.some((q) => q.code === "PHASE_TAKEOFF_NOT_DETECTED");
-  const fullEnd = flightAnalysis.phases.at(-1)?.end_s ?? 0;
-
-  // Spec 01 §8.8 / Spec 03 §5.2: fetched once per engine profile + rule
-  // set, cached (useTopicHelp), not per flight.
-  const engineProfileId = flightAnalysis.provenance.engine_profile.id;
-  const topicHelpKey = `${flightAnalysis.provenance.engine_profile.hash}:${insightSet.rules_hash}`;
-  const topicHelpById = useTopicHelp(topicHelpKey, usingFixture);
-  const aircraftSummary = useAircraftSummary(usingFixture);
-  const isMixedAircraft = (aircraftSummary?.idents.length ?? 0) > 1;
-
-  // Flight-summary line (Spec 03 §5.2, Spec 10 §4.2 / Q4): fuel burned,
-  // cruise nm/gal, mean cruise fuel flow — planning numbers, not topics,
-  // so no severity token and no insight/card. The nm/gal and fuel-flow
-  // figures need a cruise phase; fuel burned (FADEC total) doesn't.
-  const fuelBurned = flightAnalysis.metrics.fadec_gallons?.value;
-  const cruiseNmpg = flightAnalysis.metrics.cruise_nmpg?.value;
-  const cruiseFuelFlow = flightAnalysis.metrics.cruise_fuel_flow_gph?.value;
-  const noCruiseReason = flightAnalysis.quality.find((q) => q.code === "PHASE_NO_CRUISE")?.message;
-  const cruiseValueText = (value: unknown, suffix: string) =>
-    typeof value === "number" ? `${value.toFixed(1)} ${suffix}` : `— (${noCruiseReason ?? "no cruise detected"})`;
-  const flightSummaryLine = (
-    <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 6, display: "flex", alignItems: "center" }}>
-      <span>
-        Fuel burned: {typeof fuelBurned === "number" ? `${fuelBurned.toFixed(1)} gal` : "—"}
-        {"  ·  "}Cruise: {cruiseValueText(cruiseNmpg, "nm/gal")}
-        {"  ·  "}Cruise fuel flow: {cruiseValueText(cruiseFuelFlow, "gal/hr")}
-      </span>
-      <TopicHelpButton help={topicHelpById["flight_summary"]} engine={engineProfileId} units={unitsSystem} />
-    </div>
-  );
-  // Spec 03 §5.4 (v0.14): lane-check pairing, informational only — no
-  // severity, no insight. "single" can't say which lane from the G3X log
-  // (the alert names neither), so it reads "one lane only".
-  // A log without the CAS channel has nothing to say about it either way.
-  const laneCheck = flightAnalysis.metrics.cas_engine_ecu_events?.missing ? undefined : flightAnalysis.ecu_lane_check;
-  const laneCheckLine = laneCheck ? (
-    <div className="mono" data-testid="lane-check-line" style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>
-      Lane check: {LANE_CHECK_TEXT[laneCheck]}
-    </div>
-  ) : null;
-
-  useEffect(() => {
-    setVisibleWindow([0, flightAnalysis.phases.at(-1)?.end_s ?? 0]);
-  }, [flightAnalysis]);
-
-  function formatTimeRange(startS: number, endS: number): string {
-    if (!h.start_utc) return "—";
-    const base = new Date(h.start_utc);
-    const fmt = (s: number) => new Date(base.getTime() + s * 1000).toISOString().slice(11, 16);
-    const durMin = Math.round((endS - startS) / 60);
-    return `${fmt(startS)}–${fmt(endS)} (${durMin} min)`;
-  }
-
-  function stepZoom(direction: "in" | "out") {
-    const [s, e] = visibleWindow;
-    const span = e - s || fullEnd;
-    const center = (s + e) / 2;
-    let newSpan = direction === "in" ? span * 0.5 : span * 2;
-    newSpan = Math.min(Math.max(newSpan, 10), fullEnd);
-    let newStart = center - newSpan / 2;
-    let newEnd = center + newSpan / 2;
-    if (newStart < 0) {
-      newEnd -= newStart;
-      newStart = 0;
-    }
-    if (newEnd > fullEnd) {
-      newStart -= newEnd - fullEnd;
-      newEnd = fullEnd;
-    }
-    newStart = Math.max(0, newStart);
-    setZoomWindow([newStart, newEnd]);
-    setVisibleWindow([newStart, newEnd]);
-  }
-
-  // evidenceIndex: a limit card's event row (Spec 09 §12.1) zooms to that
-  // event's own window rather than the insight's first evidence.
+  // evidenceIndex: a limit card's event row zooms to that event's own
+  // window. exceedance / cas_event evidence highlights the Events row and
+  // the chart marker (Spec 03 v0.16 §5.2).
   function handleEvidenceClick(insight: Insight, evidenceIndex = 0) {
+    setActiveEventId(insightEventId(insight, evidenceIndex));
     for (const ev of insight.evidence.slice(evidenceIndex)) {
       if (ev.kind === "series_window") {
-        setZoomWindow([ev.start_s, ev.end_s]);
-        setVisibleWindow([ev.start_s, ev.end_s]);
-        // marker_start_s/end_s (optional): the event's own, unpadded
-        // bounds, when start_s/end_s have been widened for zoom context
-        // (e.g. ENGINE ECU — a brief alert would otherwise be invisible
-        // inside its own padding). Falls back to the window itself, same
-        // as before, when a producer doesn't set them.
-        const markerS = ev.marker_start_s !== undefined && ev.marker_end_s !== undefined
-          ? (ev.marker_start_s + ev.marker_end_s) / 2
-          : undefined;
-        setHighlight({ start_s: ev.start_s, end_s: ev.end_s, marker_s: markerS });
-        document.getElementById("timeline")?.scrollIntoView({ behavior: "smooth", block: "center" });
-
-        // Spec 07 §10/D8: enter the Insight chart state and show the
-        // evidence's subject channels plus each subject's registry
-        // companions (not a display hint carried on the evidence itself
-        // — resolved here so editing companions never touches the rules
-        // hash) — but only if evidence actually names channels; some
-        // evidence is zoom-only and shouldn't touch the chart's channel
-        // selection at all.
-        if (ev.channels.length > 0) {
-          const companionsFor = (id: string) => channelRegistry.find((c) => c.id === id)?.companions ?? [];
-          const combined = [...new Set([...ev.channels, ...ev.channels.flatMap(companionsFor)])];
-          const capped = combined.slice(0, maxSlots);
-          if (chartState !== "insight") {
-            setInsightSnapshot({ activeSlots, presetId, chartState: chartState as "preset" | "modified" });
-          }
-          setActiveSlots(capped);
-          setChartState("insight");
-          setInsightLabel(insight.message.text);
-          ensureLoaded(expandSlots(capped));
-        }
+        tl.focusEvidence(ev, insight.message.text);
         return;
       }
       if (ev.kind === "baseline_point") {
@@ -887,89 +381,69 @@ export function FlightView() {
         return;
       }
       if (ev.kind === "metric") {
-        // No specific flight point to highlight (unlike baseline_point) —
-        // just the metric's trend, in the context of this flight.
         navigate(`/trends?metric=${ev.metric_id}&flight=${flightAnalysis.flight_id}`);
         return;
       }
-      // "exceedance" / "cas_event" evidence only names the event; each
-      // is preceded by its own series_window, which does the zooming.
+      if (ev.kind === "exceedance" || ev.kind === "cas_event") {
+        const row = eventRows.find((r) => r.key === ev.ref);
+        if (row) openEventOnChart(row);
+        return;
+      }
     }
   }
 
-  const previousStateLabel = insightSnapshot ? presets.find((p) => p.id === insightSnapshot.presetId)?.label : undefined;
+  // ── Events ───────────────────────────────────────────────────────────────
+  const eventRows = useMemo(() => buildEventRows(flightAnalysis, insightSet), [flightAnalysis, insightSet]);
+  const markers = useMemo(
+    () => eventRows
+      .filter((r) => r.elapsed_s !== null)
+      .map((r) => ({ id: r.key, n: r.n, x_s: r.elapsed_s as number, source: r.source, muted: r.filterState === "suppressed", active: r.key === activeEventId })),
+    [eventRows, activeEventId],
+  );
+  const casEvents = useMemo(
+    () => flightAnalysis.exceedances.filter((e): e is CasEvent => (e as CasEvent).source === "cas"),
+    [flightAnalysis],
+  );
 
-  // Spec 07 §5: an unavailable channel in the current selection applies
-  // the rest and shows a quiet note rather than being silently dropped —
-  // the selection itself stays exactly as-is (D7) even for a flight that
-  // doesn't record it.
-  const unavailableActiveLabels = useMemo(() => {
-    const available = flightAnalysis.available_channels;
-    if (!available) return [];
-    const availableSet = new Set(available);
-    return activeSlots
-      .filter((id) => {
-        const sg = slotGroups.find((s) => s.id === id);
-        const ids = sg ? sg.members : [id];
-        return !ids.some((cid) => availableSet.has(cid));
-      })
-      .map((id) => slotGroups.find((s) => s.id === id)?.label ?? channelRegistry.find((c) => c.id === id)?.label ?? id);
-  }, [activeSlots, flightAnalysis.available_channels, slotGroups, channelRegistry]);
+  function openEventOnChart(row: EventRow) {
+    setActiveEventId(row.key);
+    const ev = row.insight?.evidence[row.eventIndex];
+    if (ev?.kind === "series_window") tl.focusEvidence(ev, row.insight!.message.text);
+    else if (row.elapsed_s !== null) tl.focusMoment(row.elapsed_s, row.duration_s);
+  }
 
-  // A deselected channel from the current (non-Overview) preset's own
-  // topic should stay visible as an inactive tag, not disappear into the
-  // "+ Add channel" popover — every chartable channel sharing a group
-  // with the preset's own channels shows as a tag either way. Overview
-  // stays minimal on purpose (null here keeps ChannelPicker's old
-  // active-only row).
-  const expandGroups = useMemo<Set<string> | null>(() => {
-    if (!presetId || presetId === "overview") return null;
-    const basePreset = presets.find((p) => p.id === presetId);
-    if (!basePreset) return null;
-    const groups = new Set<string>();
-    for (const id of basePreset.channels) {
-      const sg = slotGroups.find((s) => s.id === id);
-      const group = sg
-        ? channelRegistry.find((c) => sg.members.includes(c.id))?.group
-        : channelRegistry.find((c) => c.id === id)?.group;
-      if (group) groups.add(group);
-    }
-    return groups.size > 0 ? groups : null;
-  }, [presetId, presets, slotGroups, channelRegistry]);
+  // ── Header, help, topic cards ────────────────────────────────────────────
+  const h = flightAnalysis.header;
+  const durationMin = flightAnalysis.metrics.duration_min?.value;
+  const durationStr = typeof durationMin === "number" ? `${Math.floor(durationMin / 60)}h ${Math.round(durationMin % 60)}m` : "—";
+  const hasPhaseWarning = flightAnalysis.quality.some((q) => q.code === "PHASE_TAKEOFF_NOT_DETECTED");
+  const engineProfileId = flightAnalysis.provenance.engine_profile.id;
+  const topicHelpKey = `${flightAnalysis.provenance.engine_profile.hash}:${insightSet.rules_hash}`;
+  const topicHelpById = useTopicHelp(topicHelpKey, usingFixture);
+  const aircraftSummary = useAircraftSummary(usingFixture);
+  const mixedAircraftCount = aircraftSummary ? aircraftSummary.idents.length : null;
+
+  const cardModels = useMemo(
+    () => insightSet.topics.map((t) => topicCardModel(t, {
+      insightsById, markers: referenceChanges, help: topicHelpById[t.topic_id], metrics: flightAnalysis.metrics,
+    })),
+    [insightSet, insightsById, referenceChanges, topicHelpById, flightAnalysis.metrics],
+  );
+  const editorTopic = editor ? insightSet.topics.find((t) => t.topic_id === editor.topicId) : undefined;
+
+  const badge = (text: string, dot?: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
+      {dot && <div style={{ width: 6, height: 6, borderRadius: "50%", background: dot }} />}
+      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{text}</span>
+    </div>
+  );
 
   return (
     <NavShell
-      right={
-        mode === "skipped" ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Skipped log preview — nothing here is saved</span>
-          </div>
-        ) : usingFixture ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Sample flight — import your own logs to replace it</span>
-          </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 20, background: "var(--panel)", border: "1px solid var(--border)" }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{loading ? "Loading…" : "Up to date"}</span>
-          </div>
-        )
-      }
+      right={usingFixture ? badge("Sample flight — import your own logs to replace it") : badge(loading ? "Loading…" : "Up to date", "var(--success)")}
     >
       <div style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: 0 }}>
-      {mode === "skipped" && loadError ? (
-        <div style={{ padding: 60, textAlign: "center" }}>
-          <div style={{ fontSize: 14, color: "var(--severity-warning)", marginBottom: 14 }}>{loadError}</div>
-          <button
-            onClick={() => navigate("/flights")}
-            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer" }}
-          >
-            Back to Flights
-          </button>
-        </div>
-      ) : (
-      <>
-        {/* Flight header */}
+        {/* Header */}
         <div style={{ flexShrink: 0, padding: "18px 24px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 18 }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{h.date}</h1>
@@ -978,18 +452,11 @@ export function FlightView() {
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-              {filename}
-            </span>
+            <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)" }}>{filename}</span>
             {!usingFixture && referenceState && (
               referenceState.excluded ? (
                 <span style={{ fontSize: 11 }}>
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); setIncludeDialogOpen(true); }}
-                    style={{ color: "var(--text-tertiary)" }}
-                    title="click to include again"
-                  >
+                  <a href="#" onClick={(e) => { e.preventDefault(); setIncludeDialogOpen(true); }} style={{ color: "var(--text-tertiary)" }} title="click to include again">
                     Excluded from reference ({referenceState.reason})
                   </a>
                   <InlineHelp id="flight.excluded_from_reference" />
@@ -1005,87 +472,27 @@ export function FlightView() {
                 <div
                   key={m.id}
                   style={{
-                    background: "rgba(245,165,36,0.08)", border: "1px solid rgba(245,165,36,0.3)",
-                    borderRadius: 8, padding: "8px 12px", fontSize: 12, display: "flex",
-                    alignItems: "center", justifyContent: "space-between", gap: 10,
+                    background: "rgba(245,165,36,0.08)", border: "1px solid rgba(245,165,36,0.3)", borderRadius: 8,
+                    padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
                   }}
                 >
                   <span>
-                    <strong style={{ color: "var(--severity-warning)" }}>
-                      {m.cause_kind === "rule_edit" ? "Rule changed" : "Reference changed"}
-                    </strong>
+                    <strong style={{ color: "var(--severity-warning)" }}>{m.cause_kind === "rule_edit" ? "Rule changed" : "Reference changed"}</strong>
                     {m.cause_kind === "rule_edit"
                       ? ` — ${m.cause_topic_id}'s rule changed (${m.reason}); this flight's verdict may have moved.`
                       : ` — a flight was excluded from the reference (${m.reason}); this flight's verdict may have moved.`}
                   </span>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (m.cause_kind === "rule_edit") void handleRevertRuleEdit(m.cause_journal_entry_id);
-                      else if (m.cause_flight_id) void handleRevertExclusion(m.cause_flight_id);
-                    }}
-                    style={{ fontSize: 11, flexShrink: 0 }}
-                  >
-                    Revert →
-                  </a>
+                  <a href="#" onClick={(e) => { e.preventDefault(); void handleRevertMarker(m); }} style={{ fontSize: 11, flexShrink: 0 }}>Revert →</a>
                 </div>
               ))}
             </div>
           )}
-          {flightSummaryLine}
-          {laneCheckLine}
+          <FlightFacts facts={flightFacts(flightAnalysis)} help={topicHelpById["flight_summary"]} engine={engineProfileId} units={unitsSystem} />
         </div>
 
         {/* Body */}
         <div style={{ flexGrow: 1, display: "flex", minHeight: 0 }}>
-          {mode === "skipped" ? (
-            <div style={{ width: 376, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0, padding: "16px 20px" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Why this was skipped</div>
-              {skippedInfo ? (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                      border: `1px solid ${EXCLUSION_CATEGORY_COLOR[skippedInfo.category]}`, color: EXCLUSION_CATEGORY_COLOR[skippedInfo.category],
-                    }}>
-                      {EXCLUSION_CATEGORY_LABEL[skippedInfo.category]}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                      {skippedInfo.source === "auto" ? "auto-detected" : "excluded by you"}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>{skippedInfo.reason}</div>
-                </>
-              ) : (
-                <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 16 }}>
-                  No longer in exclusions.json — it may already have been included since you opened this link.
-                </div>
-              )}
-
-              {flightAnalysis.quality.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", marginBottom: 6 }}>Quality notes</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {flightAnalysis.quality.map((q, i) => (
-                      <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)" }}>{q.message}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleIncludeSkipped}
-                disabled={including}
-                style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, fontSize: 12, cursor: including ? "default" : "pointer", alignSelf: "flex-start" }}
-              >
-                {including ? "Including…" : "Include as a real flight"}
-              </button>
-              {includeError && (
-                <div style={{ fontSize: 11, color: "var(--severity-warning)", marginTop: 8 }}>{includeError}</div>
-              )}
-            </div>
-          ) : (
+          {/* Insight list */}
           <div style={{ width: 376, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ padding: "16px 20px 10px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -1106,329 +513,132 @@ export function FlightView() {
                   : null;
                 return (
                   <div key={insight.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <InsightCard
-                    insight={insight}
-                    topicId={topicId}
-                    onClick={() => handleEvidenceClick(insight)}
-                    onEventClick={(i) => handleEvidenceClick(insight, i)}
-                    visibleEventIndices={visibleEventIndices(insight)}
-                    unit={limitFor(insight)?.unit}
-                    limitType={limitFor(insight)?.limit_type}
-                    filterAction={
-                      target
-                        ? {
-                            label: insight.filter
-                              ? "Edit filter…"
-                              : insight.filterable === false
-                                ? "Why can't I filter this?"
-                                : isCas ? "Filter by duration…" : "Filter this limit…",
-                            onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id),
-                          }
-                        : undefined
-                    }
-                    secondaryAction={
-                      !usingFixture && REFERENCE_DRIVEN_TRIGGERS.has(insight.trigger) && !referenceState?.excluded
+                    <InsightCard
+                      insight={insight}
+                      topicId={topicId}
+                      onClick={() => handleEvidenceClick(insight)}
+                      onEventClick={(i) => handleEvidenceClick(insight, i)}
+                      visibleEventIndices={visibleEventIndices(insight)}
+                      unit={limitFor(insight)?.unit}
+                      limitType={limitFor(insight)?.limit_type}
+                      filterAction={
+                        target
+                          ? {
+                              label: insight.filter
+                                ? "Edit filter…"
+                                : insight.filterable === false
+                                  ? "Why can't I filter this?"
+                                  : isCas ? "Filter this alert…" : "Filter this limit…",
+                              onClick: () => setFilterEditorFor(filterEditorFor === insight.id ? null : insight.id),
+                            }
+                          : undefined
+                      }
+                      secondaryAction={
+                        !usingFixture && REFERENCE_DRIVEN_TRIGGERS.has(insight.trigger) && !referenceState?.excluded
                           ? { label: "Exclude this flight from reference →", onClick: () => setExcludeDialogFor(insight.id) }
                           : undefined
-                    }
-                    editAction={
-                      canEditRules(topicId)
-                        ? { label: "edit trigger ↓", onClick: () => setRulesJump((prev) => ({ topicId, n: (prev?.n ?? 0) + 1 })) }
-                        : undefined
-                    }
-                    note={existing?.note ?? insight.note}
-                    notesEnabled={!usingFixture}
-                    onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
-                    onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
-                  />
-                  {isCas && (
-                    <CasEventDetails
-                      events={flightAnalysis.exceedances.filter((e): e is CasEvent => e.source === "cas" && e.cas_id === insight.cas_id)}
-                      ecuRuns={flightAnalysis.ecu_runs ?? []}
+                      }
+                      editAction={canEditRules(topicId) ? { label: "Edit trigger ↓", onClick: () => openEditor(topicId) } : undefined}
+                      note={existing?.note ?? insight.note}
+                      notesEnabled={!usingFixture}
+                      onSaveNote={(text) => handleSaveNote({ kind: "insight", insight_id: insight.id }, text)}
+                      onDeleteNote={existing ? () => handleDeleteNote(existing.id) : undefined}
                     />
-                  )}
-                  {target && filterEditorFor === insight.id && (
-                    <FilterEditor
-                      target={target}
-                      flightPeak={peak}
-                      createdFrom={{ flight_id: flightAnalysis.flight_id, insight_id: insight.id }}
-                      onSaved={() => {
-                        setFilterEditorFor(null);
-                        notifyFiltersChanged();
-                        void reloadInsights();
-                      }}
-                      onCancel={() => setFilterEditorFor(null)}
-                    />
-                  )}
+                    {isCas && (
+                      <CasEventDetails
+                        events={casEvents.filter((e) => e.cas_id === insight.cas_id)}
+                        ecuRuns={flightAnalysis.ecu_runs ?? []}
+                      />
+                    )}
+                    {target && filterEditorFor === insight.id && (
+                      <FilterEditor
+                        target={target}
+                        flightPeak={peak}
+                        createdFrom={{ flight_id: flightAnalysis.flight_id, insight_id: insight.id }}
+                        onSaved={() => { setFilterEditorFor(null); afterFilterSaved(); }}
+                        onCancel={() => setFilterEditorFor(null)}
+                      />
+                    )}
                   </div>
                 );
               })}
-              {flatInsights.length === 0 && noInsightTopics.length === 0 && (
+              {flatInsights.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No insights fired for this flight.</div>
               )}
               {flatInsights.length > 0 && filteredFlatInsights.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   No insights in the selected phase{phaseFilter && phaseFilter.length === 1 ? "" : "s"}.{" "}
-                  <a href="#" onClick={(e) => { e.preventDefault(); handlePhaseFilterChange(null); }} style={{ color: "var(--accent)" }}>
-                    Show all phases
-                  </a>
-                </div>
-              )}
-              {noInsightTopics.length > 0 && (
-                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "13px 14px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--severity-info)", flexShrink: 0 }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: "var(--severity-info-text)" }}>
-                      no fired insights
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
-                    {noInsightSummaryText(noInsightTopics)}
-                  </div>
+                  <a href="#" onClick={(e) => { e.preventDefault(); handlePhaseFilterChange(null); }} style={{ color: "var(--accent)" }}>Show all phases</a>
                 </div>
               )}
             </div>
           </div>
-          )}
 
           {/* Main column */}
-          <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
-            <div id="timeline" style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Timeline</span>
-                {hasTimeline && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", marginRight: 4 }}>
-                      {formatTimeRange(visibleWindow[0], visibleWindow[1])}
-                    </span>
-                    <button
-                      onClick={() => stepZoom("out")}
-                      style={{ width: 24, height: 24, borderRadius: 6, background: "var(--panel-control)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 14, lineHeight: 1, cursor: "pointer" }}
-                    >
-                      &minus;
-                    </button>
-                    <button
-                      onClick={() => stepZoom("in")}
-                      style={{ width: 24, height: 24, borderRadius: 6, background: "var(--panel-control)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 14, lineHeight: 1, cursor: "pointer" }}
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={() => {
-                        setZoomWindow([0, fullEnd]);
-                        setVisibleWindow([0, fullEnd]);
-                        setHighlight(null);
-                      }}
-                      style={{ fontSize: 11, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", marginLeft: 6 }}
-                    >
-                      Full flight
-                    </button>
-                  </div>
-                )}
-              </div>
+          <div ref={mainRef} data-testid="flight-main" style={{ flexGrow: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, minHeight: 0, minWidth: 0 }}>
+            <TimelinePanel
+              tl={tl}
+              phases={flightAnalysis.phases}
+              availableChannels={flightAnalysis.available_channels}
+              startUtc={h.start_utc}
+              hasPhaseWarning={hasPhaseWarning}
+              markers={markers}
+              emptyText="No timeline available for this flight (its source log wasn't retained by the server)."
+            />
 
-              {hasPhaseWarning && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    background: "rgba(234,179,8,0.1)",
-                    border: "1px solid rgba(234,179,8,0.3)",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    marginBottom: 10,
-                  }}
-                >
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--severity-watch)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 12 }}>
-                    Phase detection didn't find a clear climb or cruise for this flight — shown below as one continuous segment.
-                  </span>
-                </div>
-              )}
-
-              {/* Spec 03 v0.7 §5.2: one navigational bar, not two. The
-                  minimap keeps its original job (full-flight orientation,
-                  drag-to-navigate); what the old standalone phase band
-                  showed now lives as a tint on the chart itself, below. */}
-              <PhaseMinimap
-                phases={flightAnalysis.phases}
-                fullEnd={fullEnd}
-                windowStart={visibleWindow[0]}
-                windowEnd={visibleWindow[1]}
-                onNavigate={(s, e) => {
-                  setZoomWindow([s, e]);
-                  setVisibleWindow([s, e]);
-                }}
+            <section id="events" style={{ flexShrink: 0, background: "var(--panel)", borderRadius: 12, padding: "14px 16px" }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 10px" }}>Events</h2>
+              <EventsTable
+                rows={eventRows}
+                flightId={flightAnalysis.flight_id}
+                activeEventId={activeEventId}
+                interactive={!usingFixture}
+                annotations={annotations}
+                filterSummaryById={filterSummaryById}
+                ecuRuns={flightAnalysis.ecu_runs ?? []}
+                casEvents={casEvents}
+                onOpen={openEventOnChart}
+                onSaveNote={handleSaveNote}
+                onDeleteNote={handleDeleteNote}
+                onFilterSaved={afterFilterSaved}
               />
+            </section>
 
-              {hasTimeline ? (
-                <>
-                  <PresetBar
-                    presets={presets}
-                    chartState={chartState}
-                    activePresetId={presetId}
-                    insightLabel={insightLabel}
-                    previousLabel={previousStateLabel}
-                    onSelectPreset={handleSelectPreset}
-                    onRevert={handleRevert}
-                    onSaveAsPreset={() => setSavePresetDraft("")}
-                    onBack={handleBackFromInsight}
-                  />
-                  {savePresetDraft !== null && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <input
-                        autoFocus
-                        type="text"
-                        placeholder="Preset name…"
-                        value={savePresetDraft}
-                        onChange={(e) => setSavePresetDraft(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleConfirmSaveAsPreset()}
-                        style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 9px", color: "var(--text-primary)", fontSize: 12 }}
-                      />
-                      <button
-                        onClick={handleConfirmSaveAsPreset}
-                        disabled={!savePresetDraft.trim()}
-                        style={{ padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: savePresetDraft.trim() ? "pointer" : "default" }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setSavePresetDraft(null)}
-                        style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                  <ChannelPicker
-                    registry={channelRegistry}
-                    slotGroups={slotGroups}
-                    maxSlots={maxSlots}
-                    activeSlots={activeSlots}
-                    availableChannels={flightAnalysis.available_channels ?? null}
-                    colorFor={colorFor}
-                    onToggle={handleTogglePickerChannel}
-                    expandGroups={expandGroups}
-                  />
-                  {unavailableActiveLabels.length > 0 && (
-                    <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10, marginTop: -6 }}>
-                      {unavailableActiveLabels.join(", ")} not recorded in this log.
-                    </div>
-                  )}
-                  <ChannelTimeline
-                    series={seriesCache}
-                    activeChannels={activeChannelIds}
-                    colorFor={colorFor}
-                    phases={flightAnalysis.phases}
-                    highlight={highlight}
-                    zoomWindow={zoomWindow}
-                    onZoomChange={(s, e) => setVisibleWindow([s, e])}
-                  />
-                </>
-              ) : (
-                <div style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "16px 0" }}>
-                  No timeline available for this flight (its source log wasn't retained by the server).
-                </div>
-              )}
-
-              <PhaseCaption
-                phases={flightAnalysis.phases}
-                windowStart={visibleWindow[0]}
-                windowEnd={visibleWindow[1]}
-                undifferentiatedNote={hasPhaseWarning ? "undifferentiated" : undefined}
+            <section style={{ flexShrink: 0 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 10px" }}>Analysis</h2>
+              <TopicCards
+                cards={cardModels}
+                helpById={topicHelpById}
+                engineId={engineProfileId}
+                units={unitsSystem}
+                mixedAircraftCount={mixedAircraftCount}
+                historyDerived={REFERENCE_DERIVED_TOPICS}
+                ruleFor={(id) => resolvedRules?.rules[id] ?? null}
+                canEditRules={canEditRules}
+                onEditRules={openEditor}
+                onOpenInsight={(ins) => handleEvidenceClick(ins)}
+                onRevertMarker={(m) => void handleRevertMarker(m)}
+                onOpenFlights={() => navigate("/flights")}
               />
-            </div>
-
-            {mode === "flight" && (
-              <div style={{ flexShrink: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Analysis</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                  {insightSet.topics.map((t) => {
-                    if (t.enabled === false) {
-                      const title = topicHelpById[t.topic_id]?.title ?? t.topic_id.replace(/_/g, " ");
-                      return (
-                        <div key={t.topic_id} style={{ background: "var(--panel)", borderRadius: 10, padding: "9px 15px", alignSelf: "start" }}>
-                          {!usingFixture && resolvedRules?.rules[t.topic_id] && shippedRules ? (
-                            <TopicRulesPanel
-                              topicId={t.topic_id}
-                              topic={t}
-                              title={title}
-                              resolvedRules={resolvedRules}
-                              shippedRules={shippedRules}
-                              onApplied={handleRuleApplied}
-                              onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
-                            />
-                          ) : (
-                            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                              <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{title}</span> · disabled
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    const topInsight = mirroredLimitInsight(t) ?? topTopicInsight(t);
-                    const clickable = Boolean(topInsight && topInsight.evidence.length > 0);
-                    const Wrapper = clickable ? "a" : "div";
-                    return (
-                      <Wrapper
-                        key={t.topic_id}
-                        href={clickable ? "#timeline" : undefined}
-                        onClick={
-                          clickable
-                            ? (e: React.MouseEvent) => {
-                                e.preventDefault();
-                                if (topInsight) handleEvidenceClick(topInsight);
-                              }
-                            : undefined
-                        }
-                        style={{ display: "block", background: "var(--panel)", borderRadius: 10, padding: "13px 15px", cursor: clickable ? "pointer" : "default" }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                              {topicHelpById[t.topic_id]?.title ?? t.topic_id.replace(/_/g, " ")}
-                            </span>
-                            <TopicHelpButton help={topicHelpById[t.topic_id]} engine={engineProfileId} units={unitsSystem} />
-                            {topicHelpById[t.topic_id] && !topicHelpById[t.topic_id].validated && (
-                              <span style={{ marginLeft: 6 }}>
-                                <UnverifiedTag engine={engineProfileId} />
-                              </span>
-                            )}
-                          </span>
-                          {topInsight && <SeverityBadge severity={topInsight.severity} size="sm" />}
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>{t.analysis.text}</div>
-                        {isMixedAircraft && HISTORY_DERIVED_TOPICS.has(t.topic_id) && (
-                          <div
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate("/flights"); }}
-                            style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, cursor: "pointer" }}
-                          >
-                            Compared with all {aircraftSummary!.idents.length} aircraft in this workspace.
-                          </div>
-                        )}
-                        {!usingFixture && resolvedRules?.rules[t.topic_id] && shippedRules && (
-                          <TopicRulesPanel
-                            topicId={t.topic_id}
-                            topic={t}
-                            resolvedRules={resolvedRules}
-                            shippedRules={shippedRules}
-                            onApplied={handleRuleApplied}
-                            onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
-                            openRequest={rulesJump?.topicId === t.topic_id ? rulesJump.n : 0}
-                          />
-                        )}
-                      </Wrapper>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            </section>
           </div>
         </div>
-      </>
-      )}
       </div>
+      {editor && editorTopic && resolvedRules && shippedRules && (
+        <RuleEditorPanel
+          topicId={editor.topicId}
+          topic={editorTopic}
+          title={topicHelpById[editor.topicId]?.title ?? editor.topicId.replace(/_/g, " ")}
+          originFlightId={flightAnalysis.flight_id}
+          originFlightLabel={h.date}
+          resolvedRules={resolvedRules}
+          shippedRules={shippedRules}
+          enable={editor.enable}
+          onApplied={handleRuleApplied}
+          onClose={closeEditor}
+          onNavigateFlight={(fid) => navigate(`/flights/${fid}`)}
+        />
+      )}
       {includeDialogOpen && flightId && (
         <ExcludeConfirmDialog
           mode="include"

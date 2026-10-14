@@ -1078,8 +1078,8 @@ export function Flights() {
                 {exclusions.map((e) => (
                   <tr
                     key={e.filename}
-                    onClick={() => navigate(`/skipped/${encodeURIComponent(e.filename)}`)}
-                    title="view this log's own flight data"
+                    onClick={() => navigate(`/logs/${encodeURIComponent(e.filename)}`)}
+                    title="preview this log"
                     style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }}
                   >
                     <td style={{ padding: "8px 10px" }}>

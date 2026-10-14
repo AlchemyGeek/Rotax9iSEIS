@@ -1,10 +1,16 @@
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
+import { LogPreview } from "./views/LogPreview";
 import { Trends } from "./views/Trends";
 import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
 import { ChartSessionProvider } from "./lib/chartSession";
+
+function SkippedRedirect() {
+  const { logKey } = useParams();
+  return <Navigate to={`/logs/${encodeURIComponent(logKey ?? "")}`} replace />;
+}
 
 // Spec 03 v0.6 §4: "Flights" is the log browser (this corrected a real
 // nav bug — it used to point straight at single-flight detail). Import is
@@ -20,7 +26,10 @@ function App() {
           <Route path="/" element={<Navigate to="/flights" replace />} />
           <Route path="/flights" element={<Flights />} />
           <Route path="/flights/:flightId" element={<FlightView />} />
-          <Route path="/skipped/:filenameParam" element={<FlightView />} />
+          {/* Spec 03 v0.16 §5.9: a log the loader skipped has its own
+              read-only Log preview; the old /skipped/ links redirect. */}
+          <Route path="/logs/:logKey" element={<LogPreview />} />
+          <Route path="/skipped/:logKey" element={<SkippedRedirect />} />
           <Route path="/trends" element={<Trends />} />
           {/* Spec 14 §4/§9 acceptance 10: Baselines is no longer a
               destination and Baselines.tsx's rule playground is retired

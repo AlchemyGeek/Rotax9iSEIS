@@ -1,0 +1,404 @@
+{
+  "flight_id": "2ff42d6222e2a10b",
+  "analysis_key": "ff8e6a3e64c24bc463a4793b4e56d1a1a557c568db7c76265ebbc0bb18bc7d6f",
+  "fleet_key": "e585aea45b8ea6453938cc70c7477625e80422db8db0b6da738920b67f37ebfc",
+  "rules_hash": "b3d06e2c25071b4d71fdcf7168652e38a9f0b1cf1ed758f0351068fdcbae9032",
+  "filters_hash": "130009a41fcbafb3103ef6d9220c4c36f39635977a92bb5bee33f58bc720d450",
+  "topics": [
+    {
+      "topic_id": "egt_spread",
+      "analysis": {
+        "text": "Insufficient cruise data for EGT spread."
+      },
+      "insights": [],
+      "metric_ids": [
+        "egt_spread"
+      ],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "baseline_deviation",
+          "met": null,
+          "detail": null
+        },
+        {
+          "type": "trend",
+          "met": null,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "topic_id": "oil_temp_peak",
+      "analysis": {
+        "text": "Oil temperature data not available."
+      },
+      "insights": [],
+      "metric_ids": [
+        "oil_temp_peak"
+      ],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "baseline_deviation",
+          "met": null,
+          "detail": null
+        }
+      ],
+      "limit_refs": [
+        {
+          "limit_id": "oil_temp_max",
+          "insight_id": "9524509e889a1c86"
+        }
+      ]
+    },
+    {
+      "topic_id": "coolant_temp_peak",
+      "analysis": {
+        "text": "Coolant temperature data not available."
+      },
+      "insights": [],
+      "metric_ids": [
+        "coolant_temp_peak"
+      ],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "baseline_deviation",
+          "met": null,
+          "detail": null
+        }
+      ],
+      "limit_refs": [
+        {
+          "limit_id": "coolant_temp_max",
+          "insight_id": null
+        }
+      ]
+    },
+    {
+      "topic_id": "egt_cyl_deviation",
+      "analysis": {
+        "text": "Per-cylinder EGT balance not available."
+      },
+      "insights": [],
+      "metric_ids": [
+        "egt1_deviation",
+        "egt2_deviation",
+        "egt3_deviation",
+        "egt4_deviation"
+      ],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "baseline_deviation",
+          "met": null,
+          "detail": null
+        },
+        {
+          "type": "trend",
+          "met": null,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "topic_id": "overboost_time",
+      "analysis": {
+        "text": "Max continuous block: 0s. Total this flight: 0s. OM limit: 300s."
+      },
+      "insights": [],
+      "metric_ids": [
+        "overboost_total_s",
+        "overboost_max_block_s"
+      ],
+      "enabled": true,
+      "trigger_status": [],
+      "limit_refs": [
+        {
+          "limit_id": "overboost",
+          "insight_id": null
+        }
+      ]
+    },
+    {
+      "topic_id": "map_at_takeoff",
+      "analysis": {
+        "text": "No takeoff MAP data available \u2014 flight may lack a TAKEOFF phase with RPM \u2265 5,500."
+      },
+      "insights": [],
+      "metric_ids": [
+        "takeoff_map_inhg",
+        "takeoff_pressure_alt_ft",
+        "takeoff_oat_c"
+      ],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "threshold",
+          "met": null,
+          "detail": null
+        }
+      ]
+    },
+    {
+      "topic_id": "engine_ecu_inflight",
+      "analysis": {
+        "text": "ENGINE ECU: 1 on the ground with the engine running. Lane check: not detected."
+      },
+      "insights": [],
+      "metric_ids": [
+        "inflight_ecu_count",
+        "ground_ecu_count"
+      ],
+      "enabled": true,
+      "trigger_status": [],
+      "limit_refs": [
+        {
+          "cas_id": "ENGINE ECU",
+          "insight_id": "8c141fee7283141e"
+        }
+      ]
+    },
+    {
+      "topic_id": "limit_exceedances",
+      "analysis": {
+        "text": "2 OM limits exceeded this flight (5 events, 3 within your filters); 1 alert event:"
+      },
+      "insights": [
+        {
+          "id": "33e03ebb7257ed9e",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 [CAUTION] Fuel pressure maximum: 1 event beyond your filter (up to +1.5 psi), worst 49.5 psi (max 46.0 psi), 45 s past the limit."
+          },
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 433.5,
+              "end_s": 523.5
+            }
+          ],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          },
+          "source": "limit",
+          "limit_id": "fuel_press_max",
+          "events": [
+            {
+              "event_id": "fuel_press_max@2026-02-08T12:07:36",
+              "start_utc": "2026-02-08T12:07:36",
+              "elapsed_s": 456.0,
+              "duration_s": 45.0,
+              "observed_value": 49.5,
+              "excess": 3.5,
+              "suppressed_by": null
+            }
+          ],
+          "filterable": true,
+          "filter": {
+            "filter_id": "flt_fuel_press",
+            "outcome": "breach"
+          }
+        },
+        {
+          "id": "f50413822b05243b",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "info",
+          "message": {
+            "text": "Fuel pressure maximum: 3 events within your filter (up to +1.5 psi), worst 46.8 psi (max 46.0 psi), 2 min past the limit."
+          },
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 96.0,
+              "end_s": 176.0
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 196.0,
+              "end_s": 276.0
+            },
+            {
+              "kind": "series_window",
+              "channels": [
+                "fuel_press_psi"
+              ],
+              "start_s": 296.0,
+              "end_s": 376.0
+            }
+          ],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          },
+          "source": "limit",
+          "limit_id": "fuel_press_max",
+          "events": [
+            {
+              "event_id": "fuel_press_max@2026-02-08T12:01:56",
+              "start_utc": "2026-02-08T12:01:56",
+              "elapsed_s": 116.0,
+              "duration_s": 40.0,
+              "observed_value": 46.8,
+              "excess": 0.8,
+              "suppressed_by": "magnitude"
+            },
+            {
+              "event_id": "fuel_press_max@2026-02-08T12:03:36",
+              "start_utc": "2026-02-08T12:03:36",
+              "elapsed_s": 216.0,
+              "duration_s": 40.0,
+              "observed_value": 46.8,
+              "excess": 0.8,
+              "suppressed_by": "magnitude"
+            },
+            {
+              "event_id": "fuel_press_max@2026-02-08T12:05:16",
+              "start_utc": "2026-02-08T12:05:16",
+              "elapsed_s": 316.0,
+              "duration_s": 40.0,
+              "observed_value": 46.8,
+              "excess": 0.8,
+              "suppressed_by": "magnitude"
+            }
+          ],
+          "filterable": true,
+          "filter": {
+            "filter_id": "flt_fuel_press",
+            "outcome": "suppressed"
+          }
+        },
+        {
+          "id": "9524509e889a1c86",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.threshold",
+          "trigger": "threshold",
+          "severity": "limit",
+          "message": {
+            "text": "\u26a0 [WARNING] Oil temp maximum: 1 event, worst 255.0 \u00b0F (max 248.0 \u00b0F), 20 s past the limit."
+          },
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "oil_temp_f"
+              ],
+              "start_s": 541.0,
+              "end_s": 591.0
+            }
+          ],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          },
+          "source": "limit",
+          "limit_id": "oil_temp_max",
+          "events": [
+            {
+              "event_id": "oil_temp_max@2026-02-08T12:09:16",
+              "start_utc": "2026-02-08T12:09:16",
+              "elapsed_s": 556.0,
+              "duration_s": 20.0,
+              "observed_value": 255.0,
+              "excess": 7.0,
+              "suppressed_by": null
+            }
+          ],
+          "filterable": true
+        },
+        {
+          "id": "8c141fee7283141e",
+          "topic_id": "limit_exceedances",
+          "rule_id": "limit_exceedances.cas",
+          "trigger": "threshold",
+          "severity": "watch",
+          "message": {
+            "text": "\u26a0 ENGINE ECU during TAXI, 7 s, 2,550 rpm \u2014 below the lane-check band."
+          },
+          "evidence": [
+            {
+              "kind": "series_window",
+              "channels": [
+                "rpm",
+                "oil_press_psi"
+              ],
+              "start_s": 1.0,
+              "end_s": 38.0,
+              "marker_start_s": 16.0,
+              "marker_end_s": 23.0
+            },
+            {
+              "kind": "cas_event",
+              "ref": "ENGINE ECU@2026-02-08T12:00:16"
+            }
+          ],
+          "confidence": {
+            "level": "VERY_LOW",
+            "n": 0
+          },
+          "source": "cas",
+          "cas_id": "ENGINE ECU",
+          "events": [
+            {
+              "event_id": "ENGINE ECU@2026-02-08T12:00:16",
+              "start_utc": "2026-02-08T12:00:16",
+              "elapsed_s": 16.0,
+              "duration_s": 7.0,
+              "classification": "GROUND",
+              "phase": "TAXI",
+              "phase_uncertain": false,
+              "rpm": 2550.0,
+              "suppressed_by": null,
+              "not_lane_check_reason": "rpm_below_band",
+              "lane_check_band": {
+                "rpm": 4000.0,
+                "tolerance": 500.0
+              }
+            }
+          ],
+          "filterable": true
+        }
+      ],
+      "metric_ids": [],
+      "enabled": true,
+      "trigger_status": [
+        {
+          "type": "threshold",
+          "met": true,
+          "detail": null
+        }
+      ]
+    }
+  ],
+  "header_warnings": [],
+  "provenance": {
+    "engine_version": "0.29.0",
+    "schema_version": "0.1.0",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "30b754321a4390e49c4ea19a7b882ab78f4709f5295775e5e20edb681ba79481",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "rules_hash": "b3d06e2c25071b4d71fdcf7168652e38a9f0b1cf1ed758f0351068fdcbae9032",
+    "source_keys": [
+      "a6b412b95c3fb60a"
+    ]
+  }
+}

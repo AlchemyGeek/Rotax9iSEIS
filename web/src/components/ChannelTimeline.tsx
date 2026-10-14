@@ -40,6 +40,19 @@ interface Props {
   highlight?: { start_s: number; end_s: number; marker_s?: number } | null;
   zoomWindow?: [number, number] | null;
   onZoomChange?: (start: number, end: number) => void;
+  // Spec 03 v0.16 §5.2: one marker per Events-table row, same order and
+  // the same two glyphs (▲ limit, ◆ CAS); a filtered event is muted, the
+  // row the pilot is looking at is emphasised.
+  markers?: EventMarker[];
+}
+
+export interface EventMarker {
+  id: string;
+  n: number;
+  x_s: number;
+  source: "limit" | "cas";
+  muted?: boolean;
+  active?: boolean;
 }
 
 // One overlaid chart, each channel indexed to 0-100% of its own
@@ -49,7 +62,7 @@ interface Props {
 // y-axis stays honest about being an index rather than a value scale.
 // The active-channel chip row / picker lives one level up (Spec 07 §8) —
 // this component only draws what's already been decided active.
-export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange }: Props) {
+export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange, markers }: Props) {
   // Must be memoized, not a plain .filter() — it's a dependency of the
   // option useMemo below, and an unmemoized array is a *new reference on
   // every render*. Dragging to pan fires 'dataZoom' events continuously,
@@ -87,7 +100,8 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // dataZoom percentage computed against dataEnd alone clips both the
     // zoom window and the marker's coordinate off the renderable domain
     // (ECharts doesn't draw a markPoint outside axis min/max).
-    const axisEnd = Math.max(dataEnd, zoomWindow?.[1] ?? 0, highlight?.end_s ?? 0, highlight?.marker_s ?? 0);
+    const axisEnd = Math.max(dataEnd, zoomWindow?.[1] ?? 0, highlight?.end_s ?? 0, highlight?.marker_s ?? 0,
+      ...(markers ?? []).map((m) => m.x_s));
     let dzStart = 0;
     let dzEnd = 100;
     if (zoomWindow && axisEnd > 0) {
@@ -188,7 +202,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
         axisLine: { show: false },
         splitLine: { lineStyle: { color: colors.panelControl, type: "dashed" } },
       },
-      series: seriesDefs.map(({ color, data }, i) => ({
+      series: [...seriesDefs.map(({ color, data }, i) => ({
         type: "line",
         data,
         // data rows are [elapsed_s, normalized%, real value] — without an
@@ -220,8 +234,31 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
             }
           : undefined,
       })),
+      // Event markers along the bottom edge — their own series so they
+      // draw even with no channel active, and carry a tooltip of their own.
+      ...(markers && markers.length
+        ? [{
+            type: "scatter" as const,
+            data: markers.map((m) => ({
+              value: [m.x_s, 4],
+              name: `${m.source === "cas" ? "◆" : "▲"}${m.n}`,
+              symbol: m.source === "cas" ? "diamond" : "triangle",
+              symbolSize: m.active ? 15 : 10,
+              itemStyle: {
+                // Neutral, never a severity colour — the glyph is the
+                // source distinction; the active row's marker is accented.
+                color: m.active ? colors.accent : m.muted ? colors.textTertiary : colors.textPrimary,
+                borderColor: m.active ? "#fff" : "transparent",
+                borderWidth: m.active ? 2 : 0,
+                opacity: m.muted ? 0.6 : 1,
+              },
+            })),
+            tooltip: { trigger: "item" as const, formatter: (p: { name?: string }) => `Event ${p.name ?? ""}` },
+            z: 5,
+          }]
+        : [])],
     } as EChartsOption;
-  }, [active, series, colorFor, phases, highlight, zoomWindow]);
+  }, [active, series, colorFor, phases, highlight, zoomWindow, markers]);
 
   return (
     <div>

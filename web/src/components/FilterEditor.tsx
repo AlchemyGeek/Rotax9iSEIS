@@ -49,12 +49,16 @@ const buttonStyle = (primary: boolean, enabled = true): React.CSSProperties => (
 export function FilterEditor({
   target,
   flightPeak,
+  eventDurationS,
   createdFrom,
   onSaved,
   onCancel,
 }: {
   target: FilterTarget;
   flightPeak?: number | null;
+  // Spec 09 v0.19 §12.1: a CAS filter opened from an Events row is
+  // pre-filled with that event's duration.
+  eventDurationS?: number | null;
   createdFrom?: { flight_id: string; insight_id: string };
   onSaved: (filter: LimitFilter | null) => void;
   onCancel: () => void;
@@ -92,7 +96,8 @@ export function FilterEditor({
         } else if (p.target.kind === "cas") {
           setMagnitudeOn(false);
           setDurationOn(true);
-          if (p.suggested.duration) setMaxEventS(p.suggested.duration.max_event_s);
+          if (eventDurationS) setMaxEventS(Math.ceil(eventDurationS));
+          else if (p.suggested.duration) setMaxEventS(p.suggested.duration.max_event_s);
         } else {
           if (p.suggested.magnitude) setValue(p.suggested.magnitude.value);
           if (p.policy.max_duration_s !== null) setMaxEventS(p.policy.max_duration_s);

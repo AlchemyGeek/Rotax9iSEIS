@@ -12,8 +12,8 @@ function clock(utc: string | null): string {
 // when it fired, and every ENGINE ECU run on this flight by class, so the
 // ground-context runs (start, lane check, shutdown) stay visible here and
 // nowhere else.
-export function CasEventDetails({ events, ecuRuns }: { events: CasEvent[]; ecuRuns: EcuRunRecord[] }) {
-  const [open, setOpen] = useState(false);
+export function CasEventDetails({ events, ecuRuns, defaultOpen = false }: { events: CasEvent[]; ecuRuns: EcuRunRecord[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   if (events.length === 0 && ecuRuns.length === 0) return null;
   const byClass = CLASS_ORDER.map((c) => ({ cls: c, runs: ecuRuns.filter((r) => r.classification === c) })).filter((g) => g.runs.length > 0);
   return (

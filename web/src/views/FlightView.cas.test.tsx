@@ -54,14 +54,15 @@ function renderFlight() {
 }
 
 describe("FlightView CAS events", () => {
-  it("lists both ENGINE ECU events as rows naming class and reason, with the lane-check line", async () => {
+  it("lists both ENGINE ECU events as rows naming class and reason, with the lane check in Flight facts", async () => {
     renderFlight();
     const card = (await screen.findByText(/ENGINE ECU, 2 events/)).closest("a, div") as HTMLElement;
     expect(card).toBeTruthy();
     fireEvent.click(screen.getByText(/Show 2 events/));
     expect(screen.getByText("ENGINE ECU · TAXI · 2,550 rpm — below the lane-check band (4,000 ± 500)")).toBeTruthy();
     expect(screen.getByText("ENGINE ECU · in flight · CRUISE · 5,000 rpm")).toBeTruthy();
-    expect(screen.getByTestId("lane-check-line").textContent).toBe("Lane check: not detected");
+    const lane = screen.getByTestId("flight-facts").querySelector('[data-fact="lane_check"]');
+    expect(lane?.textContent).toBe("Lane check: not detected");
   });
 
   it("expands to the alert context and the flight's ECU runs by class", async () => {
@@ -73,9 +74,10 @@ describe("FlightView CAS events", () => {
 
   it("offers a duration-only filter on the alert, pre-filled from the proposal", async () => {
     renderFlight();
-    fireEvent.click(await screen.findByText("Filter by duration…"));
+    // The insight card's action (the Events rows carry the same one).
+    fireEvent.click((await screen.findAllByText("Filter this alert…"))[0]);
     expect(proposeFilter).toHaveBeenCalledWith({ kind: "cas", cas_id: "ENGINE ECU" });
-    const editor = (await screen.findByText(/Filter this alert/)).parentElement!.parentElement as HTMLElement;
+    const editor = (await screen.findByText(/Filter this alert:/)).parentElement!.parentElement as HTMLElement;
     expect(within(editor).getAllByText(/ENGINE ECU \(alert\)/).length).toBeGreaterThan(0);
     expect(within(editor).queryByText(/A little past the limit is fine/)).toBeNull();
     expect(within(editor).getByText("Brief alerts are fine, lasting up to")).toBeTruthy();
