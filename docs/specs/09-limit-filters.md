@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.18 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
+**Status:** v0.19 — Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -28,6 +28,7 @@
 | 0.16 | **Q5 resolved (Spec 12 §8.2).** The per-limit metrics get Trends panels after all — generated per limit (filtered, or at least one exceedance), not declared per topic, so limits that have never fired produce no panel. |
 | 0.17 | **Spec 12 Phase 6.** §5: the stale "hidden from the Trends view until the follow-up" note corrected now that Spec 12 §8.4 draws them; overboost's "has an event" rule (`block_s > limit_value`, not `> 0`) written down, since `block_s` is a continuous block length present on nearly every flight. §8.2: `frequency_delta` is confirmed shared with Spec 12 §5.8's event frequency (same constant and "has an event" rule, different recent/reference windows — Notes' fixed `frequency_window` vs. Trends' own recent window). |
 | 0.18 | **Filters on CAS events** (Spec 01 v0.21, Spec 10 D19). A filter attaches to a *target*: a limit (as before) or a classified CAS alert (`cas_id`, today only `ENGINE ECU`). CAS targets offer the duration condition only — there is no excess, so no magnitude condition and no z reference; the §8 change monitor runs on event frequency alone (Spec 12 §5.8). §4, §7.3, §9, §10.1, §11 updated; `limit_id` becomes `target` in storage (migration: existing records are `{kind: "limit"}`). Phase-scoped suppression for a target, decided 2026-10-11 (per-limit phase exclusion), is specified separately when it lands and applies to CAS targets the same way. |
+| 0.19 | §12.1 reworded for Spec 03 v0.16: events are a first-class **Events** section on the Flight view (one chronological table, limit and CAS), not cards inside the limits topic. Filter actions, pre-fill, preview and the mirrored topic badges are unchanged; only where the rows render. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -556,14 +557,13 @@ interface FilterHealth {
 
 ## 12. UI (Spec 03)
 
-### 12.1 Flight view — limits topic
+### 12.1 Flight view — Events section (v0.19)
 
-- One card per limit (§10.1). Collapsed: label, event count, worst peak, total time above. Expanded: one row per event, each with the existing click-to-zoom evidence.
-- `filtered` cards render quietly (info or watch styling) with the filter summary: "17 events within your filter: up to +2.5 psi".
-- Breach cards show "beyond your filter" and the band.
-- Every limit card has **Filter this limit…** next to **Add a note**. It opens an inline editor, pre-filled from `propose_limit_filter`: limit and OM value, this flight's peak, your aircraft's typical and worst excess, suggested band. Magnitude and duration are separate toggles. Only allowed modes are shown, caps are enforced, and the note is required where applicable. If a filter already exists, the action reads **Edit filter…**.
-- **Topic cards mirror limit cards (v0.13).** A topic whose rule lists the limit in `limit_refs` (§10.2) shows this card's badge — the `suppressed` or `breach` outcome — and links here; it never shows a separate limit insight (Spec 03 §5.2).
-- **Preview before saving.** The editor shows the `preview_limit_filter` result: "This would hide 412 events on 38 flights; 2 flights would still show a breach," with the list of affected flights.
+- Events render in the Flight view's **Events** section (Spec 03 §5.2), one chronological table for every event on the flight, `source: limit` and `source: cas` alike. Each row: time, phase, target (limit label with OM value, or alert name), duration, excess (limits), reason (CAS), severity label; click-to-zoom evidence as before.
+- Events suppressed by a filter collapse to **one line per target** — *"17 FUEL PRESS events within your filter: up to +2.5 psi"* — expandable to the rows. A breach is an ordinary row marked *beyond your filter*, with the band.
+- Every row has **Filter this limit…** / **Filter this alert…** next to **Add a note**. It opens the filter editor, pre-filled from `propose_limit_filter` (limit and OM value, this flight's peak, the aircraft's typical and worst excess, suggested band; for a CAS target, this event's duration). Magnitude and duration are separate toggles; only allowed modes are shown; caps enforced; note required where applicable. With an existing filter the action reads **Edit filter…**.
+- **Preview before saving** shows the `preview_limit_filter` result: "This would hide 412 events on 38 flights; 2 flights would still show a breach," with the affected flights.
+- **Topic cards mirror the events (v0.13, unchanged).** A topic whose rule lists the limit in `limit_refs` (§10.2) shows the event's badge and links to the row; it never shows a separate limit insight. The `limit_exceedances` card itself carries only its analysis sentence and badges (Spec 03 §5.2).
 
 ### 12.2 Notes page
 

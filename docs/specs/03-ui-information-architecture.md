@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.15 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.16 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -25,6 +25,7 @@
 | 0.13 | Realigned with **Spec 14** (Settings, Journal, rule editing on the card). §4: Baselines leaves the top-level nav; Annotations becomes **Journal**; Settings is a tabbed section. §5.5 Baselines & models superseded by Spec 14 §5.1 (Settings → Reference & Models) and §7.2–§7.3 (rule editing on the topic card). §5.6 Annotations superseded by Spec 14 §6 (Journal). §5.7 Settings restated as the tabbed section. §5.2 Flight view gains the topic card's triggers disclosure, the reference-contribution header, exclude-from-card and the "reference changed" / "rule changed" markers. Principle 5 restated: the sandbox is the workspace copy of the rules, wherever it is edited, and nothing applies without a fleet-wide preview. Principle 6 restated: the researcher's extra surface is Settings, not a tuning page; all tuning is done where results are shown. §1 and D6 updated to match. Wireframes `Baselines.dc.html`, `Annotations.dc.html`, `Settings.dc.html` superseded. User-facing "baseline(s)" → "reference" throughout. Q2 moot. |
 | 0.14 | **Engine ECU view removed** (ECU review 2026-10-13, Spec 10 D19). Everything §5.4 showed is now a CAS event row in the Flight view's events list (§5.2), a frequency panel on Trends (Spec 12 v0.10) and a lane-check line in the flight summary. §5.4 kept as a tombstone; nav sketch, principles 1 and 6, §4 destination list, design-token note and Q5 updated. §5.2 gains the CAS-event row rule: the row names the class and, when the run nearly matches a lane check, why it isn't one. |
 | 0.15 | §5.4 rule: lane-check line reads `both lanes ✓` / `one lane only` / `not detected`; the filter scope caption says "this alert" for a CAS target (Spec 14 §7.5). |
+| 0.16 | **Flight view review** (2026-10-13, five decisions; Spec 10 D20). §5.2 rewritten: header gains a **Flight facts** row with an admission rule (Spec 10 §4.3); **Events** becomes a first-class section between the chart and the topic cards (one chronological table for limit and CAS events, row actions, filtered events collapsed), and the `limit_exceedances` card shrinks to its sentence and badges; topic cards are **expanded only when they have something to say** (insight, mirrored badge, change marker, validity note) and otherwise a one-line roster entry — the "analysed with nothing to flag" line is dropped as redundant; the rule editor leaves the card for a **side panel** opened from a read-only triggers summary (Spec 14 v0.9 §7.3). The loader-skipped-log preview leaves Flight view for its own read-only **Log preview** page (new §5.9). |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
 ---
@@ -116,37 +117,33 @@ Replaces the old standalone Import destination and the never-built "just a list"
 
 **Question answered:** "What happened on this flight, and is anything wrong?"
 
-The most-used view, and the one D5 (evidence links) matters most for. Layout:
+The most-used view, and the one D5 (evidence links) matters most for. Layout (v0.16):
 
 ```
 ┌───────────────────────────────────────────────────────────┐
 │ Header: date, duration, aircraft, [stale? refresh],         │
 │         Contributes to reference / Excluded (reason)        │
+│ Flight facts: fuel burned · cruise nm/gal · cruise gal/hr · │
+│               lane check                                    │
 ├───────────────────────┬─────────────────────────────────────┤
 │ Insight list           │  Timeline chart                     │
-│ (severity-sorted,      │  - phase bands (color-coded)        │
-│  from InsightSet)      │  - selected channels                │
-│  ⚡ limit               │  - markers: exceedance/CAS/ECU      │
-│  ⚠ warning              │  - linked cursor across sub-charts  │
-│  ⚑ watch                │                                      │
-│  ℹ info                 │                                      │
-│  [click → highlights    │                                      │
-│   the evidence window]  │                                      │
+│ (severity-sorted,      │  - phase bands / tint, minimap      │
+│  fired insights only)  │  - selected channels                │
+│  [click → evidence]    │  - markers: limit & CAS events      │
 ├───────────────────────┴─────────────────────────────────────┤
-│ Topic cards (every evaluated topic, TopicResult.analysis.text,│
-│ shown even where no insight fired — the "why nothing is      │
-│ wrong" half of the two-layer format, Spec 01 §8.5), each     │
-│ with a closed ▸ triggers disclosure (Spec 14 §7.3)           │
+│ Events — one table, chronological: limit and CAS events,     │
+│ with row actions; filtered events collapsed to one line      │
+├───────────────────────────────────────────────────────────┤
+│ Topic cards — expanded only when they have something to say; │
+│ otherwise one roster line each. Triggers read-only on the    │
+│ card; "Edit rules…" opens the editor panel (Spec 14 §7.3)    │
 └───────────────────────────────────────────────────────────┘
 ```
 
-- **Insight list** is the entry point (principle 2): each item shows severity, the rendered `message.text`, and confidence. Clicking one scrolls/zooms the timeline chart to its `evidence` window (`series_window` evidence → zoom to `[start_s, end_s]`; `exceedance`/`ecu_run` evidence → jump to and highlight that event; `baseline_point` evidence → a "compare to fleet" link into Trends, §5.3, pre-filtered to that flight). Only topics with `insight != null` appear here — a topic with no fired insight is never listed with a placeholder `info` severity just to have an entry; it belongs in Analysis only (below). A short line below the list states how many topics were analyzed with nothing to flag, so the list's shortness reads as "nothing more to report," not as missing content.
-- **Severity travels with the topic, not the section.** `InsightSet.topics` already bundles each topic's `analysis` and `insight` together (Spec 01 §8.5), so the same severity dot/label used in the insight list is repeated on that topic's card in Analysis, whenever `insight != null` — same color, same shape, same token. A topic with `insight == null` carries no tag in either place; the *absence* of a tag is itself the "nothing flagged" signal, not a separate `info` badge. One severity token set, defined once, referenced everywhere it appears (insight list, Analysis grid, and anywhere else a topic's severity is shown, e.g. the preview on a topic card, Spec 14 §7.2): `info` `#64748B`, `watch` `#FDE047`, `warning` `#F5A524`, `limit` `#E5484D`. `warning` and `limit` render with a small triangle indicator, `watch` and `info` with a circle, so severity is never conveyed by color alone.
-- **Timeline chart** is the one place `get_series` (R1) is called, lazily — only the channels the visible insights/topics reference are fetched by default, with a channel picker (from the Spec 01 §6.4 registry) to add more. This bounds the re-parse cost from R1 to what's actually shown.
-- **Phase bands** double as the visible marker for the finding-9 defect: a flight that's entirely one phase band (per `PHASE_TAKEOFF_NOT_DETECTED`, Spec 01 §8.1) shows a plain-language note here, not just a diagnostic code — "phase detection didn't find a clear climb or cruise for this flight; some metrics below are unavailable as a result."
-- **Only one navigational bar, not two.** An earlier pass had a second, separate "current zoom phase" band alongside the minimap — cut after review, because it was redundant with the minimap without adding real function of its own, and because two different-scope representations (local detail vs. full-flight overview) crammed into one bar would have meant sacrificing one or the other rather than genuinely merging them. What that band showed — which phase(s) the current zoom window covers — moved into the main chart itself instead, as a tint behind the data (below), which puts the information exactly where it's already being read rather than in a strip that has to be cross-checked. The minimap is now the only bar, and it keeps its original job unchanged: full-flight orientation and drag-to-navigate.
-- **The chart's background is tinted with the visible window's phase color(s), recomputed on every zoom/pan.** A window inside one phase (the common case on a flight where detection didn't find real transitions) is a flat, low-opacity wash behind the data; a window spanning a real phase change shows adjacent tinted regions sized to their share of the visible time. This is not optional for the same reason the old band's zoom-tracking wasn't: a phase indicator that doesn't update with zoom is actively misleading, not just stale.
-- **Every phase gets its own fixed color — a real palette, not two grays and a blue.** With 11 real phases (`PRE_START`, `ENGINE_START`, `WARMUP`, `TAXI`, `TAKEOFF_ROLL`, `CLIMB`, `CRUISE`, `DESCENT`, `APPROACH`, `LANDING_ROLL`, `SHUTDOWN`; `UNKNOWN` as a 12th fallback), a chart that only distinguishes "ground" from "one big airborne block" isn't doing its job on a flight where phase detection actually worked. Fixed tokens, chosen to avoid any collision with the severity palette (§5.2 above) or the channel-picker colors (so nothing on the Flight view screen accidentally reads as a severity signal):
+- **Flight facts (v0.16, Spec 10 §4.3).** A compact row in the header for per-flight figures a pilot *records* rather than *judges*: fuel burned, cruise nm/gal, cruise fuel flow (Spec 10 §4.2 planning numbers) and the lane-check result (`both lanes ✓` / `one lane only` / `not detected`, Spec 10 D19). Admission is Spec 10 §4.3's rule; nothing here ever carries a limit, a baseline, a severity or an insight, and nothing lands here by default when it leaves the topic set — it must pass the rule.
+- **Insight list** is the entry point (principle 2): each item shows severity, the rendered `message.text`, and confidence. Clicking one scrolls/zooms the timeline chart to its `evidence` window (`series_window` evidence → zoom to `[start_s, end_s]`; `exceedance`/`cas_event` evidence → highlight that row in Events and that marker on the chart; `baseline_point` evidence → a "compare to fleet" link into Trends, §5.3). Only topics with `insight != null` appear here. The former "N topics analysed with nothing to flag" line is dropped (v0.16): the topic roster below says the same thing, per topic.
+- **Severity travels with the topic, not the section.** The same severity dot/label used in the insight list is repeated on that topic's card whenever `insight != null`; a topic with `insight == null` carries no tag anywhere. One severity token set, defined once: `info` `#64748B`, `watch` `#FDE047`, `warning` `#F5A524`, `limit` `#E5484D`; `warning`/`limit` render with a triangle, `watch`/`info` with a circle.
+- **Timeline chart** is the one place `get_series` (R1) is called, lazily — only the channels the visible insights/topics reference are fetched by default, with a channel picker (Spec 01 §6.4 registry) to add more. Phase tint recomputed on zoom/pan; one minimap, no second band; fixed phase palette (table below); no text inside the minimap or tint — a caption line names the visible phases and a persistent legend key maps colours. Markers: one per event in the Events table, same order, two glyphs (limit, CAS). A flight raising `PHASE_TAKEOFF_NOT_DETECTED` shows the plain-language note here ("phase detection didn't find a clear climb or cruise for this flight; some metrics below are unavailable as a result").
 
   | Phase | Color | Phase | Color |
   |---|---|---|---|
@@ -157,13 +154,20 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout:
   | `TAKEOFF_ROLL` | `#6366F1` | `SHUTDOWN` | `#374151` |
   | `CLIMB` | `#22C55E` | `UNKNOWN` | `#1F2937` |
 
-- **No text inside the minimap or the chart tint.** At small sizes, and at whatever width a short zoom window leaves the chart, a label reliably either doesn't fit or gets truncated into something unreadable. Both communicate by color alone; what's currently showing is named in a caption line, and the phase-to-color mapping lives in a persistent legend key — shown in full always, not trimmed to only the phases present in the current flight, since it's meant to be learned once and reused across every flight a pilot looks at.
-- **Reference contribution** is stated in the header — *Contributes to reference* or *Excluded from reference (reason)* — with the toggle (Spec 14 §7.1).
-- **Topic card: triggers disclosure** (v0.13, Spec 14 §7.3). Every topic card — whether or not an insight fired — has a closed-by-default disclosure listing the topic's triggers with their current values and whether each was met on this flight and by how much (*trend · R² ≥ 0.5 · n ≥ 10 — not met: R² 0.30 over 23 flights*). Each value is editable inline; the fleet-wide preview (insights added / removed / severity-changed, flights linked) is shown before Apply; Apply writes `rules/active.json` and a Journal entry with the counted effect; Cancel discards; Reset to shipped per rule. The topic's `enabled` flag is edited here too and reports its scope before apply. This is where D6 now lives; a trigger that has never fired is edited from the topic card of a flight where it did not fire.
-- **Exclude this flight from reference →** on any `baseline_deviation`, outlier or trend insight; reason required; same dialog as the Flights toggle (Spec 14 §7.1).
-- **Markers.** A card whose verdict changed because the reference moved or a rule was edited carries *reference changed* / *rule changed*, showing what changed, when and the reason, with **Revert** behind the same preview (Spec 14 §7.2).
-- **Annotations** attach inline: any insight or event card has an "add a note" affordance, writing to Spec 02's `annotations.json` via the host, keyed by `flight_id` (Spec 01 R3) — no separate annotations screen for single-flight notes; Journal (§5.6) is for browsing/managing them across the fleet.
-- **Report / export:** "Download as text" (the familiar script 04 report, via `render_report`) and "Export flight bundle" (Spec 02 §7, `scope: "single_flight"`) live here as secondary actions.
+- **Events (v0.16).** A first-class section with its own heading, between the chart and the topic cards: **one chronological table of every event on this flight**, limit and CAS (Spec 01 §8.6 `source`). Columns: time, phase, source/target (limit label with OM value, or alert name), duration, excess (limits only), reason (CAS `not_lane_check_reason`, in words with the band), severity label. Row actions, identical for both sources: open on chart, add a note, filter (duration, or magnitude+duration for limits; Spec 09 §12.1), acknowledge (Spec 11, when built); every workspace-wide action carries its Spec 14 §7.5 scope caption. Events suppressed by a filter collapse to one line per target — *"17 FUEL PRESS events within your filter"* — expandable. A breach on a filtered target is a normal row marked *beyond your filter*. The expanded row shows the event's context (for CAS: IAS, oil-pressure gaps, co-active alerts, and the flight's full ENGINE ECU runs by class). The section is present on every flight; with nothing to show it is one line, *No events on this flight*. `limit_exceedances` remains the owner in the data model (Spec 10 §4.1) but its **card** now carries only its analysis sentence and mirrored badges, and collapses to a roster line like any other when there are no events.
+- **Topic cards — the roster rule (v0.16).** Every evaluated topic has a card, but a card is **expanded** only when it has something to say: a fired insight, a mirrored badge (Spec 10 §4.1), a *reference changed* / *rule changed* marker (Spec 14 §7.2), or a validity note (*unavailable: no cruise detected*; *not yet validated on this engine*, Spec 10 §8.1). Otherwise it is **one line** — topic name · its analysis sentence truncated to the measured value · `?` help — expandable by tap. A disabled topic's line reads *disabled · Enable* (Spec 14 §7.3). Expanded cards come first, in severity order, then the roster. The two-layer format is kept: the "why nothing is wrong" sentence is still there, one tap away, and the absence of a badge is still the signal.
+- **Topic card: triggers (v0.16, Spec 14 §7.3).** The card's disclosure shows the topic's triggers **read-only** — current value, met / not met on this flight and by how much (*trend · R² ≥ 0.5 · n ≥ 10 — not met: R² 0.30 over 23 flights*) — plus the topic's `enabled` state. One action, **Edit rules…**, opens the **rule editor panel**: a side sheet over the Flight view that knows which topic and which flight it came from, with inline editing, the fleet-wide preview (this flight highlighted), Apply / Cancel / Reset to shipped, the `enabled` toggle, and Spec 14 §7.5 scope captions. Closing it returns to the same scroll position. No input control is rendered on the card itself. *Edit trigger ↓* on an insight card opens the panel for that topic directly.
+- **Reference contribution** is stated in the header — *Contributes to reference* or *Excluded from reference (reason)* — with the toggle (Spec 14 §7.1). **Exclude this flight from reference →** on any `baseline_deviation`, outlier or trend insight; reason required.
+- **Markers.** A card whose verdict changed because the reference moved or a rule was edited carries *reference changed* / *rule changed*, showing what, when and why, with **Revert** behind the same preview (Spec 14 §7.2).
+- **Annotations** attach inline on any insight card or Events row, writing to Spec 02's `annotations.json` via the host, keyed by `flight_id` (Spec 01 R3); Journal (§5.6) browses them across the fleet.
+- **Report / export:** "Download as text" (`render_report`) and "Export flight bundle" (Spec 02 §7, `scope: "single_flight"`) as secondary actions.
+- **Not a flight.** A log the loader skipped is no longer rendered by this view; Flights links it to Log preview (§5.9).
+
+<details><summary>v0.15 layout (superseded)</summary>
+
+The v0.13–v0.15 layout had the planning numbers and lane check as an untitled summary line, events inside the `limit_exceedances` topic card, every topic card expanded with a closed inline rule editor, and the skipped-log preview as a mode of this view.
+
+</details>
 
 ### 5.3 Trends
 
@@ -225,6 +229,12 @@ One **changelog** across the three tabs: every change, with setting, before/afte
 - One explicit "Add to my workspace" button that runs the actual merge (Spec 02 §7.4) and only then makes the data live and editable.
 
 This reuses rather than duplicates the flight/trends UI, which is why it's a flow layered on existing views rather than a seventh destination.
+
+### 5.9 Log preview (v0.16)
+
+**Question answered:** "What is in this log the app didn't treat as a flight, and should it be included?"
+
+Reached from a Flights row whose status is *Ground session*, *Too short*, *Other aircraft* or any other loader skip reason (Spec 02 §5.11). Read-only. Shows: a header (file name, folder, why it was skipped, duration, aircraft ident, engine hours if present); the timeline chart with channel picker, phase tint and minimap exactly as in §5.2 (shared components); the log's CAS alerts and ENGINE ECU runs **by class** (`GROUND_START` / `LANE_CHECK` / `GROUND` / `IN_FLIGHT` / `GROUND_SHUTDOWN`, sub-threshold blips counted) as a plain list — not an Events table, since nothing here is analysed; and one action, **Include this log**, with the Spec 02 §5.11 confirmation and reason. No insights, no reference state, no topic cards, no filters, no notes. Including the log sends the pilot to its Flight view once analysed. Route `/logs/<fingerprint>`; Flight view no longer carries a preview mode.
 
 ## 6. Cross-cutting concerns
 

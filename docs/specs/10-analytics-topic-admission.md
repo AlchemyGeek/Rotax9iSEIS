@@ -1,7 +1,7 @@
 # Spec 10 — Analytics Topic Admission & Register
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.13 — for review. Decisions D1–D19 in §6.3, all closed (D7 revised in v0.7; D18 added in v0.10; D19 in v0.12). Implemented: Phases A–D; Phase E (topic help) in progress.
+**Status:** Draft v0.14 — for review. Decisions D1–D20 in §6.3, all closed (D7 revised in v0.7; D18 added in v0.10; D19 in v0.12). Implemented: Phases A–D; Phase E (topic help) in progress.
 **Suggested repo path:** `docs/specs/10-analytics-topic-admission.md`
 **Builds on:** Spec 01 (§8.5 TopicResult/Insight, §9 extension model), Spec 03 (principle 6: the Explore → operational path), Spec 08 (cylinder balance — the first topic spec, §9), Spec 09 (filters on topic threshold insights), research paper Edition 0.3
 **Baseline reviewed:** branch `webui` at commit `fee6577` (2026-10-01), engine 0.21.0; `insight_rules.json` v1.3; `engines/916iS.json`
@@ -24,6 +24,7 @@
 | 0.11 | Lane-check RPM band sourced from the OM (4,000 rpm procedure RPM, ±500 rpm our tolerance; 912iS/916iS, 915iS at its OM's 2,500 rpm, 914iS unverified); D18 evidence recorded (full set, Spec 01 v0.20). |
 | 0.12 | **D19 — ENGINE ECU events are CAS events** (ECU review, 2026-10-13, four decisions). §4.1 generalised from OM-limit events to *events*: `limit_exceedances` owns every event, `source: limit` or `source: cas`; `engine_ecu_inflight` becomes a referencing topic (analysis line, lane-check summary, mirrored badge; no second insight), its D18 provisional condition unchanged. `GROUND` events are shown by default with the reason they are not a lane check; the user filters (Spec 09 v0.18) or acknowledges. Trends gets a frequency panel per classified CAS alert now, not deferred (Spec 12 v0.10) — the decision is not to be based on one aircraft's data. Lane-check adherence is **not** admitted: it is pilot procedure, not an engine signal; recorded as candidate **C6** (procedure class, undefined) in §7. The Engine ECU view (Spec 03 §5.4) is removed. |
 | 0.13 | D18/D19 evidence from the first run with CAS events on the full set (430c1a8): three `GROUND` events, all `rpm_below_band` — the KBVS 2026-10-05 pair (7 s, 8 s, ~2,550 rpm) and 2026-05-20 18:09:49 (11 s, 3,402 rpm), the last one on a real flight and previously inside the old 3,000–5,000 band; one `watch` insight on that flight; Trends ENGINE ECU panel reads *rare*. 0 `IN_FLIGHT`. |
+| 0.14 | **D20 — Flight facts** (Flight view review, 2026-10-13; Spec 03 v0.16). New §4.3: the Flight view header carries a *Flight facts* row for per-flight figures a pilot records rather than judges. Admission rule: (a) a fact about this flight a pilot would write in a logbook or fuel log, and (b) this spec has said it is not a topic. Never a limit, baseline, severity or insight; anything that could want a threshold or a trend fails and must come through §8 instead. Current list: fuel burned, cruise nm/gal, cruise fuel flow (§4.2), lane-check result (D19). The Flight view's other four decisions (editor panel, Events section, card roster, Log preview) do not touch the topic set and are recorded in Spec 03/14. |
 
 ---
 
@@ -114,6 +115,22 @@ The topic keeps everything only it can do — baseline and trend triggers agains
 A topic is about the engine: a health topic detects a change in it, an operational topic reports a pilot-controlled practice the OM limits or that affects it. Numbers whose main drivers are outside the engine — wind, load, the pilot's choice of power — are context, not topics. They appear in a **flight-summary line** (alongside duration and airborne time): fuel burned, cruise nm/gal, mean cruise fuel flow. They raise no insights and no trend alerts, and they don't appear in the Analysis grid.
 
 They can come back as a topic only through the lifecycle (§8), with a definition that isolates an engine signal. The candidate route is BACKLOG A5's fuel-flow model (power % × density altitude), entered as **Research**. Its payoff is uncertain: on a FADEC engine both fuel flow and power % are ECU-computed, so the model may mostly reflect the ECU's map. That makes it more promising as an input to ECO/POWER inference (BACKLOG A4) than as a wear indicator — which the research has to show either way.
+
+### 4.3 Flight facts (D20, decided v0.14)
+
+The Flight view header carries a **Flight facts** row (Spec 03 §5.2): per-flight figures a pilot *records* rather than *judges*. A value is admitted as a flight fact when **both** hold:
+
+- (a) it is a fact about this flight that a pilot would write in a logbook or a fuel log;
+- (b) this spec has decided it is not a topic (§4.2, or a §6 verdict).
+
+A flight fact never carries a limit, a baseline, a severity or an insight, and nothing is demoted into this row by default — a metric leaving the topic set either passes (a) and (b) or it is simply removed. Anything that could ever want a threshold or a trend fails (a) and must come back through the lifecycle (§8) as a topic proposal.
+
+| Flight fact | Source | Admitted by |
+|---|---|---|
+| Fuel burned (gal, FADEC-integrated) | `fuel.py` | §4.2 |
+| Cruise efficiency (nm/gal) | `cruise_nmpg` | §4.2 |
+| Cruise fuel flow (gal/hr) | `cruise_fuel_flow_gph` | §4.2 |
+| Lane check (`both lanes ✓` / `one lane only` / `not detected`) | `EcuAnalysis.lane_check` | D19 |
 
 ## 5. The register
 
@@ -334,6 +351,7 @@ Once decided, each change becomes a BACKLOG item with this register as its refer
 | D15 | `fuel_press_max` | **Cause 3a: allowlist entry + pilot filter**; profile keeps OM 46 psi; entry prompts a mechanic check (sender vs regulator). | 2026-10-03, v0.6 |
 | D16 | `rpm_idle_min` | **Closed.** OM states 1,800 rpm as a minimum (915 i A OM table; OM-916 per the research paper). Keep the minimum and the `min_rpm: 1000` gate; add the idle-established condition (applies only after rpm has reached 1,800 since engine start); N117ZS's steady 20–30 rpm low idle is cause 3a (allowlist entry, pilot filter); profile note states the real rationale for `min_duration_s`. | 2026-10-05, v0.7 |
 | D17 | `rpm_takeoff_max` | **Closed.** Cause 3a (prop-governor overshoot, constant-speed propeller confirmed). No OM transient allowance in the 5,800–5,900 rpm band; no resolution tolerance (10 rpm steps). Hard ceiling; pilot filter ≤ +30 rpm; allowlist entry citing the Maintenance Manual Line. | 2026-10-05, v0.7 |
+| D20 | Flight facts | **Admission rule for the Flight view's facts row** (§4.3): logbook-type fact about this flight **and** already ruled not a topic; never limit/baseline/severity/insight. Current members: fuel burned, cruise nm/gal, cruise fuel flow, lane check. | 2026-10-13, v0.14 |
 | D19 | ENGINE ECU events | **CAS events, owned by `limit_exceedances`** (§4.1 generalised). `GROUND` events shown by default with `not_lane_check_reason`; user filters (duration) or acknowledges — no severity policy. Trends: frequency panel per classified CAS alert, built now (Spec 12 v0.10). Lane-check adherence not admitted → C6. Spec 03 §5.4 removed. Decided with four options discussed per point; the Trends panel was not deferred because "my aircraft shows nothing" is single-aircraft reasoning. | 2026-10-13, v0.12 |
 | D18 | `engine_ecu_inflight` | **Admitted (provisional).** Prior E3 evidence (4, then 5 "in-flight" ENGINE ECU runs) withdrawn — a classifier defect, corrected in Spec 01 v0.19 (phase-based classes, minimum duration). Zero in-flight events on the full set (115 logs); two short `GROUND` runs (Spec 01 v0.20). Condition to close: first true `IN_FLIGHT` positive, or a deliberate injected-excerpt test. Single-aircraft action text removed from the audit and the engine. Full set (115 logs, Spec 01 v0.20): 0 `IN_FLIGHT`; 2 `GROUND` runs, both in one stationary ground run (2026-10-05 KBVS, 7 s and 8 s, 15 s apart, ~2,550 rpm, oil-pressure dropout in the second) — consistent with a lane check performed below the OM's 4,000 rpm; no ground faults. With the lane-check band sourced from the OM (v0.11, 4,000 ± 500 rpm on the 916iS) a third `GROUND` run appears: 2026-05-20 18:09:49 (11 s), the first half of a paired lane check in which rpm fell from ~4,300 to ~2,600–3,160 while the lane was off, pulling the run's mean below the band. First run with CAS events on the full set (430c1a8): three `GROUND` events, all `rpm_below_band` — the KBVS 2026-10-05 pair (7 s, 8 s, ~2,550 rpm) and 2026-05-20 18:09:49 (11 s, 3,402 rpm, on a real flight and previously inside the old 3,000–5,000 band) — one `watch` insight on that flight, Trends ENGINE ECU panel *rare*, 0 `IN_FLIGHT`. | 2026-10-13, v0.10; evidence v0.11, v0.13 |
 
