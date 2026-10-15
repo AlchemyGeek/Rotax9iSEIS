@@ -17,7 +17,7 @@ import {
 } from "../lib/fixtures";
 import type {
   AppSettings, BaselineConfig, ChartPreset, EngineLimitsResult, FleetAnalysis,
-  RuleSet, SettingsChangelogEntry, UnpinPreview, WorkspaceManifest, WorkspaceSettings,
+  ChangedSetting, RuleSet, UnpinPreview, WorkspaceManifest, WorkspaceSettings,
 } from "../types/contract";
 
 const client = getEngineClient();
@@ -116,14 +116,14 @@ export function Settings() {
   // engine doesn't surface.
   const [cardTopicIds, setCardTopicIds] = useState<Set<string>>(new Set());
 
-  // Shared changelog (Spec 14 §5, acceptance 2).
-  const [changelog, setChangelog] = useState<SettingsChangelogEntry[]>([]);
+  // Spec 14 v0.13 §5 — no changelog; settings that differ from shipped
+  // are marked with the shipped value and a link to their Journal entry.
+  const [changedSettings, setChangedSettings] = useState<ChangedSetting[]>([]);
 
-  async function refreshChangelog() {
-    if (usingFixture) return;
+  async function refreshChangedSettings() {
     try {
-      const res = await client.getSettingsChangelog();
-      setChangelog(res.entries);
+      const res = await client.listChangedSettings();
+      setChangedSettings(res.settings);
     } catch {
       // leave whatever was already loaded
     }
@@ -155,10 +155,10 @@ export function Settings() {
         setCardTopicIds(new Set(workspaceRules.card_topic_ids));
         setUsingFixture(false);
         try {
-          const changelogRes = await client.getSettingsChangelog();
-          if (!cancelled) setChangelog(changelogRes.entries);
+          const changed = await client.listChangedSettings();
+          if (!cancelled) setChangedSettings(changed.settings);
         } catch {
-          // non-fatal — changelog just stays empty
+          // non-fatal — values just show unmarked
         }
       } catch {
         if (!cancelled) {
@@ -250,7 +250,6 @@ export function Settings() {
     if (usingFixture) return;
     try {
       await client.saveAppSettings(next);
-      await refreshChangelog();
     } catch {
       // server unreachable — local state already updated, nothing more to do
     }
@@ -262,7 +261,6 @@ export function Settings() {
     if (usingFixture || manifest.id === "legacy") return;
     try {
       await client.saveWorkspaceSettings(next);
-      await refreshChangelog();
     } catch {
       // server unreachable — local state already updated, nothing more to do
     }
@@ -276,7 +274,7 @@ export function Settings() {
       const newFleet = await client.saveBaselineConfig(draftBaselineConfig);
       setFleet(newFleet);
       setDraftBaselineConfig(clone(newFleet.provenance.baseline_config));
-      await refreshChangelog();
+      await refreshChangedSettings();
     } catch {
       // server unreachable — draft stays, nothing applied
     } finally {
@@ -287,16 +285,67 @@ export function Settings() {
   async function resetReferenceToShipped() {
     setSavingReference(true);
     try {
+      // Every setting back at shipped; the server keeps pinned references
+      // (their own Journal decisions, Spec 14 §6.1).
       const newFleet = await client.saveBaselineConfig(DEFAULT_BASELINE_CONFIG);
       setFleet(newFleet);
       setDraftBaselineConfig(clone(newFleet.provenance.baseline_config));
-      await refreshChangelog();
+      await refreshChangedSettings();
     } catch {
       // server unreachable
     } finally {
       setSavingReference(false);
     }
   }
+
+  // Spec 14 v0.13: Reset to shipped for one setting, as in Journal.
+  async function resetSetting(refId: string) {
+    setSavingReference(true);
+    try {
+      const newFleet = await client.resetSetting(refId);
+      setFleet(newFleet);
+      setDraftBaselineConfig(clone(newFleet.provenance.baseline_config));
+      await refreshChangedSettings();
+    } catch {
+      // server unreachable
+    } finally {
+      setSavingReference(false);
+    }
+  }
+
+  const changedById = useMemo(() => new Map(changedSettings.map((c) => [c.ref_id, c])), [changedSettings]);
+
+  // The mark beside a changed value: shipped value, its Journal entry,
+  // Reset to shipped. Nothing for a value at shipped.
+  function changedMark(refId: string) {
+    const c = changedById.get(refId);
+    if (!c) return null;
+    return (
+      <div data-testid={`changed-${refId}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--severity-warning)", marginBottom: 10 }}>
+        <span>Changed · shipped: <span className="mono">{c.shipped}</span></span>
+        {c.entry_id && (
+          <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/journal?entry=${encodeURIComponent(c.entry_id!)}`); }} style={{ fontSize: 11 }}>
+            Journal entry →
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={() => resetSetting(refId)}
+          disabled={savingReference}
+          style={{ background: "none", border: "none", padding: 0, color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}
+        >
+          Reset to shipped
+        </button>
+      </div>
+    );
+  }
+
+  // Changed settings that have no control of their own on this page
+  // (membership, the event-frequency threshold, a weather band set by hand).
+  const INLINE_MARKS = new Set(["outlier_z_threshold", "recent_window", "om_margin_fraction"]);
+  const otherChanged = changedSettings.filter(
+    (c) => !INLINE_MARKS.has(c.ref_id) && !c.ref_id.startsWith("outlier_z_threshold_overrides:"),
+  );
 
   function removeOverride(metricId: string) {
     setDraftBaselineConfig((prev) => {
@@ -375,6 +424,14 @@ export function Settings() {
                 <div style={ROW_STYLE}>
                   <span style={{ color: "var(--text-secondary)" }}>OM reference</span>
                   <span style={{ color: "var(--text-primary)", textAlign: "right" }}>{engineLimits.engine.om_reference}</span>
+                </div>
+              )}
+              {engineLimits.engine_version && (
+                // Spec 14 v0.13 §5: the engine version in effect. Its What's
+                // new (Spec 13's generated page) isn't in the app yet.
+                <div style={ROW_STYLE}>
+                  <span style={{ color: "var(--text-secondary)" }}>Engine version</span>
+                  <span className="mono" style={{ color: "var(--text-primary)" }}>{engineLimits.engine_version}</span>
                 </div>
               )}
               <div style={ROW_STYLE}>
@@ -467,9 +524,11 @@ export function Settings() {
                   <span style={{ color: "var(--text-secondary)" }}>Outlier z-threshold<InlineHelp id="reference.outlier_z_threshold" /></span>
                   {numberInput(draftBaselineConfig.outlier_z_threshold, (v) => setDraftBaselineConfig((p) => ({ ...p, outlier_z_threshold: v })), { step: 0.1, min: 0 })}
                 </label>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
-                  default: 2.0
-                </div>
+                {changedMark("outlier_z_threshold") ?? (
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
+                    default: 2.0
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>n_min (sample-size gate), per trigger — read-only here, edited on each topic's card:</div>
                 {rules ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 10 }}>
@@ -494,9 +553,12 @@ export function Settings() {
                   <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Per-metric overrides</div>
                     {Object.entries(draftBaselineConfig.outlier_z_threshold_overrides ?? {}).map(([metric, z]) => (
-                      <div key={metric} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
-                        <span className="mono" style={{ color: "var(--text-secondary)" }}>{metric}: {z}</span>
-                        <a href="#" onClick={(e) => { e.preventDefault(); removeOverride(metric); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>remove</a>
+                      <div key={metric}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                          <span className="mono" style={{ color: "var(--text-secondary)" }}>{metric}: {z}</span>
+                          <a href="#" onClick={(e) => { e.preventDefault(); removeOverride(metric); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>remove</a>
+                        </div>
+                        {changedMark(`outlier_z_threshold_overrides:${metric}`)}
                       </div>
                     ))}
                   </div>
@@ -517,15 +579,31 @@ export function Settings() {
                   <span style={{ color: "var(--text-secondary)" }}>Max flights in window</span>
                   {numberInput(draftBaselineConfig.recent_window_max_flights, (v) => setDraftBaselineConfig((p) => ({ ...p, recent_window_max_flights: v })), { min: 1 })}
                 </label>
+                {changedMark("recent_window")}
                 <label style={{ ...ROW_STYLE, marginBottom: 0 }}>
                   <span style={{ color: "var(--text-secondary)" }}>OM margin fraction</span>
                   {numberInput(draftBaselineConfig.om_margin_fraction, (v) => setDraftBaselineConfig((p) => ({ ...p, om_margin_fraction: v })), { step: 0.05, min: 0, max: 1 })}
                 </label>
+                <div style={{ marginTop: 8 }}>{changedMark("om_margin_fraction")}</div>
                 <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
                   Defaults: 10h &middot; 5 &middot; 15 &middot; 0.25
                 </div>
               </div>
             </div>
+
+            {otherChanged.length > 0 && (
+              <div style={PANEL_STYLE} data-testid="other-changed-settings">
+                <div style={PANEL_TITLE_STYLE}>Other settings changed from shipped</div>
+                {otherChanged.map((c) => (
+                  <div key={c.ref_id}>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {c.label}: <span className="mono" style={{ color: "var(--text-primary)" }}>{c.current}</span>
+                    </div>
+                    {changedMark(c.ref_id)}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <ScopeCaption scope="reference_settings" />
@@ -837,29 +915,6 @@ export function Settings() {
           </>
         )}
 
-        <div style={PANEL_STYLE}>
-          <div style={PANEL_TITLE_STYLE}>
-            Changelog {changelog.length > 0 && <span style={{ color: "var(--text-tertiary)", fontWeight: 400 }}>({changelog.length})</span>}
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
-            Every change made in any Settings tab, newest first.
-          </div>
-          {changelog.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No changes yet.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {changelog.map((e) => (
-                <div key={e.id} className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", gap: 10 }}>
-                  <span style={{ color: "var(--text-tertiary)", flexShrink: 0 }}>{e.at.slice(0, 10)}</span>
-                  <span style={{ flexShrink: 0, color: "var(--text-tertiary)" }}>[{TAB_LABELS[e.tab as TabId] ?? e.tab}]</span>
-                  <span>
-                    {e.setting}: {JSON.stringify(e.before)} &rarr; {JSON.stringify(e.after)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       {unpinTarget && (

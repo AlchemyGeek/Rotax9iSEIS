@@ -506,45 +506,6 @@ def test_app_and_workspace_settings_round_trip(registry_server):
     assert got["result"]["anonymize_by_default"] is True
 
 
-def test_settings_changelog_records_changes_across_tabs(registry_server):
-    """Spec 14 §5 acceptance 2 — one shared changelog, newest first, with
-    an entry per changed field whichever of the three Settings tabs it
-    came from (here: App via save_workspace_settings, Reference & Models
-    via save_baseline_config)."""
-    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
-
-    rpc(registry_server, "save_workspace_settings", {"settings": {
-        "anonymize_by_default": True, "active_engine_profile": "916iS",
-    }})
-    rpc(registry_server, "save_baseline_config", {
-        "baseline_config": {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 3.0},
-    })
-
-    got = rpc(registry_server, "get_settings_changelog", {})
-    assert got["ok"], got
-    entries = got["result"]["entries"]
-    assert len(entries) >= 2
-    # Newest first.
-    assert entries[0]["at"] >= entries[-1]["at"]
-    z_entry = next(e for e in entries if e["setting"] == "outlier_z_threshold")
-    assert z_entry["tab"] == "reference"
-    assert z_entry["before"] == 2.0
-    assert z_entry["after"] == 3.0
-    assert z_entry["source"] == "user"
-    anon_entry = next(e for e in entries if e["setting"] == "anonymize_by_default")
-    assert anon_entry["tab"] == "app"
-    assert anon_entry["before"] is False
-    assert anon_entry["after"] is True
-
-    # A save with nothing actually different logs nothing new.
-    before_count = len(entries)
-    rpc(registry_server, "save_baseline_config", {
-        "baseline_config": {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 3.0},
-    })
-    got2 = rpc(registry_server, "get_settings_changelog", {})["result"]["entries"]
-    assert len(got2) == before_count
-
-
 def test_journal_is_a_register_of_decisions_in_force(registry_server):
     """Spec 14 v0.10 §6: one entry per live decision — created with the
     action, updated in place on re-edit, removed on reversal — each with a
@@ -1901,19 +1862,17 @@ def test_apply_card_rule_edit_plain_value_change_stays_rule_edit(registry_server
     assert entry["kind"] == "rule_edit"
 
 
-def test_tail_number_grouping_is_recorded_in_the_settings_changelog(registry_server):
-    """Spec 14 §7.5 (v0.6): grouping tail numbers as one aircraft is a
-    workspace definition, not a scoped decision — it carries no caption but
-    is recorded in the Settings changelog."""
+def test_tail_number_grouping_is_a_workspace_definition_not_a_journal_entry(registry_server):
+    """Spec 14 §7.5 (v0.13): grouping tail numbers as one aircraft is a
+    workspace definition — shown where it is defined, not in Journal, and
+    (with no Settings changelog) recorded nowhere else."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     settings = rpc(registry_server, "get_workspace_settings", {})["result"]
     saved = rpc(registry_server, "save_workspace_settings",
                 {"settings": {**settings, "aircraft_aliases": [["N117ZS", "N117Z"]]}})
     assert saved["ok"], saved
-    entries = rpc(registry_server, "get_settings_changelog", {})["result"]["entries"]
-    alias = [e for e in entries if e["setting"] == "aircraft_aliases"]
-    assert len(alias) == 1
-    assert alias[0]["after"] == [["N117ZS", "N117Z"]]
+    assert rpc(registry_server, "get_workspace_settings", {})["result"]["aircraft_aliases"] == [["N117ZS", "N117Z"]]
+    assert rpc(registry_server, "get_journal", {})["result"]["entries"] == []
 
 
 def test_sync_discovers_then_analyses_on_consent(registry_server, tmp_path):

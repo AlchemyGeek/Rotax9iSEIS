@@ -39,6 +39,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pandas as pd
 
+from . import __version__
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from . import data_location
@@ -270,9 +271,89 @@ def op_save_baseline_config(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     before = ws.load_selection(workspace_dir).baseline_config or {}
-    ws.update_baseline_config(workspace_dir, params["baseline_config"])
+    # Pinned references are their own decisions (set_reference /
+    # clear_reference, Journal reference_pin), not settings: a settings
+    # save keeps them as stored. The page edits the fleet's provenance
+    # copy, which doesn't carry them — saving it used to delete every pin.
+    after = {k: v for k, v in params["baseline_config"].items() if k != "pinned_references"}
+    if before.get("pinned_references"):
+        after["pinned_references"] = before["pinned_references"]
+    ws.update_baseline_config(workspace_dir, after)
     fleet = ws.rebuild_fleet(workspace_dir)
-    ws.diff_and_log_settings(workspace_dir, "reference", before, params["baseline_config"])
+    _sync_setting_entries(workspace_dir, before, after)
+    return fleet.to_dict()
+
+
+def _sync_setting_entries(workspace_dir: Path, before: dict, after: dict) -> None:
+    """Spec 14 v0.13 §6.1: a setting edited away from shipped has its
+    Journal entry (updated in place when edited again); one back at
+    shipped has none."""
+    was = {d["ref_id"]: d for d in ws.setting_decisions(before)}
+    now = {d["ref_id"]: d for d in ws.setting_decisions(after)}
+    for ref_id, d in now.items():
+        if was.get(ref_id, {}).get("current") != d["current"]:
+            ws.upsert_journal_entry(workspace_dir, kind="changed_setting", ref_id=ref_id, what=f"Setting: {d['label']}",
+                                    where={"setting": ref_id, "tab": "reference"})
+    for ref_id in was.keys() - now.keys():
+        ws.remove_journal_entry(workspace_dir, kind="changed_setting", ref_id=ref_id)
+
+
+def _num(v: Any) -> str:
+    """A setting's number as Settings shows it: 2.0, 0.25, 15."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, float):
+        return f"{v:.1f}" if v.is_integer() else f"{v:g}"
+    return str(v)
+
+
+def _setting_value(d: dict, key: str) -> str:
+    """One setting's value as the pilot reads it."""
+    v = d[key]
+    if v is None:
+        return "follows the global value" if d["field"] == "outlier_z_threshold_overrides" else "the profile's own"
+    if d["field"]:
+        return _num(v[d["field"]][d["metric_id"]])
+    if d["ref_id"] == "recent_window":
+        return (f"{_num(v['recent_window_hours'])} h, {_num(v['recent_window_min_flights'])}–"
+                f"{_num(v['recent_window_max_flights'])} flights")
+    (val,) = v.values()
+    return _num(val)
+
+
+def _setting_text(d: dict) -> str:
+    return f"{_setting_value(d, 'current')} (shipped: {_setting_value(d, 'shipped')})"
+
+
+def op_list_changed_settings(params: dict, ctx: dict) -> Any:
+    """Spec 14 v0.13 §5: the settings that differ from shipped, each with
+    its shipped value and its Journal entry — what Settings marks. No
+    effect computed (that is Journal's, on open)."""
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    ws.reconcile_journal(workspace_dir, active_rules=_resolve_rules(ctx), shipped_rules=_default_rules())
+    entries = {e["ref_id"]: e["id"] for e in ws.load_journal(workspace_dir)["entries"] if e["kind"] == "changed_setting"}
+    return {"settings": [
+        {"ref_id": d["ref_id"], "label": d["label"], "current": _setting_value(d, "current"),
+         "shipped": _setting_value(d, "shipped"), "entry_id": entries.get(d["ref_id"])}
+        for d in ws.setting_decisions(ws.load_selection(workspace_dir).baseline_config)
+    ]}
+
+
+def op_reset_setting(params: dict, ctx: dict) -> Any:
+    """*Reset to shipped* for one setting, from Settings or Journal: the
+    setting goes back to shipped, everything else in baseline_config
+    (other settings, pinned references) stays; the entry goes."""
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    before = ws.load_selection(workspace_dir).baseline_config or {}
+    try:
+        after = ws.baseline_config_with_setting_reset(before, params["ref_id"])
+    except ValueError as e:
+        raise RpcError("NOT_FOUND", str(e))
+    ws.update_baseline_config(workspace_dir, after)
+    fleet = ws.rebuild_fleet(workspace_dir)
+    _sync_setting_entries(workspace_dir, before, after)
     return fleet.to_dict()
 
 
@@ -433,6 +514,9 @@ def op_get_engine_limits(params: dict, ctx: dict) -> Any:
             "source_status": meta.get("source_status", "UNKNOWN"),
         },
         "limits": limit_catalog(engine_cfg),
+        # Spec 14 v0.13 §5: the engine version in effect (its What's new
+        # page, Spec 13, isn't generated yet).
+        "engine_version": __version__,
         # Spec 14 §5.1 Stratification panel — research-paper §9 constants
         # (fleet.py DA_BANDS/OAT_BANDS), read-only; not engine-specific but
         # bundled here so Settings loads them in the same round trip.
@@ -1555,14 +1639,8 @@ def op_get_app_settings(params: dict, ctx: dict) -> Any:
 
 
 def op_save_app_settings(params: dict, ctx: dict) -> Any:
-    before = ws.load_app_settings(ctx["registry_path"]).to_dict()
     settings = ws.AppSettings.from_dict(params["settings"])
     ws.save_app_settings(ctx["registry_path"], settings)
-    # AppSettings is registry-level, not per-workspace (Spec 02 §6.6), but
-    # the changelog it feeds (Spec 14 §5) is read per-workspace — attach
-    # to whichever workspace is active, if any.
-    if ctx.get("active_workspace_id"):
-        ws.diff_and_log_settings(ctx["workspace_dir"], "app", before, settings.to_dict(), skip=("chart_presets",))
     return settings.to_dict()
 
 
@@ -1700,12 +1778,6 @@ def op_get_aircraft_summary(params: dict, ctx: dict) -> Any:
 
 def op_get_workspace_settings(params: dict, ctx: dict) -> Any:
     return ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
-
-
-def op_get_settings_changelog(params: dict, ctx: dict) -> Any:
-    _require_active(ctx)
-    store = ws.load_settings_changelog(ctx["workspace_dir"])
-    return {"entries": sorted(store["entries"], key=lambda e: e["at"], reverse=True)}
 
 
 def op_get_journal(params: dict, ctx: dict) -> Any:
@@ -1865,6 +1937,48 @@ class _JournalEffects:
                   else {"text": "currently changes no other flight's verdict", "zero": True})
         return effect, None, []
 
+    def _all_insights(self, fa, fleet, cache: bool) -> list:
+        """Every insight on the flight, as (topic, rule, severity)."""
+        if cache and fa.flight_id in self._current:
+            iset = self._current[fa.flight_id]
+        else:
+            iset = evaluate_insights(fa, fleet, self.rules, filters=self.filters).to_dict()
+            if cache:
+                self._current[fa.flight_id] = iset
+        return sorted((t["topic_id"], i["rule_id"], i["severity"]) for t in iset["topics"] for i in t["insights"])
+
+    def _changed_setting(self, e):
+        """Spec 14 v0.13: the setting against shipped — the fleet rebuilt
+        with only this setting back at shipped, every flight's insights
+        compared, and the Trends change summary compared."""
+        selection = ws.load_selection(self.workspace_dir)
+        d = next((d for d in ws.setting_decisions(selection.baseline_config) if d["ref_id"] == e["ref_id"]), None)
+        if d is None:
+            return None, None, []
+        shipped_cfg = ws.baseline_config_with_setting_reset(selection.baseline_config, e["ref_id"])
+        shipped_fleet = ws.fleet_for_exclusions(self.workspace_dir, selection.excluded, baseline_config=shipped_cfg)
+        added = removed = fa_add = fa_rem = 0
+        for fa in self.flights:
+            now = self._all_insights(fa, self.fleet, cache=True)
+            base = self._all_insights(fa, shipped_fleet, cache=False)
+            a = len([x for x in now if x not in base])
+            r = len([x for x in base if x not in now])
+            added, removed = added + a, removed + r
+            fa_add, fa_rem = fa_add + bool(a), fa_rem + bool(r)
+        listed = {c["metric_id"] for c in self.fleet.change_summary}
+        listed_shipped = {c["metric_id"] for c in shipped_fleet.change_summary}
+        trends = len(listed ^ listed_shipped)
+        parts = []
+        if added:
+            parts.append(f"adds {_plural(added, 'insight')} on {_plural(fa_add, 'flight')}")
+        if removed:
+            parts.append(f"removes {_plural(removed, 'insight')} on {_plural(fa_rem, 'flight')}")
+        if trends:
+            parts.append(f"changes {_plural(trends, 'metric')} in the Trends change list")
+        effect = ({"text": "; ".join(parts) + " compared with shipped", "zero": False} if parts
+                  else {"text": "currently changes nothing compared with shipped", "zero": True})
+        return effect, _setting_text(d), []
+
     def _reference_pin(self, e):
         pinned = (ws.load_selection(self.workspace_dir).baseline_config or {}).get("pinned_references") or {}
         ref = pinned.get(e["ref_id"])
@@ -1881,6 +1995,7 @@ _NO_EFFECT_NOTICE = {
     "exclusion": "This exclusion no longer changes any other flight's verdict.",
     "rule_edit": "This rule edit currently changes nothing compared with shipped.",
     "disabled_topic": "This topic would raise nothing even if it were on.",
+    "changed_setting": "This setting currently changes nothing compared with shipped.",
 }
 
 
@@ -1920,10 +2035,8 @@ def _journal_display(workspace_dir: Path, entry: dict, limit_labels: Optional[di
 
 
 def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
-    before = ws.load_workspace_settings(ctx["workspace_dir"]).to_dict()
     settings = ws.WorkspaceSettings.from_dict(params["settings"])
     ws.save_workspace_settings(ctx["workspace_dir"], settings)
-    ws.diff_and_log_settings(ctx["workspace_dir"], "app", before, settings.to_dict(), skip=("trends_detail_strips",))
     return settings.to_dict()
 
 
@@ -2003,7 +2116,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "reorder_user_presets": op_reorder_user_presets,
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
-    "get_settings_changelog": op_get_settings_changelog,
+    "list_changed_settings": op_list_changed_settings,
+    "reset_setting": op_reset_setting,
     "get_journal": op_get_journal,
     "confirm_journal_notice": op_confirm_journal_notice,
     "update_exclusion_reason": op_update_exclusion_reason,

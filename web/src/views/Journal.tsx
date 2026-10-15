@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { LimitFiltersSection } from "../components/LimitFiltersSection";
 import { FilterEditor } from "../components/FilterEditor";
@@ -28,13 +28,14 @@ const ENTRY_SCOPE: Partial<Record<JournalEntryKind, Scope>> = {
   limit_filter: "limit",
   rule_edit: "topic",
   disabled_topic: "topic",
+  changed_setting: "reference_settings",
 };
 
 // The full §6.1 taxonomy, in table order. acknowledged_insight has no
 // entries yet (Spec 11 silencing is not built); its chip still shows so
 // the taxonomy reads as complete.
 const KIND_ORDER: JournalEntryKind[] = [
-  "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit",
+  "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit", "changed_setting",
   "exclusion", "reference_pin", "annotation",
 ];
 const KIND_LABELS: Record<JournalEntryKind, string> = {
@@ -42,6 +43,7 @@ const KIND_LABELS: Record<JournalEntryKind, string> = {
   limit_filter: "Filter",
   disabled_topic: "Disabled topic",
   rule_edit: "Rule edit",
+  changed_setting: "Changed setting",
   exclusion: "Excluded from reference",
   reference_pin: "Reference pinned",
   annotation: "Annotation",
@@ -53,6 +55,7 @@ const REMOVE_LABEL: Record<JournalEntryKind, string> = {
   limit_filter: "Remove filter",
   disabled_topic: "Enable",
   rule_edit: "Reset to shipped",
+  changed_setting: "Reset to shipped",
   exclusion: "Include again",
   reference_pin: "Unpin",
   annotation: "Delete",
@@ -74,6 +77,8 @@ function removalPreview(e: JournalEntry): string {
       return e.effect?.zero ? "The topic comes back on; it would raise nothing on your flights now." : `The topic comes back on — it is ${effect}.`;
     case "rule_edit":
       return `The rule goes back to its shipped values${e.current ? ` (${e.current})` : ""}; it ${effect ?? "changes nothing"}.`;
+    case "changed_setting":
+      return `The setting goes back to its shipped value${e.current ? ` (${e.current})` : ""}; it ${effect ?? "changes nothing"}.`;
     case "reference_pin":
       return "The metric goes back to its automatic reference.";
     case "annotation":
@@ -87,6 +92,9 @@ type GroupBy = "date" | "flight";
 
 export function Journal() {
   const navigate = useNavigate();
+  // Spec 14 v0.13 §5: Settings links a changed setting to its entry here.
+  const [params] = useSearchParams();
+  const focusEntry = params.get("entry");
   const [activeTab, setActiveTab] = useState<"journal" | "filters">("journal");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -150,6 +158,11 @@ export function Journal() {
     }
   }
 
+  // Opened from a Settings mark: bring that entry into view.
+  useEffect(() => {
+    if (focusEntry) document.getElementById(`journal-entry-${focusEntry}`)?.scrollIntoView?.({ block: "center" });
+  }, [entries, focusEntry]);
+
   const annotationById = useMemo(() => new Map(annotations.map((a) => [a.id, a])), [annotations]);
   const flightById = useMemo(() => new Map(flights.map((f) => [f.flight_id, f])), [flights]);
 
@@ -207,6 +220,7 @@ export function Journal() {
     if (fid) navigate(`/flights/${fid}`);
     else if (e.kind === "limit_filter") setActiveTab("filters");
     else if (e.kind === "reference_pin") navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
+    else if (e.kind === "changed_setting") navigate("/settings?tab=reference");
   }
 
   async function act(fn: () => Promise<unknown>) {
@@ -233,6 +247,7 @@ export function Journal() {
         await client.clearReference(e.ref_id);
         notifyShiftHistoryChanged();
       } else if (e.kind === "rule_edit" || e.kind === "disabled_topic") await client.revertRuleEdit(e.id);
+      else if (e.kind === "changed_setting") await client.resetSetting(e.ref_id);
     });
   }
 
@@ -247,6 +262,7 @@ export function Journal() {
     setRemoving(null);
     if (e.kind === "rule_edit") return editRule(e);
     if (e.kind === "reference_pin") return navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
+    if (e.kind === "changed_setting") return navigate("/settings?tab=reference");
     setEditing(e.id);
     if (e.kind === "annotation") setDraft(annotationById.get(e.ref_id)?.note ?? e.what);
     if (e.kind === "exclusion") setDraft(e.reason ?? "");
@@ -280,7 +296,13 @@ export function Journal() {
     const isEditing = editing === e.id;
     const isRemoving = removing === e.id;
     return (
-      <div key={e.id} data-testid={`journal-entry-${e.id}`} style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div
+        key={e.id}
+        id={`journal-entry-${e.id}`}
+        data-testid={`journal-entry-${e.id}`}
+        data-focused={focusEntry === e.id || undefined}
+        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--accent)" : "none" }}
+      >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-secondary)", background: "var(--panel-control)", padding: "3px 8px", borderRadius: 10, flexShrink: 0 }}>

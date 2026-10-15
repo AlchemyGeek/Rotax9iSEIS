@@ -933,15 +933,18 @@ def delete_shift_event(ws_dir: Path, event_id: str) -> list[dict]:
     return filtered
 
 
-def fleet_for_exclusions(ws_dir: Path, excluded: list[dict]) -> FleetAnalysis:
+def fleet_for_exclusions(ws_dir: Path, excluded: list[dict], baseline_config: Optional[dict] = None) -> FleetAnalysis:
     """The workspace fleet as it would be with exactly `excluded` left out
     — nothing saved, no shift history. rebuild_fleet's own computation,
-    and the Spec 14 §7.1 exclude/include preview's (v0.6)."""
+    and the Spec 14 §7.1 exclude/include preview's (v0.6). A
+    `baseline_config` replaces the stored one (a changed setting's live
+    effect, Spec 14 v0.13)."""
     selection = load_selection(ws_dir)
     excluded_ids = {e["flight_id"] for e in excluded}
     included = [fa for fa in load_all_flight_analyses(ws_dir) if fa.flight_id not in excluded_ids]
     return update_fleet(
-        included, excluded=excluded, baseline_config=selection.baseline_config,
+        included, excluded=excluded,
+        baseline_config=baseline_config if baseline_config is not None else selection.baseline_config,
         engine_config=load_engine_config(load_manifest(ws_dir).engine_model),
         filters=load_filters(ws_dir)["filters"],
     )
@@ -1786,58 +1789,22 @@ def migrate_limit_annotations(ws_dir: Path, old: FlightAnalysis, fresh: FlightAn
     return moved
 
 
-# ── Settings changelog (Spec 14 §5) ──────────────────────────────────────────
-# settings_changelog.json, next to annotations.json: one entry per changed
-# field across Settings' three tabs (Engine/Reference & Models/App) — "what
-# changed in your analysis settings", one list rather than three. App-level
-# settings aren't workspace-scoped (AppSettings lives in the registry), but
-# the changelog entry is still attached to whichever workspace was active
-# when the change was made, since that's where a pilot would look for it.
-
-_SETTINGS_CHANGELOG_VERSION = "1"
-
-
-def load_settings_changelog(ws_dir: Path) -> dict:
-    f = ws_dir / "settings_changelog.json"
-    if not f.exists():
-        return {"version": _SETTINGS_CHANGELOG_VERSION, "entries": []}
-    return json.loads(f.read_text())
-
-
-def append_settings_changelog(ws_dir: Path, tab: str, setting: str, before: Any, after: Any, source: str = "user") -> dict:
-    store = load_settings_changelog(ws_dir)
-    entry = {
-        "id": _new_id("chg"), "at": _now(), "tab": tab,
-        "setting": setting, "before": before, "after": after, "source": source,
-    }
-    store["entries"].append(entry)
-    _write_json(ws_dir / "settings_changelog.json", store)
-    return entry
-
-
-def diff_and_log_settings(ws_dir: Path, tab: str, before: dict, after: dict, source: str = "user", skip: tuple = ()) -> None:
-    """One changelog entry per top-level field that actually changed —
-    a shallow dict diff is the right grain for these flat documents (one
-    entry per setting, not one per save click)."""
-    for key, new_val in after.items():
-        if key in skip or before.get(key) == new_val:
-            continue
-        append_settings_changelog(ws_dir, tab, key, before.get(key), new_val, source)
-
-
 # ── Journal (Spec 14 §6, v0.10) ─────────────────────────────────────────────
 # journal.json, next to annotations.json: the register of decisions in
 # force. One entry per live decision, keyed by its source record
 # (JOURNAL_KEY below): reversing the decision removes the entry, editing
 # it updates the entry in place. History is not kept here — filters keep
-# their own (Spec 09 §9), configuration changes are in the Settings
-# changelog. The counted effect is computed live by the server when the
-# page opens; nothing about it is stored.
+# their own (Spec 09 §9), and since Spec 14 v0.13 there is no Settings
+# changelog (an old settings_changelog.json is left on disk, unread). The
+# counted effect is computed live by the server when the page opens;
+# nothing about it is stored.
 #
 # Entry keys, by kind:
 #   limit_filter    filter id            exclusion       flight id
 #   rule_edit       topic id             reference_pin   metric id
 #   disabled_topic  topic id             annotation      annotation id
+#   changed_setting setting id (v0.13: "outlier_z_threshold", "recent_window",
+#                   "outlier_z_threshold_overrides:<metric>", …)
 #   acknowledged_insight  insight id (Spec 11; nothing writes it yet)
 
 _JOURNAL_VERSION = "2"
@@ -2033,6 +2000,10 @@ def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, ship
             live[("reference_pin", metric_id)] = {
                 "what": metric_id, "where": {"metric_id": metric_id}, "note": ref.get("label"), "at": ref.get("set_at"),
             }
+        for d in setting_decisions(selection.baseline_config):
+            live[("changed_setting", d["ref_id"])] = {
+                "what": f"Setting: {d['label']}", "where": {"setting": d["ref_id"], "tab": "reference"},
+            }
         for e in selection.excluded:
             fid = e["flight_id"]
             live[("exclusion", fid)] = {
@@ -2055,7 +2026,8 @@ def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, ship
             )
 
 
-_RECONCILED_KINDS = ("limit_filter", "annotation", "reference_pin", "exclusion", "rule_edit", "disabled_topic")
+_RECONCILED_KINDS = ("limit_filter", "annotation", "reference_pin", "exclusion", "rule_edit", "disabled_topic",
+                     "changed_setting")
 
 
 def strip_rule_comments(x: Any) -> Any:
@@ -2088,6 +2060,78 @@ def rule_decisions(active_rules: dict, shipped_rules: dict) -> list[tuple[str, s
         if not topic.get("enabled", True) and base.get("enabled", True):
             out.append((topic_id, "disabled_topic"))
     return out
+
+
+# ── Changed settings (Spec 14 v0.13 §5, §6.1) ───────────────────────────────
+# A results-affecting setting that differs from shipped is a decision in
+# force, derived like a rule edit: one entry per setting, per-metric
+# values one per metric. The settings are FleetSelection.baseline_config's
+# fields; pinned_references are not settings (they are reference_pin
+# entries). Display-only settings (units, reopen-on-launch, anonymise
+# default, chart presets, tail-number aliases) never appear here.
+
+# (setting id, baseline_config keys, label). The recent window is one
+# setting made of three numbers.
+_SCALAR_SETTINGS = (
+    ("outlier_z_threshold", ("outlier_z_threshold",), "Outlier z-threshold"),
+    ("recent_window", ("recent_window_hours", "recent_window_min_flights", "recent_window_max_flights"), "Recent window"),
+    ("om_margin_fraction", ("om_margin_fraction",), "OM margin fraction"),
+    ("membership", ("membership",), "Reference membership"),
+    ("frequency_delta", ("frequency_delta",), "Event-frequency drift threshold"),
+)
+# (baseline_config field, label): a {metric_id: value} map, shipped empty.
+_PER_METRIC_SETTINGS = (
+    ("outlier_z_threshold_overrides", "Outlier z-threshold"),
+    ("band_kind_by_metric", "Weather band"),
+)
+
+
+def shipped_baseline_config() -> dict:
+    """Every setting at its shipped value."""
+    from .filters import FREQUENCY_DELTA
+    return {**DEFAULT_BASELINE_CONFIG, "frequency_delta": FREQUENCY_DELTA}
+
+
+def setting_decisions(baseline_config: Optional[dict]) -> list[dict]:
+    """Each setting that differs from shipped: {ref_id, label, field,
+    metric_id, current, shipped}. `current`/`shipped` hold the setting's
+    keys; a per-metric value's shipped is None (no per-metric value: it
+    follows the global setting). An absent key is at shipped."""
+    bc = baseline_config or {}
+    shipped = shipped_baseline_config()
+    out = []
+    for ref_id, keys, label in _SCALAR_SETTINGS:
+        current = {k: bc.get(k, shipped[k]) for k in keys}
+        base = {k: shipped[k] for k in keys}
+        if current != base:
+            out.append({"ref_id": ref_id, "label": label, "field": None, "metric_id": None,
+                        "current": current, "shipped": base})
+    for field, label in _PER_METRIC_SETTINGS:
+        for metric_id, value in sorted((bc.get(field) or {}).items()):
+            if value is None:
+                continue
+            out.append({"ref_id": f"{field}:{metric_id}", "label": f"{label} — {metric_id}", "field": field,
+                        "metric_id": metric_id, "current": {field: {metric_id: value}}, "shipped": None})
+    return out
+
+
+def baseline_config_with_setting_reset(baseline_config: Optional[dict], ref_id: str) -> dict:
+    """`baseline_config` with one setting back at shipped and everything
+    else — other settings, pinned references — untouched."""
+    bc = dict(baseline_config or {})
+    shipped = shipped_baseline_config()
+    for sid, keys, _label in _SCALAR_SETTINGS:
+        if sid == ref_id:
+            for k in keys:
+                bc[k] = shipped[k]
+            return bc
+    field, _, metric_id = ref_id.partition(":")
+    if field in dict(_PER_METRIC_SETTINGS) and metric_id:
+        per = dict(bc.get(field) or {})
+        per.pop(metric_id, None)
+        bc[field] = per
+        return bc
+    raise ValueError(f"unknown setting {ref_id!r}")
 
 
 # ── Reference-change markers (Spec 14 §7.1) ─────────────────────────────────

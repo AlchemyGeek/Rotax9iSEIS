@@ -104,6 +104,8 @@ export interface LimitDef {
 export interface EngineLimitsResult {
   engine: { id: string; engine: string; variant?: string | null; om_reference?: string | null; source_status: string };
   limits: LimitDef[];
+  // Spec 14 v0.13 §5: the engine version in effect.
+  engine_version?: string;
   // Spec 14 §5.1 Stratification panel — research-paper §9 constants.
   band_edges: { da_band: { min: number; max: number; name: string }[]; oat_band: { min: number; max: number; name: string }[] };
 }
@@ -775,21 +777,22 @@ export interface WorkspaceSettings {
   trends_detail_strips?: Record<string, boolean>;
 }
 
-// Spec 14 §5 — one shared changelog across Settings' Engine/Reference &
-// Models/App tabs, one entry per changed field.
-export interface SettingsChangelogEntry {
-  id: string;
-  at: string;
-  tab: "engine" | "reference" | "app";
-  setting: string;
-  before: unknown;
-  after: unknown;
-  source: string;
+// Spec 14 v0.13 §5 — a results-affecting setting that differs from
+// shipped (there is no Settings changelog). Settings marks it with the
+// shipped value and links to its Journal entry.
+export interface ChangedSetting {
+  // "outlier_z_threshold", "recent_window", "om_margin_fraction",
+  // "outlier_z_threshold_overrides:<metric>", "band_kind_by_metric:<metric>", …
+  ref_id: string;
+  label: string;
+  current: string;
+  shipped: string;
+  entry_id: string | null;
 }
 
 // Spec 14 §6.1 — the kinds of decision the Journal register holds.
 export type JournalEntryKind =
-  | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit"
+  | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit" | "changed_setting"
   | "exclusion" | "reference_pin" | "annotation";
 
 // Spec 14 §7.1 — the Flight view header's "Contributes to reference /

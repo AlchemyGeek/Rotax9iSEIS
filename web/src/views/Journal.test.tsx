@@ -12,6 +12,7 @@ const state: { entries: JournalEntry[]; annotations: Annotation[]; fail: string 
 const calls = vi.hoisted(() => ({
   deleteFilter: vi.fn(), revertRuleEdit: vi.fn(), includeFlight: vi.fn(), clearReference: vi.fn(),
   deleteAnnotation: vi.fn(), saveAnnotation: vi.fn(), confirmJournalNotice: vi.fn(), updateExclusionReason: vi.fn(),
+  resetSetting: vi.fn(),
 }));
 const drop = (id: string) => { state.entries = state.entries.filter((e) => e.ref_id !== id && e.id !== id); };
 const touch = (refId: string, patch: Partial<JournalEntry>) => {
@@ -40,6 +41,7 @@ vi.mock("../lib/engineClient", async () => ({
     revertRuleEdit: async (id: string) => { calls.revertRuleEdit(id); drop(id); return { rules: {} }; },
     includeFlight: async (id: string) => { calls.includeFlight(id); drop(id); return {}; },
     clearReference: async (id: string) => { calls.clearReference(id); drop(id); return {}; },
+    resetSetting: async (id: string) => { calls.resetSetting(id); drop(id); return {}; },
     deleteAnnotation: async (id: string) => { calls.deleteAnnotation(id); drop(id); return { deleted: true }; },
     saveAnnotation: async (p: { id: string; note: string }) => {
       calls.saveAnnotation(p);
@@ -218,5 +220,44 @@ describe("Journal vocabulary", () => {
       contract.slice(entryType, contract.indexOf("export interface JournalNotice") + 120),
     ];
     for (const text of journalCode) expect(/\bclosed\b/i.test(text)).toBe(false);
+  });
+});
+
+
+describe("Journal — changed settings (Spec 14 v0.13)", () => {
+  beforeEach(() => {
+    Object.values(calls).forEach((f) => f.mockClear());
+    state.fail = null;
+    state.annotations = [];
+    state.entries = [
+      entry({
+        id: "jnl_z", kind: "changed_setting", ref_id: "outlier_z_threshold", what: "Setting: Outlier z-threshold",
+        where: { setting: "outlier_z_threshold", tab: "reference" }, current: "2.5 (shipped: 2.0)",
+        effect: { text: "removes 3 insights on 2 flights compared with shipped", zero: false },
+      }),
+    ];
+  });
+
+  it("shows the setting with its current and shipped value and live effect, and Reset to shipped removes it", async () => {
+    renderJournal();
+    await screen.findByText("Setting: Outlier z-threshold");
+    const r = row("jnl_z");
+    expect(within(r).getByText("Changed setting")).toBeTruthy();
+    expect(within(r).getByText(/2\.5 \(shipped: 2\.0\)/)).toBeTruthy();
+    expect(within(r).getByText(/removes 3 insights on 2 flights compared with shipped/i)).toBeTruthy();
+    expect(within(r).getByText("All flights in this workspace — every metric")).toBeTruthy();
+
+    fireEvent.click(within(r).getByText("Reset to shipped"));
+    const dialog = await screen.findByRole("dialog", { name: "Reset to shipped" });
+    expect(within(dialog).getByText(/goes back to its shipped value/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByText("Apply to all flights"));
+    await waitFor(() => expect(calls.resetSetting).toHaveBeenCalledWith("outlier_z_threshold"));
+    await waitFor(() => expect(screen.queryByTestId("journal-entry-jnl_z")).toBeNull());
+  });
+
+  it("opened from a Settings mark, focuses that entry", async () => {
+    render(<MemoryRouter initialEntries={["/journal?entry=jnl_z"]}><Journal /></MemoryRouter>);
+    await screen.findByText("Setting: Outlier z-threshold");
+    expect(row("jnl_z").getAttribute("data-focused")).toBe("true");
   });
 });

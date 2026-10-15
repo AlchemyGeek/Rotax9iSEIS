@@ -14,7 +14,7 @@ import type {
   FilterTarget,
   EngineLimitsResult,
   ExclusionsResult,
-  SettingsChangelogEntry,
+  ChangedSetting,
   FleetAnalysis,
   FilterHealth,
   FilterListEntry,
@@ -90,7 +90,10 @@ export interface SeriesResult {
 export interface EngineClient {
   listEngines(): Promise<{ id: string; engine: string; source_status: string; hash: string }[]>;
   getEngineLimits(): Promise<EngineLimitsResult>;
-  getSettingsChangelog(): Promise<{ entries: SettingsChangelogEntry[] }>;
+  // Spec 14 v0.13 §5 — settings that differ from shipped, each linked to
+  // its Journal entry; reset one to shipped (from Settings or Journal).
+  listChangedSettings(): Promise<{ settings: ChangedSetting[] }>;
+  resetSetting(refId: string): Promise<FleetAnalysis>;
   getJournal(): Promise<{ entries: JournalEntry[] }>;
   getDefaultRules(): Promise<RuleSet>;
   ingestLog(file: UploadFile): Promise<IngestResult>;
@@ -266,8 +269,12 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<EngineLimitsResult>("get_engine_limits", {});
   }
 
-  getSettingsChangelog() {
-    return this.rpc<{ entries: SettingsChangelogEntry[] }>("get_settings_changelog", {});
+  listChangedSettings() {
+    return this.rpc<{ settings: ChangedSetting[] }>("list_changed_settings", {});
+  }
+
+  resetSetting(refId: string) {
+    return this.rpc<FleetAnalysis>("reset_setting", { ref_id: refId });
   }
 
   getJournal() {
