@@ -1,7 +1,7 @@
 # Spec 14 — Settings, Journal, and Rule Editing on the Card
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.9 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
+**Status:** v0.10 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
 **Suggested repo path:** `docs/specs/14-settings-journal-and-card-rule-editing.md`
 **Builds on:** Spec 02 (`FleetSelection`, `rules/active.json`, `annotations.json`, app-level vs workspace-level settings §6.4), Spec 03 (§3 principle 6, §4 nav, §5.5 Baselines & models, §5.6 Annotations, §5.7 Settings), Spec 09 (filters, "what would this hide?" preview v0.2, Notes page), Spec 10 (§6.1 rules that do not reflect what runs), Spec 11 (insight layer — paused; three silencing levels, settings shown on the card), Spec 12 (Trends as a change page — recent window, reference pinning)
 **Supersedes:** Spec 03 §5.5 (the rule playground as a page) and the part of principle 6 that places all tuning in Baselines & Models
@@ -15,6 +15,7 @@
 | 0.7 | ECU leaves the top-level nav (Spec 03 v0.14, Spec 10 D19): its content is now Flight-view CAS event rows and a Trends panel. §4 table, activity grouping and nav sketch updated; acceptance 1 amended. No other change. |
 | 0.8 | §7.5 scope caption: the object noun follows the filter target — "this limit" for a limit, "this alert" for a CAS target (Spec 09 v0.18). |
 | 0.9 | **Editor leaves the card** (Flight view review, 2026-10-13; Spec 03 v0.16). The topic card's disclosure becomes **read-only** (triggers, current values, met/not met, `enabled` state); one action, *Edit rules…*, opens the editor as a **side panel** over the Flight view, in context (topic + originating flight), with the §7.2 flow unchanged (preview, Apply, Cancel, Reset, scope captions, Journal). *Edit trigger ↓* on an insight card opens the panel directly. The decision that there is no rule list in Settings stands; what moves is only where the inputs render. §7.3 amended. |
+| 0.10 | **Journal is a register, not a log** (2026-10-14). The user wants to know what is *in force*, not what happened. §6 rewritten: one entry per live decision; reversing a decision **removes** its entry (no closed/struck-through entries); re-editing a decision **updates** its entry; the counted effect is **live**, recomputed on open, not a snapshot; the *backfilled* badge goes (imported decisions are ordinary entries); the Settings changelog remains the configuration history and Journal does not duplicate or link into it line by line. §7.1 reversal, §7.2 Apply, §7.3 Enable and acceptance 9/12/17 amended. History survives where it is already kept for other reasons — `LimitFilter.history[]` (Spec 09 §9), the Settings changelog, Spec 12 shift history — not on this page. |
 | 0.5 | **From implementation of v0.4 steps 1–3.** A disabled topic's card **stays, collapsed** to one line with *Enable*, uniformly for every topic — as built, the engine returned no result for a disabled topic and its card vanished, leaving Journal as the only way back (§7.3). `margin_min_f` and `consecutive_flights` leave the §7.4 list: they are fixed in engine code, not editable triggers; Code's draft wording kept for when they are. Preview wording adopted as built (§7.2). Spec 01 to note that a disabled topic still returns a topic result carrying `enabled: false` and no analysis. §7.5 scope labelling was not built in the v0.4 run and remains pending. |
 | 0.4 | **From implementation of v0.3, and inline help.** Insight card keeps a *jump* to its topic card's open disclosure — one editor, reachable from the insight (§7.3). Engine gap found: `overboost_time`, `map_at_takeoff`, `engine_ecu_inflight`, `limit_exceedances` never read their `enabled` flag; disabling them changed the file and Journal but suppressed nothing — made a guard with a uniform test (§7.3). New §7.4 inline help: when a parameter or section gets help, what it says, where the text lives. New §7.5 scope labelling: every decision control says, before it is touched, whether it applies to this flight or to all flights in the workspace — a trigger edited from one flight's topic card is a workspace rule, and nothing said so until the preview. Acceptance 13–16. `trigger_status` per topic now in the engine contract (Spec 01 to note). |
 | 0.3 | **From implementation of v0.2.** Rule editing moves from the *insight* card to the *topic* card (§7.3), so a trigger that never fires can still be edited in context — found live: no trend trigger fires on the 53-flight set, so no trend rule had an entry point. `n_min` is per-trigger in `rules/active.json`, not a global field; §5.1 corrected to show it read-only. Backfilled Journal entries are marked as backfilled and carry no counted effect (§6.1); backfill must be idempotent. Exclusion dialog has one field, reason (§7.1). Q4 part-resolved: 57 ms preview on 53 flights, local-server mode; Pyodide unmeasured. Acknowledge and disable-topic levels stay unbuilt until Spec 11 (§7.2). |
@@ -100,35 +101,37 @@ What is **not** here: baseline values as the page's main content (they are on ca
 
 ## 6. Journal
 
-The Annotations page (Spec 03 §5.6; "Notes" in Spec 09 and in conversation) is renamed **Journal** and redefined. It is the user's decision journal: every decision (§3) is created somewhere else in the flow — on a card, in Flights, from a Research task — and lands here for review, editing and reversal. Journal creates nothing itself except a free-text annotation.
+The Annotations page (Spec 03 §5.6; "Notes" in Spec 09 and in conversation) is renamed **Journal** and redefined. It is the user's **register of decisions in force**: every decision (§3) is created somewhere else in the flow — on a card, in Flights, in the editor panel, from a Research task — and is listed here while it stands, for review, editing and reversal. Journal creates nothing itself except a free-text annotation.
+
+**Register, not log (v0.10).** An entry exists exactly as long as its decision does. Reversing a decision (removing a filter, enabling a topic, including a flight again, reverting a rule, unpinning, deleting a note) **removes** the entry. Re-editing a decision **updates** its entry in place — a filter edited three times is one entry showing its current values. The page never shows closed, struck-through or superseded entries, and never shows a sequence of changes to one decision. History is not Journal's job: configuration history lives in the Settings changelog (§5), filter history in `LimitFilter.history[]` (Spec 09 §9), reference history in Spec 12's shift history.
 
 ### 6.1 Entries
 
-| Kind | Created from | Reversible by |
-|---|---|---|
-| Acknowledged insight (one insight, one flight) | insight card | Journal, the card |
-| Limit filter (Spec 09) | limit-exceedance insight card | Journal, the card; editing shows the "what would this hide?" preview |
-| Disabled topic | insight card, topic card | Journal |
-| Rule edit (§7.2) | insight card | Journal (revert, with preview), the card |
-| Flight excluded from reference (§7.1) | insight card, Flights row | Journal, Flights row, Flight view header |
-| Reference pinned (Spec 12) | Trends, Reference & Models | Reference & Models |
-| Annotation (free text on a flight, event or time) | any card, Trends time axis (Spec 12 v2), Journal | Journal |
+| Kind | Created from | Updated by | Removed by |
+|---|---|---|---|
+| Acknowledged insight (one insight, one flight) | insight card | — | un-acknowledge on the card or here |
+| Limit / alert filter (Spec 09) | Events row, insight card | editing the filter (preview first) | removing the filter |
+| Disabled topic | topic card, editor panel | — | *Enable* |
+| Rule edit (§7.2) | editor panel | a further edit of the same rule | *Reset to shipped* / Revert |
+| Flight excluded from reference (§7.1) | insight card, Flights row, Flight view header | editing the reason | *Include again* |
+| Reference pinned (Spec 12) | Trends, Reference & Models | re-pinning | *Unpin* |
+| Annotation (free text on a flight, event or time) | any card, Events row, Trends time axis (Spec 12 v2), Journal | editing the text | deleting it |
 
-Each entry carries: what, where it was made (link), when, the reason/note, and the **counted effect at the time** ("suppressed 7 events on 5 flights"; "removed this insight here and on 3 others").
+Each entry carries: what the decision is **now** (current values; for a rule edit, the current value and the shipped default), where it applies (link to the flight, limit, topic or metric), the reason/note, when it was made and last changed, and its **live counted effect** — recomputed when the page opens, not stored: "suppressing 9 events on 6 flights", "removing 11 insights on 9 flights", "excluded: changes 2 verdicts". A decision whose live effect is zero is shown with that fact ("currently suppresses nothing"), which is itself the cue to remove it.
 
-**Backfilled entries.** Decisions that predate the Journal (existing filters, exclusions, pins) are imported once, marked *backfilled*, dated to the import, and carry no counted effect — the "before" state no longer exists. Backfill is idempotent: keyed on the source record, so two readers opening a workspace at once cannot create the same entry twice.
+**Imported decisions.** Decisions that predate `journal.json` (existing filters, exclusions, pins) are imported once, as ordinary entries dated to the import. No *backfilled* badge: with live effects there is no missing "before" state to apologise for. Import is idempotent, keyed on the source record.
 
 ### 6.2 Change notices
 
-Oct 4 principle 3 — the system's job is to tell the user when something changed in their operations. Journal is where those notices live: a filter whose reference has drifted (Spec 09 §12), a rule edit whose counted effect has grown since it was made, an excluded flight whose exclusion no longer changes any verdict, a pinned reference that is now older than the window. Each notice sits on its entry, with the same preview-and-apply controls as the original decision.
+Oct 4 principle 3 — the system's job is to tell the user when something changed in their operations. Journal is where those notices live, on the live entry: a filter whose reference has drifted (Spec 09 §8), an excluded flight whose exclusion no longer changes any verdict, a pinned reference now older than the recent window, a decision whose live effect has fallen to zero. Each notice sits on its entry with the same preview-and-apply controls as the original decision, and clears when the decision is edited, confirmed or removed. "Effect has grown since made" is no longer a separate notice: the live effect on the entry says so.
 
 ### 6.3 Relationship to the Settings changelog
 
-A Settings change made *because of* a decision (an exclusion from a card, a pin from Trends) appears in both: the Settings changelog records the configuration change; Journal records the decision and its reason. The two link to each other. A Settings change made directly in Settings appears only in the changelog.
+**Settings holds what changes the computation; Journal holds what the user has decided about the results.** The changelog (§5) is the history of configuration changes, including those a Journal decision caused. Journal does not link to changelog lines and the changelog does not link to Journal entries; each answers its own question. A pilot who wants to know *what happened* reads the changelog; one who wants to know *what is in force* reads Journal.
 
 ### 6.4 Layout
 
-Newest first, with kind chips to filter and the same grouping affordances as Flights (by date, by flight). Change notices float to the top while unresolved. Nothing is deleted: a reversed decision is closed, shown struck through, and keeps its history.
+Most recently changed first, with kind chips to filter and grouping by date or by flight as in Flights. Change notices float to the top while unresolved. Every entry offers edit (where the kind allows) and remove, each with the §7.5 scope caption and the preview the original decision had. An empty Journal says so in one line.
 
 ## 7. Workflows
 
@@ -144,7 +147,7 @@ Newest first, with kind chips to filter and the same grouping affordances as Fli
 
 **After confirming:** the reference recomputes (explicit rebuild, or the pending-rebuild banner if rebuild is deferred — Spec 03 principle 3); the Flight view header shows the new state; a Journal entry is written; every insight on other flights whose verdict changed because the reference moved carries a **"reference changed"** marker (Spec 11), and Trends' change summary notes the recomputation (Spec 12).
 
-**Reversal:** *Include again* from the Flights toggle, the Flight view header, or the Journal entry — through the same dialog and preview as *Exclude* (v0.6), since it has the same consequence in reverse. The Journal entry is closed, not deleted.
+**Reversal:** *Include again* from the Flights toggle, the Flight view header, or the Journal entry — through the same dialog and preview as *Exclude* (v0.6), since it has the same consequence in reverse. The Journal entry is removed (§6, v0.10).
 
 **Not offered:** bulk exclusion by rule ("all flights under 20 minutes"). That is membership, and membership is folders. An excluded flight is still analysed and still shows its own insights; it only stops shaping other flights' reference.
 
@@ -158,7 +161,7 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 2. The user changes a value inline.
 3. Before anything is applied, the card shows the **preview** across the workspace, computed by the existing `whatIfRules` path (`evaluate_insights` against every contributing flight):
    *"On your 42 flights: 4 changes (1 newly flagged, 3 cleared, 0 changed severity)"* — counts are flights, not insights; affected flights are linked. While computing, the card says so rather than promising an instant answer (Pyodide mode, large workspaces).
-4. **Apply** writes `rules/active.json` — still one workspace-wide copy (Spec 03 Q2), never a per-flight rule — and a Journal entry with before/after values and the counted effect. **Cancel** discards. **Reset to shipped** is offered per rule on the card.
+4. **Apply** writes `rules/active.json` — still one workspace-wide copy (Spec 03 Q2), never a per-flight rule — and a Journal entry showing the rule's current value against the shipped default (a further edit updates the same entry; *Reset to shipped* removes it, §6 v0.10). **Cancel** discards. **Reset to shipped** is offered per rule on the card.
 
 **Same shape for silencing**, scaled to scope (Spec 11's three levels): acknowledge → "this card only"; filter → "suppresses 7 events across 5 flights"; disable topic → "removes 11 insights across 9 flights". One pattern, learned once, for every decision that changes what is shown. Only the filter level exists today (Spec 09); acknowledge and disable-topic arrive with Spec 11 — Journal shows their kinds empty until then, never fabricated.
 
@@ -195,7 +198,7 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 
 **One editor, reachable from the insight (v0.4, amended v0.9).** The editor panel is rendered once. The insight card carries *Edit trigger ↓*, which opens the panel for that topic; the topic card's disclosure carries *Edit rules…*, which does the same. The pilot who saw the insight gets to the edit in one click; the implementation stays single.
 
-**Disabled topic (v0.5, clarified v0.6).** A disabled topic's card does not disappear. It stays in Analysis, collapsed to one line — *EGT spread · disabled · Enable* — with empty analysis text and no insight, and is not counted among topics "analysed with nothing to flag". *Enable* uses the same preview-before-apply flow and **closes** the open `disabled_topic` Journal entry (no second entry). Uniform for every topic **that has a card**, `egt_cyl_deviation` included; topics whose rules are fixed in engine code and have no card get no collapsed line either (§7.2 guards). The engine still returns a topic result for a disabled topic — `enabled: false`, empty `analysis.text`, no `trigger_status`, no `limit_refs`, no insight — in its usual position (Spec 01 to record).
+**Disabled topic (v0.5, clarified v0.6).** A disabled topic's card does not disappear. It stays in Analysis, collapsed to one line — *EGT spread · disabled · Enable* — with empty analysis text and no insight, and is not counted among topics "analysed with nothing to flag". *Enable* uses the same preview-before-apply flow and **removes** the `disabled_topic` Journal entry (§6 v0.10). Uniform for every topic **that has a card**, `egt_cyl_deviation` included; topics whose rules are fixed in engine code and have no card get no collapsed line either (§7.2 guards). The engine still returns a topic result for a disabled topic — `enabled: false`, empty `analysis.text`, no `trigger_status`, no `limit_refs`, no insight — in its usual position (Spec 01 to record).
 
 **Guard (v0.4).** Every evaluated topic honours its `enabled` flag before evaluating — found in v0.3 that four did not (`overboost_time`, `map_at_takeoff`, `engine_ecu_inflight`, `limit_exceedances`), so disabling them wrote the file and the Journal but suppressed nothing. The fix is a correctness change, not a heuristic change, but goes through the Spec 10 / `CLAUDE.md` snapshot comparison like any engine edit. For `limit_exceedances`, disabling the topic hides its *insights*; limit *events* are still detected and still feed Spec 09 filters and the Trends per-limit metrics, since those are not the topic.
 
@@ -215,7 +218,7 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 | Settings → Engine | phase-aware suppression windows; what "overrides: none" means | the limit values (they carry the OM reference) |
 | Topic card triggers | `r2_min`, `n_min`; `baseline_deviation` (what the reference is, what σ means here); `enabled` (*stops this topic reporting; past Journal entries stay*) | `threshold` against an OM limit; severity. (`margin_min_f`, `consecutive_flights` are fixed in engine code, not editable — if they become triggers: *how much hotter than the next cylinder the hottest must be before it counts — lower notices a change sooner but reacts to near-ties*; *how many flights in a row a different cylinder must be hottest before it is reported — fewer reports sooner, more ignores one-off flights*) |
 | Preview | what *N changes (x newly flagged, y cleared, z changed severity)* counts — flights, not insights | — |
-| Journal | the *backfilled* marker; change notices (generic wording — a past decision whose basis has moved — with the limit filter as the example, not the only case) | entry kinds |
+| Journal | live counted effect (what it counts, that it is recomputed); change notices (generic wording — a decision whose basis has moved — with the limit filter as the example, not the only case) | entry kinds |
 | Flight view header | *Excluded from reference* (still analysed; no longer shapes other flights) | *Contributes to reference* |
 
 ### 7.5 Scope labelling (v0.4)
@@ -259,15 +262,15 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 6. The preview from the card equals the retired playground's diff for the same edit, verified on the project logs for at least one `threshold`, one `baseline_deviation` and one `trend` trigger.
 7. Each of the three silencing levels states its scope (count of insights / events / flights) before Apply.
 8. After an exclusion that changes any other flight's verdict, that flight's card carries the "reference changed" marker and Revert restores the previous verdict.
-9. Journal lists every entry kind in §6.1, newest first, with reversal from the entry; reversed entries are closed, not removed.
+9. Journal lists every entry kind in §6.1, most recently changed first, each with its live counted effect and removal from the entry; a reversed decision's entry is **gone** (v0.10), a re-edited decision has **one** entry.
 10. `Baselines.tsx`'s rule playground is removed; no route serves it.
 11. (v0.3) Every trigger of every evaluated topic can be edited from the topic card on a flight where it did not fire, verified on the project logs by loosening a `trend` trigger (`egt_spread`, `r2_min`) from a flight with no trend insight and seeing the preview report the flights that would gain one.
-12. (v0.3) Opening a workspace that predates `journal.json` from two clients at once produces exactly one backfilled entry per source record.
+12. (v0.3, v0.10) Opening a workspace that predates `journal.json` from two clients at once produces exactly one imported entry per source record, indistinguishable from a user-made one apart from its date.
 13. (v0.4) Every evaluated topic, disabled from its topic card, produces no insight on any flight in the project logs; `limit_exceedances` disabled still yields limit events to Spec 09 filters and Trends. Snapshot comparison shows no other change.
 14. (v0.4) *edit trigger ↓* on an insight card lands on its topic card with the disclosure open; there is one editor implementation.
 15. (v0.4) Every item in §7.4's "Gets help" column has help; no help text exceeds one sentence; all help text is in one registry; nothing in the "Does not" column has help.
 16. (v0.4) Every control in §7.5's table shows its scope caption before interaction and on its Apply button, with the fixed wording; no decision control exists outside the table without one.
-17. (v0.5) Disabling any topic from its card leaves a one-line collapsed card with *Enable* on every flight; *Enable* previews, applies and closes the Journal entry; `egt_cyl_deviation` behaves identically to the others.
+17. (v0.5) Disabling any topic from its card leaves a one-line collapsed card with *Enable* on every flight; *Enable* previews, applies and removes the Journal entry; `egt_cyl_deviation` behaves identically to the others.
 18. (v0.6) *Include again* from Flights and Flight view opens the exclusion dialog with its scope caption and preview; Trends shift-history delete carries its caption; the Settings `n_min` list shows a disabled topic marked *disabled*.
 
 ## 10. Open questions
