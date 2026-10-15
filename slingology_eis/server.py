@@ -41,6 +41,7 @@ import pandas as pd
 
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
+from . import data_location
 from . import workspace as ws
 from .channels import CHANNEL_REGISTRY, MAX_CHART_SLOTS, SLOT_GROUPS
 from .cli import _REPO_ROOT, _write_workspace, resolve_logs_dir, resolve_workspace_dir
@@ -1486,6 +1487,69 @@ def op_reclassify_flights(params: dict, ctx: dict) -> Any:
     return {"reclassified": reclassified}
 
 
+# ── Data location (Spec 02 v0.10 §5.8.1, Spec 14 v0.12 §5.2) ─────────────────
+
+def op_get_data_location(params: dict, ctx: dict) -> Any:
+    loc = data_location.resolve()
+    default = data_location.default_root()
+    count = None
+    if not loc.missing:
+        try:
+            count = data_location.workspace_count(loc.root)
+        except (OSError, ValueError):
+            count = None
+    return {**loc.to_dict(), "workspace_count": count, "default_path": str(default),
+            "env_var": data_location.ENV_VAR}
+
+
+def _location_target(params: dict) -> Path:
+    if params.get("default"):
+        return data_location.default_root()
+    return Path(str(params.get("path") or ""))
+
+
+def op_assess_data_location(params: dict, ctx: dict) -> Any:
+    """What choosing a folder would do, without doing it (§5.8.1 table)."""
+    return data_location.assess(_location_target(params))
+
+
+def op_change_data_location(params: dict, ctx: dict) -> Any:
+    """Move the data root, or switch to one that already holds data, then
+    reopen the app on it. Refused while a scan runs."""
+    if ctx.get("scan_progress", {}).get("active"):
+        raise RpcError("BUSY", "A sync is running. Change the data location when it has finished.")
+    if ctx.get("location_progress", {}).get("active"):
+        raise RpcError("BUSY", "The data location is already being changed.")
+
+    def on_progress(update: dict) -> None:
+        ctx["location_progress"] = {"active": True, **update}
+
+    ctx["location_progress"] = {"active": True, "phase": "starting"}
+    try:
+        result = data_location.change(_location_target(params), on_progress=on_progress)
+    except data_location.DataLocationError as e:
+        raise RpcError(e.code, e.message)
+    finally:
+        ctx["location_progress"] = {"active": False}
+    _open_data_root(ctx)
+    return {**result, "location": op_get_data_location({}, ctx)}
+
+
+def op_get_data_location_progress(params: dict, ctx: dict) -> Any:
+    return ctx.get("location_progress", {"active": False})
+
+
+def op_retry_data_location(params: dict, ctx: dict) -> Any:
+    """*Try again* on the missing-location notice."""
+    _open_data_root(ctx)
+    return op_get_data_location({}, ctx)
+
+
+# Ops the app may call while the data location is missing or being moved.
+_LOCATION_OPS = {"get_data_location", "assess_data_location", "change_data_location",
+                 "get_data_location_progress", "retry_data_location"}
+
+
 def op_get_app_settings(params: dict, ctx: dict) -> Any:
     return ws.load_app_settings(ctx["registry_path"]).to_dict()
 
@@ -1864,6 +1928,11 @@ def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
 
 
 _OPS: dict[str, Callable[[dict, dict], Any]] = {
+    "get_data_location": op_get_data_location,
+    "assess_data_location": op_assess_data_location,
+    "change_data_location": op_change_data_location,
+    "get_data_location_progress": op_get_data_location_progress,
+    "retry_data_location": op_retry_data_location,
     "get_default_rules": op_get_default_rules,
     "get_workspace_rules": op_get_workspace_rules,
     "save_workspace_rules": op_save_workspace_rules,
@@ -1973,6 +2042,12 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path]):
                 op, request_id, op_params = envelope["op"], envelope.get("request_id"), envelope.get("params", {})
                 if op not in _OPS:
                     raise RpcError("UNKNOWN_OP", f"unknown operation: {op}")
+                if op not in _LOCATION_OPS:
+                    if ctx.get("data_location_missing"):
+                        raise RpcError("DATA_LOCATION_MISSING",
+                                       f"The data location {ctx['data_location_missing']} can't be reached.")
+                    if ctx.get("location_progress", {}).get("active"):
+                        raise RpcError("BUSY", "Your data is being moved; try again when it has finished.")
                 result = _OPS[op](op_params, ctx)
                 body = {"request_id": request_id, "ok": True, "result": result}
             except RpcError as e:
@@ -2044,6 +2119,27 @@ def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path,
     return resolve_workspace_dir(None), None
 
 
+def _open_data_root(ctx: dict, workspace_arg: Optional[str] = None) -> None:
+    """
+    Point ctx at the data root (Spec 02 v0.10 §5.8.1) and its active
+    workspace — at startup, after a change of location, and on *Try
+    again*. A chosen location that can't be reached leaves ctx marked
+    `data_location_missing`; every op but the data-location ones is then
+    refused (the UI shows its notice), and nothing is written anywhere.
+    """
+    loc = data_location.resolve()
+    ctx["registry_path"] = loc.root / "registry.json"
+    ctx["workspaces_root"] = loc.root / "workspaces"
+    if loc.missing:
+        ctx["data_location_missing"] = str(loc.root)
+        ctx["workspace_dir"], ctx["active_workspace_id"] = loc.root, None
+        return
+    ctx.pop("data_location_missing", None)
+    ctx["workspace_dir"], ctx["active_workspace_id"] = _resolve_active_workspace(
+        workspace_arg, ctx["registry_path"], ctx["workspaces_root"])
+    (ctx["workspace_dir"] / "flights").mkdir(parents=True, exist_ok=True)
+
+
 def build_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: int, quiet: bool) -> ThreadingHTTPServer:
     """
     Construct (but don't run) the server — split out from run_server() so
@@ -2051,22 +2147,19 @@ def build_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: in
     cleanly, instead of blocking forever on serve_forever() in-process.
     """
     resolved_logs = resolve_logs_dir(logs_dir)
-    registry_path = ws.resolve_registry_path()
-    workspaces_root = ws.resolve_workspaces_root()
-    resolved_workspace, active_workspace_id = _resolve_active_workspace(workspace_dir, registry_path, workspaces_root)
-    (resolved_workspace / "flights").mkdir(parents=True, exist_ok=True)
-
     ctx = {
-        "logs_dir": resolved_logs, "workspace_dir": resolved_workspace, "quiet": quiet,
-        "registry_path": registry_path, "workspaces_root": workspaces_root,
-        "active_workspace_id": active_workspace_id,
+        "logs_dir": resolved_logs, "quiet": quiet,
         # Mutated in place by op_scan_workspace's on_progress callback and
         # read back by op_get_scan_progress — ctx is one shared dict for
         # this server process's lifetime (built once here, closed over by
         # every request handler), so a poll running on another thread
         # sees updates from the scan thread with no extra plumbing.
         "scan_progress": {"active": False},
+        # Spec 02 v0.10 §5.8.1: a move of the data root in progress.
+        "location_progress": {"active": False},
     }
+    _open_data_root(ctx, workspace_dir)
+    resolved_workspace = ctx["workspace_dir"]
 
     ui_dist = _REPO_ROOT / "web" / "dist"
     ui_dist = ui_dist if ui_dist.is_dir() else None
@@ -2074,6 +2167,7 @@ def build_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: in
     handler = _make_handler(ctx, ui_dist)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
     httpd.slingology_workspace_dir = resolved_workspace  # type: ignore[attr-defined]
+    httpd.slingology_data_location_missing = ctx.get("data_location_missing")  # type: ignore[attr-defined]
     return httpd
 
 
@@ -2083,6 +2177,9 @@ def run_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: int,
         print(f"SlingologyEIS local server: http://127.0.0.1:{httpd.server_port}/  "
               f"(workspace: {httpd.slingology_workspace_dir})", file=sys.stderr)  # type: ignore[attr-defined]
         print("POST /rpc for the API. Ctrl-C to stop.", file=sys.stderr)
+        if httpd.slingology_data_location_missing:  # type: ignore[attr-defined]
+            print(f"Data location {httpd.slingology_data_location_missing} can't be reached; "  # type: ignore[attr-defined]
+                  "the app will ask you to reconnect it or choose another.", file=sys.stderr)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

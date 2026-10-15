@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import __version__
+from . import data_location as _data_location
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from .filters import target_label
@@ -70,7 +71,6 @@ _SOURCE_FORMAT_TO_VIA = {
 }
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_PACKAGED_HOME = Path.home() / "SlingologyEIS"
 
 
 def _now() -> str:
@@ -79,17 +79,6 @@ def _now() -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
-
-
-def _is_git_checkout(start: Path) -> bool:
-    cur = start
-    for _ in range(6):
-        if (cur / ".git").exists():
-            return True
-        if cur.parent == cur:
-            return False
-        cur = cur.parent
-    return False
 
 
 def _write_json(path: Path, obj: dict) -> None:
@@ -105,16 +94,16 @@ def _write_json(path: Path, obj: dict) -> None:
 # cli.resolve_logs_dir/resolve_workspace_dir do for data expected to already
 # exist. Docker (Spec 02 §5.8's third context) is "whatever is mounted" —
 # there is no Docker-specific code anywhere else in this repo either, so this
-# doesn't add one; a Docker deployment mounts something at _PACKAGED_HOME's
-# path and this resolves the same way as a packaged install.
+# doesn't add one; a Docker deployment mounts something at the packaged
+# home's path, or sets SLINGOLOGY_EIS_HOME (data_location.py, §5.8.1).
 
 def resolve_registry_path() -> Path:
-    """registry.json — alongside workspaces/, never inside any one workspace."""
-    if _PACKAGED_HOME.is_dir():
-        return _PACKAGED_HOME / "registry.json"
-    if _is_git_checkout(_REPO_ROOT):
-        return _REPO_ROOT / "data" / "registry.json"
-    return _PACKAGED_HOME / "registry.json"
+    """registry.json — alongside workspaces/, never inside any one workspace.
+    At the data root (Spec 02 v0.10 §5.8.1): the environment, the pilot's
+    chosen location, else the defaults above. Raises
+    data_location.DataLocationMissing for a chosen location that can't be
+    reached."""
+    return _data_location.data_root() / "registry.json"
 
 
 def resolve_workspaces_root() -> Path:

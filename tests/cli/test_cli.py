@@ -14,6 +14,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from slingology_eis import data_location
 from slingology_eis import workspace as _workspace
 from slingology_eis.cli import anonymize, main
 
@@ -160,7 +161,7 @@ def test_export_bundle_stub_exits_two():
 def isolated_packaged_home(tmp_path, monkeypatch):
     home = tmp_path / "SlingologyEIS"
     home.mkdir()
-    monkeypatch.setattr(_workspace, "_PACKAGED_HOME", home)
+    monkeypatch.setattr(data_location, "_PACKAGED_HOME", home)
     return home
 
 

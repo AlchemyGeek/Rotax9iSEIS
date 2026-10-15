@@ -1,4 +1,4 @@
-import type { ScanOptions } from "../types/contract";
+import type { DataLocation, DataLocationAssessment, DataLocationChange, DataLocationProgress, ScanOptions } from "../types/contract";
 import type {
   ActiveWorkspace,
   AircraftSummary,
@@ -162,6 +162,13 @@ export interface EngineClient {
   addLogFolder(path: string): Promise<WorkspaceManifest>;
   scanWorkspace(options?: ScanOptions): Promise<ScanResult>;
   getScanProgress(): Promise<ScanProgress>;
+  // Spec 02 v0.10 §5.8.1 / Spec 14 v0.12 §5.2 — the data location.
+  // `target` is a folder path, or { default: true } for the default folder.
+  getDataLocation(): Promise<DataLocation>;
+  assessDataLocation(target: DataLocationTarget): Promise<DataLocationAssessment>;
+  changeDataLocation(target: DataLocationTarget): Promise<DataLocationChange>;
+  getDataLocationProgress(): Promise<DataLocationProgress>;
+  retryDataLocation(): Promise<DataLocation>;
   getAppSettings(): Promise<AppSettings>;
   saveAppSettings(settings: AppSettings): Promise<AppSettings>;
   getWorkspaceSettings(): Promise<WorkspaceSettings>;
@@ -218,6 +225,12 @@ function toBase64(buf: ArrayBuffer): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+export type DataLocationTarget = string | { default: true };
+
+function locationParams(target: DataLocationTarget) {
+  return typeof target === "string" ? { path: target } : { default: true };
 }
 
 let nextRequestId = 1;
@@ -472,6 +485,26 @@ export class LocalServerClient implements EngineClient {
 
   getScanProgress() {
     return this.rpc<ScanProgress>("get_scan_progress", {});
+  }
+
+  getDataLocation() {
+    return this.rpc<DataLocation>("get_data_location", {});
+  }
+
+  assessDataLocation(target: DataLocationTarget) {
+    return this.rpc<DataLocationAssessment>("assess_data_location", locationParams(target));
+  }
+
+  changeDataLocation(target: DataLocationTarget) {
+    return this.rpc<DataLocationChange>("change_data_location", locationParams(target));
+  }
+
+  getDataLocationProgress() {
+    return this.rpc<DataLocationProgress>("get_data_location_progress", {});
+  }
+
+  retryDataLocation() {
+    return this.rpc<DataLocation>("retry_data_location", {});
   }
 
   getAppSettings() {

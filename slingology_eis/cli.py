@@ -20,6 +20,7 @@ from typing import Optional
 from . import __version__
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
+from . import data_location as _data_location
 from . import workspace as _workspace
 from .contract import content_hash
 from .limits import _resolve_engine_name, limit_catalog, load_engine_config
@@ -692,6 +693,49 @@ def cmd_workspace_create(args) -> int:
     return 0
 
 
+# ── data-location (Spec 02 v0.10 §5.8.1) ──────────────────────────────────
+
+_LOCATION_SOURCE_TEXT = {
+    "environment": f"set by the environment ({_data_location.ENV_VAR})",
+    "chosen": "chosen by you",
+    "default": "default location",
+}
+
+
+def cmd_data_location(args) -> int:
+    if args.action is None:
+        loc = _data_location.resolve()
+        if args.json:
+            _print_json(loc.to_dict())
+        else:
+            missing = " — can't be reached" if loc.missing else ""
+            print(f"{loc.root}  ({_LOCATION_SOURCE_TEXT[loc.source]}){missing}")
+        return 0
+    if not args.path:
+        raise CliUsageError("data-location set needs a folder path.")
+
+    def on_progress(update: dict) -> None:
+        if not args.quiet and update.get("phase") == "copying":
+            print(f"\rCopying {update['done']}/{update['total']} files", end="", file=sys.stderr)
+
+    try:
+        result = _data_location.change(Path(args.path), on_progress=on_progress)
+    except _data_location.DataLocationError as e:
+        raise CliOperationError(e.message)
+    if not args.quiet:
+        print(file=sys.stderr)
+    if args.json:
+        _print_json(result)
+    elif result["action"] == "move":
+        print(f"Your data now lives in {result['path']}. The previous copy is still in "
+              f"{result['previous_path']}; you can delete it once you're happy.")
+    elif result["action"] == "use_existing":
+        print(f"Now using the data in {result['path']}. Your previous data is unchanged.")
+    else:
+        print(f"Starting fresh in {result['path']}.")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .server import run_server
     run_server(args.logs, args.workspace, args.port, args.quiet)
@@ -773,6 +817,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tail-number", metavar="IDENT", help="Primary tail number (informational only, Spec 02 §5.6)")
     p.set_defaults(func=cmd_workspace_create)
 
+    p = sub.add_parser("data-location", parents=[common],
+                       help="Show or change where workspaces are kept (Spec 02 §5.8.1)")
+    p.add_argument("action", nargs="?", choices=["set"], help="set: move your data to PATH, or use the data already there")
+    p.add_argument("path", nargs="?", help="Folder for the data location")
+    p.set_defaults(func=cmd_data_location)
+
     p = sub.add_parser("explain", parents=[common], help="Plain-text topic help (Spec 01 §8.8)")
     p.add_argument("topic_id", nargs="?", help="Topic id to explain (default: every applicable topic)")
     p.set_defaults(func=cmd_explain)
@@ -793,6 +843,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         return args.func(args)
     except CliUsageError as e:
+        print(f"usage error: {e}", file=sys.stderr)
+        return 2
+    except _data_location.DataLocationMissing as e:
         print(f"usage error: {e}", file=sys.stderr)
         return 2
     except CliOperationError as e:

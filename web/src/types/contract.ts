@@ -919,6 +919,43 @@ export interface ScanOptions {
 // Polled by the Sync button while a scan_workspace call is in flight
 // (op_get_scan_progress) — a large initial sync can take minutes, so
 // this is what turns "Syncing…" into "Analyzing 42 of 210 — <filename>".
+// Spec 02 v0.10 §5.8.1 / Spec 14 v0.12 §5.2 — where the data root lives.
+export type DataLocationSource = "environment" | "chosen" | "default";
+
+export interface DataLocation {
+  path: string;
+  source: DataLocationSource;
+  missing: boolean;
+  workspace_count: number | null;
+  default_path: string;
+  env_var: string;
+}
+
+// What choosing a folder would do, before anything happens. start_fresh:
+// an empty folder while the current location is missing (nothing to move).
+export interface DataLocationAssessment {
+  action: "move" | "use_existing" | "start_fresh" | "refused";
+  path: string;
+  workspace_count: number | null;
+  bytes: number | null;
+  reason: string | null;
+  code: string | null;
+}
+
+export interface DataLocationChange {
+  action: "move" | "use_existing" | "start_fresh";
+  path: string;
+  previous_path: string | null;
+  location: DataLocation;
+}
+
+export interface DataLocationProgress {
+  active: boolean;
+  phase?: "starting" | "copying" | "checking";
+  done?: number;
+  total?: number;
+}
+
 export interface ScanProgress {
   active: boolean;
   phase?: "starting" | "reading" | "analyzing" | "reanalyzing";

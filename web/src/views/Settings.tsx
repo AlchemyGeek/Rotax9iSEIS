@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
+import { DataLocationPanel } from "../components/DataLocation";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
 import { getEngineClient } from "../lib/engineClient";
@@ -702,6 +703,9 @@ export function Settings() {
                 </div>
               </div>
             </div>
+
+            {/* Spec 14 v0.12 §5.2 — local server only; renders nothing otherwise. */}
+            <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
 
             <div style={PANEL_STYLE}>
               <div style={{ ...PANEL_TITLE_STYLE, marginBottom: 4 }}>Chart presets</div>

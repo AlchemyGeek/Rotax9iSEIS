@@ -14,6 +14,7 @@ import urllib.request
 
 import pytest
 
+from slingology_eis import data_location
 from slingology_eis import workspace as ws
 from slingology_eis.server import build_server
 
@@ -39,7 +40,7 @@ def isolated_packaged_home(tmp_path, monkeypatch):
     """
     home = tmp_path / "SlingologyEIS"
     home.mkdir()
-    monkeypatch.setattr(ws, "_PACKAGED_HOME", home)
+    monkeypatch.setattr(data_location, "_PACKAGED_HOME", home)
     return home
 
 

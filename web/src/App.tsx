@@ -1,6 +1,7 @@
 import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import type { ReactNode } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { DataLocationGate } from "./components/DataLocation";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { LogPreview } from "./views/LogPreview";
@@ -25,6 +26,9 @@ function SkippedRedirect() {
 // no longer a destination; it folded into Flights as a drop zone (§5.1).
 function App() {
   return (
+    // Spec 02 v0.10 §5.8.1: an unreachable chosen data location replaces
+    // every page with its notice.
+    <DataLocationGate>
     <HashRouter>
       {/* Spec 07 D7: the chart's channel selection lives above the routes
           so it survives navigating away from and back to Flight view
@@ -55,6 +59,7 @@ function App() {
         </PageBoundary>
       </ChartSessionProvider>
     </HashRouter>
+    </DataLocationGate>
   );
 }
 

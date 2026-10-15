@@ -37,3 +37,15 @@ def import_notebook(name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def _no_chosen_data_location(tmp_path_factory, monkeypatch):
+    """Spec 02 v0.10 §5.8.1: neither SLINGOLOGY_EIS_HOME nor a data location
+    chosen on this machine may reach a test. Each test sees no environment
+    override and an empty configuration folder, so resolution falls through
+    to the defaults (which the registry tests isolate further)."""
+    from slingology_eis import data_location
+    monkeypatch.delenv(data_location.ENV_VAR, raising=False)
+    cfg = tmp_path_factory.mktemp("eis-config")
+    monkeypatch.setattr(data_location, "config_dir", lambda: cfg)
