@@ -43,7 +43,7 @@ The Operators Manual allows takeoff power, above {profile:overboost.rpm_threshol
 
 ## map_at_takeoff
 title: Turbo boost at takeoff
-applies_to: [914iS, 915iS, 916iS]
+applies_to: [915iS, 916iS]
 last_reviewed: 2026-10-02
 
 At full takeoff power the turbocharger should deliver a manifold pressure (MAP) that depends mainly on airport elevation and outside air temperature. This topic learns that relationship from your own takeoffs and compares each takeoff's MAP with what your engine normally makes in the same conditions. A takeoff is flagged when the difference is larger than your takeoffs normally vary, about {config:outlier_z_threshold} times the usual scatter of your own data. Lower than expected can point to the turbo, the wastegate or an intake leak; higher than expected is usually worth a sensor check. If a takeoff's elevation or temperature is outside anything your takeoffs have covered so far, the card says so instead of guessing.

@@ -132,7 +132,7 @@ def test_register_916is_statuses_agree_with_spec_10_5_2(register, spec_table):
 def test_map_at_takeoff_is_na_only_on_the_non_turbo_912is(register):
     entry = next(t for t in register["topics"] if t["topic_id"] == "map_at_takeoff")
     assert entry["status"]["912iS"] == "n/a"
-    for engine in ("914iS", "915iS", "916iS"):
+    for engine in ("915iS", "916iS"):
         assert entry["status"][engine] != "n/a"
 
 
@@ -140,7 +140,7 @@ def test_every_admitted_topic_has_unverified_or_admitted_on_every_applicable_eng
     for t in register["topics"]:
         if t["status"]["916iS"] != "Admitted":
             continue
-        for engine in ("912iS", "914iS", "915iS"):
+        for engine in ("912iS", "915iS"):
             assert t["status"][engine] in ("Admitted", "Unverified", "n/a"), (
                 f"{t['topic_id']}/{engine}: expected Admitted/Unverified/n/a, got {t['status'][engine]!r}"
             )
@@ -150,7 +150,7 @@ def test_removed_and_research_topics_carry_the_same_status_on_every_engine(regis
     for t in register["topics"]:
         s16 = t["status"]["916iS"]
         if s16 in ("Removed", "Research"):
-            for engine in ("912iS", "914iS", "915iS"):
+            for engine in ("912iS", "915iS"):
                 assert t["status"][engine] == s16, f"{t['topic_id']}/{engine}: expected {s16!r}"
 
 

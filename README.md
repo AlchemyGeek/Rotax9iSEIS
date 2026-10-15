@@ -2,9 +2,9 @@
 
 **Version: 0.11.0** — verify with `slingology-eis --version` or `python -c "import slingology_eis; print(slingology_eis.__version__)"`
 
-Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines (912iS, 914iS, 915iS, 916iS). Built from the ground up for how these engines actually work — not retrofitted from the carbureted-engine assumptions that underpin existing tools like Savvy Aviation and FlySto. Analyses Garmin G3X EIS logs against Rotax Operators Manual limits, automatically detects flight phases, tracks EGT spread and cylinder balance over engine hours, classifies CAS alerts, monitors overboost time, builds personal baselines from your own flight history, and produces plain-language per-flight reports — all offline, with your data never leaving your machine.
+Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines (912iS, 915iS, 916iS). Built from the ground up for how these engines actually work — not retrofitted from the carbureted-engine assumptions that underpin existing tools like Savvy Aviation and FlySto. Analyses Garmin G3X EIS logs against Rotax Operators Manual limits, automatically detects flight phases, tracks EGT spread and cylinder balance over engine hours, classifies CAS alerts, monitors overboost time, builds personal baselines from your own flight history, and produces plain-language per-flight reports — all offline, with your data never leaving your machine.
 
-**Current status:** Python toolkit v0.11.0, validated against 37 flights on N117ZS (Sling TSi, Rotax 916iS, KPAE). Engine profiles 916iS and 915iS are fully verified against their Operators Manuals; 912iS and 914iS are placeholders pending verification. As of v0.11.0 the toolkit is built around a stateless, typed engine contract (see [`docs/specs/01-engine-contract.md`](docs/specs/01-engine-contract.md)) with a unified command-line interface — the same contract a future browser UI will run against unmodified. Long-term goal is a free progressive web app for any Sling / Rotax iS pilot.
+**Current status:** Python toolkit v0.11.0, validated against 37 flights on N117ZS (Sling TSi, Rotax 916iS, KPAE). Engine profiles 916iS and 915iS are fully verified against their Operators Manuals; 912iS is a placeholder pending verification. As of v0.11.0 the toolkit is built around a stateless, typed engine contract (see [`docs/specs/01-engine-contract.md`](docs/specs/01-engine-contract.md)) with a unified command-line interface — the same contract a future browser UI will run against unmodified. Long-term goal is a free progressive web app for any Sling / Rotax iS pilot.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
@@ -69,7 +69,6 @@ Rotax9iSEIS/
 ├── engines/
 │   ├── 916iS.json                      # VERIFIED — sourced from OM-916 i/C24 Ed.0 Rev.1
 │   ├── 915iS.json                      # VERIFIED — sourced from OM-915 i A/C24 Ed.0 Rev.4
-│   ├── 914iS.json                      # PLACEHOLDER — verify before operational use
 │   └── 912iS.json                      # PLACEHOLDER — verify before operational use
 ├── data/
 │   ├── logs/                           # Place your G3X CSV files here (default --logs)
@@ -99,7 +98,7 @@ Edit `config.json` at the toolkit root to change the default:
 }
 ```
 
-Valid values: `916iS`, `915iS`, `914iS`, `912iS`. The 916iS and 915iS configs are fully verified against their Operators Manuals. 914iS and 912iS are placeholders — verify limits against your engine's OM before relying on them.
+Valid values: `916iS`, `915iS`, `912iS`. The 916iS and 915iS configs are fully verified against their Operators Manuals. 912iS is a placeholder — verify limits against your engine's OM before relying on them.
 
 ### 2. Add your log files
 

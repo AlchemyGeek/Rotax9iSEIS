@@ -144,3 +144,29 @@ def test_912is_idle_floor_is_its_own_1400_not_1800():
     # "reached" test its dip to 1,300 would never be checked.
     events = [e for e in check_exceedances(_idle_flight(1400), cfg) if e.limit_id == "rpm_idle_min"]
     assert len(events) == 1 and events[0].observed_value == 1300.0
+
+
+# ── 914iS retired ────────────────────────────────────────────────────────────
+
+def test_914is_has_no_profile_and_says_why():
+    assert not (Path(__file__).resolve().parents[2] / "engines" / "914iS.json").exists()
+    with pytest.raises(ValueError, match="Rotax has no 914iS.*912iS, 915iS or 916iS"):
+        load_engine_config("914iS")
+
+
+def test_a_workspace_naming_914is_fails_clearly_and_never_loads_another_profile(tmp_path):
+    from slingology_eis import workspace as ws
+    assert ws.ENGINE_MODELS == ("912iS", "915iS", "916iS")
+    with pytest.raises(ValueError, match="914iS"):
+        ws.create_workspace(tmp_path / "registry.json", tmp_path / "workspaces", "Old", "914iS")
+
+    m = ws.create_workspace(tmp_path / "registry.json", tmp_path / "workspaces", "Old", "915iS")
+    ws_dir = tmp_path / "workspaces" / m.id
+    raw = json.loads((ws_dir / "manifest.json").read_text())
+    raw["engine_model"] = "914iS"              # as written before the profile was withdrawn
+    (ws_dir / "manifest.json").write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="Workspace 'Old' uses engine model '914iS'.*Rotax has no 914iS"):
+        ws.load_manifest(ws_dir)
+    # Still listed, so it can be removed.
+    assert [e.name for e in ws.list_workspaces(tmp_path / "registry.json")] == ["Old"]
+    ws.delete_workspace(tmp_path / "registry.json", tmp_path / "workspaces", m.id)

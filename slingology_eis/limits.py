@@ -2,8 +2,8 @@
 limits.py — Engine operating limits loader and exceedance checker.
 
 Limits are loaded from a JSON engine config file in engines/ rather than
-hardcoded — this is what makes the toolkit work across all four Rotax iS
-engines (912iS, 914iS, 915iS, 916iS) without code changes.
+hardcoded — this is what makes the toolkit work across the Rotax iS
+engines (912iS, 915iS, 916iS) without code changes.
 
 Engine selection (in priority order):
   1. Explicit argument to load_engine_config(engine="916iS")
@@ -160,6 +160,15 @@ def parse_engine_config(text: str, name: str = "") -> dict:
     return cfg
 
 
+# Profiles that once shipped and were withdrawn, with the reason given to
+# anyone who still names one (config.json, SLINGOLOGY_ENGINE, a workspace).
+RETIRED_ENGINES = {
+    "914iS": ("Rotax has no 914iS. The 914 is a carburetted turbo engine, not an iS engine, and there is "
+              "no Operators Manual to source a profile from; the former placeholder only copied 915iS "
+              "values. Use the profile for your engine: 912iS, 915iS or 916iS."),
+}
+
+
 def load_engine_config(engine: Optional[str] = None) -> dict:
     """
     Load an engine config dict from engines/<name>.json.
@@ -185,6 +194,8 @@ def load_engine_config(engine: Optional[str] = None) -> dict:
     ValueError         if the file is not valid JSON.
     """
     name = _resolve_engine_name(engine)
+    if name in RETIRED_ENGINES:
+        raise ValueError(f"Engine profile {name!r} is not supported: {RETIRED_ENGINES[name]}")
     path = _ENGINES_DIR / f"{name}.json"
     if not path.exists():
         available = [p.stem for p in _ENGINES_DIR.glob("*.json")]

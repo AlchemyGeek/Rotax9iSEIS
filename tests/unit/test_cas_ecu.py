@@ -70,7 +70,7 @@ def test_runs_at_merge_gap_stay_separate():
 def test_merge_gap_and_min_duration_come_from_the_profile():
     df = _flight([("TAXI", 60, 1800, 5, 5)], ecu=[(10, 12)])
     assert extract_engine_ecu_runs(df, {**CFG, "cas": {"merge_gap_s": 5, "min_event_duration_s": 2}}).runs
-    for engine in ("912iS", "914iS", "915iS", "916iS"):
+    for engine in ("912iS", "915iS", "916iS"):
         assert set(load_engine_config(engine)["cas"]) == {"merge_gap_s", "min_event_duration_s"}
 
 

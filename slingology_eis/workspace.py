@@ -47,7 +47,7 @@ from . import data_location as _data_location
 from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from .filters import target_label
-from .limits import load_engine_config, resolve_min_flight_duration_min
+from .limits import RETIRED_ENGINES, load_engine_config, resolve_min_flight_duration_min
 from .loader import (
     find_duplicate_flights,
     flight_fingerprint,
@@ -62,7 +62,18 @@ from .operations import (
 
 SCHEMA_VERSION = "02-v0.5"
 
-ENGINE_MODELS = ("912iS", "914iS", "915iS", "916iS")
+ENGINE_MODELS = ("912iS", "915iS", "916iS")
+
+
+def check_engine_model(engine_model: str, workspace_name: str = "") -> None:
+    """Fail with a clear message for an engine model with no profile —
+    never fall through to another engine's limits (§5.6). A retired one
+    (914iS) says why it was withdrawn."""
+    if engine_model in ENGINE_MODELS:
+        return
+    who = f"Workspace {workspace_name!r} uses" if workspace_name else "Engine model"
+    reason = RETIRED_ENGINES.get(engine_model) or f"expected one of {', '.join(ENGINE_MODELS)}."
+    raise ValueError(f"{who} engine model {engine_model!r}, which has no engine profile. {reason}")
 
 _SOURCE_FORMAT_TO_VIA = {
     "g3x_direct": "sd_card",
@@ -473,8 +484,7 @@ def create_workspace(
     loosely writes `<name>`; this follows the former since ids are stable
     and filesystem-safe and names aren't guaranteed to be either).
     """
-    if engine_model not in ENGINE_MODELS:
-        raise ValueError(f"Unknown engine_model {engine_model!r}; expected one of {ENGINE_MODELS}")
+    check_engine_model(engine_model)
     if not name or not name.strip():
         raise ValueError("Workspace name cannot be empty.")
 
@@ -551,7 +561,9 @@ def add_log_folder(ws_dir: Path, folder_path: str, registry_path: Optional[Path]
 # ── Per-workspace documents (§5.3, §6) ───────────────────────────────────────
 
 def load_manifest(ws_dir: Path) -> WorkspaceManifest:
-    return WorkspaceManifest.from_dict(json.loads((ws_dir / "manifest.json").read_text()))
+    manifest = WorkspaceManifest.from_dict(json.loads((ws_dir / "manifest.json").read_text()))
+    check_engine_model(manifest.engine_model, manifest.name)
+    return manifest
 
 
 def save_manifest(ws_dir: Path, manifest: WorkspaceManifest) -> None:

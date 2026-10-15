@@ -28,7 +28,7 @@ from slingology_eis.operations import (
 )
 from slingology_eis.rules import validate_rules
 
-ENGINES = ("912iS", "914iS", "915iS", "916iS")
+ENGINES = ("912iS", "915iS", "916iS")
 
 
 # ── Limit ids (§6.1) ──────────────────────────────────────────────────────────
@@ -603,7 +603,7 @@ def test_requires_reached_since_start_flags_nothing_if_threshold_never_reached()
 
 
 def test_rpm_idle_min_is_idle_established_in_the_profiles():
-    for engine in ("912iS", "914iS", "915iS", "916iS"):
+    for engine in ("912iS", "915iS", "916iS"):
         lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "rpm_idle_min")
         assert lim.get("min_rpm") == 1000
 
@@ -628,7 +628,7 @@ def test_kfcm_spool_up_raises_no_rpm_idle_min_event_but_a_later_low_idle_still_d
 
 
 def test_volts_min_is_rpm_gated_in_the_profiles():
-    for engine in ("912iS", "914iS", "915iS", "916iS"):
+    for engine in ("912iS", "915iS", "916iS"):
         lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "volts_min")
         assert lim.get("min_rpm") == 1000
 

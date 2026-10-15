@@ -44,9 +44,9 @@ def test_applies_to_all():
 
 
 def test_applies_to_list():
-    text = _entry("title: Foo\napplies_to: [914iS, 915iS, 916iS]\nlast_reviewed: 2026-10-05\n\nOne paragraph.")
+    text = _entry("title: Foo\napplies_to: [915iS, 916iS]\nlast_reviewed: 2026-10-05\n\nOne paragraph.")
     entries = parse_help_file(text)
-    assert entries["some_topic"].applies_to == ["914iS", "915iS", "916iS"]
+    assert entries["some_topic"].applies_to == ["915iS", "916iS"]
 
 
 def test_multiline_paragraph_joins_into_one():

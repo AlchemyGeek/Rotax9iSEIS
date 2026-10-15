@@ -93,7 +93,7 @@ def test_caution_limit_caps_when_the_profile_declares_them():
 
 
 def test_oil_pressure_minimum_is_never_filterable():
-    for engine in ("912iS", "914iS", "915iS", "916iS"):
+    for engine in ("912iS", "915iS", "916iS"):
         lim = next(l for l in limit_catalog(load_engine_config(engine)) if l["id"] == "oil_press_min")
         assert not resolve_filter_policy(lim)["filterable"]
 

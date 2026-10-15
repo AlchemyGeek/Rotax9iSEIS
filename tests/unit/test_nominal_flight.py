@@ -10,7 +10,7 @@ import pytest
 
 from slingology_eis.limits import check_exceedances, load_engine_config
 
-ENGINES = ("912iS", "914iS", "915iS", "916iS")
+ENGINES = ("912iS", "915iS", "916iS")
 
 
 def _limit(cfg, limit_id):

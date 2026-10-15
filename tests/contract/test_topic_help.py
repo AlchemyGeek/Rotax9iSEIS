@@ -13,7 +13,7 @@ from ..conftest import TOOLKIT_ROOT
 
 REGISTER_PATH = TOOLKIT_ROOT / "docs" / "specs" / "topics" / "register.json"
 RULES_PATH = TOOLKIT_ROOT / "insight_rules.json"
-ENGINES = ("912iS", "914iS", "915iS", "916iS")
+ENGINES = ("912iS", "915iS", "916iS")
 
 
 @pytest.fixture(scope="module")

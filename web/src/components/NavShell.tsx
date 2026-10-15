@@ -12,7 +12,7 @@ const client = getEngineClient();
 // this short a list on its own (list_engines returns full profile
 // objects), and it changes rarely enough that duplicating the four
 // values here is simpler than a round trip just to populate a picker.
-const ENGINE_MODELS = ["912iS", "914iS", "915iS", "916iS"];
+const ENGINE_MODELS = ["912iS", "915iS", "916iS"];
 
 const NAV_LINK_STYLE = ({ isActive }: { isActive: boolean }) => ({
   padding: "6px 14px",
