@@ -784,8 +784,7 @@ export interface SettingsChangelogEntry {
   source: string;
 }
 
-// Spec 14 §6 — Journal's own record of decisions, open until reversed
-// (closed, never removed — §6.4).
+// Spec 14 §6.1 — the kinds of decision the Journal register holds.
 export type JournalEntryKind =
   | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit"
   | "exclusion" | "reference_pin" | "annotation";
@@ -811,24 +810,30 @@ export interface ReferenceChangeMarker {
   resolved: boolean;
 }
 
+// Spec 14 v0.10 §6 — one entry per decision in force, keyed by its
+// source record (ref_id); removed when the decision is reversed, updated
+// in place when it is edited. effect / current / notices are computed by
+// the server when the Journal is read, never stored.
 export interface JournalEntry {
   id: string;
   kind: JournalEntryKind;
+  ref_id: string;
   what: string;
   where?: Record<string, unknown> | null;
-  at: string;
   reason?: string | null;
   note?: string | null;
-  effect?: string | null;
-  status: "open" | "closed";
-  closed_at?: string | null;
-  ref_id?: string | null;
-  before?: unknown;
-  after?: unknown;
-  // Spec 14 §6.1 (v0.3) — imported once from a record that predates
-  // journal.json; always false for an entry created by a live user
-  // action. Carries no counted effect (see `effect` above).
-  backfilled?: boolean;
+  created_at: string;
+  updated_at: string;
+  // The live counted effect; zero is the "currently suppresses nothing" case.
+  effect?: { text: string; zero: boolean } | null;
+  // The decision's current values ("up to +1.5 psi", "trend.r2_min 0.3 (shipped 0.5)").
+  current?: string | null;
+  notices?: JournalNotice[];
+}
+
+export interface JournalNotice {
+  kind: "drifting" | "breached" | "no_effect";
+  text: string;
 }
 
 // ── Flights table (Spec 03 §5.1) — not a Spec 01/02 contract type itself; ────

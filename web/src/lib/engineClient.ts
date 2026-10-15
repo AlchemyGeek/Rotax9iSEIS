@@ -177,11 +177,13 @@ export interface EngineClient {
   // (rules/active.json + BaselineConfig), plus the live per-flight diff.
   getWorkspaceRules(): Promise<WorkspaceRulesResult>;
   saveWorkspaceRules(rules: RuleSet): Promise<{ rules: RuleSet }>;
-  // journal_entry is null when the edit re-enables a disabled topic: that
-  // closes its open disabled_topic entry (closed_journal_entry_ids)
-  // instead of opening one (Spec 14 §7.3 v0.5).
-  applyCardRuleEdit(topicId: string, topic: RuleTopic): Promise<{ rules: RuleSet; journal_entry: JournalEntry | null; closed_journal_entry_ids?: string[]; changed_flight_ids: string[] }>;
+  // journal_entry: the topic's entry now in force (Spec 14 v0.10), or null
+  // when the edit leaves no decision standing (Enable, back to shipped).
+  applyCardRuleEdit(topicId: string, topic: RuleTopic): Promise<{ rules: RuleSet; journal_entry: JournalEntry | null; changed_flight_ids: string[] }>;
   revertRuleEdit(entryId: string): Promise<{ rules: RuleSet }>;
+  // Spec 14 v0.10 §6.2 — keep a decision a notice questions; edit an exclusion's reason.
+  confirmJournalNotice(entryId: string, notice: string): Promise<JournalEntry>;
+  updateExclusionReason(flightId: string, reason: string): Promise<unknown>;
   resetWorkspaceRules(): Promise<{ rules: RuleSet }>;
   saveBaselineConfig(baselineConfig: BaselineConfig): Promise<FleetAnalysis>;
   whatIfRules(candidate: { rules?: RuleSet; baseline_config?: BaselineConfig }): Promise<WhatIfResult>;
@@ -504,9 +506,17 @@ export class LocalServerClient implements EngineClient {
   }
 
   applyCardRuleEdit(topicId: string, topic: RuleTopic) {
-    return this.rpc<{ rules: RuleSet; journal_entry: JournalEntry | null; closed_journal_entry_ids?: string[]; changed_flight_ids: string[] }>(
+    return this.rpc<{ rules: RuleSet; journal_entry: JournalEntry | null; changed_flight_ids: string[] }>(
       "apply_card_rule_edit", { topic_id: topicId, topic },
     );
+  }
+
+  confirmJournalNotice(entryId: string, notice: string) {
+    return this.rpc<JournalEntry>("confirm_journal_notice", { entry_id: entryId, notice });
+  }
+
+  updateExclusionReason(flightId: string, reason: string) {
+    return this.rpc<unknown>("update_exclusion_reason", { flight_id: flightId, reason });
   }
 
   revertRuleEdit(entryId: string) {

@@ -544,11 +544,10 @@ def test_settings_changelog_records_changes_across_tabs(registry_server):
     assert len(got2) == before_count
 
 
-def test_journal_records_and_closes_entries_across_kinds(registry_server):
-    """Spec 14 §6 — Journal is its own record of decisions, created
-    alongside the real action and closed (not removed) on reversal,
-    across the three kinds with real data today: a limit filter, a
-    reference pin, and an annotation."""
+def test_journal_is_a_register_of_decisions_in_force(registry_server):
+    """Spec 14 v0.10 §6: one entry per live decision — created with the
+    action, updated in place on re-edit, removed on reversal — each with a
+    live counted effect. A filter, an annotation and a reference pin."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     log = _flying_log_bytes(extra_header=",Fuel Press (PSI)",
                             row_extra_fn=lambda i: ",47.0" if i > _FLYING_PREAMBLE_LEN + 300 else ",44.0")
@@ -557,50 +556,56 @@ def test_journal_records_and_closes_entries_across_kinds(registry_server):
     }]})
     flight_id = imported["result"]["results"][0]["flight_id"]
 
-    # Limit filter: created -> open entry; deleted -> closed, kept.
-    saved_filter = rpc(registry_server, "save_filter", {"filter": {
+    def journal():
+        return rpc(registry_server, "get_journal", {})["result"]["entries"]
+
+    # Filter: one entry with its live effect.
+    saved = rpc(registry_server, "save_filter", {"filter": {
         "limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "sender reads high",
     }})["result"]
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    filter_entry = next(e for e in entries if e["kind"] == "limit_filter" and e["ref_id"] == saved_filter["id"])
-    assert filter_entry["status"] == "open" and filter_entry["closed_at"] is None
-    assert filter_entry["note"] == "sender reads high"
+    [entry] = [e for e in journal() if e["kind"] == "limit_filter"]
+    assert entry["ref_id"] == saved["id"] and entry["note"] == "sender reads high"
+    assert entry["effect"]["zero"] is False and entry["effect"]["text"].startswith("suppressing 1 event on 1 flight")
+    assert entry["current"] and entry["notices"] == []
+    assert not {"status", "closed_at", "backfilled"} & entry.keys()
 
-    rpc(registry_server, "delete_filter", {"id": saved_filter["id"]})
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    filter_entry = next(e for e in entries if e["id"] == filter_entry["id"])
-    assert filter_entry["status"] == "closed" and filter_entry["closed_at"] is not None
+    # Edited twice: still one entry, latest values, updated_at moved.
+    created, first_update = entry["created_at"], entry["updated_at"]
+    for note, value in (("second", 1.2), ("third", 0.2)):
+        rpc(registry_server, "save_filter", {"filter": {
+            "id": saved["id"], "target": {"kind": "limit", "limit_id": "fuel_press_max"},
+            "magnitude": {"mode": "absolute", "value": value}, "note": note,
+        }})
+    [entry] = [e for e in journal() if e["kind"] == "limit_filter"]
+    assert entry["note"] == "third" and entry["created_at"] == created and entry["updated_at"] > first_update
+    # +0.2 psi tolerates nothing on this flight (it runs +1.0 past): zero
+    # wording, and the "currently has no effect" notice.
+    assert entry["effect"] == {"text": "currently suppresses nothing", "zero": True}
+    assert [n["kind"] for n in entry["notices"]] == ["no_effect"]
+    rpc(registry_server, "confirm_journal_notice", {"entry_id": entry["id"], "notice": "no_effect"})
+    assert [e for e in journal() if e["kind"] == "limit_filter"][0]["notices"] == []
 
-    # Annotation: created -> open entry; deleted -> closed, kept.
+    # Removing the filter removes the entry.
+    rpc(registry_server, "delete_filter", {"id": saved["id"]})
+    assert [e for e in journal() if e["kind"] == "limit_filter"] == []
+
+    # Annotation: edit updates, delete removes.
     ann = rpc(registry_server, "save_annotation", {
         "flight_id": flight_id, "ref": {"kind": "flight"}, "note": "checking density altitude tolerance",
     })["result"]
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    ann_entry = next(e for e in entries if e["kind"] == "annotation" and e["ref_id"] == ann["id"])
-    assert ann_entry["status"] == "open"
+    rpc(registry_server, "save_annotation", {"id": ann["id"], "flight_id": flight_id, "ref": {"kind": "flight"}, "note": "confirmed"})
+    [a_entry] = [e for e in journal() if e["kind"] == "annotation"]
+    assert a_entry["what"] == "confirmed" and a_entry["effect"] is None
     rpc(registry_server, "delete_annotation", {"id": ann["id"]})
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    assert next(e for e in entries if e["id"] == ann_entry["id"])["status"] == "closed"
+    assert [e for e in journal() if e["kind"] == "annotation"] == []
 
-    # Reference pin: set -> open entry with a counted n; cleared -> closed.
+    # Reference pin: re-pin updates the one entry; unpin removes it.
     rpc(registry_server, "set_reference", {"metric_id": "egt_spread", "flight_ids": [flight_id], "label": "after oil change"})
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    pin_entry = next(e for e in entries if e["kind"] == "reference_pin" and e["ref_id"] == "egt_spread")
-    assert pin_entry["status"] == "open" and pin_entry["effect"] == "n=1"
+    rpc(registry_server, "set_reference", {"metric_id": "egt_spread", "flight_ids": [flight_id], "label": "after the overhaul"})
+    [pin] = [e for e in journal() if e["kind"] == "reference_pin"]
+    assert pin["note"] == "after the overhaul" and pin["effect"]["text"].startswith("reference of 1 flight")
     rpc(registry_server, "clear_reference", {"metric_id": "egt_spread"})
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    assert next(e for e in entries if e["id"] == pin_entry["id"])["status"] == "closed"
-
-    # Newest first.
-    assert entries[0]["at"] >= entries[-1]["at"]
-
-    # Re-pinning the same metric after a clear doesn't reuse the closed
-    # entry — it's a new decision, with its own open entry.
-    rpc(registry_server, "set_reference", {"metric_id": "egt_spread", "flight_ids": [flight_id]})
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    open_pins = [e for e in entries if e["kind"] == "reference_pin" and e["ref_id"] == "egt_spread" and e["status"] == "open"]
-    assert len(open_pins) == 1
-    assert open_pins[0]["id"] != pin_entry["id"]
+    assert journal() == []
 
 
 def test_list_exclusions_and_include_excluded_log(registry_server, tmp_path):
@@ -1699,8 +1704,13 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
     entry = next(e for e in entries if e["kind"] == "exclusion" and e["ref_id"] == outlier_id)
     assert entry["reason"] == "230F is a clear outlier"
-    assert entry["effect"] == "changed the verdict on 1 other flight"
-    assert entry["status"] == "open"
+    # Live effect (Spec 14 v0.10): recomputed now, same count as the preview.
+    assert entry["effect"] == {"text": "changes 1 verdict on other flights", "zero": False}
+
+    # Editing the reason updates the one entry; the exclusion stands.
+    rpc(registry_server, "update_exclusion_reason", {"flight_id": outlier_id, "reason": "sender fault on that flight"})
+    exclusions = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "exclusion"]
+    assert len(exclusions) == 1 and exclusions[0]["reason"] == "sender fault on that flight"
 
     marked = [fid for fid in ids[:-1] if rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["reference_changes"]]
     assert len(marked) == 1
@@ -1712,7 +1722,7 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
 
     # The Flight view header state for the excluded flight itself.
     excluded_state = rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_state"]
-    assert excluded_state == {"excluded": True, "reason": "230F is a clear outlier"}
+    assert excluded_state == {"excluded": True, "reason": "sender fault on that flight"}
     included_state = rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_state"]
     assert included_state == {"excluded": False, "reason": None}
 
@@ -1722,12 +1732,11 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     back = rpc(registry_server, "preview_reference_membership", {"flight_id": outlier_id, "action": "include"})
     assert back["result"]["changed_flight_ids"] == [marked_id]
 
-    # Revert (Include again): closes the Journal entry and resolves the marker.
+    # Include again: removes the Journal entry and resolves the marker.
     inc = rpc(registry_server, "include_flight", {"flight_id": outlier_id})
     assert inc["ok"], inc
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    entry = next(e for e in entries if e["id"] == entry["id"])
-    assert entry["status"] == "closed" and entry["closed_at"] is not None
+    assert not any(e["kind"] == "exclusion" for e in entries)
     assert rpc(registry_server, "get_flight", {"flight_id": marked_id})["result"]["reference_changes"] == []
 
 
@@ -1736,8 +1745,8 @@ def test_apply_card_rule_edit_counted_effect_journal_entry_and_revert(registry_s
     card is the exact mechanism that used to live only in the retired
     playground: Apply writes rules/active.json and a Journal entry with
     the counted effect, flights whose verdict moved carry a "rule
-    changed" marker, and Revert restores the exact previous value
-    (closing the entry) rather than resetting to shipped."""
+    changed" marker, and (Spec 14 v0.10) Revert puts the rule back to
+    shipped and removes the entry."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     # 7 near-identical + 1 clear outlier = 8 flights: the outlier's own
     # leave-one-out baseline has n=7, below oil_temp_peak's shipped
@@ -1775,66 +1784,51 @@ def test_apply_card_rule_edit_counted_effect_journal_entry_and_revert(registry_s
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
     entry = next(e for e in entries if e["kind"] == "rule_edit")
     assert entry["ref_id"] == "oil_temp_peak"
-    assert entry["before"]["triggers"][0]["n_min"] == 10
-    assert entry["after"]["triggers"][0]["n_min"] == 5
-    assert entry["effect"] == "changed on 1 flight"
-    assert entry["status"] == "open"
+    assert entry["current"] == "baseline_deviation.n_min 5 (shipped 10)"
+    assert entry["effect"] == {"text": "adds 1 insight on 1 flight compared with shipped", "zero": False}
 
     changes = rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_changes"]
     assert len(changes) == 1
     assert changes[0]["cause_kind"] == "rule_edit"
     assert changes[0]["cause_topic_id"] == "oil_temp_peak"
 
-    # Revert: exact previous value, not shipped-defaults, entry closes.
+    # Revert: back to shipped; the entry is gone.
     reverted = rpc(registry_server, "revert_rule_edit", {"entry_id": entry["id"]})
     assert reverted["ok"], reverted
     assert reverted["result"]["rules"]["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 10
     assert oil_temp_insight(outlier_id) == []
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    assert next(e for e in entries if e["id"] == entry["id"])["status"] == "closed"
+    assert not any(e["kind"] == "rule_edit" for e in entries)
     assert rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_changes"] == []
 
 
-def test_apply_card_rule_edit_keeps_two_edits_to_the_same_topic_independently_revertible(registry_server):
-    """Spec 14 §10 Q5 — each edit is its own Journal entry; reverting an
-    OLDER edit after a NEWER one closes exactly that entry, not whichever
-    is most recent (the bug close_journal_entry's ref_id lookup would
-    have had for this kind)."""
+def test_rule_edit_reedit_updates_one_entry_and_reset_to_shipped_removes_it(registry_server):
+    """Spec 14 v0.10 §6: two edits to the same topic are one entry with
+    the latest values; an edit back to the shipped value (Reset to
+    shipped, then Apply) removes it."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     _import_oil_temp_flight(registry_server, 1, 180)
 
-    rules = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
-    topic = rules["rules"]["oil_temp_peak"]
+    topic = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]["rules"]["oil_temp_peak"]
     first_edit = json.loads(json.dumps(topic)); first_edit["triggers"][0]["n_min"] = 7
     first = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": first_edit})["result"]
     second_edit = json.loads(json.dumps(first_edit)); second_edit["triggers"][0]["n_min"] = 5
     second = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": second_edit})["result"]
+    assert first["journal_entry"]["id"] == second["journal_entry"]["id"]
 
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    rule_entries = [e for e in entries if e["kind"] == "rule_edit"]
-    assert len(rule_entries) == 2
-    assert all(e["status"] == "open" for e in rule_entries)
+    rule_entries = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "rule_edit"]
+    assert len(rule_entries) == 1
+    assert rule_entries[0]["current"] == "baseline_deviation.n_min 5 (shipped 10)"
+    assert rule_entries[0]["updated_at"] >= rule_entries[0]["created_at"]
 
-    first_entry = next(e for e in rule_entries if e["after"]["triggers"][0]["n_min"] == 7)
-    rpc(registry_server, "revert_rule_edit", {"entry_id": first_entry["id"]})
-
-    entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    rule_entries = {e["id"]: e for e in entries if e["kind"] == "rule_edit"}
-    assert rule_entries[first_entry["id"]]["status"] == "closed"
-    second_entry_id = next(eid for eid in rule_entries if eid != first_entry["id"])
-    assert rule_entries[second_entry_id]["status"] == "open"
-    # Reverting the first (n_min 7 -> 10) restores the shipped value,
-    # since that's what was active before that edit was made.
-    on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
-    assert on_disk["rules"]["oil_temp_peak"]["triggers"][0]["n_min"] == 10
-
+    rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": topic})
+    assert not any(e["kind"] == "rule_edit" for e in rpc(registry_server, "get_journal", {})["result"]["entries"])
 
 
 def test_apply_card_rule_edit_classifies_enable_toggle_as_disabled_topic(registry_server):
     """Spec 14 §7.3 / §8 — the enabled flag going true -> false on a topic
     card is Spec 11's disable-topic silencing level; it gets its own
-    Journal kind, but reverts through the exact same mechanism as any
-    other rule_edit entry."""
+    Journal kind. Removing it from Journal turns the topic back on."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     _import_oil_temp_flight(registry_server, 1, 180)
 
@@ -1849,8 +1843,8 @@ def test_apply_card_rule_edit_classifies_enable_toggle_as_disabled_topic(registr
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
     entry = next(e for e in entries if e["ref_id"] == "oil_temp_peak")
     assert entry["kind"] == "disabled_topic"
-    assert entry["before"]["enabled"] is True
-    assert entry["after"]["enabled"] is False
+    assert entry["current"] == "off (shipped: on)"
+    assert entry["effect"]["text"].startswith(("removing", "currently removes nothing"))
 
     on_disk = rpc(registry_server, "get_workspace_rules", {})["result"]["rules"]
     assert on_disk["rules"]["oil_temp_peak"]["enabled"] is False
@@ -1859,15 +1853,14 @@ def test_apply_card_rule_edit_classifies_enable_toggle_as_disabled_topic(registr
     assert reverted["ok"], reverted
     assert reverted["result"]["rules"]["rules"]["oil_temp_peak"]["enabled"] is True
     entries = rpc(registry_server, "get_journal", {})["result"]["entries"]
-    assert next(e for e in entries if e["id"] == entry["id"])["status"] == "closed"
+    assert not any(e["ref_id"] == "oil_temp_peak" for e in entries)
 
 
-def test_enable_from_collapsed_card_closes_the_disabled_topic_entry(registry_server):
+def test_enable_from_collapsed_card_removes_the_disabled_topic_entry(registry_server):
     """Spec 14 §7.3 (v0.5) / criterion 17 — a disabled topic still has a
     (collapsed) card: get_flight returns its result with enabled: false
     and no analysis. Enable goes through the same apply RPC, re-enables
-    the topic and closes the disabled_topic entry instead of opening a
-    second one."""
+    the topic and removes the disabled_topic entry (Spec 14 v0.10)."""
     rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
     flight_id = _import_oil_temp_flight(registry_server, 1, 180)
 
@@ -1882,11 +1875,11 @@ def test_enable_from_collapsed_card_closes_the_disabled_topic_entry(registry_ser
     enabled = rpc(registry_server, "apply_card_rule_edit", {"topic_id": "oil_temp_peak", "topic": {**topic, "enabled": True}})
     assert enabled["ok"], enabled
     assert enabled["result"]["journal_entry"] is None
-    assert enabled["result"]["closed_journal_entry_ids"] == [disable_entry["id"]]
     assert enabled["result"]["rules"]["rules"]["oil_temp_peak"]["enabled"] is True
+    assert disable_entry["kind"] == "disabled_topic"
 
     entries = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["ref_id"] == "oil_temp_peak"]
-    assert [(e["kind"], e["status"]) for e in entries] == [("disabled_topic", "closed")]
+    assert entries == []
 
 
 def test_apply_card_rule_edit_plain_value_change_stays_rule_edit(registry_server):

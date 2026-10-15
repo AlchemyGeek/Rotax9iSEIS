@@ -9,6 +9,7 @@ handling all need actual parseable CSVs to mean anything.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import warnings
 from pathlib import Path
@@ -820,60 +821,47 @@ class TestScanWithRealLogs:
         assert {i.filename for i in sources.imports} == {_LOG_A.name, "variant_export.csv"}
 
 
-def test_journal_backfills_entries_for_records_predating_the_journal(tmp_path):
-    """Spec 14 Appendix A step 3 — "existing filters, annotations ...
-    must appear with no data migration visible to the user." Simulated
-    here by writing a filter, an annotation and a pinned reference
-    directly (as a workspace from before journal.json existed would have
-    them), bypassing server.py's save-time journal hooks entirely, then
-    confirming backfill_journal_from_existing finds and records all
-    three on first read — dated at each record's own creation time, not
-    "now" — and does nothing on a second call."""
+def test_journal_imports_decisions_predating_the_journal(tmp_path):
+    """Spec 14 v0.10 §6.1 — a filter, an annotation and a pinned reference
+    written before journal.json existed are imported once as ordinary
+    entries (no backfilled badge), dated to their own records; a second
+    pass adds nothing."""
     registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
-    manifest = ws.create_workspace(registry_path, root, "journal-backfill", "916iS")
+    manifest = ws.create_workspace(registry_path, root, "journal-import", "916iS")
     ws_dir = root / manifest.id
 
     flt = ws.save_filter(ws_dir, {"limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "x"})
     ann = ws.save_annotation(ws_dir, "fl_1", {"kind": "insight", "insight_id": "abc"}, "pre-existing note")
     ws.set_reference(ws_dir, "egt_spread", ["fl_1", "fl_2"], label="pre-existing pin")
+    assert ws.load_journal(ws_dir)["entries"] == []
 
-    assert ws.load_journal(ws_dir)["entries"] == []  # nothing yet — no hook ran
-
-    ws.backfill_journal_from_existing(ws_dir)
+    ws.reconcile_journal(ws_dir)
     entries = ws.load_journal(ws_dir)["entries"]
-    assert len(entries) == 3
     by_kind = {e["kind"]: e for e in entries}
-    assert by_kind["limit_filter"]["ref_id"] == flt["id"]
-    assert by_kind["limit_filter"]["at"] == flt["created_at"]
-    assert by_kind["annotation"]["ref_id"] == ann["id"]
-    assert by_kind["annotation"]["at"] == ann["created_at"]
-    assert by_kind["reference_pin"]["ref_id"] == "egt_spread"
-    assert by_kind["reference_pin"]["note"] == "pre-existing pin (n=2)"
-    assert all(e["status"] == "open" for e in entries)
-    # v0.3 (Spec 14 §6.1): marked backfilled, no counted effect.
-    assert all(e["backfilled"] is True for e in entries)
-    assert all(e["effect"] is None for e in entries)
+    assert len(entries) == 3
+    assert by_kind["limit_filter"]["ref_id"] == flt["id"] and by_kind["limit_filter"]["created_at"] == flt["created_at"]
+    assert by_kind["annotation"]["ref_id"] == ann["id"] and by_kind["annotation"]["created_at"] == ann["created_at"]
+    assert by_kind["reference_pin"]["ref_id"] == "egt_spread" and by_kind["reference_pin"]["note"] == "pre-existing pin"
+    assert all(set(e) == {"id", "kind", "ref_id", "what", "where", "reason", "note", "created_at", "updated_at"} for e in entries)
 
-    # Idempotent — a second backfill doesn't duplicate.
-    ws.backfill_journal_from_existing(ws_dir)
+    ws.reconcile_journal(ws_dir)
     assert len(ws.load_journal(ws_dir)["entries"]) == 3
 
+    # A decision reversed outside Journal (the filter deleted directly)
+    # leaves the register on the next pass.
+    ws.delete_filter(ws_dir, flt["id"])
+    ws.reconcile_journal(ws_dir)
+    assert {e["kind"] for e in ws.load_journal(ws_dir)["entries"]} == {"annotation", "reference_pin"}
 
-def test_journal_backfill_is_idempotent_under_concurrent_callers(tmp_path):
-    """Spec 14 §9 acceptance 12 — server.py runs a ThreadingHTTPServer,
-    so two clients opening the same just-migrated workspace at once can
-    call get_journal (and therefore backfill_journal_from_existing) from
-    different threads in the same process at the same time. Without
-    _JOURNAL_LOCK serializing the whole scan-and-append pass, both
-    threads' has_open_journal_entry checks can read "not backfilled yet"
-    before either writes, producing two entries for the one pre-existing
-    filter. A thread barrier lines up every caller to call in together,
-    maximizing the chance of hitting that window if the lock weren't
-    there."""
+
+def test_journal_import_is_idempotent_under_concurrent_callers(tmp_path):
+    """Spec 14 §9 acceptance 12 — two clients opening a workspace at once
+    (ThreadingHTTPServer: one thread per request) import one entry per
+    source record, not two. A barrier lines the callers up."""
     import threading
 
     registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
-    manifest = ws.create_workspace(registry_path, root, "journal-backfill-race", "916iS")
+    manifest = ws.create_workspace(registry_path, root, "journal-import-race", "916iS")
     ws_dir = root / manifest.id
     ws.save_filter(ws_dir, {"limit_id": "fuel_press_max", "magnitude": {"mode": "absolute", "value": 1.5}, "note": "x"})
     assert ws.load_journal(ws_dir)["entries"] == []
@@ -883,7 +871,7 @@ def test_journal_backfill_is_idempotent_under_concurrent_callers(tmp_path):
 
     def call():
         barrier.wait()
-        ws.backfill_journal_from_existing(ws_dir)
+        ws.reconcile_journal(ws_dir)
 
     threads = [threading.Thread(target=call) for _ in range(n_callers)]
     for t in threads:
@@ -892,6 +880,48 @@ def test_journal_backfill_is_idempotent_under_concurrent_callers(tmp_path):
         t.join()
 
     entries = ws.load_journal(ws_dir)["entries"]
-    assert len(entries) == 1, f"expected exactly one backfilled entry, got {len(entries)}"
+    assert len(entries) == 1, f"expected exactly one imported entry, got {len(entries)}"
     assert entries[0]["kind"] == "limit_filter"
-    assert entries[0]["backfilled"] is True
+
+
+def test_journal_v1_migrates_on_read_dropping_closed_and_collapsing_duplicates(tmp_path):
+    """Spec 14 v0.10 §6: a v1 journal.json (a log) becomes the register —
+    closed entries dropped, several open entries for one decision
+    collapsed to the most recent (created_at: the earliest) — and the
+    reference-change markers follow: a merged entry's markers point at the
+    survivor, a dropped entry's open markers resolve."""
+    ws_dir = tmp_path / "ws"
+    ws_dir.mkdir()
+    def v1(i, kind, ref, at, status="open", **kw):
+        return {"id": f"jnl_{i}", "kind": kind, "ref_id": ref, "what": f"{kind} {ref}", "where": None, "at": at,
+                "reason": kw.get("reason"), "note": kw.get("note"), "effect": "n=1", "status": status,
+                "closed_at": None if status == "open" else at, "before": None, "after": None, "backfilled": False}
+    (ws_dir / "journal.json").write_text(json.dumps({"version": "1", "entries": [
+        v1(1, "limit_filter", "flt_a", "2026-10-01T00:00:00Z", note="old"),
+        v1(2, "limit_filter", "flt_a", "2026-10-03T00:00:00Z", note="new"),
+        v1(3, "rule_edit", "egt_spread", "2026-10-02T00:00:00Z", status="closed"),
+        v1(4, "exclusion", "f9", "2026-10-04T00:00:00Z", reason="ground run"),
+        v1(5, "disabled_topic", "oil_temp_peak", "2026-10-05T00:00:00Z", status="closed"),
+    ]}))
+    (ws_dir / "reference_changes.json").write_text(json.dumps({"version": "1", "markers": [
+        {"id": "m1", "flight_id": "f1", "at": "", "cause_journal_entry_id": "jnl_1", "cause_kind": "exclusion",
+         "cause_flight_id": None, "cause_topic_id": None, "reason": "", "resolved": False},
+        {"id": "m2", "flight_id": "f2", "at": "", "cause_journal_entry_id": "jnl_3", "cause_kind": "rule_edit",
+         "cause_flight_id": None, "cause_topic_id": "egt_spread", "reason": "", "resolved": False},
+    ]}))
+
+    store = ws.load_journal(ws_dir)
+    assert store["version"] == "2"
+    assert store["migrated_from_v1"]["dropped_closed"] == 2 and store["migrated_from_v1"]["merged"] == 1
+    entries = {e["id"]: e for e in store["entries"]}
+    assert set(entries) == {"jnl_2", "jnl_4"}
+    assert entries["jnl_2"]["note"] == "new"
+    assert entries["jnl_2"]["created_at"] == "2026-10-01T00:00:00Z" and entries["jnl_2"]["updated_at"] == "2026-10-03T00:00:00Z"
+    assert entries["jnl_4"]["reason"] == "ground run"
+    assert not any({"status", "closed_at", "effect", "backfilled", "before", "after", "at"} & e.keys() for e in entries.values())
+    markers = {m["id"]: m for m in ws.load_reference_changes(ws_dir)["markers"]}
+    assert markers["m1"]["cause_journal_entry_id"] == "jnl_2" and markers["m1"]["resolved"] is False
+    assert markers["m2"]["resolved"] is True
+    # Written back once; reading again is a no-op.
+    assert json.loads((ws_dir / "journal.json").read_text())["version"] == "2"
+    assert ws.load_journal(ws_dir)["entries"] == store["entries"]

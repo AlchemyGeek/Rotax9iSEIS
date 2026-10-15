@@ -332,7 +332,6 @@ def op_apply_card_rule_edit(params: dict, ctx: dict) -> Any:
     topic_id = params["topic_id"]
     new_topic = params["topic"]
     rules = _resolve_rules(ctx)
-    before_topic = rules["rules"].get(topic_id)
     fleet = _get_or_build_fleet(workspace_dir)
     filters = _workspace_filters(ctx)
     flights = _load_workspace_flights(workspace_dir)
@@ -348,65 +347,61 @@ def op_apply_card_rule_edit(params: dict, ctx: dict) -> Any:
         if _topic_insight_signature(evaluate_insights(fa, fleet, resolved, filters=filters), topic_id) != before[fa.flight_id]
     ]
 
-    # Spec 14 §7.3 (v0.5): Enable on a disabled topic's collapsed card
-    # closes the open disabled_topic entry it undoes and resolves the
-    # markers that entry caused — the same outcome as Journal's Revert of
-    # it, reached through the card's preview-before-apply flow — rather
-    # than opening a second entry. With no open disabled_topic entry
-    # (disabled before the Journal, or by editing the file) it is an
-    # ordinary rule_edit below.
-    if not (before_topic or {}).get("enabled", True) and new_topic.get("enabled", True):
-        open_disable = [e for e in ws.load_journal(workspace_dir)["entries"]
-                        if e["kind"] == "disabled_topic" and e.get("ref_id") == topic_id and e.get("status") == "open"]
-        if open_disable:
-            for e in open_disable:
-                ws.close_journal_entry_by_id(workspace_dir, e["id"])
-                ws.resolve_reference_changes_for_cause(workspace_dir, e["id"])
-            return {"rules": resolved, "journal_entry": None, "closed_journal_entry_ids": [e["id"] for e in open_disable],
-                    "changed_flight_ids": changed}
-
-    # Spec 14 §7.3 / §8 (Spec 11 impact): the topic's enabled flag going
-    # true -> false *is* Spec 11's disable-topic silencing level, so an
-    # edit that does that is journaled as "disabled_topic" rather than a
-    # generic "rule_edit" — same apply/revert mechanism either way
-    # (op_revert_rule_edit handles both kinds), just the kind a pilot
-    # sees in Journal. The reverse direction is handled above.
-    kind = "disabled_topic" if (before_topic or {}).get("enabled", True) and not new_topic.get("enabled", True) else "rule_edit"
-    entry = ws.append_journal_entry(
-        workspace_dir, kind=kind, what=f"Rule: {topic_id}", where={"topic_id": topic_id},
-        effect=f"changed on {len(changed)} flight{'' if len(changed) == 1 else 's'}" if changed else "no flight's verdict changed",
-        ref_id=topic_id, before=before_topic, after=new_topic,
-    )
-    for fid in changed:
-        ws.add_reference_change_marker(
-            workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_kind="rule_edit",
-            cause_topic_id=topic_id, reason=f"a rule setting changed on {topic_id}",
-        )
+    # Spec 14 v0.10 §6: the topic's Journal entries follow the rule now in
+    # force — a rule_edit entry while the rule differs from shipped, a
+    # disabled_topic entry while the pilot has it off. A further edit
+    # updates the entry; Enable, or an edit back to shipped, removes it
+    # (and resolves the markers it caused).
+    entries = _sync_rule_entries(workspace_dir, topic_id, resolved)
+    entry = entries.get("disabled_topic") or entries.get("rule_edit")
+    if entry is not None:
+        reason = ("the topic was turned off" if entry["kind"] == "disabled_topic"
+                  else f"a rule setting changed on {topic_id}")
+        for fid in changed:
+            ws.add_reference_change_marker(
+                workspace_dir, flight_id=fid, cause_journal_entry_id=entry["id"], cause_kind="rule_edit",
+                cause_topic_id=topic_id, reason=reason,
+            )
     return {"rules": resolved, "journal_entry": entry, "changed_flight_ids": changed}
 
 
+def _sync_rule_entries(workspace_dir: Path, topic_id: str, resolved: dict) -> dict:
+    """Upsert or remove `topic_id`'s rule_edit / disabled_topic entries so
+    they match the rule in force. Returns {kind: entry} for those in force."""
+    decisions = {kind for _, kind in ws.rule_decisions(
+        {"rules": {topic_id: resolved["rules"].get(topic_id, {})}}, _default_rules())}
+    out = {}
+    for kind in ("rule_edit", "disabled_topic"):
+        if kind in decisions:
+            out[kind] = ws.upsert_journal_entry(workspace_dir, kind=kind, ref_id=topic_id,
+                                                what=f"Rule: {topic_id}", where={"topic_id": topic_id})
+        else:
+            ws.remove_journal_entry(workspace_dir, kind=kind, ref_id=topic_id)
+    return out
+
+
 def op_revert_rule_edit(params: dict, ctx: dict) -> Any:
-    """Restores the exact previous values the causing Journal entry holds
-    (Spec 14 §10 Q5 — not "reset to shipped", a separate action), closes
-    that entry by id (a topic can have several open rule_edit entries at
-    once, so "most recent open for this topic" would close the wrong one
-    if an older edit is reverted after a newer one), and resolves
-    whatever markers it caused. No new Journal entry for the revert
-    itself, matching Unpin/Include-again/Remove elsewhere in this session."""
+    """Removes a rule decision from Journal or a "rule changed" marker
+    (Spec 14 v0.10 §6): a rule_edit entry puts the topic's rule back to
+    shipped (its enabled flag stays as it is); a disabled_topic entry
+    turns the topic back on. The entry goes, with its markers."""
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
-    entry_id = params["entry_id"]
-    store = ws.load_journal(workspace_dir)
-    entry = next((e for e in store["entries"] if e["id"] == entry_id and e["kind"] in ("rule_edit", "disabled_topic")), None)
-    if entry is None:
-        raise RpcError("NOT_FOUND", f"no rule_edit or disabled_topic journal entry {entry_id}")
+    entry = ws.get_journal_entry(workspace_dir, entry_id=params["entry_id"])
+    if entry is None or entry["kind"] not in ("rule_edit", "disabled_topic"):
+        raise RpcError("NOT_FOUND", f"no rule_edit or disabled_topic journal entry {params['entry_id']}")
     topic_id = entry["ref_id"]
     rules = _resolve_rules(ctx)
-    new_rules = {**rules, "rules": {**rules["rules"], topic_id: entry["before"]}}
-    ws.save_workspace_rules(workspace_dir, new_rules)
-    ws.close_journal_entry_by_id(workspace_dir, entry_id)
-    ws.resolve_reference_changes_for_cause(workspace_dir, entry_id)
-    return {"rules": _resolve_rules(ctx)}
+    current = rules["rules"].get(topic_id, {})
+    if entry["kind"] == "rule_edit":
+        shipped = _default_rules()["rules"].get(topic_id, {})
+        topic = {**shipped, "enabled": current.get("enabled", True)}
+    else:
+        topic = {**current, "enabled": True}
+    ws.save_workspace_rules(workspace_dir, {**rules, "rules": {**rules["rules"], topic_id: topic}})
+    resolved = _resolve_rules(ctx)
+    _sync_rule_entries(workspace_dir, topic_id, resolved)
+    return {"rules": resolved}
 
 
 def op_list_engines(params: dict, ctx: dict) -> Any:
@@ -837,12 +832,9 @@ def op_exclude_flight(params: dict, ctx: dict) -> Any:
     after_fleet = ws.rebuild_fleet(workspace_dir)
     changed = _other_flights_whose_verdict_changes(workspace_dir, flight_id, before_fleet, after_fleet, rules, filters)
 
-    entry = ws.append_journal_entry(
-        workspace_dir, kind="exclusion", what=_source_filename(workspace_dir, flight_id) or flight_id,
-        where={"flight_id": flight_id},
-        reason=reason,
-        effect=f"changed the verdict on {len(changed)} other flight{'' if len(changed) == 1 else 's'}" if changed else "no other flight's verdict changed",
-        ref_id=flight_id,
+    entry = ws.upsert_journal_entry(
+        workspace_dir, kind="exclusion", ref_id=flight_id,
+        what=_source_filename(workspace_dir, flight_id) or flight_id, where={"flight_id": flight_id}, reason=reason,
     )
     for fid in changed:
         ws.add_reference_change_marker(
@@ -856,9 +848,25 @@ def op_include_flight(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     flight_id = params["flight_id"]
     selection = ws.include_flight(workspace_dir, flight_id)
-    closed = ws.close_journal_entry(workspace_dir, kind="exclusion", ref_id=flight_id)
-    if closed:
-        ws.resolve_reference_changes_for_cause(workspace_dir, closed["id"])
+    ws.remove_journal_entry(workspace_dir, kind="exclusion", ref_id=flight_id)
+    return selection.to_dict()
+
+
+def op_update_exclusion_reason(params: dict, ctx: dict) -> Any:
+    """Spec 14 v0.10 §6.1: editing an exclusion's reason updates its entry;
+    the exclusion itself (and so the reference) is unchanged."""
+    workspace_dir = ctx["workspace_dir"]
+    flight_id = params["flight_id"]
+    selection = ws.load_selection(workspace_dir)
+    hit = next((e for e in selection.excluded if e["flight_id"] == flight_id), None)
+    if hit is None:
+        raise RpcError("NOT_FOUND", f"{flight_id} is not excluded")
+    hit["reason"] = params.get("reason", "")
+    ws.save_selection(workspace_dir, selection)
+    ws.upsert_journal_entry(
+        workspace_dir, kind="exclusion", ref_id=flight_id,
+        what=_source_filename(workspace_dir, flight_id) or flight_id, where={"flight_id": flight_id}, reason=hit["reason"],
+    )
     return selection.to_dict()
 
 
@@ -869,14 +877,12 @@ def op_set_reference(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     metric_id = params["metric_id"]
-    is_new_pin = not ws.has_open_journal_entry(workspace_dir, kind="reference_pin", ref_id=metric_id)
     selection = ws.set_reference(workspace_dir, metric_id, params["flight_ids"], params.get("label"))
-    if is_new_pin:
-        ref = selection.baseline_config.get("pinned_references", {}).get(metric_id, {})
-        ws.append_journal_entry(
-            workspace_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
-            note=params.get("label"), effect=f"n={len(ref.get('flight_ids', []))}", ref_id=metric_id,
-        )
+    # Re-pinning updates the entry (Spec 14 v0.10 §6.1).
+    ws.upsert_journal_entry(
+        workspace_dir, kind="reference_pin", ref_id=metric_id, what=metric_id, where={"metric_id": metric_id},
+        note=params.get("label"),
+    )
     return selection.baseline_config
 
 
@@ -884,7 +890,7 @@ def op_clear_reference(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     selection = ws.clear_reference(workspace_dir, params["metric_id"])
-    ws.close_journal_entry(workspace_dir, kind="reference_pin", ref_id=params["metric_id"])
+    ws.remove_journal_entry(workspace_dir, kind="reference_pin", ref_id=params["metric_id"])
     return selection.baseline_config
 
 
@@ -1146,13 +1152,12 @@ def op_save_filter(params: dict, ctx: dict) -> Any:
         raise RpcError("INVALID_FILTER", " ".join(d["message"] for d in diags))
     hours = _latest_engine_hours(_load_workspace_flights(workspace_dir)) if existing is None else None
     saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=new_reference, engine_hours=hours)
-    if existing is None:
-        ws.append_journal_entry(
-            workspace_dir, kind="limit_filter",
-            what=f"Filter: {_filters.target_label(saved['target'], lim['label'] if lim else None)}",
-            where={"target": saved["target"]}, note=saved.get("note"),
-            ref_id=saved["id"],
-        )
+    # Created or edited: one entry, current values (Spec 14 v0.10 §6.1).
+    ws.upsert_journal_entry(
+        workspace_dir, kind="limit_filter", ref_id=saved["id"],
+        what=f"Filter: {_filters.target_label(saved['target'], lim['label'] if lim else None)}",
+        where={"target": saved["target"]}, note=saved.get("note"),
+    )
     return saved
 
 
@@ -1161,7 +1166,7 @@ def op_delete_filter(params: dict, ctx: dict) -> Any:
     flt = ws.get_filter(workspace_dir, params["id"])
     deleted = ws.delete_filter(workspace_dir, params["id"])
     if deleted and flt is not None:
-        ws.close_journal_entry(workspace_dir, kind="limit_filter", ref_id=params["id"])
+        ws.remove_journal_entry(workspace_dir, kind="limit_filter", ref_id=params["id"])
     return {"deleted": deleted}
 
 
@@ -1261,17 +1266,14 @@ def op_list_annotations(params: dict, ctx: dict) -> Any:
 
 def op_save_annotation(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
-    is_new = not params.get("id")
     saved = ws.save_annotation(
         workspace_dir, params["flight_id"], params["ref"], params["note"],
         annotation_id=params.get("id"),
     )
-    if is_new:
-        ws.append_journal_entry(
-            workspace_dir, kind="annotation", what=saved["note"][:80],
-            where={"flight_id": saved["flight_id"], "ref": saved["ref"]},
-            ref_id=saved["id"],
-        )
+    ws.upsert_journal_entry(
+        workspace_dir, kind="annotation", ref_id=saved["id"], what=saved["note"][:80],
+        where={"flight_id": saved["flight_id"], "ref": saved["ref"]},
+    )
     return saved
 
 
@@ -1279,7 +1281,7 @@ def op_delete_annotation(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     deleted = ws.delete_annotation(workspace_dir, params["id"])
     if deleted:
-        ws.close_journal_entry(workspace_dir, kind="annotation", ref_id=params["id"])
+        ws.remove_journal_entry(workspace_dir, kind="annotation", ref_id=params["id"])
     return {"deleted": deleted}
 
 
@@ -1618,22 +1620,213 @@ def op_get_settings_changelog(params: dict, ctx: dict) -> Any:
 
 
 def op_get_journal(params: dict, ctx: dict) -> Any:
+    """Spec 14 v0.10 §6: the register of decisions in force, each with its
+    live counted effect (recomputed now, from the current analyses, by the
+    same code the decision's own preview uses), its current values, and
+    any change notice. Reconciles the register with the stores first."""
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
-    ws.backfill_journal_from_existing(workspace_dir)
-    store = ws.load_journal(workspace_dir)
-    entries = [_journal_display(workspace_dir, e) for e in store["entries"]]
-    return {"entries": sorted(entries, key=lambda e: e["at"], reverse=True)}
+    rules = _resolve_rules(ctx)
+    ws.reconcile_journal(workspace_dir, active_rules=rules, shipped_rules=_default_rules())
+    live = _JournalEffects(ctx, rules)
+    engine_cfg, _ = _current_engine(ctx)
+    labels = {k: lim.get("label") for k, lim in _target_limits(engine_cfg).items()}
+    entries = [{**e, **live.describe(e)} for e in
+               (_journal_display(workspace_dir, e, labels) for e in ws.load_journal(workspace_dir)["entries"])]
+    return {"entries": sorted(entries, key=lambda e: e["updated_at"], reverse=True)}
 
 
-def _journal_display(workspace_dir: Path, entry: dict) -> dict:
-    """An exclusion entry written before its title was the log's file name
-    carries the flight id there; show the file name instead (on read —
-    journal.json itself is history and isn't rewritten)."""
+def op_confirm_journal_notice(params: dict, ctx: dict) -> Any:
+    """Keep a decision whose change notice says it no longer does anything
+    (Spec 14 §6.2); the notice clears until the decision is edited."""
+    entry = ws.confirm_journal_notice(ctx["workspace_dir"], params["entry_id"], params["notice"])
+    if entry is None:
+        raise RpcError("NOT_FOUND", f"no journal entry {params['entry_id']}")
+    return entry
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+class _JournalEffects:
+    """Live counted effects for Journal entries (Spec 14 v0.10 §6.1), each
+    from the computation the decision's own preview already uses:
+    filters — filters.preview_limit_filter; exclusions — the reference-
+    membership preview (_other_flights_whose_verdict_changes); rule edits
+    and disabled topics — the what-if evaluation (evaluate_insights with
+    the candidate rules, compared per topic). Evaluations are cached for
+    the one request."""
+
+    def __init__(self, ctx: dict, rules: dict):
+        self.ctx = ctx
+        self.workspace_dir = ctx["workspace_dir"]
+        self.rules = rules
+        self._flights = None
+        self._fleet = None
+        self._filters = None
+        self._current: dict = {}
+        self._health = None
+
+    @property
+    def flights(self):
+        if self._flights is None:
+            self._flights = _load_workspace_flights(self.workspace_dir)
+        return self._flights
+
+    @property
+    def fleet(self):
+        if self._fleet is None:
+            self._fleet = _get_or_build_fleet(self.workspace_dir)
+        return self._fleet
+
+    @property
+    def filters(self):
+        if self._filters is None:
+            self._filters = _workspace_filters(self.ctx)
+        return self._filters
+
+    def _topic_insights(self, fa, rules: dict, topic_id: str, cache: bool) -> list:
+        if cache and fa.flight_id in self._current:
+            iset = self._current[fa.flight_id]
+        else:
+            iset = evaluate_insights(fa, self.fleet, rules, filters=self.filters).to_dict()
+            if cache:
+                self._current[fa.flight_id] = iset
+        t = next((t for t in iset["topics"] if t["topic_id"] == topic_id), None)
+        return sorted((i["rule_id"], i["severity"]) for i in (t["insights"] if t else []))
+
+    def _health_by_id(self) -> dict:
+        if self._health is None:
+            engine_cfg, _ = _current_engine(self.ctx)
+            self._health = {h["filter_id"]: h for h in
+                            _filters.evaluate_filter_health(self.flights, self.fleet, self.filters, engine_cfg)}
+        return self._health
+
+    def describe(self, e: dict) -> dict:
+        try:
+            effect, current, notices = getattr(self, f"_{e['kind']}", self._none)(e)
+        except Exception as exc:  # a broken store must not take the page down
+            effect, current, notices = {"text": f"couldn't compute the effect ({exc})", "zero": False}, None, []
+        if effect and effect["zero"] and "no_effect" not in (e.get("confirmed") or {}):
+            notices = notices + [{"kind": "no_effect", "text": _NO_EFFECT_NOTICE.get(e["kind"], "This decision currently has no effect.")}]
+        return {"effect": effect, "current": current, "notices": notices}
+
+    def _none(self, e):
+        return None, None, []
+
+    def _limit_filter(self, e):
+        f = next((f for f in self.filters if f["id"] == e["ref_id"]), None)
+        if f is None:
+            return None, None, []
+        others = [x for x in self.filters if x["id"] != f["id"]]
+        p = _filters.preview_limit_filter(self.flights, self.fleet, self.rules, others, f)
+        n, m = p["events_hidden"], p["flights_affected"]
+        effect = ({"text": f"suppressing {_plural(n, 'event')} on {_plural(m, 'flight')}", "zero": False} if n
+                  else {"text": "currently suppresses nothing", "zero": True})
+        engine_cfg, _ = _current_engine(self.ctx)
+        lim = _target_limits(engine_cfg).get(_filters.target_key(f))
+        current = _filters.band_text(f, lim) if lim else None
+        h = self._health_by_id().get(f["id"])
+        notices = ([{"kind": h["status"], "text": (h.get("reasons") or [""])[0]}]
+                   if h and h["status"] in ("breached", "drifting") else [])
+        return effect, current, notices
+
+    def _disabled_topic(self, e):
+        topic_id = e["ref_id"]
+        on = {**self.rules, "rules": {**self.rules["rules"], topic_id: {**self.rules["rules"][topic_id], "enabled": True}}}
+        counts = [len(self._topic_insights(fa, on, topic_id, cache=False)) for fa in self.flights]
+        n, m = sum(counts), sum(1 for c in counts if c)
+        effect = ({"text": f"removing {_plural(n, 'insight')} on {_plural(m, 'flight')}", "zero": False} if n
+                  else {"text": "currently removes nothing", "zero": True})
+        return effect, "off (shipped: on)", []
+
+    def _rule_edit(self, e):
+        topic_id = e["ref_id"]
+        current = self.rules["rules"].get(topic_id, {})
+        shipped = _default_rules()["rules"].get(topic_id, {})
+        if not current.get("enabled", True):
+            return {"text": "topic is off — see its disabled entry", "zero": False}, _rule_diff_text(current, shipped), []
+        cand = {**self.rules, "rules": {**self.rules["rules"], topic_id: {**shipped, "enabled": True}}}
+        added = removed = fa_add = fa_rem = 0
+        for fa in self.flights:
+            now = self._topic_insights(fa, self.rules, topic_id, cache=True)
+            base = self._topic_insights(fa, cand, topic_id, cache=False)
+            a = len([x for x in now if x not in base])
+            r = len([x for x in base if x not in now])
+            added, removed = added + a, removed + r
+            fa_add, fa_rem = fa_add + bool(a), fa_rem + bool(r)
+        parts = []
+        if added:
+            parts.append(f"adds {_plural(added, 'insight')} on {_plural(fa_add, 'flight')}")
+        if removed:
+            parts.append(f"removes {_plural(removed, 'insight')} on {_plural(fa_rem, 'flight')}")
+        effect = ({"text": "; ".join(parts) + " compared with shipped", "zero": False} if parts
+                  else {"text": "currently changes nothing compared with shipped", "zero": True})
+        return effect, _rule_diff_text(current, shipped), []
+
+    def _exclusion(self, e):
+        fid = e["ref_id"]
+        excluded = ws.load_selection(self.workspace_dir).excluded
+        without = [x for x in excluded if x["flight_id"] != fid]
+        proposed = ws.fleet_for_exclusions(self.workspace_dir, without)
+        changed = _other_flights_whose_verdict_changes(self.workspace_dir, fid, self.fleet, proposed, self.rules, self.filters)
+        n = len(changed)
+        effect = ({"text": f"changes {_plural(n, 'verdict')} on other flights", "zero": False} if n
+                  else {"text": "currently changes no other flight's verdict", "zero": True})
+        return effect, None, []
+
+    def _reference_pin(self, e):
+        pinned = (ws.load_selection(self.workspace_dir).baseline_config or {}).get("pinned_references") or {}
+        ref = pinned.get(e["ref_id"])
+        if ref is None:
+            return None, None, []
+        n = len(ref.get("flight_ids", []))
+        when = (ref.get("set_at") or "")[:10]
+        return ({"text": f"reference of {_plural(n, 'flight')}" + (f", pinned {when}" if when else ""), "zero": False},
+                ref.get("label"), [])
+
+
+_NO_EFFECT_NOTICE = {
+    "limit_filter": "This filter currently hides nothing.",
+    "exclusion": "This exclusion no longer changes any other flight's verdict.",
+    "rule_edit": "This rule edit currently changes nothing compared with shipped.",
+    "disabled_topic": "This topic would raise nothing even if it were on.",
+}
+
+
+def _rule_diff_text(current: dict, shipped: dict) -> Optional[str]:
+    """The rule now against the shipped default, field by field:
+    "trend.r2_min 0.3 (shipped 0.5)"."""
+    parts = []
+    current, shipped = ws.strip_rule_comments(current), ws.strip_rule_comments(shipped)
+    ct, st = current.get("triggers") or [], shipped.get("triggers") or []
+    if len(ct) != len(st):
+        parts.append(f"{len(ct)} trigger(s) (shipped {len(st)})")
+    for c, b in zip(ct, st):
+        for k in sorted(set(c) | set(b)):
+            if k != "type" and c.get(k) != b.get(k):
+                parts.append(f"{c.get('type')}.{k} {c.get(k)} (shipped {b.get(k)})")
+    for k in sorted(set(current) | set(shipped)):
+        if k not in ("triggers", "enabled") and not k.startswith("_") and current.get(k) != shipped.get(k):
+            parts.append(f"{k} {current.get(k)} (shipped {shipped.get(k)})")
+    return ", ".join(parts) or None
+
+
+def _journal_display(workspace_dir: Path, entry: dict, limit_labels: Optional[dict] = None) -> dict:
+    """Titles computed on read, so entries written by older code read the
+    same as new ones: an exclusion by its log's file name (not the flight
+    id), a filter by its limit's label (not the limit id)."""
     if entry.get("kind") == "exclusion" and entry.get("what") == entry.get("ref_id"):
         name = _source_filename(workspace_dir, entry["ref_id"])
         if name:
             return {**entry, "what": name}
+    if entry.get("kind") == "limit_filter" and limit_labels is not None:
+        # Entries written before Spec 09 v0.18 say where with a bare limit_id.
+        target = _filters.migrate_filter(dict(entry.get("where") or {})).get("target")
+        if target:
+            label = limit_labels.get(_filters.target_key({"target": target}))
+            return {**entry, "what": f"Filter: {_filters.target_label(target, label)}", "where": {"target": target}}
     return entry
 
 
@@ -1718,6 +1911,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "save_workspace_settings": op_save_workspace_settings,
     "get_settings_changelog": op_get_settings_changelog,
     "get_journal": op_get_journal,
+    "confirm_journal_notice": op_confirm_journal_notice,
+    "update_exclusion_reason": op_update_exclusion_reason,
     "get_topic_help": op_get_topic_help,
     "get_aircraft_summary": op_get_aircraft_summary,
 }

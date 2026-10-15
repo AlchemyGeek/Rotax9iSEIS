@@ -1753,95 +1753,172 @@ def diff_and_log_settings(ws_dir: Path, tab: str, before: dict, after: dict, sou
         append_settings_changelog(ws_dir, tab, key, before.get(key), new_val, source)
 
 
-# ── Journal (Spec 14 §6) ──────────────────────────────────────────────────
-# journal.json, next to annotations.json: Journal's own record of every
-# decision (§3) — created alongside the action that makes it (a filter
-# saved, a reference pinned, a note added) and, on reversal, closed
-# in place rather than removed (§6.4 "nothing is deleted"). This is
-# deliberately a record Journal owns outright, independent of whatever
-# the underlying store (filters.json, FleetSelection.pinned_references,
-# annotations.json — each owned by its own spec) does on removal; Spec
-# 09 filters are hard-deleted from filters.json by design (§9), for
-# example, but the decision to have created and later removed one still
-# belongs in Journal's own history.
+# ── Journal (Spec 14 §6, v0.10) ─────────────────────────────────────────────
+# journal.json, next to annotations.json: the register of decisions in
+# force. One entry per live decision, keyed by its source record
+# (JOURNAL_KEY below): reversing the decision removes the entry, editing
+# it updates the entry in place. History is not kept here — filters keep
+# their own (Spec 09 §9), configuration changes are in the Settings
+# changelog. The counted effect is computed live by the server when the
+# page opens; nothing about it is stored.
+#
+# Entry keys, by kind:
+#   limit_filter    filter id            exclusion       flight id
+#   rule_edit       topic id             reference_pin   metric id
+#   disabled_topic  topic id             annotation      annotation id
+#   acknowledged_insight  insight id (Spec 11; nothing writes it yet)
 
-_JOURNAL_VERSION = "1"
+_JOURNAL_VERSION = "2"
 
 # server.py runs a ThreadingHTTPServer — one thread per request — so two
-# browser tabs/clients opening the same workspace at once (Spec 14 §9
-# acceptance 12) really can call get_journal, and therefore
-# backfill_journal_from_existing, concurrently in this one process.
-# Without serializing journal.json's read-modify-write, both threads can
-# read "not backfilled yet" before either writes, producing two entries
-# for the same source record — the duplicate observed live in v0.2. One
-# process-wide RLock (reentrant: backfill's own read-check-append needs
-# to nest inside the same critical section as append_journal_entry's)
-# around every journal.json mutation closes the window.
+# clients opening the same workspace at once (Spec 14 §9 acceptance 12)
+# can import concurrently in this one process. One process-wide RLock
+# around every journal.json read-modify-write keeps that to one entry per
+# source record.
 _JOURNAL_LOCK = threading.RLock()
+
+_UNSET: Any = object()
+
+
+def migrate_journal_store(store: dict) -> tuple[dict, dict, dict]:
+    """v1 (a log: open/closed entries, one per action) -> v2 (a register).
+    Closed entries are dropped; several open entries for the same key
+    collapse to the most recent one (created_at: the earliest of them).
+    Returns (store, report, id_map) — id_map sends each merged-away id to
+    the surviving entry's id, so reference-change markers can follow."""
+    entries = store.get("entries", [])
+    open_entries = [e for e in entries if e.get("status", "open") != "closed"]
+    dropped_closed = len(entries) - len(open_entries)
+    groups: dict[tuple, list[dict]] = {}
+    for e in open_entries:
+        groups.setdefault((e["kind"], e.get("ref_id")), []).append(e)
+    out, id_map, merged = [], {}, 0
+    for group in groups.values():
+        group.sort(key=lambda e: e.get("updated_at") or e.get("at") or "")
+        survivor = group[-1]
+        merged += len(group) - 1
+        for e in group[:-1]:
+            id_map[e["id"]] = survivor["id"]
+        created = min(e.get("created_at") or e.get("at") or "" for e in group)
+        out.append({
+            "id": survivor["id"], "kind": survivor["kind"], "ref_id": survivor.get("ref_id"),
+            "what": survivor.get("what"), "where": survivor.get("where"),
+            "reason": survivor.get("reason"), "note": survivor.get("note"),
+            "created_at": created, "updated_at": survivor.get("updated_at") or survivor.get("at") or created,
+        })
+    report = {"dropped_closed": dropped_closed, "merged": merged, "kept": len(out), "at": _now()}
+    return {"version": _JOURNAL_VERSION, "entries": out, "migrated_from_v1": report}, report, id_map
+
+
+def _remap_reference_change_causes(ws_dir: Path, id_map: dict, dropped_ids: set) -> None:
+    """After migration: markers caused by a merged-away entry point at its
+    survivor; markers still open for a dropped (closed) entry resolve —
+    the decision that caused them is no longer in force."""
+    store = load_reference_changes(ws_dir)
+    changed = False
+    for m in store["markers"]:
+        cause = m.get("cause_journal_entry_id")
+        if cause in id_map:
+            m["cause_journal_entry_id"] = id_map[cause]
+            changed = True
+        elif cause in dropped_ids and not m.get("resolved"):
+            m["resolved"] = True
+            changed = True
+    if changed:
+        _write_json(ws_dir / "reference_changes.json", store)
 
 
 def load_journal(ws_dir: Path) -> dict:
     f = ws_dir / "journal.json"
     if not f.exists():
         return {"version": _JOURNAL_VERSION, "entries": []}
-    return json.loads(f.read_text())
+    store = json.loads(f.read_text())
+    if store.get("version") == _JOURNAL_VERSION:
+        return store
+    with _JOURNAL_LOCK:
+        store = json.loads(f.read_text())
+        if store.get("version") == _JOURNAL_VERSION:
+            return store
+        before_ids = {e["id"] for e in store.get("entries", [])}
+        migrated, _report, id_map = migrate_journal_store(store)
+        kept = {e["id"] for e in migrated["entries"]}
+        _remap_reference_change_causes(ws_dir, id_map, before_ids - kept - set(id_map))
+        _write_json(f, migrated)
+        return migrated
 
 
-def append_journal_entry(
-    ws_dir: Path, *, kind: str, what: str, where: Optional[dict] = None,
-    reason: Optional[str] = None, note: Optional[str] = None,
-    effect: Optional[str] = None, ref_id: Optional[str] = None, at: Optional[str] = None,
-    before: Any = None, after: Any = None, backfilled: bool = False,
+def get_journal_entry(ws_dir: Path, *, kind: Optional[str] = None, ref_id: Optional[str] = None,
+                      entry_id: Optional[str] = None) -> Optional[dict]:
+    for e in load_journal(ws_dir)["entries"]:
+        if entry_id is not None and e["id"] == entry_id:
+            return e
+        if entry_id is None and e["kind"] == kind and e.get("ref_id") == ref_id:
+            return e
+    return None
+
+
+def upsert_journal_entry(
+    ws_dir: Path, *, kind: str, ref_id: str, what: str, where: Optional[dict] = None,
+    reason: Any = _UNSET, note: Any = _UNSET, at: Optional[str] = None, create_only: bool = False,
 ) -> dict:
+    """The decision `kind`/`ref_id` is in force: create its entry, or
+    update the existing one in place (current values, updated_at; a
+    confirmed notice is cleared — the decision changed). `create_only`
+    leaves an existing entry untouched (the import)."""
     with _JOURNAL_LOCK:
         store = load_journal(ws_dir)
+        now = at or _now()
+        for e in store["entries"]:
+            if e["kind"] == kind and e.get("ref_id") == ref_id:
+                if create_only:
+                    return e
+                e["what"] = what
+                if where is not None:
+                    e["where"] = where
+                if reason is not _UNSET:
+                    e["reason"] = reason
+                if note is not _UNSET:
+                    e["note"] = note
+                e["updated_at"] = _now()
+                e.pop("confirmed", None)
+                _write_json(ws_dir / "journal.json", store)
+                return e
         entry = {
-            "id": _new_id("jnl"), "kind": kind, "what": what, "where": where,
-            "at": at or _now(), "reason": reason, "note": note, "effect": effect,
-            "status": "open", "closed_at": None, "ref_id": ref_id,
-            "before": before, "after": after, "backfilled": backfilled,
+            "id": _new_id("jnl"), "kind": kind, "ref_id": ref_id, "what": what, "where": where,
+            "reason": None if reason is _UNSET else reason, "note": None if note is _UNSET else note,
+            "created_at": now, "updated_at": now,
         }
         store["entries"].append(entry)
         _write_json(ws_dir / "journal.json", store)
         return entry
 
 
-def close_journal_entry(ws_dir: Path, *, kind: str, ref_id: str, effect: Optional[str] = None) -> Optional[dict]:
-    """Closes the most recent open entry of `kind` for `ref_id` — struck
-    through in the UI, kept in the list, never removed (§6.4). Only
-    correct for kinds with at most one open entry per ref_id at a time
-    (filter/pin/exclusion's create-once-until-reversed lifecycle); a
-    topic can have several open rule_edit entries at once (each edit is
-    its own entry, Spec 14 §10 Q5), so that kind is closed by id instead
-    — see close_journal_entry_by_id."""
+def remove_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> Optional[dict]:
+    """The decision is no longer in force: remove its entry, and resolve
+    the reference-change markers it caused."""
     with _JOURNAL_LOCK:
         store = load_journal(ws_dir)
-        for entry in reversed(store["entries"]):
-            if entry["kind"] == kind and entry["ref_id"] == ref_id and entry["status"] == "open":
-                entry["status"] = "closed"
-                entry["closed_at"] = _now()
-                if effect is not None:
-                    entry["effect"] = effect
-                _write_json(ws_dir / "journal.json", store)
-                return entry
-        return None
+        hit = next((e for e in store["entries"] if e["kind"] == kind and e.get("ref_id") == ref_id), None)
+        if hit is None:
+            return None
+        store["entries"] = [e for e in store["entries"] if e is not hit]
+        _write_json(ws_dir / "journal.json", store)
+    resolve_reference_changes_for_cause(ws_dir, hit["id"])
+    return hit
 
 
-def close_journal_entry_by_id(ws_dir: Path, entry_id: str) -> Optional[dict]:
+def confirm_journal_notice(ws_dir: Path, entry_id: str, notice: str) -> Optional[dict]:
+    """Spec 14 §6.2: the pilot has seen a change notice and keeps the
+    decision as it is; the notice stays cleared until the decision is
+    edited (upsert clears it)."""
     with _JOURNAL_LOCK:
         store = load_journal(ws_dir)
-        for entry in store["entries"]:
-            if entry["id"] == entry_id and entry["status"] == "open":
-                entry["status"] = "closed"
-                entry["closed_at"] = _now()
+        for e in store["entries"]:
+            if e["id"] == entry_id:
+                e.setdefault("confirmed", {})[notice] = _now()
                 _write_json(ws_dir / "journal.json", store)
-                return entry
+                return e
         return None
-
-
-def has_open_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> bool:
-    store = load_journal(ws_dir)
-    return any(e["kind"] == kind and e["ref_id"] == ref_id and e["status"] == "open" for e in store["entries"])
 
 
 def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
@@ -1856,67 +1933,89 @@ def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
     return src.imports[-1].filename if src and src.imports else None
 
 
-def backfill_journal_from_existing(ws_dir: Path) -> None:
+def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, shipped_rules: Optional[dict] = None) -> None:
     """
-    Spec 14 Appendix A step 3: "existing filters, annotations ... must
-    appear with no data migration visible to the user." journal.json
-    only started being written to going forward (this session); a
-    filter, annotation or pin created before that has no journal entry
-    at all. Called once per get_journal — idempotent (has_open_journal_
-    entry skips anything already backfilled) and silent: one journal
-    entry per live record that's missing one, dated at the record's own
-    original timestamp rather than "now", so it sorts into its real
-    place in the newest-first list instead of jumping to the top.
-
-    The whole scan-and-append pass runs under _JOURNAL_LOCK as one
-    critical section (Spec 14 §9 acceptance 12) — two threads calling
-    this for the same just-opened workspace serialize instead of racing,
-    so the second one's has_open_journal_entry checks see the first
-    one's writes and backfills nothing.
+    Make the register match the decisions actually in force (Spec 14 §6,
+    v0.10). Imports a decision with no entry — filters, exclusions, pins
+    and annotations made before journal.json existed, and rule edits /
+    disabled topics found in rules/active.json — as an ordinary entry
+    dated to its own record where it has one, else to now; and removes an
+    entry whose decision no longer exists (reversed outside Journal, or
+    the store edited by hand). Idempotent and keyed on the source record,
+    and one critical section, so two clients opening a workspace at once
+    produce one entry per decision (acceptance 12).
     """
     with _JOURNAL_LOCK:
+        live: dict[tuple, dict] = {}
         for f in load_filters(ws_dir)["filters"]:
-            if not has_open_journal_entry(ws_dir, kind="limit_filter", ref_id=f["id"]):
-                append_journal_entry(
-                    ws_dir, kind="limit_filter", what=f"Filter: {target_label(f['target'])}",
-                    where={"target": f["target"]}, note=f.get("note"), ref_id=f["id"],
-                    at=f.get("created_at"), backfilled=True,
-                )
+            live[("limit_filter", f["id"])] = {
+                "what": f"Filter: {target_label(f['target'])}", "where": {"target": f["target"]},
+                "note": f.get("note"), "at": f.get("created_at"),
+            }
         for a in load_annotations(ws_dir)["annotations"]:
-            if not has_open_journal_entry(ws_dir, kind="annotation", ref_id=a["id"]):
-                append_journal_entry(
-                    ws_dir, kind="annotation", what=a["note"][:80],
-                    where={"flight_id": a["flight_id"], "ref": a["ref"]}, ref_id=a["id"],
-                    at=a.get("created_at"), backfilled=True,
-                )
-        # v0.3 (Spec 14 §6.1): backfilled entries carry no counted effect
-        # — there's no "before" state left to diff against for something
-        # that happened before this code existed. The pinned set's size
-        # is descriptive, not a computed effect of an action, so it moves
-        # into `note` alongside the label rather than `effect`.
-        pinned = (load_selection(ws_dir).baseline_config or {}).get("pinned_references") or {}
-        for metric_id, ref in pinned.items():
-            if not has_open_journal_entry(ws_dir, kind="reference_pin", ref_id=metric_id):
-                n = len(ref.get("flight_ids", []))
-                label = ref.get("label")
-                append_journal_entry(
-                    ws_dir, kind="reference_pin", what=metric_id, where={"metric_id": metric_id},
-                    note=f"{label} (n={n})" if label else f"n={n}", ref_id=metric_id,
-                    at=ref.get("set_at"), backfilled=True,
-                )
-        # Exclusions carry no timestamp at all in FleetSelection (§6.3's
-        # own "excluded" list predates this entry kind and was never
-        # given one) — backfilled entries land at "now" rather than a
-        # fabricated date, and with no counted effect, since there's no
-        # "before" state left to diff against for something that
-        # happened before this code existed.
-        for e in load_selection(ws_dir).excluded:
-            if not has_open_journal_entry(ws_dir, kind="exclusion", ref_id=e["flight_id"]):
-                append_journal_entry(
-                    ws_dir, kind="exclusion", what=source_filename(ws_dir, e["flight_id"]) or e["flight_id"],
-                    where={"flight_id": e["flight_id"]},
-                    reason=e.get("reason"), ref_id=e["flight_id"], backfilled=True,
-                )
+            live[("annotation", a["id"])] = {
+                "what": a["note"][:80], "where": {"flight_id": a["flight_id"], "ref": a["ref"]}, "at": a.get("created_at"),
+            }
+        selection = load_selection(ws_dir)
+        for metric_id, ref in ((selection.baseline_config or {}).get("pinned_references") or {}).items():
+            live[("reference_pin", metric_id)] = {
+                "what": metric_id, "where": {"metric_id": metric_id}, "note": ref.get("label"), "at": ref.get("set_at"),
+            }
+        for e in selection.excluded:
+            fid = e["flight_id"]
+            live[("exclusion", fid)] = {
+                "what": source_filename(ws_dir, fid) or fid, "where": {"flight_id": fid}, "reason": e.get("reason"),
+            }
+        if active_rules is not None and shipped_rules is not None:
+            for topic_id, kind in rule_decisions(active_rules, shipped_rules):
+                live[(kind, topic_id)] = {"what": f"Rule: {topic_id}", "where": {"topic_id": topic_id}}
+
+        store = load_journal(ws_dir)
+        stale = [e for e in store["entries"]
+                 if e["kind"] in _RECONCILED_KINDS and (e["kind"], e.get("ref_id")) not in live
+                 and (e["kind"] not in ("rule_edit", "disabled_topic") or active_rules is not None)]
+        for e in stale:
+            remove_journal_entry(ws_dir, kind=e["kind"], ref_id=e["ref_id"])
+        for (kind, ref_id), d in live.items():
+            upsert_journal_entry(
+                ws_dir, kind=kind, ref_id=ref_id, what=d["what"], where=d.get("where"),
+                reason=d.get("reason"), note=d.get("note"), at=d.get("at"), create_only=True,
+            )
+
+
+_RECONCILED_KINDS = ("limit_filter", "annotation", "reference_pin", "exclusion", "rule_edit", "disabled_topic")
+
+
+def strip_rule_comments(x: Any) -> Any:
+    """Drop "_comment"-style keys at every level — they aren't settings."""
+    if isinstance(x, dict):
+        return {k: strip_rule_comments(v) for k, v in x.items() if not k.startswith("_")}
+    if isinstance(x, list):
+        return [strip_rule_comments(v) for v in x]
+    return x
+
+
+def _rule_body(topic: Optional[dict]) -> dict:
+    """A topic's rule without its enabled flag or comments — what a
+    rule_edit entry is about (enabled is the disabled_topic entry's)."""
+    return {k: v for k, v in strip_rule_comments(topic or {}).items() if k != "enabled"}
+
+
+def rule_decisions(active_rules: dict, shipped_rules: dict) -> list[tuple[str, str]]:
+    """(topic_id, kind) for every rule decision in force: "rule_edit" when
+    a topic's rule differs from shipped, "disabled_topic" when the pilot
+    has turned off a topic shipped enabled."""
+    out = []
+    shipped = shipped_rules.get("rules", {})
+    for topic_id, topic in active_rules.get("rules", {}).items():
+        base = shipped.get(topic_id)
+        if base is None:
+            continue
+        if _rule_body(topic) != _rule_body(base):
+            out.append((topic_id, "rule_edit"))
+        if not topic.get("enabled", True) and base.get("enabled", True):
+            out.append((topic_id, "disabled_topic"))
+    return out
 
 
 # ── Reference-change markers (Spec 14 §7.1) ─────────────────────────────────

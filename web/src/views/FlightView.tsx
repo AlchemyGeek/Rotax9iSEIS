@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InsightCard } from "../components/InsightCard";
 import { FilterEditor } from "../components/FilterEditor";
@@ -250,6 +250,19 @@ export function FlightView() {
       if (mainRef.current) mainRef.current.scrollTop = top;
     });
   }
+
+  // Journal's Edit on a rule entry (Spec 14 v0.10 §6.1) lands here with
+  // ?edit=<topic>: open the panel for it once the rules are loaded.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get("edit");
+  useEffect(() => {
+    if (!editParam || !canEditRules(editParam)) return;
+    openEditor(editParam);
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editParam, resolvedRules, shippedRules, insightSet, usingFixture]);
 
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);

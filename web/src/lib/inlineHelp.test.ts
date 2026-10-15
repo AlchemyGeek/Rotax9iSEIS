@@ -12,7 +12,7 @@ const EXPECTED = [
   "engine.suppression", "engine.overrides",
   "trigger.enabled", "trigger.r2_min", "trigger.n_min", "trigger.baseline_deviation",
   "preview.counts",
-  "journal.backfilled", "journal.change_notices",
+  "journal.live_effect", "journal.change_notices",
   "flight.excluded_from_reference",
 ];
 

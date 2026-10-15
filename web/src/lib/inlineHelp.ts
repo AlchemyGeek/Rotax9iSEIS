@@ -37,10 +37,10 @@ export const INLINE_HELP = {
     "Counts flights, not insights: newly flagged flights gain an insight from this topic, cleared ones lose it, and changed ones keep it at a different severity.",
 
   // Journal
-  "journal.backfilled":
-    "Recorded before the Journal existed, so it is dated to when it was imported and has no count of what it changed.",
+  "journal.live_effect":
+    "What this decision is doing to your flights right now — events hidden, insights added or removed, verdicts changed — recounted from your current analyses each time the Journal opens.",
   "journal.change_notices":
-    "A past decision whose basis has moved since you made it — for example, a limit filter whose recent flights now breach or drift from its band — so you can check it still holds.",
+    "A decision whose basis has moved since you made it — for example, a limit filter whose recent flights now breach or drift from its band, or one that no longer changes anything — so you can check it still holds.",
 
   // Flight view header
   "flight.excluded_from_reference":
