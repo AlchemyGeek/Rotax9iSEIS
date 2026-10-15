@@ -426,10 +426,11 @@ class TestScanWithRealLogs:
         second = ws.scan_workspace(ws_dir, registry_path)
 
         assert len(first.auto_excluded) == 1
-        # Re-discovered every scan (never becomes "known" — no flight_id
-        # to match against), but idempotent: still just one entry, not a
-        # growing pile.
-        assert len(second.auto_excluded) == 1
+        # Already recorded as not a flight: the second scan skips it by
+        # file name without re-reading it (Spec 03 v0.17 — a log the
+        # workspace has already classified isn't new work), and the
+        # exclusions file still holds one entry, not a growing pile.
+        assert second.auto_excluded == [] and second.pending_new_logs == []
         exclusions = ws._exclusions.load_exclusions(ws_dir)
         assert len(exclusions["entries"]) == 1
 

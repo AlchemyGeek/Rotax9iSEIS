@@ -1,3 +1,4 @@
+import type { ScanOptions } from "../types/contract";
 import type {
   ActiveWorkspace,
   AircraftSummary,
@@ -159,7 +160,7 @@ export interface EngineClient {
   deleteWorkspace(workspaceId: string): Promise<{ deleted: boolean; workspace_id: string }>;
   getActiveWorkspace(): Promise<ActiveWorkspace>;
   addLogFolder(path: string): Promise<WorkspaceManifest>;
-  scanWorkspace(): Promise<ScanResult>;
+  scanWorkspace(options?: ScanOptions): Promise<ScanResult>;
   getScanProgress(): Promise<ScanProgress>;
   getAppSettings(): Promise<AppSettings>;
   saveAppSettings(settings: AppSettings): Promise<AppSettings>;
@@ -465,8 +466,8 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<WorkspaceManifest>("add_log_folder", { path });
   }
 
-  scanWorkspace() {
-    return this.rpc<ScanResult>("scan_workspace", {});
+  scanWorkspace(options: ScanOptions = {}) {
+    return this.rpc<ScanResult>("scan_workspace", options);
   }
 
   getScanProgress() {

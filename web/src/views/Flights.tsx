@@ -9,7 +9,7 @@ import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engi
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import type {
   ExclusionEntry, FlightRowStatus, FlightTableRow,
-  InsightSeverity, ScanProgress, WorkspaceManifest,
+  InsightSeverity, ScanOptions, ScanProgress, ScanResult, WorkspaceManifest,
 } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 
@@ -21,30 +21,11 @@ const LEGACY_MANIFEST: WorkspaceManifest = {
   flight_count: 0, storage_backend: "filesystem",
 };
 
-interface ImportProgressItem {
-  filename: string;
-  status: "waiting" | "analyzing" | "done" | "error";
-  result?: IngestResult;
-}
-
-const PROGRESS_LABEL: Record<ImportProgressItem["status"], string> = {
-  waiting: "waiting…",
-  analyzing: "analyzing…",
-  done: "done",
-  error: "failed",
-};
-const CLASSIFICATION_LABEL: Record<IngestResult["classification"], string> = {
-  new: "new flight",
-  duplicate: "already in this workspace",
-  ground_session: "ground session — no airborne phase",
-  short_flight: "short flight",
-  corrupt_log: "corrupt log",
-};
-
 // Spec 03 §5.1's status values, matching Spec 02 §5.5/§5.6 exactly rather
 // than inventing UI-only states.
 const STATUS_LABEL: Record<FlightRowStatus, string> = {
   analyzed: "Analyzed",
+  needs_analysis: "Needs analysis",
   needs_reanalysis: "Needs re-analysis",
   missing: "Missing log",
   folder_unreachable: "Folder unreachable",
@@ -54,6 +35,7 @@ const STATUS_LABEL: Record<FlightRowStatus, string> = {
 
 const STATUS_COLOR: Record<FlightRowStatus, string> = {
   analyzed: "var(--text-secondary)",
+  needs_analysis: "var(--accent)",
   needs_reanalysis: "var(--severity-watch)",
   missing: "var(--severity-warning)",
   folder_unreachable: "var(--severity-warning)",
@@ -80,6 +62,36 @@ function scanProgressText(p: ScanProgress | null): string {
 
 type GroupBy = "date" | "folder";
 
+// Spec 03 v0.17 §5.1: one or two dropped files analyse at once; this many
+// or more go through the same "Analyze now?" question as Sync.
+export const DROP_PROMPT_THRESHOLD = 3;
+
+// One banner above the table for everything transient: progress, the
+// Sync / drop question, and the summary afterwards (§5.1 — never a
+// permanent panel).
+type Banner =
+  | { kind: "progress"; text: string; detail?: string }
+  | { kind: "prompt"; newLogs: number; stale: number; uploads: File[] }
+  | { kind: "summary"; lines: string[] };
+
+function rowKey(row: FlightTableRow): string {
+  return row.flight_id ?? (row.source_key ? `log:${row.source_key}` : `upload:${row.upload_key}`);
+}
+
+function dateFromFilename(name: string): string {
+  const m = /^log_(\d{4})(\d{2})(\d{2})_/.exec(name);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+}
+
+// The analysed flights in a group — the only selectable rows.
+function groupIds(rows: FlightTableRow[]): string[] {
+  return rows.flatMap((r) => (r.flight_id ? [r.flight_id] : []));
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
@@ -87,6 +99,7 @@ function formatDuration(min: number): string {
 }
 
 function groupKeyForDate(row: FlightTableRow): string {
+  if (!row.date) return "Undated";
   const d = new Date(row.date + "T00:00:00");
   return isNaN(d.getTime()) ? row.date : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
@@ -137,14 +150,16 @@ export function Flights() {
     return raw ? new Set(raw.split(",")) : null;
   }, [params]);
 
-  const [importResults, setImportResults] = useState<IngestResult[]>([]);
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<ImportProgressItem[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [rescanning, setRescanning] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  // Dropped files the pilot said "Not now" to — they wait in this page
+  // (a drop points at files; nothing is stored until they're analysed).
+  const [pendingUploads, setPendingUploads] = useState<File[]>([]);
+  // A Needs-analysis row the pilot clicked: it offers "Analyze this flight".
+  const [offerKey, setOfferKey] = useState<string | null>(null);
+  const [addLogsOpen, setAddLogsOpen] = useState(false);
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [excludingId, setExcludingId] = useState<string | null>(null);
@@ -199,93 +214,144 @@ export function Flights() {
   }, [refresh]);
 
   // One file at a time (not one batched RPC call for the whole drop) so
-  // the list below can show real per-file progress — which log is
-  // actually being analyzed right now, not just one opaque spinner for
-  // however long the whole batch takes.
+  // the banner can show real per-file progress.
   const runImport = useCallback(
     async (fileList: File[]) => {
       if (!fileList.length) return;
       setImporting(true);
-      setImportError(null);
-      setImportProgress(fileList.map((f) => ({ filename: f.name, status: "waiting" })));
       const newResults: IngestResult[] = [];
+      let failed: string | null = null;
       for (let i = 0; i < fileList.length; i++) {
         const f = fileList[i];
-        setImportProgress((prev) => prev.map((item, idx) => (idx === i ? { ...item, status: "analyzing" } : item)));
+        setBanner({ kind: "progress", text: `Analyzing ${i + 1} of ${fileList.length}`, detail: f.name });
         try {
           const upload: UploadFile = { content: await f.arrayBuffer(), filename: f.name };
           const res = await client.importFiles([upload]);
-          const result = res.results[0];
-          newResults.push(result);
-          setImportProgress((prev) => prev.map((item, idx) => (idx === i ? { ...item, status: "done", result } : item)));
+          newResults.push(res.results[0]);
         } catch (e) {
-          setImportProgress((prev) => prev.map((item, idx) => (idx === i ? { ...item, status: "error" } : item)));
-          setImportError(
-            `Couldn't reach the local server (${e instanceof Error ? e.message : String(e)}). ` +
-              `Run \`slingology-eis serve\` and try again.`
-          );
+          failed = `Couldn't reach the local server (${e instanceof Error ? e.message : String(e)}). Run \`slingology-eis serve\` and try again.`;
           break;
         }
       }
-      setImportResults((prev) => [...newResults, ...prev]);
+      setPendingUploads((prev) => prev.filter((f) => !fileList.includes(f)));
       await refresh();
       setImporting(false);
+      const count = (c: IngestResult["classification"][]) => newResults.filter((r) => c.includes(r.classification)).length;
+      const lines = [
+        count(["new"]) ? `${plural(count(["new"]), "new flight")} analyzed` : "",
+        count(["duplicate"]) ? `${plural(count(["duplicate"]), "file")} skipped — already in this workspace` : "",
+        count(["ground_session", "short_flight", "corrupt_log"])
+          ? `${plural(count(["ground_session", "short_flight", "corrupt_log"]), "file")} skipped — not a flight (ground session, short flight, or corrupt log; recorded in Skipped)`
+          : "",
+        failed ?? "",
+      ].filter(Boolean);
+      setBanner({ kind: "summary", lines: lines.length ? lines : ["Nothing new in those files."] });
     },
     [refresh]
   );
 
+  // Spec 03 v0.17 §5.1: a drop of one or two files analyses at once; more
+  // ask first, the same question Sync asks.
+  function receiveFiles(files: File[]) {
+    const csvs = files.filter((f) => f.name.toLowerCase().endsWith(".csv"));
+    if (!csvs.length) return;
+    if (csvs.length < DROP_PROMPT_THRESHOLD) void runImport(csvs);
+    else setBanner({ kind: "prompt", newLogs: csvs.length, stale: 0, uploads: csvs });
+  }
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    runImport(Array.from(e.dataTransfer.files));
+    receiveFiles(Array.from(e.dataTransfer.files));
   };
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    runImport(Array.from(e.target.files ?? []));
+    receiveFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
   };
-  const newCount = importResults.filter((r) => r.classification === "new").length;
-  const duplicateResults = importResults.filter((r) => r.classification === "duplicate");
-  // Ground session / short flight / corrupt log — auto-excluded and
-  // recorded to exclusions.json, never became a flight (Spec 02
-  // §5.11.2).
-  const autoExcludedResults = importResults.filter((r) =>
-    r.classification === "ground_session" || r.classification === "short_flight" || r.classification === "corrupt_log"
-  );
 
-  // "Sync" (was "Rescan") — finds new/missing/moved files AND re-runs
-  // analysis for any already-known flight whose stored result predates
-  // the running engine (Spec 03 §5.1), one action covering both jobs
-  // rather than leaving reanalysis to a separate, easy-to-forget step.
-  async function handleSync() {
+  // scan_workspace is one synchronous RPC that can take minutes on a big
+  // batch — a cheap second RPC is polled meanwhile for per-flight progress.
+  async function withScanProgress<T>(fn: () => Promise<T>): Promise<T> {
     setRescanning(true);
-    setScanProgress({ active: true, phase: "starting" });
-    // scan_workspace is one synchronous RPC call that can genuinely take
-    // minutes on a large initial sync (every new file gets parsed AND
-    // fully analyzed) — poll a second, cheap RPC concurrently to show
-    // real "processing log X of N" instead of leaving the pilot staring
-    // at an opaque "Syncing…" the whole time. Stopped in finally so a
-    // failed/aborted scan doesn't leave the poll running forever.
     const pollId = window.setInterval(() => {
-      client.getScanProgress().then(setScanProgress).catch(() => {});
+      client.getScanProgress()
+        .then((p) => p.active && setBanner({ kind: "progress", text: scanProgressText(p), detail: p.filename ?? undefined }))
+        .catch(() => {});
     }, 400);
     try {
-      const result = await client.scanWorkspace();
-      await refresh();
-      const parts: string[] = [];
-      if (result.new_flight_ids.length) parts.push(`${result.new_flight_ids.length} new`);
-      if (result.reanalyzed_flight_ids.length) parts.push(`${result.reanalyzed_flight_ids.length} re-analyzed`);
-      if (result.recovered_flight_ids.length) parts.push(`${result.recovered_flight_ids.length} recovered`);
-      if (result.now_missing_flight_ids.length) parts.push(`${result.now_missing_flight_ids.length} newly missing`);
-      if (result.rematched_flight_ids.length) parts.push(`${result.rematched_flight_ids.length} moved/renamed`);
-      if (result.unreachable_folders.length) parts.push(`${result.unreachable_folders.length} folder${result.unreachable_folders.length === 1 ? "" : "s"} unreachable`);
-      if (result.auto_excluded.length) parts.push(`${result.auto_excluded.length} excluded (ground session/short flight/corrupt log)`);
-      setSyncMessage(parts.length ? parts.join(" · ") : "No changes.");
-    } catch {
-      // no active workspace, or server unreachable — nothing to do beyond leaving state as-is
+      return await fn();
     } finally {
       window.clearInterval(pollId);
-      setScanProgress(null);
       setRescanning(false);
+    }
+  }
+
+  function bookkeepingLines(result: ScanResult): string[] {
+    const parts: string[] = [];
+    if (result.recovered_flight_ids.length) parts.push(`${result.recovered_flight_ids.length} recovered`);
+    if (result.now_missing_flight_ids.length) parts.push(`${result.now_missing_flight_ids.length} newly missing`);
+    if (result.rematched_flight_ids.length) parts.push(`${result.rematched_flight_ids.length} moved/renamed`);
+    if (result.unreachable_folders.length) parts.push(`${plural(result.unreachable_folders.length, "folder")} unreachable`);
+    if (result.auto_excluded.length) parts.push(`${result.auto_excluded.length} skipped — not a flight`);
+    return parts.length ? [parts.join(" · ")] : [];
+  }
+
+  // Spec 03 v0.17 §5.1: Sync discovers (moved, missing, new, stale) and
+  // asks before it analyses anything.
+  async function handleSync() {
+    setBanner({ kind: "progress", text: "Looking for changes…" });
+    try {
+      const result = await withScanProgress(() => client.scanWorkspace({ analyze: false }));
+      await refresh();
+      const newLogs = result.pending_new_logs?.length ?? 0;
+      const stale = result.pending_reanalysis_flight_ids?.length ?? 0;
+      if (newLogs + stale === 0) setBanner({ kind: "summary", lines: ["No changes.", ...bookkeepingLines(result)] });
+      else setBanner({ kind: "prompt", newLogs, stale, uploads: [] });
+    } catch {
+      setBanner(null); // no active workspace, or server unreachable
+    }
+  }
+
+  // Analyze now / Analyze N / a row's "Analyze this flight": the folder
+  // logs and stale flights given (all when omitted), then any dropped
+  // files still waiting in the browser.
+  async function runAnalysis(options: ScanOptions = {}, uploads: File[] = []) {
+    const hasServerWork = options.source_keys === undefined || options.source_keys.length > 0 || (options.flight_ids?.length ?? 0) > 0;
+    let result: ScanResult | null = null;
+    if (hasServerWork) {
+      setBanner({ kind: "progress", text: "Analyzing…" });
+      try {
+        result = await withScanProgress(() => client.scanWorkspace(options));
+      } catch {
+        setBanner({ kind: "summary", lines: ["Couldn't reach the local server — nothing was analyzed."] });
+        return;
+      }
+    }
+    if (uploads.length) {
+      await runImport(uploads);
+      return;
+    }
+    await refresh();
+    if (result) {
+      const lines = [
+        result.new_flight_ids.length ? `${plural(result.new_flight_ids.length, "new flight")} analyzed` : "",
+        result.reanalyzed_flight_ids.length ? `${result.reanalyzed_flight_ids.length} re-analyzed` : "",
+        ...bookkeepingLines(result),
+      ].filter(Boolean);
+      setBanner({ kind: "summary", lines: lines.length ? lines : ["Nothing needed analysis."] });
+    }
+  }
+
+  function answerPrompt(analyze: boolean) {
+    if (banner?.kind !== "prompt") return;
+    const uploads = banner.uploads;
+    if (analyze) {
+      void runAnalysis(uploads.length ? { source_keys: [], flight_ids: [] } : {}, uploads);
+    } else {
+      // Not now: the logs wait in the table as Needs analysis, with
+      // Analyze N beside Sync. Dropped files wait in this page.
+      setPendingUploads((prev) => [...prev, ...uploads.filter((u) => !prev.includes(u))]);
+      setBanner(null);
     }
   }
 
@@ -420,25 +486,42 @@ export function Flights() {
     });
   }
 
+  // Only analysed flights can be selected (remove); a log waiting for
+  // analysis has nothing to remove yet.
   function toggleSelectAll(rowsToToggle: FlightTableRow[]) {
+    const ids = rowsToToggle.flatMap((r) => (r.flight_id ? [r.flight_id] : []));
     setSelectedIds((prev) => {
-      const allSelected = rowsToToggle.length > 0 && rowsToToggle.every((r) => prev.has(r.flight_id));
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
       const next = new Set(prev);
-      for (const r of rowsToToggle) {
-        if (allSelected) next.delete(r.flight_id);
-        else next.add(r.flight_id);
+      for (const id of ids) {
+        if (allSelected) next.delete(id);
+        else next.add(id);
       }
       return next;
     });
   }
 
+  // Server rows plus dropped files waiting in this page (Spec 03 v0.17).
+  const allRows = useMemo<FlightTableRow[]>(() => [
+    ...rows,
+    ...pendingUploads.map((f): FlightTableRow => ({
+      flight_id: null, upload_key: f.name, date: dateFromFilename(f.name), airport: "—", duration_min: null,
+      engine_hours: null, insight_count: null, worst_severity: null, in_baselines: null, status: "needs_analysis",
+      filename: f.name, log_folder: "dropped files",
+    })),
+  ], [rows, pendingUploads]);
+  const queue = {
+    newLogs: allRows.filter((r) => r.status === "needs_analysis").length,
+    stale: allRows.filter((r) => r.status === "needs_reanalysis").length,
+  };
+
   const filtered = useMemo(() => {
-    let out = rows;
-    if (idsFilter) out = out.filter((r) => idsFilter.has(r.flight_id));
+    let out = allRows;
+    if (idsFilter) out = out.filter((r) => r.flight_id !== null && idsFilter.has(r.flight_id));
     if (statusFilter === "excluded") out = out.filter((r) => r.excluded_reason);
     else if (statusFilter) out = out.filter((r) => r.status === statusFilter);
     return out;
-  }, [rows, idsFilter, statusFilter]);
+  }, [allRows, idsFilter, statusFilter]);
 
   const groups = useMemo(() => {
     const map = new Map<string, FlightTableRow[]>();
@@ -465,17 +548,18 @@ export function Flights() {
   }, [filtered, groupBy]);
 
   const summary = useMemo(() => {
-    const inBaselines = rows.filter((r) => r.in_baselines).length;
-    const missing = rows.filter((r) => r.status === "missing").length;
-    const otherAircraft = rows.filter((r) => r.different_tail_number).length;
-    return { total: rows.length, inBaselines, missing, otherAircraft };
+    const flights = rows.filter((r) => r.flight_id !== null);
+    const inBaselines = flights.filter((r) => r.in_baselines).length;
+    const missing = flights.filter((r) => r.status === "missing").length;
+    const otherAircraft = flights.filter((r) => r.different_tail_number).length;
+    return { total: flights.length, inBaselines, missing, otherAircraft };
   }, [rows]);
 
   const statusCounts = useMemo(() => {
     const counts = new Map<FlightRowStatus, number>();
-    for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+    for (const r of allRows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
     return counts;
-  }, [rows]);
+  }, [allRows]);
   const excludedCount = rows.filter((r) => r.excluded_reason).length;
   // Computed from the live `exclusions` list, not a separately-fetched
   // summary — a category count here must always agree with what's
@@ -521,9 +605,80 @@ export function Flights() {
     );
   }
 
+  // Spec 03 v0.17 §5.1: a log found but not analysed has no results —
+  // its date comes from the file name, Insights and In reference read "—",
+  // and clicking it offers "Analyze this flight" instead of opening an
+  // empty Flight view.
+  function pendingRow(row: FlightTableRow) {
+    const key = rowKey(row);
+    const offered = offerKey === key;
+    const upload = row.upload_key ? pendingUploads.find((f) => f.name === row.upload_key) : undefined;
+    const dash = <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>;
+    return (
+      <tr key={key} data-testid="pending-row" onClick={() => setOfferKey(offered ? null : key)} style={{ borderBottom: "1px solid var(--border-subtle)", cursor: "pointer" }}>
+        <td />
+        <td className="mono">{row.date || "—"} &middot; —</td>
+        <td>{dash}</td>
+        <td>{dash}</td>
+        <td>{dash}</td>
+        <td><span style={{ color: STATUS_COLOR[row.status], fontWeight: 600, fontSize: 12 }}>{STATUS_LABEL[row.status]}</span></td>
+        <td className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }} title={row.log_folder}>{row.filename}</td>
+        <td onClick={(e) => e.stopPropagation()}>
+          {offered && (
+            <button
+              type="button"
+              disabled={rescanning || importing}
+              onClick={() => {
+                setOfferKey(null);
+                void runAnalysis({ source_keys: row.source_key ? [row.source_key] : [], flight_ids: [] }, upload ? [upload] : []);
+              }}
+              style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              Analyze this flight
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  }
+
+  const hasFolders = manifest.log_folders.length > 0;
+  const queueCount = queue.newLogs + queue.stale;
+  const BUTTON: React.CSSProperties = { padding: "7px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer", flexShrink: 0 };
+
+  const folderForm = (
+    <span style={{ display: "flex", gap: 4 }}>
+      <input
+        autoFocus
+        aria-label="Folder path"
+        value={folderPath}
+        onChange={(e) => setFolderPath(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleAddFolder()}
+        placeholder="/path/to/logs"
+        className="mono"
+        style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 260 }}
+      />
+      <button type="button" onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer" }}>
+        Add
+      </button>
+      <button type="button" onClick={() => { setAddingFolder(false); setFolderPath(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
+        Cancel
+      </button>
+    </span>
+  );
+
   return (
     <NavShell>
-      <div style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div
+        // Spec 03 v0.17 §5.1: once the workspace has a folder, a drop
+        // anywhere on the page is still accepted.
+        onDragOver={(e) => { if (hasFolders) { e.preventDefault(); setDragOver(true); } }}
+        onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+        onDrop={(e) => { if (hasFolders) onDrop(e); }}
+        data-testid="flights-page"
+        style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16, outline: dragOver && hasFolders ? "2px dashed var(--accent)" : "none", outlineOffset: -6 }}
+      >
+        <input ref={inputRef} type="file" multiple accept=".csv" style={{ display: "none" }} onChange={onPick} data-testid="file-input" />
         {filterAttention > 0 && (
           // Spec 09 §10.4: one line when a limit filter needs attention.
           <div
@@ -538,7 +693,6 @@ export function Flights() {
           <div>
             <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>
               {manifest.name} {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
-              {loading && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}> · loading…</span>}
             </h1>
             <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
               {manifest.log_folders.map((f) => (
@@ -559,33 +713,7 @@ export function Flights() {
                   {!f.reachable && " — unreachable"}
                 </span>
               ))}
-              {isRegistryActive && !addingFolder && (
-                <button
-                  onClick={() => setAddingFolder(true)}
-                  style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px dashed var(--border)", color: "var(--text-tertiary)", cursor: "pointer" }}
-                >
-                  + Add folder
-                </button>
-              )}
-              {addingFolder && (
-                <span style={{ display: "flex", gap: 4 }}>
-                  <input
-                    autoFocus
-                    value={folderPath}
-                    onChange={(e) => setFolderPath(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddFolder()}
-                    placeholder="/path/to/logs"
-                    className="mono"
-                    style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 220 }}
-                  />
-                  <button onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer" }}>
-                    Add
-                  </button>
-                  <button onClick={() => { setAddingFolder(false); setFolderPath(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                </span>
-              )}
+              {hasFolders && addingFolder && folderForm}
             </div>
             <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
               {summary.total} flights &middot; {summary.inBaselines} in reference
@@ -593,44 +721,57 @@ export function Flights() {
               {summary.otherAircraft > 0 && ` · ${summary.otherAircraft} other aircraft`}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "flex-start" }}>
+            {queueCount > 0 && !rescanning && !importing && (
+              <button
+                type="button"
+                onClick={() => void runAnalysis({}, pendingUploads)}
+                title={`${plural(queue.newLogs, "log")} not analyzed yet, ${plural(queue.stale, "flight")} needing re-analysis`}
+                style={{ ...BUTTON, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}
+              >
+                Analyze {queueCount}
+              </button>
+            )}
+            {hasFolders && isRegistryActive && (
+              <span style={{ position: "relative" }}>
+                <button type="button" onClick={() => setAddLogsOpen((v) => !v)} style={BUTTON} aria-expanded={addLogsOpen}>
+                  Add logs…
+                </button>
+                {addLogsOpen && (
+                  <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 10, background: "var(--panel-control)", border: "1px solid var(--border)", borderRadius: 10, padding: 10, width: 260, display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+                    <button type="button" role="menuitem" onClick={() => { setAddLogsOpen(false); inputRef.current?.click(); }} style={{ ...BUTTON, textAlign: "left" }}>
+                      Choose log files…
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setAddLogsOpen(false); setAddingFolder(true); }} style={{ ...BUTTON, textAlign: "left" }}>
+                      Add a folder…
+                    </button>
+                    <div style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
+                      Or drop log files anywhere on this page.
+                    </div>
+                  </div>
+                )}
+              </span>
+            )}
             <button
+              type="button"
               onClick={handleSync}
               disabled={rescanning || !isRegistryActive}
-              title={!isRegistryActive ? "no active workspace with log folders to sync — create/switch to one first" : "finds new/missing/moved files and re-analyzes any flight whose result predates the current engine"}
-              style={{ padding: "7px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", color: isRegistryActive ? "var(--text-primary)" : "var(--text-tertiary)", fontSize: 12, cursor: rescanning || !isRegistryActive ? "default" : "pointer", flexShrink: 0 }}
+              title={!isRegistryActive ? "no active workspace with log folders to sync — create/switch to one first" : "looks for new, moved, missing and out-of-date logs, then asks before analysing"}
+              style={{ ...BUTTON, color: isRegistryActive ? "var(--text-primary)" : "var(--text-tertiary)", cursor: rescanning || !isRegistryActive ? "default" : "pointer" }}
             >
-              {rescanning ? scanProgressText(scanProgress) : "Sync"}
+              {rescanning ? "Syncing…" : "Sync"}
             </button>
             <button
+              type="button"
               onClick={() => { setDeletingWorkspace(true); setDeleteConfirmText(""); setDeleteError(null); }}
               disabled={!isRegistryActive}
               title={!isRegistryActive ? "no active workspace to delete" : "permanently delete this workspace and everything in it"}
-              style={{ padding: "7px 14px", borderRadius: 8, background: "transparent", border: "1px solid var(--border)", color: isRegistryActive ? "#e5484d" : "var(--text-tertiary)", fontSize: 12, cursor: isRegistryActive ? "pointer" : "default", flexShrink: 0 }}
+              style={{ ...BUTTON, background: "transparent", color: isRegistryActive ? "#e5484d" : "var(--text-tertiary)", cursor: isRegistryActive ? "pointer" : "default" }}
             >
               Delete workspace
             </button>
           </div>
         </div>
-
-        {rescanning && (
-          <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)" }}>
-            {scanProgressText(scanProgress)}
-            {scanProgress?.filename && <span className="mono" style={{ color: "var(--text-tertiary)" }}> — {scanProgress.filename}</span>}
-            {(scanProgress?.total ?? 0) > 20 && (
-              <span style={{ color: "var(--text-tertiary)" }}> · a first sync of a large folder can take a few minutes</span>
-            )}
-          </div>
-        )}
-
-        {syncMessage && (
-          <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" }}>
-            <span>{syncMessage}</span>
-            <a href="#" onClick={(e) => { e.preventDefault(); setSyncMessage(null); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-              dismiss
-            </a>
-          </div>
-        )}
 
         {deletingWorkspace && (
           <div style={{ padding: "14px", borderRadius: 8, background: "var(--panel)", border: "1px solid #e5484d", fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -675,88 +816,77 @@ export function Flights() {
           </div>
         )}
 
-        {/* Drop zone / file picker — Import's old standalone role, now living here (§5.1) */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          style={{
-            border: `2px dashed ${dragOver ? "var(--accent)" : "#2e6f64"}`,
-            borderRadius: 16,
-            background: "rgba(79,195,176,0.05)",
-            padding: 22,
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--accent-15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v13m0 0l-5-5m5 5l5-5" />
-              <path d="M4 18v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-            </svg>
-          </div>
-          <div style={{ flexGrow: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Drop your G3X logs here</div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              or{" "}
-              <a href="#" onClick={(e) => { e.preventDefault(); inputRef.current?.click(); }}>
-                choose files
-              </a>
-              {" — "}dropping a folder triggers a scan the same way Sync does.
+        {/* Spec 03 v0.17 §5.1: with no folders, the page is the onboarding
+            surface — drop zone / file picker and Add folder. */}
+        {!hasFolders && (
+          <div
+            data-testid="onboarding-drop"
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            style={{
+              border: `2px dashed ${dragOver ? "var(--accent)" : "#2e6f64"}`, borderRadius: 16, background: "rgba(79,195,176,0.05)",
+              padding: 22, display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap",
+            }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--accent-15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v13m0 0l-5-5m5 5l5-5" />
+                <path d="M4 18v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+              </svg>
             </div>
-          </div>
-          {importing && (
-            <span style={{ fontSize: 12, color: "var(--text-secondary)", flexShrink: 0 }}>
-              Analyzing {importProgress.filter((p) => p.status === "done" || p.status === "error").length + 1} of {importProgress.length}…
-            </span>
-          )}
-          {!importing && newCount > 0 && (
-            <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600, flexShrink: 0 }}>
-              Analyze {newCount} new flight{newCount === 1 ? "" : "s"} →
-            </span>
-          )}
-          <input ref={inputRef} type="file" multiple accept=".csv" style={{ display: "none" }} onChange={onPick} />
-        </div>
-        {importProgress.length > 0 && (
-          <div style={{ background: "var(--panel)", borderRadius: 12, padding: "10px 14px", flexShrink: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600 }}>
-                {importing ? "Importing…" : "Import finished"} — {importProgress.length} file{importProgress.length === 1 ? "" : "s"}
-              </span>
-              {!importing && (
-                <a href="#" onClick={(e) => { e.preventDefault(); setImportProgress([]); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                  dismiss
-                </a>
-              )}
+            <div style={{ flexGrow: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop your G3X logs here</div>
+              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                or{" "}
+                <a href="#" onClick={(e) => { e.preventDefault(); inputRef.current?.click(); }}>choose files</a>
+                {isRegistryActive && <> — or add the folder you keep them in, and the app will keep it in sync.</>}
+              </div>
             </div>
-            <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
-              {importProgress.map((item, i) => (
-                <div key={`${item.filename}-${i}`} className="mono" style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, padding: "3px 4px" }}>
-                  <span style={{ color: item.status === "analyzing" ? "var(--text-primary)" : "var(--text-tertiary)", fontWeight: item.status === "analyzing" ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {item.filename}
-                  </span>
-                  <span
-                    style={{
-                      flexShrink: 0,
-                      color:
-                        item.status === "analyzing" ? "var(--accent)" :
-                        item.status === "error" ? "var(--severity-limit)" :
-                        item.result?.classification === "new" ? "var(--accent)" :
-                        "var(--text-tertiary)",
-                    }}
-                  >
-                    {item.status === "done" && item.result ? CLASSIFICATION_LABEL[item.result.classification] : PROGRESS_LABEL[item.status]}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {isRegistryActive && (addingFolder ? folderForm : (
+              <button type="button" onClick={() => setAddingFolder(true)} style={{ ...BUTTON, fontWeight: 600 }}>Add folder</button>
+            ))}
           </div>
         )}
-        {importError && (
-          <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(229,72,77,0.1)", border: "1px solid rgba(229,72,77,0.3)", fontSize: 12 }}>
-            {importError}
+
+        {/* One transient banner: progress, the Sync / drop question, the summary. */}
+        {banner && (
+          <div
+            role={banner.kind === "prompt" ? "dialog" : "status"}
+            aria-label={banner.kind === "prompt" ? "Analyze now?" : undefined}
+            data-testid="flights-banner"
+            style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: banner.kind === "prompt" ? "1px solid var(--accent)" : "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+          >
+            {banner.kind === "progress" && (
+              <span>
+                {banner.text}
+                {banner.detail && <span className="mono" style={{ color: "var(--text-tertiary)" }}> — {banner.detail}</span>}
+              </span>
+            )}
+            {banner.kind === "prompt" && (
+              <>
+                <span style={{ color: "var(--text-primary)" }}>
+                  Found {plural(banner.newLogs, "new log")}
+                  {banner.stale > 0 && <> and {plural(banner.stale, "flight")} needing re-analysis</>}. Analyze now?
+                </span>
+                <span style={{ flexGrow: 1 }} />
+                <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}>
+                  Analyze now
+                </button>
+                <button type="button" onClick={() => answerPrompt(false)} style={{ ...BUTTON, padding: "5px 12px", background: "transparent" }}>
+                  Not now
+                </button>
+              </>
+            )}
+            {banner.kind === "summary" && (
+              <>
+                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {banner.lines.map((l) => <span key={l}>{l}</span>)}
+                </span>
+                <span style={{ flexGrow: 1 }} />
+                <a href="#" onClick={(e) => { e.preventDefault(); setBanner(null); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>dismiss</a>
+              </>
+            )}
           </div>
         )}
         {removeMessage && (
@@ -767,21 +897,6 @@ export function Flights() {
             </a>
           </div>
         )}
-        {!importing && (duplicateResults.length > 0 || autoExcludedResults.length > 0) && (
-          <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
-            {duplicateResults.length > 0 && (
-              <span title={duplicateResults.map((r) => r.filename).join(", ")}>
-                {duplicateResults.length} file{duplicateResults.length === 1 ? "" : "s"} skipped — already in this workspace
-              </span>
-            )}
-            {autoExcludedResults.length > 0 && (
-              <span title={autoExcludedResults.map((r) => `${r.filename}: ${r.reason}`).join("; ")}>
-                {autoExcludedResults.length} file{autoExcludedResults.length === 1 ? "" : "s"} skipped — not a flight (ground session, short flight, or corrupt log; recorded in exclusions)
-              </span>
-            )}
-          </div>
-        )}
-
         {/* Status chips */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(Object.keys(STATUS_LABEL) as FlightRowStatus[])
@@ -926,9 +1041,10 @@ export function Flights() {
                     <th style={{ width: 24 }}>
                       <input
                         type="checkbox"
-                        checked={groupRows.length > 0 && groupRows.every((r) => selectedIds.has(r.flight_id))}
+                        checked={groupIds(groupRows).length > 0 && groupIds(groupRows).every((id) => selectedIds.has(id))}
                         ref={(el) => {
-                          if (el) el.indeterminate = groupRows.some((r) => selectedIds.has(r.flight_id)) && !groupRows.every((r) => selectedIds.has(r.flight_id));
+                          const ids = groupIds(groupRows);
+                          if (el) el.indeterminate = ids.some((id) => selectedIds.has(id)) && !ids.every((id) => selectedIds.has(id));
                         }}
                         onChange={() => toggleSelectAll(groupRows)}
                         title="select all in this group"
@@ -944,12 +1060,15 @@ export function Flights() {
                   </tr>
                 </thead>
                 <tbody>
-                  {groupRows.map((row) => (
-                    <tr key={row.flight_id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                  {groupRows.map((row) => {
+                    if (row.flight_id === null) return pendingRow(row);
+                    const fid = row.flight_id;
+                    return (
+                    <tr key={fid} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={selectedIds.has(row.flight_id)} onChange={() => toggleSelected(row.flight_id)} />
+                        <input type="checkbox" checked={selectedIds.has(fid)} onChange={() => toggleSelected(fid)} />
                       </td>
-                      <td className="mono" onClick={() => navigate(`/flights/${row.flight_id}`)} style={{ cursor: "pointer" }}>
+                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }}>
                         {row.date} &middot; {row.airport}
                         {row.different_tail_number && (
                           <span style={{ marginLeft: 6, fontSize: 10, color: "var(--severity-watch)" }} title="informational only — never excludes">
@@ -957,12 +1076,12 @@ export function Flights() {
                           </span>
                         )}
                       </td>
-                      <td className="mono" onClick={() => navigate(`/flights/${row.flight_id}`)} style={{ cursor: "pointer" }}>
-                        {formatDuration(row.duration_min)}
+                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }}>
+                        {row.duration_min != null ? formatDuration(row.duration_min) : "—"}
                         {row.engine_hours != null && ` · ${row.engine_hours}h`}
                       </td>
-                      <td onClick={() => navigate(`/flights/${row.flight_id}`)} style={{ cursor: "pointer" }}>
-                        {row.insight_count > 0 && row.worst_severity ? (
+                      <td onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }}>
+                        {(row.insight_count ?? 0) > 0 && row.worst_severity ? (
                           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <SeverityBadge severity={row.worst_severity as InsightSeverity} size="sm" />
                             <span className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{row.insight_count}</span>
@@ -974,7 +1093,7 @@ export function Flights() {
                       <td onClick={(e) => e.stopPropagation()}>
                         {row.excluded_reason ? (
                           <span
-                            onClick={() => setIncludingId(row.flight_id)}
+                            onClick={() => setIncludingId(fid)}
                             style={{ color: "var(--text-tertiary)", cursor: "pointer" }}
                             title={`excluded — ${row.excluded_reason} — click to include in reference again`}
                           >
@@ -982,7 +1101,7 @@ export function Flights() {
                           </span>
                         ) : row.in_baselines ? (
                           <span
-                            onClick={() => setExcludingId(row.flight_id)}
+                            onClick={() => setExcludingId(fid)}
                             style={{ color: "var(--success)", cursor: "pointer" }}
                             title="click to exclude from reference"
                           >
@@ -992,21 +1111,21 @@ export function Flights() {
                           <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>
                         )}
                       </td>
-                      <td onClick={() => navigate(`/flights/${row.flight_id}`)} style={{ cursor: "pointer" }}>
+                      <td onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }}>
                         <span style={{ color: STATUS_COLOR[row.status], fontWeight: row.status === "analyzed" ? 400 : 600, fontSize: 12 }}>
                           {row.status === "missing" || row.status === "folder_unreachable" ? "⚠ " : ""}
                           {STATUS_LABEL[row.status]}
                         </span>
                       </td>
-                      <td className="mono" onClick={() => navigate(`/flights/${row.flight_id}`)} style={{ fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer" }} title={row.log_folder}>
+                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer" }} title={row.log_folder}>
                         {row.filename}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {removingId === row.flight_id ? (
+                        {removingId === fid ? (
                           <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Remove?</span>
                             <button
-                              onClick={() => handleRemoveMany([row.flight_id])}
+                              onClick={() => handleRemoveMany([fid])}
                               disabled={removeBusy}
                               style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, background: "#e5484d", border: "none", color: "#fff", cursor: removeBusy ? "default" : "pointer" }}
                             >
@@ -1019,7 +1138,7 @@ export function Flights() {
                         ) : (
                           <a
                             href="#"
-                            onClick={(e) => { e.preventDefault(); setRemovingId(row.flight_id); }}
+                            onClick={(e) => { e.preventDefault(); setRemovingId(fid); }}
                             style={{ color: "var(--text-tertiary)", display: "inline-flex" }}
                             title="remove this flight from the workspace, then sync"
                           >
@@ -1028,7 +1147,8 @@ export function Flights() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

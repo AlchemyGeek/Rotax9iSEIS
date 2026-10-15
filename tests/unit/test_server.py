@@ -1913,3 +1913,51 @@ def test_tail_number_grouping_is_recorded_in_the_settings_changelog(registry_ser
     alias = [e for e in entries if e["setting"] == "aircraft_aliases"]
     assert len(alias) == 1
     assert alias[0]["after"] == [["N117ZS", "N117Z"]]
+
+
+def test_sync_discovers_then_analyses_on_consent(registry_server, tmp_path):
+    """Spec 03 v0.17 §5.1 — Sync asks before it analyses. A discovery scan
+    (analyze: false) analyses nothing and reports what's waiting; the table
+    shows new logs as Needs analysis (date from the file name, no results)
+    and stale flights as Needs re-analysis; analysis can then be run for
+    one log, one flight, or everything."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    for day in (1, 2):
+        (folder / f"log_202601{day:02d}_120000_TEST.csv").write_bytes(_flying_log_bytes(date=f"2026-01-{day:02d}"))
+    assert rpc(registry_server, "add_log_folder", {"path": str(folder)})["ok"]
+
+    found = rpc(registry_server, "scan_workspace", {"analyze": False})["result"]
+    assert found["new_flight_ids"] == [] and len(found["pending_new_logs"]) == 2
+    rows = rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]
+    assert sorted((r["status"], r["date"], r["insight_count"]) for r in rows) == [
+        ("needs_analysis", "2026-01-01", None), ("needs_analysis", "2026-01-02", None)]
+
+    # One log only.
+    first_key = next(p["source_key"] for p in found["pending_new_logs"] if p["filename"].startswith("log_20260101"))
+    one = rpc(registry_server, "scan_workspace", {"source_keys": [first_key]})["result"]
+    assert len(one["new_flight_ids"]) == 1 and len(one["pending_new_logs"]) == 1
+    statuses = sorted(r["status"] for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"])
+    assert statuses == ["analyzed", "needs_analysis"]
+
+    # Everything.
+    rest = rpc(registry_server, "scan_workspace", {})["result"]
+    assert len(rest["new_flight_ids"]) == 1 and rest["pending_new_logs"] == []
+    assert rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_new_logs"] == []
+
+    # A flight analysed by an older engine: Needs re-analysis, until re-analysed.
+    from slingology_eis import workspace as ws_mod
+    ws_id = rpc(registry_server, "get_active_workspace", {})["result"]["registry_entry"]["id"]
+    ws_dir = ws_mod.resolve_workspaces_root() / ws_id
+    fid = one["new_flight_ids"][0]
+    f = ws_dir / "flights" / fid / "analysis.json"
+    doc = json.loads(f.read_text())
+    doc["provenance"]["engine_version"] = "0.0.0"
+    f.write_text(json.dumps(doc))
+    rows = {r["flight_id"]: r for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]}
+    assert rows[fid]["status"] == "needs_reanalysis" and rows[fid]["insight_count"] is not None
+    assert rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_reanalysis_flight_ids"] == [fid]
+    done = rpc(registry_server, "scan_workspace", {"flight_ids": [fid]})["result"]
+    assert done["reanalyzed_flight_ids"] == [fid]
+    assert all(r["status"] == "analyzed" for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"])

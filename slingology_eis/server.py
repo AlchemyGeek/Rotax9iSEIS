@@ -733,6 +733,11 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
         manifest = ws.load_manifest(workspace_dir)
         unreachable_folders = {f.path for f in manifest.log_folders if not f.reachable}
 
+    # Spec 03 v0.17 §5.1: work waiting for the pilot's go-ahead — logs found
+    # in the folders but not analysed, and flights analysed by an older engine.
+    pending_logs, stale_ids = ws.pending_work(workspace_dir) if ctx.get("active_workspace_id") else ([], [])
+    stale = set(stale_ids)
+
     rows = []
     for fid in ws.list_flight_ids(workspace_dir):
         fa = ws.load_flight_analysis(workspace_dir, fid)
@@ -751,6 +756,8 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
             status = "missing"
         elif src and src.imports and all(imp.log_folder_path in unreachable_folders for imp in src.imports):
             status = "folder_unreachable"
+        elif fid in stale:
+            status = "needs_reanalysis"
 
         h = fa.header
         last_import = src.imports[-1] if src and src.imports else None
@@ -768,6 +775,14 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
             "different_tail_number": src.different_tail_number if src else None,
             "filename": last_import.filename if last_import else (_source_filename(workspace_dir, fid) or ""),
             "log_folder": last_import.log_folder_path if last_import else "",
+        })
+    for p in pending_logs:
+        # No results yet: what the file name and folder say, nothing more.
+        rows.append({
+            "flight_id": None, "source_key": p["source_key"], "date": p["date"] or "", "airport": "—",
+            "duration_min": None, "engine_hours": None, "insight_count": None, "worst_severity": None,
+            "in_baselines": None, "excluded_reason": None, "status": "needs_analysis",
+            "different_tail_number": None, "filename": p["filename"], "log_folder": p["log_folder"],
         })
     return {"rows": rows}
 
@@ -1431,12 +1446,22 @@ def op_scan_workspace(params: dict, ctx: dict) -> Any:
     def on_progress(update: dict) -> None:
         ctx["scan_progress"] = {"active": True, **update}
 
+    # Spec 03 v0.17 §5.1: Sync discovers first and asks before analysing.
+    # analyze: false — discovery only (moved/missing/recovered bookkeeping,
+    # nothing parsed or analysed; what's waiting comes back as pending_*).
+    # source_keys / flight_ids — analyse just those new logs / stale
+    # flights (a row's "Analyze this flight"). Omitted: everything, as before.
+    analyze = params.get("analyze", True)
+    new_keys = set() if not analyze else (set(params["source_keys"]) if params.get("source_keys") is not None else None)
+    reanalyze_ids = set() if not analyze else (set(params["flight_ids"]) if params.get("flight_ids") is not None else None)
+
     ctx["scan_progress"] = {"active": True, "phase": "starting"}
     try:
-        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress)
+        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress,
+                                   new_keys=new_keys, reanalyze_ids=reanalyze_ids)
     finally:
         ctx["scan_progress"] = {"active": False}
-    if result.reanalyzed_flight_ids:
+    if result.reanalyzed_flight_ids or result.new_flight_ids:
         ws.rebuild_fleet(workspace_dir)
     return result.to_dict()
 

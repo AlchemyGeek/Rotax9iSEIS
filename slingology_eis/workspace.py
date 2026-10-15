@@ -404,6 +404,11 @@ class ScanResult:
     # flight_id at all, so
     # keyed by filename, not flight_id like the fields above.
     auto_excluded: list[dict] = field(default_factory=list)
+    # Spec 03 v0.17 §5.1 — what's waiting for consent after a scan run with
+    # analysis deferred (or restricted): logs found but not analysed, and
+    # flights whose stored analysis predates the running engine.
+    pending_new_logs: list[dict] = field(default_factory=list)
+    pending_reanalysis_flight_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -415,6 +420,8 @@ class ScanResult:
             "excluded": self.excluded,
             "reanalyzed_flight_ids": self.reanalyzed_flight_ids,
             "auto_excluded": self.auto_excluded,
+            "pending_new_logs": self.pending_new_logs,
+            "pending_reanalysis_flight_ids": self.pending_reanalysis_flight_ids,
         }
 
 
@@ -1230,11 +1237,67 @@ def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[byte
     return None
 
 
+def date_from_log_filename(filename: str) -> Optional[str]:
+    """G3X names logs log_YYYYMMDD_HHMMSS_<airport>.csv — the only date a
+    log that hasn't been analysed yet has (Spec 03 v0.17 §5.1)."""
+    import re
+    m = re.match(r"log_(\d{4})(\d{2})(\d{2})_", filename)
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None
+
+
+def _pending_log(skey: str, folder_path: str, rel: str, filename: str) -> dict:
+    return {"source_key": skey, "log_folder": folder_path, "relative_path": rel,
+            "filename": filename, "date": date_from_log_filename(filename)}
+
+
+def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
+    """Read-only (Spec 03 v0.17 §5.1): logs in the workspace's folders not
+    yet analysed (no known fingerprint, not recorded as a non-flight), and
+    flights whose stored analysis predates the running engine and whose
+    source can still be read. Hashing a folder is cheap; nothing is parsed."""
+    manifest = load_manifest(ws_dir)
+    exclusions_data = _exclusions.load_exclusions(ws_dir)
+    known: set[str] = set()
+    stale: list[str] = []
+    for fid in list_flight_ids(ws_dir):
+        src = load_sources(ws_dir, fid)
+        if src is None:
+            continue
+        known.update(imp.source_key for imp in src.imports)
+        if src.missing:
+            continue
+        fa = load_flight_analysis(ws_dir, fid)
+        if fa is not None and fa.provenance.get("engine_version") != __version__ and read_source_bytes(ws_dir, src) is not None:
+            stale.append(fid)
+    new_logs: dict[str, dict] = {}
+    for lf in manifest.log_folders:
+        folder = Path(lf.path).expanduser()
+        if not folder.is_dir():
+            continue
+        for abspath in _find_csv_files(folder):
+            if _exclusions.is_excluded(abspath.name, exclusions_data):
+                continue
+            skey = _source_key(abspath.read_bytes())
+            if skey not in known and skey not in new_logs:
+                new_logs[skey] = _pending_log(skey, lf.path, _relative_path(abspath, folder), abspath.name)
+    return list(new_logs.values()), stale
+
+
 def scan_workspace(
     ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True,
     on_progress: Optional[Callable[[dict], None]] = None,
+    new_keys: Optional[set] = None, reanalyze_ids: Optional[set] = None,
 ) -> ScanResult:
     """
+    Spec 03 v0.17 §5.1 (Sync asks before it analyses): `new_keys` limits
+    which newly found logs (by source_key) are parsed and analysed, and
+    `reanalyze_ids` which stale flights are re-analysed; None means all
+    (the behaviour before v0.17), an empty set means none — discovery
+    only. The bookkeeping that costs no analysis (moved/renamed files,
+    missing and recovered flights, unreachable folders) always runs. What
+    was found but left alone comes back in pending_new_logs /
+    pending_reanalysis_flight_ids.
+
     The core Spec 02 operation: reconcile `flights/` against what
     `manifest.log_folders` currently contains.
 
@@ -1335,6 +1398,11 @@ def scan_workspace(
         # already-known flight (same physical flight, different file) —
         # that's only knowable after parsing (flight_id is fingerprint-of-
         # content, not of bytes), so defer to the batch below.
+        if _exclusions.is_excluded(filename, exclusions_data):
+            continue  # already recorded as not a flight (Spec 02 §5.11) — nothing new to do
+        if new_keys is not None and skey not in new_keys:
+            result.pending_new_logs.append(_pending_log(skey, folder_path, rel, filename))
+            continue
         content = abspath.read_bytes()
         new_batch.append((content, filename, skey))
         new_batch_meta[skey] = (folder_path, rel, filename)
@@ -1463,6 +1531,9 @@ def scan_workspace(
             continue
         fa = load_flight_analysis(ws_dir, fid)
         if fa is None or fa.provenance.get("engine_version") == __version__:
+            continue
+        if reanalyze_ids is not None and fid not in reanalyze_ids:
+            result.pending_reanalysis_flight_ids.append(fid)
             continue
         found = read_source_bytes(ws_dir, src)
         if found is None:

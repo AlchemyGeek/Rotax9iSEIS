@@ -843,21 +843,28 @@ export interface JournalNotice {
 
 export type FlightRowStatus =
   | "analyzed"
+  | "needs_analysis" // Spec 03 v0.17: found in a folder (or dropped), not analysed yet — no results
   | "needs_reanalysis"
   | "missing"
   | "folder_unreachable"
   | "ground_session"
   | "unreadable";
 
+// A needs_analysis row has no results yet: flight_id, duration, insights
+// and reference membership are null, the date comes from the file name,
+// and source_key (a folder log) or upload_key (a dropped file waiting in
+// the browser) says which log it is.
 export interface FlightTableRow {
-  flight_id: string;
+  flight_id: string | null;
+  source_key?: string;
+  upload_key?: string;
   date: string;
   airport: string;
-  duration_min: number;
+  duration_min: number | null;
   engine_hours: number | null;
-  insight_count: number;
+  insight_count: number | null;
   worst_severity: InsightSeverity | null;
-  in_baselines: boolean;
+  in_baselines: boolean | null;
   excluded_reason?: string;
   status: FlightRowStatus;
   different_tail_number?: string;
@@ -892,6 +899,18 @@ export interface ScanResult {
   // never became a
   // flight_id at all, unlike `excluded` above (duplicate exports).
   auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
+  // Spec 03 v0.17 §5.1 — waiting for the pilot's go-ahead after a scan that
+  // deferred (or restricted) analysis.
+  pending_new_logs?: { source_key: string; log_folder: string; relative_path: string; filename: string; date: string | null }[];
+  pending_reanalysis_flight_ids?: string[];
+}
+
+// Spec 03 v0.17: Sync runs { analyze: false } (discovery only) and asks;
+// Analyze runs everything, or just the given logs / flights.
+export interface ScanOptions {
+  analyze?: boolean;
+  source_keys?: string[];
+  flight_ids?: string[];
 }
 
 // Polled by the Sync button while a scan_workspace call is in flight
