@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.17 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.18 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -27,6 +27,7 @@
 | 0.15 | §5.4 rule: lane-check line reads `both lanes ✓` / `one lane only` / `not detected`; the filter scope caption says "this alert" for a CAS target (Spec 14 §7.5). |
 | 0.16 | **Flight view review** (2026-10-13, five decisions; Spec 10 D20). §5.2 rewritten: header gains a **Flight facts** row with an admission rule (Spec 10 §4.3); **Events** becomes a first-class section between the chart and the topic cards (one chronological table for limit and CAS events, row actions, filtered events collapsed), and the `limit_exceedances` card shrinks to its sentence and badges; topic cards are **expanded only when they have something to say** (insight, mirrored badge, change marker, validity note) and otherwise a one-line roster entry — the "analysed with nothing to flag" line is dropped as redundant; the rule editor leaves the card for a **side panel** opened from a read-only triggers summary (Spec 14 v0.9 §7.3). The loader-skipped-log preview leaves Flight view for its own read-only **Log preview** page (new §5.9). |
 | 0.17 | **Flights review** (2026-10-15, five decisions; two changes). §5.1: the drop zone shows only while the workspace has **no folders**; afterwards it collapses to an **Add logs…** action beside **Sync**, page-wide drop still accepted, progress as a transient banner. **Sync** discovers, then asks before analysing (*Found N new logs and M flights needing re-analysis — Analyze now? / Not now*); deferred work shows as a *Needs analysis* status with a persistent **Analyze N** button. Insights column, Skipped chip-swap and the column set are confirmed unchanged. Also: §5.9 route is by file name (no fingerprint reaches the web); §5.2 roster rule notes that a *reference changed* marker expands every reference-based card while a *rule changed* marker expands only its topic. |
+| 0.18 | §5.7: the Settings changelog is removed (Spec 14 v0.13). Changed settings are marked in Settings and listed in Journal as entries; the Engine tab shows the engine version in effect and its *What's new*. |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
 ---
@@ -219,7 +220,7 @@ Not a top-level nav item (§4) — reached via the gear icon. The workspace swit
 - **Reference & Models** — Spec 14 §5.1 (see §5.5).
 - **App** — units, which workspace reopens on launch, anonymize-by-default (Spec 02 §6.6); the **export/import bundle** flow (Spec 02 §7: scope picker, anonymize toggle, download; import is §5.8's drop-and-preview flow from a different entry point); and the **persistence nudge** (Spec 02 §9 — one-time, dismissible, browser mode only).
 
-One **changelog** across the three tabs: every change, with setting, before/after, source (user, Research task, app upgrade) and time; cross-linked with Journal when the change resulted from a decision (Spec 14 §6.3).
+No changelog (Spec 14 v0.13). A setting that changes results and differs from shipped is marked with its shipped value and links to its Journal entry; display-only settings are unmarked. The Engine tab shows the engine version in effect and its user-facing *What's new* (Spec 13).
 
 ### 5.8 Bundle preview (not top-level; a modal/overlay flow)
 
