@@ -42,6 +42,15 @@ import type {
   WorkspaceRulesResult,
   WorkspaceSettings,
 } from "../types/contract";
+import { targetLabel } from "../types/contract";
+
+// A server older than the Spec 09 v0.18 web (engine before the CAS-events
+// change) names a filter's target with a top-level limit_id and no
+// `target`. Read either shape, so a stale server can't crash a page.
+function withTarget<T extends { target?: FilterTarget; limit_id?: string }>(x: T): T & { target: FilterTarget } {
+  if (x.target) return x as T & { target: FilterTarget };
+  return { ...x, target: { kind: "limit", limit_id: x.limit_id ?? "" } };
+}
 
 // Mirrors Spec 01 §7's operation envelope exactly — the same shape a
 // future Pyodide Web Worker adapter will speak over postMessage instead
@@ -318,40 +327,50 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ deleted: boolean }>("delete_annotation", { id });
   }
 
-  listFilters() {
-    return this.rpc<{ filters: FilterListEntry[] }>("list_filters", {});
+  async listFilters() {
+    const res = await this.rpc<{ filters: FilterListEntry[] }>("list_filters", {});
+    return {
+      ...res,
+      filters: res.filters.map((e) => {
+        const filter = withTarget(e.filter);
+        return { ...e, filter, target_label: e.target_label ?? targetLabel(filter.target, e.limit?.label) };
+      }),
+    };
   }
 
-  proposeFilter(target: FilterTarget) {
-    return this.rpc<FilterProposal>("propose_filter", { target });
+  async proposeFilter(target: FilterTarget) {
+    const p = await this.rpc<FilterProposal>("propose_filter", { target });
+    return { ...p, target: p.target ?? target, existing: p.existing ? withTarget(p.existing) : null };
   }
 
   previewFilter(filter: LimitFilterDraft) {
     return this.rpc<FilterPreview>("preview_filter", { filter });
   }
 
-  saveFilter(filter: LimitFilterDraft) {
-    return this.rpc<LimitFilter>("save_filter", { filter });
+  async saveFilter(filter: LimitFilterDraft) {
+    return withTarget(await this.rpc<LimitFilter>("save_filter", { filter }));
   }
 
   deleteFilter(id: string) {
     return this.rpc<{ deleted: boolean }>("delete_filter", { id });
   }
 
-  filterHealth() {
-    return this.rpc<{ health: FilterHealth[]; attention_count: number }>("filter_health", {});
+  async filterHealth() {
+    const res = await this.rpc<{ health: FilterHealth[]; attention_count: number }>("filter_health", {});
+    return { ...res, health: res.health.map((h) => withTarget(h)) };
   }
 
-  reviewFilter(id: string) {
-    return this.rpc<LimitFilter>("review_filter", { id });
+  async reviewFilter(id: string) {
+    return withTarget(await this.rpc<LimitFilter>("review_filter", { id }));
   }
 
-  rebaselineFilter(id: string) {
-    return this.rpc<LimitFilter>("rebaseline_filter", { id });
+  async rebaselineFilter(id: string) {
+    return withTarget(await this.rpc<LimitFilter>("rebaseline_filter", { id }));
   }
 
-  copyFilters(sourceWorkspaceId: string) {
-    return this.rpc<CopyFiltersResult>("copy_filters", { source_workspace_id: sourceWorkspaceId });
+  async copyFilters(sourceWorkspaceId: string) {
+    const res = await this.rpc<CopyFiltersResult>("copy_filters", { source_workspace_id: sourceWorkspaceId });
+    return { ...res, skipped: res.skipped.map((s) => withTarget(s)) };
   }
 
   getChannelRegistry() {

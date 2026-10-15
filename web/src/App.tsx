@@ -1,4 +1,6 @@
-import { HashRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import type { ReactNode } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { LogPreview } from "./views/LogPreview";
@@ -6,6 +8,12 @@ import { Trends } from "./views/Trends";
 import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
 import { ChartSessionProvider } from "./lib/chartSession";
+
+// One page failing to render must not take every other route down with it.
+function PageBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname + location.search}>{children}</ErrorBoundary>;
+}
 
 function SkippedRedirect() {
   const { logKey } = useParams();
@@ -22,6 +30,7 @@ function App() {
           so it survives navigating away from and back to Flight view
           (e.g. via the Flights list), not just a same-route param change. */}
       <ChartSessionProvider>
+        <PageBoundary>
         <Routes>
           <Route path="/" element={<Navigate to="/flights" replace />} />
           <Route path="/flights" element={<Flights />} />
@@ -43,6 +52,7 @@ function App() {
           <Route path="/journal" element={<Journal />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        </PageBoundary>
       </ChartSessionProvider>
     </HashRouter>
   );
