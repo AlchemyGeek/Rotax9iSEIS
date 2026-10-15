@@ -1,7 +1,7 @@
 # Spec 14 — Settings, Journal, and Rule Editing on the Card
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.11 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
+**Status:** v0.12 — §5.2 (data location in Settings → App) implemented. v0.11 — v0.2–v0.5 implemented on `webui` (`ac62b20`…`282631c`; `4839600`…`03c0017`; `c68c145`…`d84ee5d`; `55e6b32`…`dfe88a6`, 2026-10-11/12). v0.6 (tidy-up: §7.5 additions, *Include again* through the exclusion dialog, Settings `n_min` list shows disabled topics) implemented 2026-10-13. **Spec implemented**; remaining follow-ups live elsewhere: Spec 01 revision note (§8), Spec 11 silencing levels, Pyodide preview latency (Q4). §4–§7 decided, §10 open.
 **Suggested repo path:** `docs/specs/14-settings-journal-and-card-rule-editing.md`
 **Builds on:** Spec 02 (`FleetSelection`, `rules/active.json`, `annotations.json`, app-level vs workspace-level settings §6.4), Spec 03 (§3 principle 6, §4 nav, §5.5 Baselines & models, §5.6 Annotations, §5.7 Settings), Spec 09 (filters, "what would this hide?" preview v0.2, Notes page), Spec 10 (§6.1 rules that do not reflect what runs), Spec 11 (insight layer — paused; three silencing levels, settings shown on the card), Spec 12 (Trends as a change page — recent window, reference pinning)
 **Supersedes:** Spec 03 §5.5 (the rule playground as a page) and the part of principle 6 that places all tuning in Baselines & Models
@@ -17,6 +17,7 @@
 | 0.9 | **Editor leaves the card** (Flight view review, 2026-10-13; Spec 03 v0.16). The topic card's disclosure becomes **read-only** (triggers, current values, met/not met, `enabled` state); one action, *Edit rules…*, opens the editor as a **side panel** over the Flight view, in context (topic + originating flight), with the §7.2 flow unchanged (preview, Apply, Cancel, Reset, scope captions, Journal). *Edit trigger ↓* on an insight card opens the panel directly. The decision that there is no rule list in Settings stands; what moves is only where the inputs render. §7.3 amended. |
 | 0.10 | **Journal is a register, not a log** (2026-10-14). The user wants to know what is *in force*, not what happened. §6 rewritten: one entry per live decision; reversing a decision **removes** its entry (no closed/struck-through entries); re-editing a decision **updates** its entry; the counted effect is **live**, recomputed on open, not a snapshot; the *backfilled* badge goes (imported decisions are ordinary entries); the Settings changelog remains the configuration history and Journal does not duplicate or link into it line by line. §7.1 reversal, §7.2 Apply, §7.3 Enable and acceptance 9/12/17 amended. History survives where it is already kept for other reasons — `LimitFilter.history[]` (Spec 09 §9), the Settings changelog, Spec 12 shift history — not on this page. |
 | 0.11 | **From implementation of v0.10** (bd9a268). Two corrections the build got right and the spec had loose: (1) rule-edit entries are **derived** — a topic whose `rules/active.json` differs from shipped has an entry, whether or not the edit was made through the app, and the register is reconciled with its sources on every read (imports decisions without an entry, drops entries whose decision is gone); "upsert on edit" was a weaker statement of the same thing. (2) With one entry per rule there is no "previous value": **Revert and Reset to shipped are one action**, named *Reset to shipped*. §6.1 row, §7.2 step 4 and §7.3 wording aligned. Also recorded: notices a pilot has reviewed stay cleared until the decision is edited again. |
+| 0.12 | **Data location in Settings → App (§5.2, proposed;** Spec 02 v0.10 §5.8.1**).** The App tab shows where the pilot's data lives and why (default, chosen, or fixed by the environment), with *Change…* and *Use default location*. The flow states what will happen — move into an empty folder, or use one that already holds data — before anything happens. A move keeps the old copy and says where it is. Local server only. Not an analysis setting, so it is not in the changelog. Acceptance 19. |
 | 0.5 | **From implementation of v0.4 steps 1–3.** A disabled topic's card **stays, collapsed** to one line with *Enable*, uniformly for every topic — as built, the engine returned no result for a disabled topic and its card vanished, leaving Journal as the only way back (§7.3). `margin_min_f` and `consecutive_flights` leave the §7.4 list: they are fixed in engine code, not editable triggers; Code's draft wording kept for when they are. Preview wording adopted as built (§7.2). Spec 01 to note that a disabled topic still returns a topic result carrying `enabled: false` and no analysis. §7.5 scope labelling was not built in the v0.4 run and remains pending. |
 | 0.4 | **From implementation of v0.3, and inline help.** Insight card keeps a *jump* to its topic card's open disclosure — one editor, reachable from the insight (§7.3). Engine gap found: `overboost_time`, `map_at_takeoff`, `engine_ecu_inflight`, `limit_exceedances` never read their `enabled` flag; disabling them changed the file and Journal but suppressed nothing — made a guard with a uniform test (§7.3). New §7.4 inline help: when a parameter or section gets help, what it says, where the text lives. New §7.5 scope labelling: every decision control says, before it is touched, whether it applies to this flight or to all flights in the workspace — a trigger edited from one flight's topic card is a workspace rule, and nothing said so until the preview. Acceptance 13–16. `trigger_status` per topic now in the engine contract (Spec 01 to note). |
 | 0.3 | **From implementation of v0.2.** Rule editing moves from the *insight* card to the *topic* card (§7.3), so a trigger that never fires can still be edited in context — found live: no trend trigger fires on the 53-flight set, so no trend rule had an entry point. `n_min` is per-trigger in `rules/active.json`, not a global field; §5.1 corrected to show it read-only. Backfilled Journal entries are marked as backfilled and carry no counted effect (§6.1); backfill must be idempotent. Exclusion dialog has one field, reason (§7.1). Q4 part-resolved: 57 ms preview on 53 flights, local-server mode; Pyodide unmeasured. Acknowledge and disable-topic levels stay unbuilt until Spec 11 (§7.2). |
@@ -79,7 +80,7 @@ Settings becomes a section with tabs. It holds everything that changes what the 
 |---|---|---|
 | **Engine** | Active engine profile and version; the OM limits it ships, read-only, with phase-aware suppression shown per limit; engine overrides when designed (`reason`/`source` mandatory) | `engines/<model>.json`, `engine_overrides.json` |
 | **Reference & Models** | §5.1 | `FleetSelection.baseline_config`, `baselines.json`, `models.json` |
-| **App** | Units; last active workspace; anonymise-on-export default; platform notes (Safari folder re-pick) | app-level settings |
+| **App** | Units; last active workspace; anonymise-on-export default; platform notes (Safari folder re-pick); data location (§5.2, local server only, v0.12) | app-level settings; the location file (Spec 02 §5.8.1) |
 
 The three tabs share **one changelog** — "what changed in your analysis settings", newest first, each entry naming the setting, before/after, and who/what changed it (user, Research task, app upgrade). One list rather than three, so a pilot asking "why does this flight look different from last month" has one place to check. Entries are also mirrored into Journal when they resulted from a decision (§6.3).
 
@@ -99,6 +100,25 @@ Presented as what the engine is compared against, grouped by metric, with contro
 | Models | fitted models — takeoff MAP vs PA/OAT: R², n, residual SD, last refit | refit; link to the Trends residual panel (Spec 12 v0.3) |
 
 What is **not** here: baseline values as the page's main content (they are on cards and Trends); per-topic rule editing (§7.2); limit filter management and drift (Journal, §6).
+
+### 5.2 Data location (App tab, v0.12)
+
+**Question answered:** "Where is my data, and can I put it somewhere else?" The behaviour is Spec 02 §5.8.1; this section is only how it shows.
+
+- **Shown:** the data root's full path, and how many workspaces it holds. One line says how the path was chosen: *Default location*, *Chosen by you*, or *Set by the environment (SLINGOLOGY_EIS_HOME)*. A note says log folders stay where they are.
+- **Change…** opens a path field, the same control as Add folder (Spec 03 §5.1). Once a path is entered, the panel says what will happen before anything does. It's one of:
+  - *Move your data here*, with the number of workspaces and the size to copy.
+  - *Use the data already here*, with the number of workspaces it holds and a note that the current data stays where it is.
+  - The reason it can't be used (Spec 02 §5.8.1's refusals).
+
+  The confirm button names the action: **Move data** or **Use this location**.
+- **During a move:** progress, like a scan's. The rest of the app is unavailable until the move finishes, as it would be during a switch of workspace.
+- **After a move:** "Your data now lives in …. The previous copy is still in …; you can delete it once you're happy." The app never offers to delete it.
+- **Use default location** appears only when a location has been chosen. It runs the same flow against the default folder.
+- **Fixed by the environment:** path and source are shown; *Change…* and *Use default location* are not.
+- **Missing location:** if the chosen location can't be reached at launch, the app opens on a notice in place of every page, not just this tab. The notice names the folder and offers *Try again* and *Choose another location*, the latter opening this flow.
+- **Not in the changelog:** the data location changes where results are kept, not what is computed (§5), so it isn't recorded there.
+- **Browser mode:** the section isn't shown (Spec 02 §5.9).
 
 ## 6. Journal
 
@@ -250,7 +270,7 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 | **13** (deferred) | Inline help text (§7.4) is the first tier of user documentation; Spec 13 reuses the registry rather than rewriting it |
 | **11** (paused) | Adopt §7.1 (exclude from a card), §7.2 and §7.3 (edit with preview before apply, on the topic card; silencing levels report scope before apply; "reference changed" / "rule changed" markers with Revert) when it resumes. The topic `enabled` flag edited per §7.3 *is* the disable-topic level |
 | **12** | Recent window and pinning are configured in Reference & Models; the change summary notes reference recomputation after an exclusion |
-| **02** | No schema change. `FleetSelection`, `rules/active.json`, `annotations.json` and the settings split are unchanged; only where they are edited moves |
+| **02** | No schema change. `FleetSelection`, `rules/active.json`, `annotations.json` and the settings split are unchanged; only where they are edited moves. v0.12: the data location (§5.2) is Spec 02 v0.10 §5.8.1 |
 | **10** | §6.1 removals become a prerequisite (§7.2 guards) |
 
 ## 9. Acceptance criteria
@@ -273,6 +293,12 @@ The Rules playground is retired as a page. Its reason to exist — seeing the fl
 16. (v0.4) Every control in §7.5's table shows its scope caption before interaction and on its Apply button, with the fixed wording; no decision control exists outside the table without one.
 17. (v0.5) Disabling any topic from its card leaves a one-line collapsed card with *Enable* on every flight; *Enable* previews, applies and removes the Journal entry; `egt_cyl_deviation` behaves identically to the others.
 18. (v0.6) *Include again* from Flights and Flight view opens the exclusion dialog with its scope caption and preview; Trends shift-history delete carries its caption; the Settings `n_min` list shows a disabled topic marked *disabled*.
+19. (v0.12) In local-server mode, Settings → App shows the data root and its source.
+    - A move into an empty folder copies every workspace. The app reopens on the same workspace, and flights, filters, Journal and app settings are identical. The old folder is untouched.
+    - Choosing a folder that holds a registry switches to it without copying.
+    - A non-empty folder without a registry is refused, and nothing is written.
+    - With `SLINGOLOGY_EIS_HOME` set, the location can't be changed from the UI.
+    - A missing chosen location opens on the notice, not on the defaults.
 
 ## 10. Open questions
 

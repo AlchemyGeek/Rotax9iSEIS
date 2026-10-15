@@ -1,7 +1,7 @@
 # Spec 02 — Results Bundle & Workspace
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.9 — v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built
+**Status:** v0.10 — v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built; §5.8.1 (choosing the data location) implemented (`data_location.py`, server ops, CLI `data-location`)
 **Suggested repo path:** `docs/specs/02-results-bundle-and-workspace.md`
 **Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
 **Precedes:** Spec 03 (UI Information Architecture)
@@ -20,6 +20,7 @@
 | 0.7 | **Log admission and flight exclusions folded in** (new §5.11, §6.8), replacing the separate Workspace Flight Exclusions spec (filed as a second "Spec 08") and recording the never-committed Ground Session Detection spec it depended on. Written against the implementation, and corrects four things the former spec got wrong: (1) `exclusions.json` governs **admission** (does a log become a flight at all), not baseline contribution — baseline contribution is, and stays, `fleet/selection.json`'s `excluded` list (§6.3). The two are deliberately separate tiers keyed differently (filename vs. `flight_id`), not two copies of one list; §5.11 states why. (2) Parse failures are not `corrupt_log` entries — an unreadable file is never recorded, it surfaces as the Unreadable status (Spec 03 §5.1). (3) `include` never deletes an entry, including a `user_defined` one — it sets `user_override`. (4) `exclusions.json` lives at the workspace root, not `data/`. §5.1, §5.3, §5.9, §6.3 and §7.1 updated to reference the new sections. Status header corrected — it still read "no code written" well after the filesystem realization shipped. New open questions Q12–Q14. |
 | 0.8 | **Mixed-aircraft workspaces made explicit (§5.6).** Tail number stays informational — never a gate, never an exclusion — but v0.7 called several same-engine aircraft in one workspace "a supported case" without noting that the per-aircraft layer (baselines, models, learned patterns, filters, change monitor — Spec 10 §1) then treats them as **one** aircraft. A workspace whose admitted flights carry more than one tail number now shows a persistent notice saying so and recommending one workspace per aircraft; the pilot can confirm that differing tail numbers are the same aircraft (a G3X ident typo, a re-registration), which clears it (`WorkspaceSettings.aircraft_aliases`, §6.6). OM limit checks are unaffected. Per-aircraft learning inside one workspace, with a fleet view comparing aircraft, becomes a future investigation (Q15). |
 | 0.9 | §6.3 gains `fleet/shift_history.json` (Spec 12 §6) — a `ShiftEvent[]`, alongside `selection.json`, append-only except user deletion. Pinned references are not a new file; they're `selection.json`'s `BaselineConfig.pinned_references` (Spec 12 §5.7). |
+| 0.10 | **Choosing the data location (§5.8.1, proposed).** The data root (registry, app settings and `workspaces/`, always together) can be moved. The resolution order is `SLINGOLOGY_EIS_HOME`, then a `location.json` in the per-user configuration folder, then the existing defaults; a configured location wins in every context, a developer checkout included. Changing it from Settings → App (Spec 14 v0.12) or the CLI either **moves** the data into an empty folder (copied, checked, then switched; the old copy is kept until the pilot deletes it) or **uses** a folder that already holds a registry; anything else is refused. A configured location that's missing opens on a notice, never on the defaults. Log folders are unaffected. Q6 resolved. §6.7 points at §5.8.1. |
 
 ---
 
@@ -165,6 +166,35 @@ Extends §5.1's original three contexts (developer checkout, packaged install, D
 | Docker | Whatever the person mounts | One mount for the registry + workspaces tree; log folders are separate mounts entirely, one per folder the pilot wants referenced |
 
 `--logs DIR` (Spec 01 §7.1) still resolves the same way for a single-workspace CLI invocation, but a multi-workspace pilot needs the CLI to accept a workspace by **name**, not just by path, and to list/create workspaces without hand-editing the registry — `slingology-eis workspace list` / `workspace create <name>`. This is a Spec 01 §7.1 follow-up this spec flags but doesn't itself specify (out of scope here — see §10).
+
+### 5.8.1 Choosing the data location (v0.10)
+
+The table above gives the **default** location. A pilot can choose another: an external drive, a synced folder, a folder they can find in Finder. What moves is the whole **data root**, one folder holding `registry.json`, the app-level `settings.json` (§6.6) and `workspaces/`. These three always stay together: the registry names workspaces by id and finds each at `workspaces/<id>/`. Log folders don't move. A workspace references them by path wherever the pilot keeps them (§5.1), so they must stay reachable from the new location as before.
+
+**Resolution order** — the first that applies wins, in every context including a developer checkout:
+
+1. The **`SLINGOLOGY_EIS_HOME`** environment variable: the data root's path. This is the way for Docker, scripts and tests. While it's set, the app shows the location as fixed by the environment and doesn't offer a change.
+2. The **location file**: `location.json` in the per-user configuration folder — macOS `~/Library/Application Support/SlingologyEIS/`, Linux `$XDG_CONFIG_HOME/slingology-eis/` (default `~/.config/slingology-eis/`), Windows `%APPDATA%\SlingologyEIS\`. It is written only by a change of location (below) and holds `{ version: 1, data_root: <absolute path>, set_at: <ISO time> }`. It lives outside the data root because the root can't record its own whereabouts, and outside `~/SlingologyEIS/` because that folder's existence is itself a step in the default order.
+3. **The defaults** in the table above, unchanged.
+
+A location file whose `data_root` doesn't exist or can't be read (an unplugged drive) is **not** skipped silently in favour of the defaults: that would show a pilot an empty app, or someone else's data, without saying why. The app opens on a notice naming the missing folder, with *Try again* and *Choose another location*; the CLI exits with a usage error naming it.
+
+**Changing the location** (local server: Settings → App, Spec 14 §5; CLI: `slingology-eis data-location set PATH`). The pilot gives a folder path, the same way Add folder takes one (Spec 03 §5.1). Before anything happens the app says what will happen, which depends on the folder:
+
+| Target folder | What happens |
+|---|---|
+| Doesn't exist, or empty | **Move.** The current data root's contents are copied there, then checked: every file arrived, the registry loads, every workspace's manifest loads. Only then is the location file written and the app switched to it. The old copy is **left in place**; the app says where it is and that it can be deleted once the pilot is satisfied. It is never deleted automatically. |
+| Holds a `registry.json` | **Use existing.** The app switches to it as it is, after showing how many workspaces it holds. The current data root is not touched or copied. This is how a pilot reconnects to data already on a drive, or goes back to an earlier location. |
+| Not empty, no `registry.json` | Refused: the data won't be mixed into an unrelated folder. The message suggests a new, empty folder inside it. |
+| The current root, inside it, or containing it; not writable | Refused, saying which. |
+
+- A change is refused while a scan or analysis is running.
+- A failed copy or check leaves everything as it was: no location file is written, the half-copied target is removed (it was empty before), and the error says what failed.
+- **Use default location** removes the location file. It offers the same choice against the default folder: move there, or use what's already there.
+- After a switch, the workspace that opens is the new root's `last_active_workspace_id` (§6.6). After a move that's the one that was open.
+- The data location is install-level, not an analysis setting. It is not recorded in any workspace's Settings changelog (Spec 14 §5).
+- `slingology-eis data-location` (no argument) prints the data root in use and which of the three steps chose it.
+- **Browser realization:** not applicable. The browser's data lives in IndexedDB (§5.9), and the setting isn't shown there.
 
 ### 5.9 Browser realization
 
@@ -372,7 +402,7 @@ interface WorkspaceRegistry {
 }
 ```
 
-**Local realization:** `~/SlingologyEIS/registry.json` (or the equivalent developer-checkout / Docker path from §5.8), sibling to the `workspaces/` directory, not inside any one workspace. **Browser realization:** the `slingology-eis-registry` IndexedDB database (§5.9). Both are small — even a hundred workspaces is a trivial amount of JSON — so no special sizing concern beyond what §9 already covers for a single workspace.
+**Local realization:** `registry.json` at the data root — by default `~/SlingologyEIS/registry.json`, or the developer-checkout / Docker path from §5.8, or a location the pilot chose (§5.8.1) — sibling to the `workspaces/` directory, not inside any one workspace. **Browser realization:** the `slingology-eis-registry` IndexedDB database (§5.9). Both are small — even a hundred workspaces is a trivial amount of JSON — so no special sizing concern beyond what §9 already covers for a single workspace.
 
 ### 6.8 `exclusions.json` (new in v0.7)
 
@@ -475,7 +505,7 @@ Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection
 | Q3 | Should the workspace track its own storage usage and warn before hitting a browser quota, or rely on `navigator.storage.estimate()` at UI level? | UI-level (Spec 03), this spec just needs the data to stay small, which §9 argues it does. |
 | Q4 | Does `engine_overrides.json` need a real design now, or can it stay a placeholder until a pilot actually asks for it? | Placeholder; no evidence yet that default engine profiles are wrong for any tested aircraft. |
 | Q5 | Bundle import currently always merges (§7.4) — is there a case for a true "read-only, don't merge" viewer mode, e.g. for a community sample bundle someone doesn't want mixed into their own data? | **Sharpened by `workspaces-and-log-browser.md`'s Q3 (below), now folded in here:** with multiple workspaces, "don't merge into what I have" has a natural answer that didn't exist in v0.3 — open an imported bundle as a **new workspace** rather than merging into the active one. That's a real design change to §7.4's "always merges" rule, not just a UI mode; needs a decision, not just a leaning. |
-| Q6 | Should the packaged installer's default (`~/SlingologyEIS/`) be a fixed, hardcoded name, or configurable at install time (e.g. macOS `~/Library/Application Support/SlingologyEIS/` vs. a plain home-directory folder a non-technical user can actually find in Finder)? | Lean toward a plain, visible home-directory folder — discoverability by a non-technical pilot matters more than platform convention here. Needs a decision before Spec 04 §9.5 packaging is implemented. |
+| Q6 | Should the packaged installer's default (`~/SlingologyEIS/`) be a fixed, hardcoded name, or configurable at install time (e.g. macOS `~/Library/Application Support/SlingologyEIS/` vs. a plain home-directory folder a non-technical user can actually find in Finder)? | **Resolved (v0.10):** the default stays a plain, visible home-directory folder, `~/SlingologyEIS/` — discoverability by a non-technical pilot matters more than platform convention — and the pilot can move it anywhere afterwards (§5.8.1). Only the small location file uses the platform's configuration folder. |
 | Q7 | ~~A log with no fingerprint match reappears "missing" indefinitely — does it drop out on its own, or stay listed until removed?~~ | **Resolved.** Stays listed as Missing, results and baseline contribution unchanged, until the pilot explicitly clears it — distinct from a whole unreachable folder, which is one event, not N missing logs. See §5.5. |
 | Q8 | ~~When a scan finds a log for a different aircraft, warn-and-exclude, or offer to create/switch workspace?~~ | **Resolved, and reframed.** Multi-aircraft-same-engine-type is a real, intended use case (a flight school, a partnership), not an edge case to guard against — a different tail number is purely informational, never excludes anything. What actually can't mix is *engine model*, and that's enforced structurally (one `engine_model` per workspace, applied to everything in it) rather than detected per-log, because engine variant isn't present in the log data at all (verified against `limits.py`) — see §5.6, and the resulting gap, Q11. |
 | Q9 | ~~Should a first-time pilot ever have to think about creating a workspace?~~ | **Resolved.** No — auto-create from the tail number in their first imported logs, plain fallback name if parsing fails, always renamable. |
