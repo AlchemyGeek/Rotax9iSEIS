@@ -82,6 +82,16 @@ describe("Events table", () => {
     expect(screen.getByText(/in flight \(1\)/)).toBeTruthy();
   });
 
+  it("a phase-suppressed row says so, with its phases (Spec 09 v0.20)", () => {
+    const iset = JSON.parse(JSON.stringify(eis)) as InsightSet;
+    const filtered = iset.topics.find((t) => t.topic_id === "limit_exceedances")!.insights.find((i) => i.filter?.outcome === "suppressed")!;
+    filtered.events = filtered.events!.map((e) => ({ ...e, suppressed_by: "phase", phases: ["CRUISE"] }));
+    table(efa, iset);
+    fireEvent.click(within(screen.getByTestId("filtered-group")).getByRole("button"));
+    const rows = screen.getAllByTestId("event-row").filter((r) => r.textContent?.includes("suppressed (phase: CRUISE)"));
+    expect(rows).toHaveLength(3);
+  });
+
   it("has one line when the flight has no events", () => {
     table({ ...efa, exceedances: [] }, eis);
     expect(screen.getByText("No events on this flight")).toBeTruthy();

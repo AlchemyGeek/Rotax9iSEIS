@@ -52,7 +52,7 @@
       "max_val": 5800,
       "severity": "WARNING",
       "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit",
-      "filter_policy": { "magnitude_modes": ["absolute"], "duration_allowed": false, "max_band_abs": 30 }
+      "filter_policy": { "magnitude_modes": ["absolute"], "duration_allowed": false, "phases_allowed": false, "max_band_abs": 30 }
     },
 
     {
@@ -240,7 +240,7 @@
     "power_pct_threshold": 100,
     "limit_s": 300,
     "note": "Naturally aspirated engine — no boost. Block retained only because it is the single owner of the OM 5-minute take-off rule: 5,800 rpm / 100% power for max. 5 min (OM 2.1 Engine speed).",
-    "filter_policy": { "magnitude_modes": ["absolute", "percent"], "duration_allowed": false }
+    "filter_policy": { "magnitude_modes": ["absolute", "percent"], "duration_allowed": false, "phases_allowed": false }
   },
 
   "_eco_power_mode_note": "Intentionally absent: the 912iS ECU has ECO and POWER modes but OM-912 i Series Ed.2 Rev.2 states no throttle-position threshold for the switch-over, so none is configured.",

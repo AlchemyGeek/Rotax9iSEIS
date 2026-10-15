@@ -60,6 +60,8 @@ function chartOption({
           s.band ? `band: ${bandLabel(s.band)}` : "",
           showReference && s.in_reference ? "reference flight" : "",
           s.breaches ? `${s.breaches} beyond the filter` : s.events ? `${s.events} event(s), all within the filter` : "",
+          // Spec 09 v0.20 §12.2: per flight, the events hidden by phase.
+          s.suppressed_by_phase ? `${s.suppressed_by_phase} suppressed by phase` : "",
         ].filter(Boolean).join("<br/>");
       },
     },

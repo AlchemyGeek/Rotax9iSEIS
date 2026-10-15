@@ -140,6 +140,9 @@ def resolve_filter_policy(limit: dict) -> dict:
     raw = limit.get("filter_policy") or {}
     severity = limit.get("severity", "CAUTION")
     duration_allowed = bool(raw.get("duration_allowed", True))
+    # §6.3 (v0.20): may a filter on this limit carry a phase condition?
+    # Default yes; a CAS target never (Q12).
+    phases_allowed = bool(raw.get("phases_allowed", True)) and limit.get("kind") != "cas"
     magnitude_modes = raw.get("magnitude_modes")
     if magnitude_modes is None:
         magnitude_modes = list(MAGNITUDE_MODES)
@@ -155,6 +158,7 @@ def resolve_filter_policy(limit: dict) -> dict:
         "severity": severity,
         "magnitude_modes": magnitude_modes,
         "duration_allowed": duration_allowed,
+        "phases_allowed": phases_allowed,
         "max_band_abs": raw.get("max_band_abs"),
         "max_duration_s": raw.get("max_duration_s") if duration_allowed else None,
         "note_required": bool(raw.get("note_required", severity == "WARNING")),
@@ -319,15 +323,33 @@ def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]
 
     diags = []
     magnitude, duration = filter_.get("magnitude"), filter_.get("duration")
+    phases = filter_.get("phases") or None   # an empty list is no condition
     if is_cas(limit) and magnitude:
         # §7.3 / §11.4: a CAS event has no excess, so magnitude can't
         # apply; the condition is ignored (not fatal) and the duration
         # condition, if any, still stands.
         diags.append(_diag("FILTER_CAS_MAGNITUDE", f"{label}: a magnitude condition doesn't apply to an alert; ignored.", filter_))
         magnitude = None
-    if not magnitude and not duration:
-        need = "a duration condition" if is_cas(limit) else "a magnitude or a duration condition"
+    if not magnitude and not duration and not phases:
+        need = "a duration condition" if is_cas(limit) else "a magnitude, duration or phase condition"
         diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a filter needs {need}.", filter_))
+    if phases:
+        # §7.3 / §7.5 (v0.20): limit targets whose policy allows it; names
+        # the detector emits, not UNKNOWN; no duplicates.
+        if not policy["phases_allowed"]:
+            why = ("an alert's ground/in-flight split belongs to its classifier" if is_cas(limit)
+                   else "excluding phases would bypass this limit's own guardrail")
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a phase condition isn't allowed — {why}.", filter_))
+        else:
+            bad = [p for p in phases if p not in FILTER_PHASES]
+            dupes = sorted({p for p in phases if phases.count(p) > 1})
+            if bad or dupes:
+                what = []
+                if bad:
+                    what.append("not a phase that can be excluded: " + ", ".join(map(str, bad)))
+                if dupes:
+                    what.append("listed twice: " + ", ".join(dupes))
+                diags.append(_diag("FILTER_PHASE_INVALID", f"{label}: " + "; ".join(what) + ".", filter_))
     if magnitude:
         mode, value = magnitude.get("mode"), magnitude.get("value")
         if mode not in policy["magnitude_modes"]:
@@ -397,12 +419,64 @@ def active_filters(filters: list[dict], limits_by_id: dict, fleet=None) -> tuple
 
 # ── Suppression (§4, §7) ────────────────────────────────────────────────────
 
+# §7.5 (v0.20): the phases a filter may exclude — every phase the detector
+# emits (Spec 01 §8.3) except UNKNOWN, in the order a flight runs.
+FILTER_PHASES = (
+    "PRE_START", "ENGINE_START", "WARMUP", "TAXI", "TAKEOFF_ROLL", "CLIMB",
+    "CRUISE", "DESCENT", "APPROACH", "LANDING_ROLL", "SHUTDOWN",
+)
+
+
+def event_phases(event: dict, phase_segments: list[dict]) -> list[str]:
+    """§11.3 (v0.20): the phases an event's rows lie in, in order. Rows are
+    1 Hz samples from elapsed_s to elapsed_s + duration_s - 1 (duration_s
+    counts the last row, limits.py); a phase segment covers
+    [start_s, end_s). A row no segment covers, or an event with no time,
+    is UNKNOWN."""
+    t0 = event.get("elapsed_s")
+    if t0 is None:
+        return ["UNKNOWN"]
+    t1 = t0 + max(float(event.get("duration_s") or 1) - 1, 0)
+    out: list[str] = []
+    cursor = t0                      # rows before cursor are accounted for
+    for seg in sorted(phase_segments, key=lambda g: g["start_s"]):
+        if seg["start_s"] > t1 or seg["end_s"] <= t0:
+            continue
+        if seg["start_s"] > cursor + 1e-9:
+            out.append("UNKNOWN")    # a stretch no segment covers
+        out.append(seg["phase"])
+        cursor = max(cursor, seg["end_s"])
+    if cursor <= t1 - 1e-9 or not out:
+        out.append("UNKNOWN")
+    return [p for i, p in enumerate(out) if i == 0 or p != out[i - 1]]
+
+
+def with_event_phases(events: list[dict], phase_segments: list[dict]) -> list[dict]:
+    """Copies of `events` carrying `phases` (§11.3)."""
+    return [{**e, "phases": event_phases(e, phase_segments)} for e in events]
+
+
+def tolerated_by_phase(event: dict, filter_: dict) -> bool:
+    """§7.5 whole-event rule: every row of the event lies in an excluded
+    phase. An event touching any other phase, or UNKNOWN, is not."""
+    excluded = set(filter_.get("phases") or ())
+    phases = event.get("phases") or ["UNKNOWN"]
+    return bool(excluded) and all(p in excluded for p in phases)
+
+
 def classify_event(event: dict, filter_: dict, limit: dict, z_ref: Optional[dict] = None) -> Optional[str]:
     """
-    "magnitude" or "duration" if the filter tolerates this event (magnitude
-    checked first), None if it's a breach. `z_ref` is the comparison-set
-    stats (comparison_set) for a z filter.
+    Which condition tolerates this event, or None if it's a breach (§4).
+    When several do, the simplest reason is named: "phase", then
+    "duration", then "magnitude" (§11.3, v0.20). `event["phases"]` is the
+    event's phases (with_event_phases); `z_ref` is the comparison-set
+    stats for a z filter.
     """
+    if tolerated_by_phase(event, filter_):
+        return "phase"
+    d = filter_.get("duration")
+    if d and event["duration_s"] <= d["max_event_s"]:
+        return "duration"
     excess = event.get("excess")
     m = filter_.get("magnitude")
     if m and excess is not None:
@@ -413,9 +487,6 @@ def classify_event(event: dict, filter_: dict, limit: dict, z_ref: Optional[dict
                     return "magnitude"
         elif excess <= resolved_band(filter_, limit) + 1e-9:
             return "magnitude"
-    d = filter_.get("duration")
-    if d and event["duration_s"] <= d["max_event_s"]:
-        return "duration"
     return None
 
 
@@ -437,7 +508,14 @@ def band_text(filter_: dict, limit: dict, frozen: Optional[dict] = None) -> str:
     d = filter_.get("duration")
     if d:
         parts.append(f"events up to {d['max_event_s']:g} s")
+    if filter_.get("phases"):
+        parts.append("in " + ", ".join(_flight_order(filter_["phases"])))
     return " or ".join(parts)
+
+
+def _flight_order(phases: list[str]) -> list[str]:
+    order = {p: i for i, p in enumerate(FILTER_PHASES)}
+    return sorted(phases, key=lambda p: order.get(p, len(order)))
 
 
 # ── Operations (§11.2) ──────────────────────────────────────────────────────
@@ -585,6 +663,10 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
     limits = with_cas_targets({lim["id"]: lim for fa in included[:1] for lim in fa.limits})
     diagnostics = validate_filter(draft, limits, fleet) if limits else []
 
+    def _target_events(iset) -> list[dict]:
+        topic = next((t for t in iset.topics if t["topic_id"] == "limit_exceedances"), {"insights": []})
+        return [e for i in topic["insights"] if insight_target_key(i) == key for e in i.get("events", [])]
+
     def _limit_counts(iset) -> tuple[int, int, int]:
         """(events, suppressed, breaches) for the draft's target on one flight."""
         topic = next((t for t in iset.topics if t["topic_id"] == "limit_exceedances"), {"insights": []})
@@ -595,6 +677,12 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
                        if (i.get("filter") or {}).get("outcome") == "breach")
         return len(evs), suppressed, breaches
 
+    # §12.1 (v0.20): for a phase condition, what it suppresses by phase,
+    # and what of this limit stays visible, with its phases.
+    by_phase: dict[str, dict] = {}
+    visible_by_phase: dict[str, int] = {}
+    visible_total = 0
+
     def _topic_ids(iset) -> dict:
         return {i["id"]: i for t in iset.topics if t["topic_id"] != "limit_exceedances" for i in t["insights"]}
 
@@ -604,6 +692,16 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
         after = evaluate_insights(fa, fleet, rules, filters=candidate)
         n, sup_before, _ = _limit_counts(before)
         _, sup_after, breaches = _limit_counts(after)
+        for e in _target_events(after):
+            if e["suppressed_by"] == "phase":
+                for ph in dict.fromkeys(e.get("phases") or []):
+                    slot = by_phase.setdefault(ph, {"events": 0, "flights": set()})
+                    slot["events"] += 1
+                    slot["flights"].add(fa.flight_id)
+            elif e["suppressed_by"] is None:
+                visible_total += 1
+                for ph in dict.fromkeys(e.get("phases") or ["UNKNOWN"]):
+                    visible_by_phase[ph] = visible_by_phase.get(ph, 0) + 1
         if n == 0 and not _topic_ids(before).keys() - _topic_ids(after).keys():
             continue
         b_ids, a_ids = _topic_ids(before), _topic_ids(after)
@@ -627,7 +725,19 @@ def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: lis
         "flights_affected": sum(1 for f in flights if f["newly_suppressed"] or f["topic_insights_removed"]),
         "flights_with_breach": sum(1 for f in flights if f["breaches"]),
         "flights": flights,
+        "phases": {
+            "suppressed_by_phase": {ph: {"events": v["events"], "flights": len(v["flights"])}
+                                    for ph, v in sorted(by_phase.items(), key=lambda kv: _phase_rank(kv[0]))},
+            "visible_events": visible_total,
+            "visible_by_phase": dict(sorted(visible_by_phase.items(), key=lambda kv: _phase_rank(kv[0]))),
+            # Q11 (leaning: allow, and say so plainly).
+            "excludes_every_phase": set(draft.get("phases") or ()) >= set(FILTER_PHASES),
+        } if draft.get("phases") else None,
     }
+
+
+def _phase_rank(phase: str) -> int:
+    return FILTER_PHASES.index(phase) if phase in FILTER_PHASES else len(FILTER_PHASES)
 
 
 # ── Change monitor (§8) ─────────────────────────────────────────────────────
@@ -795,9 +905,9 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
             fid = p["flight_id"]
             fa = fas.get(fid)
             band = flight_band(fa, limit) if fa else p.get("band")
-            events = suppressed = breaches = 0
+            events = suppressed = breaches = by_phase = 0
             if fa is not None:
-                evs = [e for e in fa.exceedances if event_target_key(e) == lid]
+                evs = with_event_phases([e for e in fa.exceedances if event_target_key(e) == lid], fa.phases)
                 if ob:
                     block = fa.metrics.get("overboost_max_block_s", {}).get("value")
                     if block is not None and block > limit["limit_value"]:
@@ -811,8 +921,10 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
                     z_ref = comparison_set(frozen_mag, band)[0] if (f.get("magnitude") or {}).get("mode") == "z" else None
                     for e in evs:
                         events += 1
-                        if is_valid and classify_event(e, f, limit, z_ref):
+                        why = classify_event(e, f, limit, z_ref) if is_valid else None
+                        if why:
                             suppressed += 1
+                            by_phase += why == "phase"   # §12.2 (v0.20); never a breach
                         else:
                             breaches += 1
             series.append({
@@ -821,6 +933,7 @@ def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], en
                 **({} if cas else {("block_s" if ob else "peak_excess"): (mag_pts.get(fid) or {}).get("value")}),
                 **({"time_above_pct": (pct_pts.get(fid) or {}).get("value")} if pct_key else {}),
                 "events": events, "suppressed": suppressed, "breaches": breaches,
+                "suppressed_by_phase": by_phase,
             })
         health["series"] = series
         monitored = [s for s in series if s["monitored"]]

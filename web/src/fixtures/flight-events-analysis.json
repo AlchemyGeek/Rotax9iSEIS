@@ -1,6 +1,6 @@
 {
   "flight_id": "2ff42d6222e2a10b",
-  "analysis_key": "ff8e6a3e64c24bc463a4793b4e56d1a1a557c568db7c76265ebbc0bb18bc7d6f",
+  "analysis_key": "4644a540df8f7c44343775d34633fe256e7832b6bf4e984b329e59339553c9af",
   "source_keys": [
     "a6b412b95c3fb60a"
   ],
@@ -648,7 +648,7 @@
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
-      "hash": "30b754321a4390e49c4ea19a7b882ab78f4709f5295775e5e20edb681ba79481",
+      "hash": "62c4e519df1fe08eb85c8ba61b296a1abb422c5b7ed34ba61d64dd0c76500789",
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
@@ -697,6 +697,7 @@
           "absolute"
         ],
         "duration_allowed": false,
+        "phases_allowed": false,
         "max_band_abs": 30
       },
       "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit"
@@ -970,7 +971,8 @@
           "absolute",
           "percent"
         ],
-        "duration_allowed": false
+        "duration_allowed": false,
+        "phases_allowed": false
       }
     }
   ],

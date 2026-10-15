@@ -81,10 +81,12 @@ def test_catalog_carries_overboost_close_call_and_stratification():
     # v0.12: overboost is an ordinary reported exceedance now (Spec 09 §6.4).
     assert cat["overboost"]["param"] == "overboost"
     assert cat["overboost"]["report_in_exceedances"] is True
-    assert cat["overboost"]["filter_policy"] == {"magnitude_modes": ["absolute", "percent"], "duration_allowed": False}
+    # v0.20 (§6.3): neither takes a phase condition.
+    assert cat["overboost"]["filter_policy"] == {"magnitude_modes": ["absolute", "percent"], "duration_allowed": False,
+                                                  "phases_allowed": False}
     assert "rpm_continuous_max" not in cat
     assert cat["rpm_takeoff_max"]["filter_policy"] == {
-        "magnitude_modes": ["absolute"], "duration_allowed": False, "max_band_abs": 30,
+        "magnitude_modes": ["absolute"], "duration_allowed": False, "phases_allowed": False, "max_band_abs": 30,
     }
     assert cat["oil_temp_max"]["stratify_by"] == "oat_band"
     assert cat["map_max"]["stratify_by"] == "da_band"

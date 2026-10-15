@@ -55,7 +55,7 @@
       "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit",
       "filter_policy": {
         "magnitude_modes": ["absolute"],
-        "duration_allowed": false,
+        "duration_allowed": false, "phases_allowed": false,
         "max_band_abs": 30
       }
     },
@@ -254,7 +254,7 @@
     "note": "Above 5,500 rpm or 100 % power for more than 5 minutes",
     "filter_policy": {
       "magnitude_modes": ["absolute", "percent"],
-      "duration_allowed": false
+      "duration_allowed": false, "phases_allowed": false
     }
   },
 

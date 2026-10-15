@@ -1,7 +1,7 @@
 {
   "flight_id": "2ff42d6222e2a10b",
-  "analysis_key": "ff8e6a3e64c24bc463a4793b4e56d1a1a557c568db7c76265ebbc0bb18bc7d6f",
-  "fleet_key": "e585aea45b8ea6453938cc70c7477625e80422db8db0b6da738920b67f37ebfc",
+  "analysis_key": "4644a540df8f7c44343775d34633fe256e7832b6bf4e984b329e59339553c9af",
+  "fleet_key": "27e05e8442a451055b75be70f86841c5bce8ea21eaf8aad842fd19d050a9d964",
   "rules_hash": "b3d06e2c25071b4d71fdcf7168652e38a9f0b1cf1ed758f0351068fdcbae9032",
   "filters_hash": "130009a41fcbafb3103ef6d9220c4c36f39635977a92bb5bee33f58bc720d450",
   "topics": [
@@ -199,7 +199,10 @@
               "duration_s": 45.0,
               "observed_value": 49.5,
               "excess": 3.5,
-              "suppressed_by": null
+              "suppressed_by": null,
+              "phases": [
+                "CRUISE"
+              ]
             }
           ],
           "filterable": true,
@@ -257,7 +260,10 @@
               "duration_s": 40.0,
               "observed_value": 46.8,
               "excess": 0.8,
-              "suppressed_by": "magnitude"
+              "suppressed_by": "magnitude",
+              "phases": [
+                "CRUISE"
+              ]
             },
             {
               "event_id": "fuel_press_max@2026-02-08T12:03:36",
@@ -266,7 +272,10 @@
               "duration_s": 40.0,
               "observed_value": 46.8,
               "excess": 0.8,
-              "suppressed_by": "magnitude"
+              "suppressed_by": "magnitude",
+              "phases": [
+                "CRUISE"
+              ]
             },
             {
               "event_id": "fuel_press_max@2026-02-08T12:05:16",
@@ -275,7 +284,10 @@
               "duration_s": 40.0,
               "observed_value": 46.8,
               "excess": 0.8,
-              "suppressed_by": "magnitude"
+              "suppressed_by": "magnitude",
+              "phases": [
+                "CRUISE"
+              ]
             }
           ],
           "filterable": true,
@@ -317,7 +329,10 @@
               "duration_s": 20.0,
               "observed_value": 255.0,
               "excess": 7.0,
-              "suppressed_by": null
+              "suppressed_by": null,
+              "phases": [
+                "CRUISE"
+              ]
             }
           ],
           "filterable": true
@@ -392,7 +407,7 @@
     "schema_version": "0.1.0",
     "engine_profile": {
       "id": "916iS",
-      "hash": "30b754321a4390e49c4ea19a7b882ab78f4709f5295775e5e20edb681ba79481",
+      "hash": "62c4e519df1fe08eb85c8ba61b296a1abb422c5b7ed34ba61d64dd0c76500789",
       "source_status": "VERIFIED"
     },
     "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",

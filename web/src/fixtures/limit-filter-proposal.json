@@ -32,6 +32,7 @@
       "z"
     ],
     "duration_allowed": true,
+    "phases_allowed": true,
     "max_band_abs": null,
     "max_duration_s": null,
     "note_required": true,

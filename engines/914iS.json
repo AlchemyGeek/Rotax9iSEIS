@@ -51,7 +51,7 @@
       "note": "PLACEHOLDER \u2014 verify against OM",
       "filter_policy": {
         "magnitude_modes": ["absolute"],
-        "duration_allowed": false,
+        "duration_allowed": false, "phases_allowed": false,
         "max_band_abs": 30
       }
     },
@@ -200,7 +200,7 @@
     "note": "PLACEHOLDER \u2014 verify against OM",
     "filter_policy": {
       "magnitude_modes": ["absolute", "percent"],
-      "duration_allowed": false
+      "duration_allowed": false, "phases_allowed": false
     }
   },
   "eco_power_mode": {

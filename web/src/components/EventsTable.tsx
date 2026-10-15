@@ -211,6 +211,7 @@ function Row({ row, muted, expanded, onToggle, ...props }: EventsTableProps & { 
               target={row.target}
               flightPeak={lim?.excess ?? null}
               eventDurationS={row.source === "cas" ? row.duration_s : null}
+              eventPhases={row.source === "limit" ? row.phases : null}
               createdFrom={row.insight ? { flight_id: props.flightId, insight_id: row.insight.id } : undefined}
               onSaved={() => { setFilterOpen(false); props.onFilterSaved(); }}
               onCancel={() => setFilterOpen(false)}

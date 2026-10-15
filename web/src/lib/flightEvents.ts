@@ -31,6 +31,10 @@ export interface EventRow {
   // "suppressed": inside a filter (collapsed); "breach": a filtered
   // target's event the filter doesn't tolerate.
   filterState: "none" | "suppressed" | "breach";
+  // Which condition hides it (Spec 09 §11.3), and the phases its rows lie
+  // in (v0.20, from the limit insight's event).
+  suppressedBy: "phase" | "duration" | "magnitude" | null;
+  phases: string[] | null;
   insight: Insight | null;
   eventIndex: number; // index into insight.events / insight.evidence
 }
@@ -79,9 +83,11 @@ export function buildEventRows(fa: FlightAnalysis, insightSet: InsightSet): Even
         target: { kind: "cas", cas_id: e.cas_id }, targetLabel: e.cas_id, duration_s: e.duration_s,
         excessText: null, reason: notLaneCheckText(e),
         severity: hit?.insight.severity ?? null, filterState, insight: hit?.insight ?? null, eventIndex: hit?.index ?? 0,
+        suppressedBy: insEvent?.suppressed_by ?? null, phases: null,
       };
     }
     const lim = e as ExceedanceEvent;
+    const limEvent = insEvent && !("classification" in insEvent) ? insEvent : undefined;
     const excess = lim.excess ?? null;
     return {
       key, source: "limit", event: e, elapsed_s: lim.elapsed_s,
@@ -89,8 +95,9 @@ export function buildEventRows(fa: FlightAnalysis, insightSet: InsightSet): Even
       target: lim.limit_id ? { kind: "limit", limit_id: lim.limit_id } : null,
       targetLabel: limitTargetLabel(lim), duration_s: lim.duration_s,
       excessText: excess === null ? null : `${lim.limit_type === "MIN" ? "−" : "+"}${fmtNum(Math.abs(excess))} ${lim.unit}`,
-      reason: null,
+      reason: limEvent?.suppressed_by === "phase" ? `suppressed (phase: ${(limEvent.phases ?? []).join(", ")})` : null,
       severity: hit?.insight.severity ?? null, filterState, insight: hit?.insight ?? null, eventIndex: hit?.index ?? 0,
+      suppressedBy: limEvent?.suppressed_by ?? null, phases: limEvent?.phases ?? null,
     };
   });
 

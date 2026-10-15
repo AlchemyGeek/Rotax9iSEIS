@@ -154,7 +154,8 @@
                   "duration_s": { "type": "number" },
                   "observed_value": { "type": "number" },
                   "excess": { "type": ["number", "null"] },
-                  "suppressed_by": { "enum": ["magnitude", "duration", null] }
+                  "suppressed_by": { "enum": ["phase", "duration", "magnitude", null], "description": "Spec 09 §11.3: the simplest condition that tolerates the event — phase, then duration, then magnitude (v0.20)." },
+                  "phases": { "type": "array", "items": { "type": "string" }, "description": "Spec 09 v0.20: the phases the event's rows lie in, in order; UNKNOWN where no phase segment covers a row." }
                 }
               },
               {

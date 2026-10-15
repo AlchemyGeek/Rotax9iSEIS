@@ -213,7 +213,10 @@ export interface InsightEvent {
   duration_s: number;
   observed_value: number;
   excess: number | null;
-  suppressed_by: "magnitude" | "duration" | null;
+  // Spec 09 §11.3: the simplest condition that tolerates it — phase, then
+  // duration, then magnitude (v0.20).
+  suppressed_by: "phase" | "duration" | "magnitude" | null;
+  phases?: string[]; // v0.20: the phases the event's rows lie in, in order
 }
 
 // Spec 14 §7.3 — one entry per configured trigger on a topic, whether or
@@ -1007,6 +1010,8 @@ export interface LimitFilter {
   target: FilterTarget;
   magnitude?: { mode: FilterMagnitudeMode; value: number };
   duration?: { max_event_s: number };
+  // Spec 09 v0.20 §7.5: excluded flight phases (detector names, never UNKNOWN).
+  phases?: string[];
   note: string;
   created_from?: { flight_id: string; insight_id: string };
   copied_from?: { workspace_id: string; filter_id: string };
@@ -1020,7 +1025,14 @@ export interface LimitFilter {
 }
 
 // What the filter editor sends: a new filter has no id and no reference yet.
-export type LimitFilterDraft = Pick<LimitFilter, "target" | "magnitude" | "duration" | "note" | "created_from"> & { id?: string };
+export type LimitFilterDraft = Pick<LimitFilter, "target" | "magnitude" | "duration" | "phases" | "note" | "created_from"> & { id?: string };
+
+// The detector's phases a filter may exclude, in the order a flight runs
+// (Spec 09 v0.20 §12.1) — never UNKNOWN.
+export const FILTER_PHASES = [
+  "PRE_START", "ENGINE_START", "WARMUP", "TAXI", "TAKEOFF_ROLL", "CLIMB",
+  "CRUISE", "DESCENT", "APPROACH", "LANDING_ROLL", "SHUTDOWN",
+] as const;
 
 export interface FilterPolicy {
   filterable: boolean;
@@ -1028,6 +1040,8 @@ export interface FilterPolicy {
   severity: string;
   magnitude_modes: FilterMagnitudeMode[];
   duration_allowed: boolean;
+  // Spec 09 v0.20 §6.3: may a filter on this limit exclude flight phases?
+  phases_allowed?: boolean;
   max_band_abs: number | null;
   max_duration_s: number | null;
   note_required: boolean;
@@ -1081,6 +1095,14 @@ export interface FilterPreview {
     breaches: number;
     topic_insights_removed: { id: string; topic_id: string; text: string }[];
   }[];
+  // Spec 09 v0.20 §12.1: for a phase condition, what it suppresses by
+  // phase and what of this limit stays visible.
+  phases?: {
+    suppressed_by_phase: Record<string, { events: number; flights: number }>;
+    visible_events: number;
+    visible_by_phase: Record<string, number>;
+    excludes_every_phase: boolean;
+  } | null;
 }
 
 export interface FilterListEntry {
@@ -1126,6 +1148,7 @@ export interface FilterHealth {
     events: number;
     suppressed: number;
     breaches: number;
+    suppressed_by_phase?: number; // Spec 09 v0.20 §12.2
   }[];
   last_breach?: { flight_id: string; event_id: string | null };
   hours_since_review: number | null;

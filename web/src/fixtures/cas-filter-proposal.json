@@ -28,6 +28,7 @@
     "severity": "CAUTION",
     "magnitude_modes": [],
     "duration_allowed": true,
+    "phases_allowed": false,
     "max_band_abs": null,
     "max_duration_s": null,
     "note_required": false,

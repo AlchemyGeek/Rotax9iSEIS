@@ -1788,6 +1788,7 @@ def _event_summary(exc: dict, suppressed_by: Optional[str] = None) -> dict:
             exc["observed_value"] - exc["limit_value"] if exc["limit_type"] == "MAX"
             else exc["limit_value"] - exc["observed_value"]),
         "suppressed_by": suppressed_by,
+        "phases": exc.get("phases") or ["UNKNOWN"],
     }
 
 
@@ -2020,14 +2021,20 @@ def evaluate_insights(
     # against. Empty for a pre-Spec-09 analysis — topics then fall back to
     # the legacy numeric thresholds until the flight is re-analysed.
     limits_by_id = _filters.with_cas_targets({lim["id"]: lim for lim in flight_analysis.limits})
-    events_by_limit = _events_by_limit(flight_analysis.exceedances)
+    # Spec 09 §11.3 (v0.20): each limit event carries the phases its rows
+    # lie in — from the flight's own phase segments, so it applies to
+    # analyses stored before v0.20 too. CAS events keep their classifier phase.
+    events_by_limit = _events_by_limit([
+        e if e.get("source") == "cas" else {**e, "phases": _filters.event_phases(e, flight_analysis.phases)}
+        for e in flight_analysis.exceedances
+    ])
 
     # Spec 09 §7: classify each filtered limit's events. `unsuppressed`
     # (breaches, or every event on an unfiltered limit) is what topic
     # thresholds react to (§10.2).
     valid_filters, filter_diagnostics = _filters.active_filters(filters or [], limits_by_id, fleet_analysis)
     limit_diagnostics.extend(filter_diagnostics)
-    suppressed_by: dict[str, Optional[str]] = {}   # event_id -> "magnitude" | "duration" | None
+    suppressed_by: dict[str, Optional[str]] = {}   # event_id -> "phase" | "duration" | "magnitude" | None
     frozen_by_limit: dict[str, dict] = {}
     for lid, flt in valid_filters.items():
         lim = limits_by_id[lid]

@@ -2150,8 +2150,8 @@ def resolve_reference_changes_for_cause(ws_dir: Path, cause_journal_entry_id: st
 # what it's given and keeps each filter's history.
 
 _FILTERS_VERSION = "1"
-_FILTER_CONDITION_KEYS = ("magnitude", "duration")
-_FILTER_EDITABLE_KEYS = ("magnitude", "duration", "note")
+_FILTER_CONDITION_KEYS = ("magnitude", "duration", "phases")   # phases: Spec 09 v0.20 §7.5
+_FILTER_EDITABLE_KEYS = ("magnitude", "duration", "phases", "note")
 
 
 def load_filters(ws_dir: Path) -> dict:
@@ -2237,8 +2237,8 @@ def _filter_target(fields: dict) -> dict:
 
 
 def filter_conditions_changed(old: dict, fields: dict) -> bool:
-    """Did an edit change the band or the duration (which resets the
-    reference, §8.1), as opposed to only the note?"""
+    """Did an edit change the band, the duration or (v0.20) the excluded
+    phases — which resets the reference, §8.1 — as opposed to only the note?"""
     return any((old.get(k) or None) != (fields.get(k) or None) for k in _FILTER_CONDITION_KEYS)
 
 

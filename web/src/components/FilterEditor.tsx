@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import type { FilterMagnitudeMode, FilterPreview, FilterProposal, FilterTarget, LimitFilter, LimitFilterDraft } from "../types/contract";
-import { targetKey } from "../types/contract";
+import { FILTER_PHASES, targetKey } from "../types/contract";
 import { ScopeCaption } from "./ScopeCaption";
 import { APPLY_LABEL, filterScope } from "../lib/scope";
 
@@ -50,6 +50,7 @@ export function FilterEditor({
   target,
   flightPeak,
   eventDurationS,
+  eventPhases,
   createdFrom,
   onSaved,
   onCancel,
@@ -59,6 +60,9 @@ export function FilterEditor({
   // Spec 09 v0.19 §12.1: a CAS filter opened from an Events row is
   // pre-filled with that event's duration.
   eventDurationS?: number | null;
+  // Spec 09 v0.20 §12.1: the phases of the event this was opened from —
+  // offered as "exclude this event's phases", never pre-selected.
+  eventPhases?: string[] | null;
   createdFrom?: { flight_id: string; insight_id: string };
   onSaved: (filter: LimitFilter | null) => void;
   onCancel: () => void;
@@ -70,6 +74,8 @@ export function FilterEditor({
   const [value, setValue] = useState<number>(1);
   const [durationOn, setDurationOn] = useState(false);
   const [maxEventS, setMaxEventS] = useState<number>(10);
+  // Spec 09 v0.20 §7.5: excluded flight phases (empty: no phase condition).
+  const [phases, setPhases] = useState<string[]>([]);
   const [note, setNote] = useState("");
   // A preview belongs to the draft it was run for; any edit hides it.
   const [previewFor, setPreviewFor] = useState<{ key: string; result: FilterPreview } | null>(null);
@@ -92,6 +98,7 @@ export function FilterEditor({
           }
           setDurationOn(Boolean(existing.duration));
           if (existing.duration) setMaxEventS(existing.duration.max_event_s);
+          setPhases(existing.phases ?? []);
           setNote(existing.note);
         } else if (p.target.kind === "cas") {
           setMagnitudeOn(false);
@@ -118,10 +125,12 @@ export function FilterEditor({
       target,
       magnitude: magnitudeOn && target.kind !== "cas" ? { mode, value } : undefined,
       duration: durationOn && proposal.policy.duration_allowed ? { max_event_s: maxEventS } : undefined,
+      phases: phases.length && proposal.policy.phases_allowed && target.kind !== "cas"
+        ? FILTER_PHASES.filter((p) => phases.includes(p)) : undefined,
       note,
       created_from: proposal.existing ? undefined : createdFrom,
     };
-  }, [proposal, target, magnitudeOn, mode, value, durationOn, maxEventS, note, createdFrom]);
+  }, [proposal, target, magnitudeOn, mode, value, durationOn, maxEventS, phases, note, createdFrom]);
 
   const draftKey = JSON.stringify(draft);
   const preview = previewFor && previewFor.key === draftKey ? previewFor.result : null;
@@ -162,7 +171,8 @@ export function FilterEditor({
   const overCap = policy.max_band_abs !== null && resolvedBand !== null && resolvedBand > policy.max_band_abs + 1e-9;
   const durationOverCap = policy.max_duration_s !== null && maxEventS > policy.max_duration_s;
   const noteMissing = policy.note_required && !note.trim();
-  const nothing = !(magnitudeOn && !isCas) && !(durationOn && policy.duration_allowed);
+  const phasesAllowed = Boolean(policy.phases_allowed) && !isCas;
+  const nothing = !(magnitudeOn && !isCas) && !(durationOn && policy.duration_allowed) && !(phasesAllowed && phases.length > 0);
   const zUnavailable = mode === "z" && !proposal.z_available;
   const canSave = !nothing && !overCap && !durationOverCap && !noteMissing && !(zUnavailable && !isCas) && (isCas || value > 0) && !busy;
 
@@ -286,8 +296,48 @@ export function FilterEditor({
           )}
         </>
       )}
-      {!isCas && magnitudeOn && durationOn && policy.duration_allowed && (
-        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>An event is hidden if either condition tolerates it.</div>
+      {phasesAllowed && (
+        <div data-testid="phase-chips">
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, marginBottom: 6 }}>
+            <span>Events in these phases are fine:</span>
+            {eventPhases && eventPhases.some((p) => (FILTER_PHASES as readonly string[]).includes(p)) && (
+              <button
+                type="button"
+                onClick={() => setPhases((prev) => [...new Set([...prev, ...eventPhases.filter((p) => (FILTER_PHASES as readonly string[]).includes(p))])])}
+                style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 11, cursor: "pointer" }}
+              >
+                Exclude this event's phases ({eventPhases.join(" → ")})
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {FILTER_PHASES.map((p) => {
+              const on = phases.includes(p);
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setPhases((prev) => (on ? prev.filter((x) => x !== p) : [...prev, p]))}
+                  style={{
+                    padding: "3px 9px", borderRadius: 12, fontSize: 11, cursor: "pointer",
+                    border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    background: on ? "var(--accent-15)" : "transparent",
+                    color: on ? "var(--accent)" : "var(--text-secondary)",
+                  }}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+            An event is hidden only if all of it lies in excluded phases; one reaching into any other phase stays visible.
+          </div>
+        </div>
+      )}
+      {!isCas && [magnitudeOn, durationOn && policy.duration_allowed, phasesAllowed && phases.length > 0].filter(Boolean).length > 1 && (
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>An event is hidden if any of these conditions tolerates it.</div>
       )}
 
       <div>
@@ -315,6 +365,26 @@ export function FilterEditor({
               {preview.flights.some((f) => f.topic_insights_removed.length > 0) && (
                 <div style={{ color: "var(--text-tertiary)" }}>
                   Also hides {preview.flights.reduce((s, f) => s + f.topic_insights_removed.length, 0)} topic threshold insight(s) for this limit.
+                </div>
+              )}
+              {preview.phases && (
+                <div data-testid="phase-preview" style={{ marginTop: 6 }}>
+                  {preview.phases.excludes_every_phase && (
+                    <div style={{ color: "var(--severity-watch)" }}>Every phase is excluded: no event of this limit will be shown.</div>
+                  )}
+                  <div>
+                    Suppressed by phase:{" "}
+                    {Object.keys(preview.phases.suppressed_by_phase).length === 0
+                      ? "none"
+                      : Object.entries(preview.phases.suppressed_by_phase)
+                          .map(([ph, v]) => `${ph} ${v.events} event${v.events === 1 ? "" : "s"} on ${v.flights} flight${v.flights === 1 ? "" : "s"}`)
+                          .join(" · ")}
+                  </div>
+                  <div>
+                    Still visible: {preview.phases.visible_events} event{preview.phases.visible_events === 1 ? "" : "s"}
+                    {preview.phases.visible_events > 0 &&
+                      ` (${Object.entries(preview.phases.visible_by_phase).map(([ph, n]) => `${ph} ${n}`).join(" · ")})`}
+                  </div>
                 </div>
               )}
             </>

@@ -72,6 +72,7 @@ function EventRows({
               {ev.observed_value.toFixed(1)}
               {unit ? ` ${unit}` : ""}
               {ev.excess !== null && ` (${ev.excess.toFixed(1)} ${limitType === "MIN" ? "under" : "over"})`}
+              {ev.suppressed_by === "phase" && ` · suppressed (phase: ${(ev.phases ?? []).join(", ")})`}
             </span>
           )}
           <span>{fmtDuration(ev.duration_s)}</span>

@@ -48,6 +48,16 @@ function driftDetailText(details: NonNullable<FilterHealth["drift_details"]>): s
     .join("\n\n");
 }
 
+// Spec 09 v0.20 §12.2: events hidden because they lay wholly in an
+// excluded phase, over the monitored history.
+function phaseSuppressedText(series: FilterHealth["series"]): string {
+  const total = series.reduce((n, s) => n + (s.suppressed_by_phase ?? 0), 0);
+  const flights = series.filter((s) => (s.suppressed_by_phase ?? 0) > 0).length;
+  return total === 0
+    ? "nothing suppressed by phase yet"
+    : `${total} event${total === 1 ? "" : "s"} suppressed by phase on ${flights} flight${flights === 1 ? "" : "s"}`;
+}
+
 function History({ history }: { history: LimitFilter["history"] }) {
   return (
     <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -289,6 +299,13 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
               </ul>
             )}
             <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>Tolerates {summary || "—"}</div>
+            {filter.phases && filter.phases.length > 0 && (
+              // Spec 09 v0.20 §12.2: the excluded phases, and what they hide.
+              <div data-testid="filter-phases" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                Excluded phases: {filter.phases.join(", ")}
+                {h && ` · ${phaseSuppressedText(h.series)}`}
+              </div>
+            )}
             {filter.note && <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>“{filter.note}”</div>}
             {!valid && (
               <div style={{ fontSize: 12, color: "var(--severity-limit)" }}>

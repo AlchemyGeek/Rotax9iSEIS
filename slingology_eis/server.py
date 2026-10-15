@@ -1159,7 +1159,7 @@ def op_save_filter(params: dict, ctx: dict) -> Any:
     candidate = {**(existing or {}), **fields,
                  "reference": {"flight_ids": new_reference} if new_reference is not None
                  else (existing or {}).get("reference", {"flight_ids": []})}
-    for k in ("magnitude", "duration"):
+    for k in ("magnitude", "duration", "phases"):
         if not fields.get(k):
             candidate.pop(k, None)
     diags = _filters.validate_filter(candidate, limits, fleet)
@@ -1259,7 +1259,7 @@ def op_copy_filters(params: dict, ctx: dict) -> Any:
         if lim is None:
             skipped.append({"target": f["target"], "reason": "no such limit or alert in this engine profile"})
             continue
-        fields = {k: f[k] for k in ("target", "magnitude", "duration", "note") if f.get(k) is not None}
+        fields = {k: f[k] for k in ("target", "magnitude", "duration", "phases", "note") if f.get(k) is not None}
         fields["copied_from"] = {"workspace_id": source_id, "filter_id": f.get("id")}
         saved = ws.save_filter(workspace_dir, fields, reference_flight_ids=_filters.select_reference(fleet, lim),
                                engine_hours=hours)
