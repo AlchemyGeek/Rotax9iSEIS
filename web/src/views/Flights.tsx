@@ -12,6 +12,7 @@ import type {
   InsightSeverity, ScanOptions, ScanProgress, ScanResult, WorkspaceManifest,
 } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
+import { DROP_PROMPT_THRESHOLD, plural, promptText } from "../lib/flightsSync";
 
 const client = getEngineClient();
 
@@ -62,9 +63,6 @@ function scanProgressText(p: ScanProgress | null): string {
 
 type GroupBy = "date" | "folder";
 
-// Spec 03 v0.17 §5.1: one or two dropped files analyse at once; this many
-// or more go through the same "Analyze now?" question as Sync.
-export const DROP_PROMPT_THRESHOLD = 3;
 
 // One banner above the table for everything transient: progress, the
 // Sync / drop question, and the summary afterwards (§5.1 — never a
@@ -88,9 +86,7 @@ function groupIds(rows: FlightTableRow[]): string[] {
   return rows.flatMap((r) => (r.flight_id ? [r.flight_id] : []));
 }
 
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
+
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
@@ -866,8 +862,7 @@ export function Flights() {
             {banner.kind === "prompt" && (
               <>
                 <span style={{ color: "var(--text-primary)" }}>
-                  Found {plural(banner.newLogs, "new log")}
-                  {banner.stale > 0 && <> and {plural(banner.stale, "flight")} needing re-analysis</>}. Analyze now?
+                  {promptText(banner.newLogs, banner.stale)}
                 </span>
                 <span style={{ flexGrow: 1 }} />
                 <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}>

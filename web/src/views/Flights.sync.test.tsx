@@ -66,7 +66,8 @@ vi.mock("../lib/engineClient", () => {
   return { getEngineClient: () => client };
 });
 
-import { Flights, DROP_PROMPT_THRESHOLD } from "./Flights";
+import { Flights } from "./Flights";
+import { DROP_PROMPT_THRESHOLD, promptText } from "../lib/flightsSync";
 
 function renderFlights() {
   render(<MemoryRouter initialEntries={["/flights"]}><Flights /></MemoryRouter>);
@@ -142,6 +143,18 @@ describe("Flights — adding logs and Sync consent", () => {
     expect(screen.queryAllByTestId("pending-row")).toHaveLength(0);
     expect(screen.queryByText("Needs re-analysis")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Analyze \d+$/ })).toBeNull();
+  });
+
+  it("names only the kinds of work found", async () => {
+    expect(promptText(0, 53)).toBe("Found 53 flights needing re-analysis. Analyze now?");
+    expect(promptText(2, 0)).toBe("Found 2 new logs. Analyze now?");
+    expect(promptText(1, 1)).toBe("Found 1 new log and 1 flight needing re-analysis. Analyze now?");
+    state.stale = ["f1", "f2"];
+    renderFlights();
+    fireEvent.click(await screen.findByText("Sync"));
+    const prompt = await screen.findByRole("dialog", { name: "Analyze now?" });
+    expect(prompt.textContent).toContain("Found 2 flights needing re-analysis. Analyze now?");
+    expect(prompt.textContent).not.toContain("0 new");
   });
 
   it("a Needs-analysis row offers Analyze this flight instead of opening the Flight view", async () => {
