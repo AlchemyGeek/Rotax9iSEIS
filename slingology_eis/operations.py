@@ -2164,7 +2164,11 @@ def evaluate_insights(
 
         if topic_id == "egt_spread":
             enabled = r_data.get(topic_id, {}).get("enabled", True)
-            raw = topics.egt_spread(value, 392, b, triggers, enabled)
+            # The high-flow EGT split limit from this engine's profile, or
+            # none: an engine whose OM defines no split (912iS) gets no
+            # OM-limit line, never another engine's 392 °F.
+            split = limits_by_id.get(_METRIC_LIMIT_REF["egt_spread"])
+            raw = topics.egt_spread(value, split["limit_value"] if split else None, b, triggers, enabled)
         elif topic_id in ("oil_temp_peak", "coolant_temp_peak"):
             om_limit, limit_events = _resolve_limit_ref_events(topic_id)
             fn = topics.oil_temp_peak if topic_id == "oil_temp_peak" else topics.coolant_temp_peak

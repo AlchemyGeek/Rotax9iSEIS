@@ -146,6 +146,7 @@ def parse_engine_config(text: str, name: str = "") -> dict:
         cfg = json.loads(text)
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid engine config JSON: {e}")
+    egt_spread_config(cfg)   # an incomplete egt_spread block fails here, at load
 
     # Warn if this is a placeholder config
     if cfg.get("_metadata", {}).get("source_status") == "PLACEHOLDER":
@@ -228,6 +229,34 @@ def engine_limits_from_config(engine_config: dict) -> list[Limit]:
 
 EGT_SPLIT_HIGH_FLOW_ID = "egt_split_high_flow"
 EGT_SPLIT_LOW_FLOW_ID = "egt_split_low_flow"
+
+# The OM values an egt_spread block must state. There are no defaults: an
+# engine whose OM defines no EGT split (the 912iS) has no block and no
+# check, and a block missing one of these is a profile error, not a cue
+# to borrow another engine's numbers.
+_EGT_SPREAD_REQUIRED = ("high_flow_threshold_lph", "high_flow_spread_limit_f", "low_flow_spread_limit_f")
+
+
+def egt_spread_config(engine_config: dict) -> Optional[dict]:
+    """
+    The profile's EGT split block, or None when it has none — then there
+    is no EGT split check and no EGT split limit anywhere. Raises
+    ValueError when the block is present but doesn't state every OM value
+    the check needs (`_EGT_SPREAD_REQUIRED`).
+    """
+    if "egt_spread" not in engine_config:
+        return None
+    spread = engine_config["egt_spread"]
+    if not isinstance(spread, dict):
+        raise ValueError("Engine profile 'egt_spread' must be an object; omit it when the OM defines no EGT split.")
+    missing = [k for k in _EGT_SPREAD_REQUIRED
+               if isinstance(spread.get(k), bool) or not isinstance(spread.get(k), (int, float))]
+    if missing:
+        raise ValueError(
+            f"Engine profile 'egt_spread' block is incomplete: missing or non-numeric {', '.join(missing)}. "
+            f"State every value from the Operators Manual, or omit the block when the OM defines no EGT split."
+        )
+    return spread
 OVERBOOST_ID = "overboost"
 
 
@@ -245,8 +274,8 @@ def validate_limit_ids(engine_config: dict) -> None:
     """
     seen: set[str] = set()
     ids = [(e.get("id"), e.get("label", "?")) for e in engine_config.get("limits", [])]
-    spread = engine_config.get("egt_spread") or {}
-    if spread:
+    spread = egt_spread_config(engine_config)
+    if spread is not None:
         ids.append((spread.get("high_flow_limit_id", EGT_SPLIT_HIGH_FLOW_ID), "EGT split (high flow)"))
         ids.append((spread.get("low_flow_limit_id", EGT_SPLIT_LOW_FLOW_ID), "EGT split (low flow)"))
     if engine_config.get("overboost"):
@@ -336,15 +365,15 @@ def limit_catalog(engine_config: dict) -> list[dict]:
             if lim.note:
                 entry["note"] = lim.note
             out.append(entry)
-    spread = engine_config.get("egt_spread") or {}
-    if spread:
+    spread = egt_spread_config(engine_config)
+    if spread is not None:
         for id_key, default_id, limit_key, label in (
             ("high_flow_limit_id", EGT_SPLIT_HIGH_FLOW_ID, "high_flow_spread_limit_f", "EGT Split (high fuel flow)"),
             ("low_flow_limit_id", EGT_SPLIT_LOW_FLOW_ID, "low_flow_spread_limit_f", "EGT Split (low fuel flow)"),
         ):
             entry = {
                 "id": spread.get(id_key, default_id), "param": "egt_spread_f", "label": label, "unit": "°F",
-                "limit_type": "MAX", "limit_value": spread.get(limit_key, 392.0 if "high" in id_key else 932.0),
+                "limit_type": "MAX", "limit_value": spread[limit_key],
                 "severity": "WARNING", "report_in_exceedances": True,
                 "stratify_by": spread.get("stratify_by", "oat_band"),
             }
@@ -537,17 +566,19 @@ def check_exceedances(
             _accumulate_events(working_df, series, mask, lim, "MAX", lim.max_val, events, lim_gap_s)
 
     # ── EGT spread: conditional on fuel flow ─────────────────────────────────
-    # Thresholds come from the engine config rather than being hardcoded.
-    egt_spread_cfg = engine_config.get("egt_spread", {})
-    hi_flow_threshold = egt_spread_cfg.get("high_flow_threshold_lph", 3.0)
-    hi_spread_f       = egt_spread_cfg.get("high_flow_spread_limit_f", 392.0)
-    lo_spread_f       = egt_spread_cfg.get("low_flow_spread_limit_f", 932.0)
-    hi_note = egt_spread_cfg.get("high_flow_note", f"EGT split limit at fuel flow > {hi_flow_threshold} L/hr")
-    lo_note = egt_spread_cfg.get("low_flow_note",  f"EGT split limit at fuel flow < {hi_flow_threshold} L/hr")
-    hi_id = egt_spread_cfg.get("high_flow_limit_id", EGT_SPLIT_HIGH_FLOW_ID)
-    lo_id = egt_spread_cfg.get("low_flow_limit_id", EGT_SPLIT_LOW_FLOW_ID)
+    # Only for an engine whose OM defines an EGT split: no egt_spread block,
+    # no check (OM-912 i defines none). Thresholds come from the profile,
+    # never from another engine's numbers.
+    egt_spread_cfg = egt_spread_config(engine_config)
+    if egt_spread_cfg is not None and "egt_spread_f" in df.columns and "fuel_flow_lph" in df.columns:
+        hi_flow_threshold = egt_spread_cfg["high_flow_threshold_lph"]
+        hi_spread_f       = egt_spread_cfg["high_flow_spread_limit_f"]
+        lo_spread_f       = egt_spread_cfg["low_flow_spread_limit_f"]
+        hi_note = egt_spread_cfg.get("high_flow_note", f"EGT split limit at fuel flow > {hi_flow_threshold} L/hr")
+        lo_note = egt_spread_cfg.get("low_flow_note",  f"EGT split limit at fuel flow < {hi_flow_threshold} L/hr")
+        hi_id = egt_spread_cfg.get("high_flow_limit_id", EGT_SPLIT_HIGH_FLOW_ID)
+        lo_id = egt_spread_cfg.get("low_flow_limit_id", EGT_SPLIT_LOW_FLOW_ID)
 
-    if "egt_spread_f" in df.columns and "fuel_flow_lph" in df.columns:
         hi_flow = df["fuel_flow_lph"] >= hi_flow_threshold
         lo_flow = df["fuel_flow_lph"] <  hi_flow_threshold
 

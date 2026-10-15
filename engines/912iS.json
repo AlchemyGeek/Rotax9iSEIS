@@ -231,7 +231,7 @@
     }
   ],
 
-  "_egt_spread_note": "Intentionally absent: OM-912 i Series Chapter 2.1 defines no EGT split / cylinder-difference limit (unlike OM-915/916). The EGT split checker must not run for this engine — see limits.py egt_spread defaults.",
+  "_egt_spread_note": "Intentionally absent: OM-912 i Series Chapter 2.1 defines no EGT split / cylinder-difference limit (unlike OM-915/916). The EGT split checker doesn't run for an engine without this block — see limits.py egt_spread_config.",
 
   "overboost": {
     "id": "overboost",

@@ -116,15 +116,19 @@ def predict_takeoff_map(model: dict, pressure_alt_ft: float, oat_c: float) -> Op
 
 # ── Topics ─────────────────────────────────────────────────────────────────
 
-def egt_spread(spread, spread_hi_limit_f: float, b: dict, rule_triggers: list, enabled: bool = True) -> dict:
+def egt_spread(spread, spread_hi_limit_f: Optional[float], b: dict, rule_triggers: list, enabled: bool = True) -> dict:
+    """`spread_hi_limit_f`: the profile's high-flow EGT split limit, or None
+    for an engine whose OM defines no split — then no OM-limit sentence."""
     if spread is None or b.get("mean") is None:
         return {"analysis": "Insufficient cruise data for EGT spread.", "insights": []}
     note = confidence_note(b)
     analysis = (
         f"Cruise mean {spread:.0f}°F. "
         f"Your average: {b['mean']:.0f}°F ± {b['std']:.0f}°F "
-        f"({b['n']} flights{note}). OM limit: {spread_hi_limit_f:.0f}°F."
+        f"({b['n']} flights{note})."
     )
+    if spread_hi_limit_f is not None:
+        analysis += f" OM limit: {spread_hi_limit_f:.0f}°F."
     insights = []
     if enabled:
         for rule in rule_triggers:
