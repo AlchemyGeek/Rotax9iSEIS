@@ -467,16 +467,15 @@ def tolerated_by_phase(event: dict, filter_: dict) -> bool:
 def classify_event(event: dict, filter_: dict, limit: dict, z_ref: Optional[dict] = None) -> Optional[str]:
     """
     Which condition tolerates this event, or None if it's a breach (§4).
-    When several do, the simplest reason is named: "phase", then
-    "duration", then "magnitude" (§11.3, v0.20). `event["phases"]` is the
-    event's phases (with_event_phases); `z_ref` is the comparison-set
-    stats for a z filter.
+    When several do, one is named in this order: "phase", then
+    "magnitude", then "duration" (§11.3, v0.21) — magnitude before
+    duration is the order used before phases, so a flight with no phase
+    condition keeps its labels. `event["phases"]` is the event's phases
+    (with_event_phases); `z_ref` is the comparison-set stats for a z
+    filter.
     """
     if tolerated_by_phase(event, filter_):
         return "phase"
-    d = filter_.get("duration")
-    if d and event["duration_s"] <= d["max_event_s"]:
-        return "duration"
     excess = event.get("excess")
     m = filter_.get("magnitude")
     if m and excess is not None:
@@ -487,6 +486,9 @@ def classify_event(event: dict, filter_: dict, limit: dict, z_ref: Optional[dict
                     return "magnitude"
         elif excess <= resolved_band(filter_, limit) + 1e-9:
             return "magnitude"
+    d = filter_.get("duration")
+    if d and event["duration_s"] <= d["max_event_s"]:
+        return "duration"
     return None
 
 

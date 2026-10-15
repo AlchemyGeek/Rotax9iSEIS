@@ -1,5 +1,5 @@
 """
-Spec 09 v0.20 — phase-of-flight exclusion in filters (§7.5, Phase 8):
+Spec 09 v0.20/v0.21 — phase-of-flight exclusion in filters (§7.5, Phase 8):
 acceptance 25–28 on synthetic flights. (24, on the real log set, is in
 tests/contract/test_phase_filter_real.py.)
 """
@@ -98,15 +98,26 @@ def test_acceptance_26_magnitude_and_phase():
     assert [(e["elapsed_s"], e["suppressed_by"]) for e in outcome["suppressed"]["events"]] == [(100.0, "phase")]
     assert "within your filter (up to +2 psi or in WARMUP)" in outcome["suppressed"]["message"]["text"]
 
-    # §11.3 precedence: phase > duration > magnitude.
+    # §11.3 reason order (v0.21): phase, then magnitude, then duration.
     lim = CAT["fuel_press_max"]
     every = _filter("fuel_press_max", {"mode": "absolute", "value": 5.0}, {"max_event_s": 120}, phases=["WARMUP"])
     small_short_warm = {**_fp(100, 60, 47.0), "phases": ["WARMUP"]}
     small_short_cruise = {**_fp(1000, 60, 47.0), "phases": ["CRUISE"]}
     small_long_cruise = {**_fp(1000, 600, 47.0), "phases": ["CRUISE"]}
-    assert classify_event(small_short_warm, every, lim) == "phase"
-    assert classify_event(small_short_cruise, every, lim) == "duration"
+    large_short_cruise = {**_fp(1000, 60, 60.0), "phases": ["CRUISE"]}
+    assert classify_event(small_short_warm, every, lim) == "phase"          # all three tolerate it
+    assert classify_event(small_short_cruise, every, lim) == "magnitude"    # band and duration both tolerate it
     assert classify_event(small_long_cruise, every, lim) == "magnitude"
+    assert classify_event(large_short_cruise, every, lim) == "duration"
+
+    # Through evaluate_insights: an event both the band and the duration
+    # tolerate is labelled magnitude without a phase condition, and phase
+    # with one that also tolerates it.
+    fa = _flight([_fp(100, 60, 47.0)], GROUND_AIR)
+    band_and_duration = _filter("fuel_press_max", {"mode": "absolute", "value": 5.0}, {"max_event_s": 120}, note="")
+    for flt, why in ((band_and_duration, "magnitude"), (band_and_duration | {"phases": ["WARMUP"]}, "phase")):
+        evs = _events(evaluate_insights(fa, update_fleet([]), RULES, filters=[flt]), "fuel_press_max")
+        assert [e["suppressed_by"] for e in evs] == [why]
 
 
 # ── Acceptance 27: monitoring ────────────────────────────────────────────────
@@ -203,6 +214,15 @@ def test_acceptance_28_without_phase_filters_insights_unchanged_apart_from_event
         for e in i.get("events", []):
             assert e.pop("phases")
     assert [[e["suppressed_by"] for e in i["events"]] for i in stripped] == [[None], ["magnitude", "magnitude"]]
+
+    # An event both a band and a duration tolerate keeps its pre-v0.20
+    # label, magnitude (§11.3, v0.21); a phase condition that also
+    # tolerates it takes precedence.
+    both = _filter("fuel_press_max", {"mode": "absolute", "value": 2.5}, {"max_event_s": 120}, note="sender reads high")
+    ins = _limit_topic(evaluate_insights(fa, update_fleet([]), RULES, filters=[both]))["insights"]
+    assert [[e["suppressed_by"] for e in i["events"]] for i in ins] == [[None], ["magnitude", "magnitude"]]
+    ins = _limit_topic(evaluate_insights(fa, update_fleet([]), RULES, filters=[both | {"phases": ["WARMUP"]}]))["insights"]
+    assert [[e["suppressed_by"] for e in i["events"]] for i in ins] == [[None], ["phase", "magnitude"]]
 
 
 def test_preview_breaks_suppression_down_by_phase():

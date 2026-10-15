@@ -1,7 +1,7 @@
 # Spec 09 — Limit Filters and Change Monitoring
 
 **Project:** SlingologyEIS
-**Status:** v0.20 — Phase 8 (phase-of-flight exclusion, §7.5) proposed, not implemented; Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
+**Status:** v0.21 — Phase 8 (phase-of-flight exclusion, §7.5) implemented (commit f92c55c), with v0.21's reason-order amendment pending, to ship as engine 0.30.0; Phases 1–6 implemented (engine 0.22.0); Phase 7 topic limit references implemented (Spec 10 Phase B, engine 0.25.0); Phase 7's D6 limit fixes (§6.8) proposed, not implemented (§16); Q5 resolved by Spec 12 §8.2 (Session B); §5/§8.2 cross-references to Spec 12 Phase 6's event frequency (Session C)
 **Suggested repo path:** `docs/specs/09-limit-filters.md`
 **Builds on:** Spec 01 (engine contract, baselines §8.4, insight rules, annotations R3), Spec 02 (workspace files, `FleetSelection`), Spec 03 (Flight view, Baselines & models, Notes page), Spec 08 (persistence pattern for consecutive-flight insights)
 **Baseline reviewed:** branch `webui` at commit `3f71549` (2026-09-29), engine 0.14.0
@@ -30,6 +30,7 @@
 | 0.18 | **Filters on CAS events** (Spec 01 v0.21, Spec 10 D19). A filter attaches to a *target*: a limit (as before) or a classified CAS alert (`cas_id`, today only `ENGINE ECU`). CAS targets offer the duration condition only — there is no excess, so no magnitude condition and no z reference; the §8 change monitor runs on event frequency alone (Spec 12 §5.8). §4, §7.3, §9, §10.1, §11 updated; `limit_id` becomes `target` in storage (migration: existing records are `{kind: "limit"}`). Phase-scoped suppression for a target, decided 2026-10-11 (per-limit phase exclusion), is specified separately when it lands and applies to CAS targets the same way. |
 | 0.19 | §12.1 reworded for Spec 03 v0.16: events are a first-class **Events** section on the Flight view (one chronological table, limit and CAS), not cards inside the limits topic. Filter actions, pre-fill, preview and the mirrored topic badges are unchanged; only where the rows render. |
 | 0.20 | **Phase-of-flight exclusion (§7.5, Phase 8 proposed).** A filter on a limit can list flight phases to exclude. An event lying **wholly** within the excluded phases is suppressed (`suppressed_by: "phase"`); an event touching any phase not excluded, or UNKNOWN, is judged by the filter's other conditions as before. Phase is a third intention alongside magnitude and duration: any condition that tolerates an event suppresses it, and a filter may carry phases alone. Excluded-phase events stay in the change monitor's metrics, so growth in them makes the filter Drifting, and they are never a breach (§8.1). New policy field `phases_allowed` (default true, §6.3); `rpm_takeoff_max` and `overboost` declare `false`, because a phase exclusion would bypass the ceiling's 30 rpm cap and the 5-minute rule (§6.4, §6.7). CAS targets get no phase condition: their ground/in-flight split already belongs to the classifier (Q12). Phase *scope* — a band applying only within chosen phases — is deferred (Q10). Acceptance 24–28. |
+| 0.21 | **From the Phase 8 implementation (f92c55c).** Reason order changed to `phase`, then `magnitude`, then `duration` (§11.3): magnitude-before-duration is the order the code used before v0.20, so a flight with no phase filter keeps exactly the labels it had, as acceptance 28 requires; v0.20's "simplest reason" ordering would have relabelled events that both a band and a duration tolerate. §7.5 records where an event's phases come from (evaluation time, from the stored phase segments; uncovered rows are UNKNOWN) and that rows the profile dropped inside an event still count toward its phases. Q11 resolved: excluding every phase is allowed, with the preview warning. Engine 0.30.0 for Phase 8, accepting that the Sync rules (Spec 03 v0.17) mark every flight for re-analysis on the bump. |
 
 **Note on numbering:** Number 06 stays reserved for the tabled research mode.
 
@@ -369,6 +370,7 @@ Filters apply retroactively to every flight in the workspace. A flight's insight
 - **Limits only.** A phase condition is available on limit targets whose policy has `phases_allowed` (§6.3). CAS targets don't carry one: whether a CAS event happened on the ground or in flight is the classifier's job (Spec 01 §8.6), and a mislabelled phase could hide an in-flight ENGINE ECU event (Q12).
 - **Per limit.** A phase condition applies to its filter's one limit. There is no workspace-wide phase exclusion: excluding TAXI for every limit would also hide an oil-pressure loss or an overheat while taxiing.
 - **After the engine profile.** The profile's own phase rules and gates (`phases`, `min_duration_by_phase`, `min_rpm` §6.6, the idle-established condition §6.8) are fixed rules from the OM or physics, applied for everyone before events are formed. A phase filter is the pilot's choice, applied afterwards to the events that remain. It is never the fix for a rule defect; those belong in the profile (Spec 10 D6, causes 1 and 2).
+- **Where an event's phases come from (v0.21).** They are derived when insights are evaluated, from the phase segments every stored flight analysis already carries, so existing analyses need no new data. A row that no segment covers counts as UNKNOWN. An event's phases are taken over its whole time span, including rows the profile's own rules dropped inside it (§6.2): a phase those rows were in still counts, which errs toward keeping the event visible.
 - **Phase labels can be wrong**, for example post-shutdown rows labelled DESCENT (§6.6). A phase filter inherits that. Two safeguards: the editor previews, across the whole workspace, exactly which events the condition would suppress and in which phases (§12.1); and excluded-phase events stay monitored (§8.1). Because filters apply retroactively (§7.4), a change in phase detection in a new engine version re-applies the condition to every flight, and the change monitor shows any resulting shift.
 
 ## 8. Change monitor
@@ -541,7 +543,7 @@ interface Insight {
     event_id: string;
     elapsed_s: number; duration_s: number;
     observed_value: number; excess: number;
-    suppressed_by: "magnitude" | "duration" | "phase" | null;   // "phase" v0.20; precedence phase > duration > magnitude
+    suppressed_by: "magnitude" | "duration" | "phase" | null;   // "phase" v0.20; precedence phase > magnitude > duration (v0.21)
     phases: string[];                      // v0.20: the phases the event's rows lie in, in order
   }[];
 }
@@ -567,7 +569,7 @@ interface FilterHealth {
 }
 ```
 
-When several conditions tolerate one event, `suppressed_by` names the simplest reason: `phase`, then `duration`, then `magnitude` (v0.20).
+When several conditions tolerate one event, `suppressed_by` names one of them in this order: `phase`, then `magnitude`, then `duration` (v0.21; v0.20 had duration before magnitude). Phase comes first because it is the plainest reason to show; magnitude before duration is the order used before v0.20, so a flight without a phase filter keeps its labels.
 
 ### 11.4 Diagnostics
 
@@ -692,7 +694,7 @@ All tests run in Claude Code against the full log set (100+ logs), plus KACV as 
 | Q8 | ~~Filters compare within the flight's band, but `baseline_deviation` compares against all flights. Align them?~~ | **Resolved (option B).** `baseline_deviation` moves to stratified leave-one-out comparison with an unstratified fallback below `n_min`: Spec 01 v0.13, R8; Spec 03 v0.11 §5.3 for the Trends outlier rings. Implemented as its own change, not part of Spec 09, but Spec 09's frozen-baseline comparison calls the same helper. |
 | Q9 | "Overboost" is a misnomer for the 5-minute rule on the normally aspirated 912iS. Rename the limit (e.g. `takeoff_power_time`)? | Deferred. Renaming an id needs a filter and annotation migration; not worth it until a 912iS user exists. |
 | Q10 | **Phase scope:** should a magnitude or duration band be able to apply only within chosen phases ("tolerate +2 psi, but only in CRUISE")? | Deferred, by decision (2026-10-11). Exclusion first; revisit once phase filters have been used. Scope makes every filter a combination of conditions, and exclusion covers the cases seen so far. |
-| Q11 | Should a filter be allowed to exclude every phase, which in effect turns the limit off? | Leaning: allow it, with the preview stating plainly that no event of this limit will be shown. Turning a limit off on purpose belongs with the silencing levels (Spec 11), so this is revisited there. |
+| Q11 | Should a filter be allowed to exclude every phase, which in effect turns the limit off? | **Resolved (Phase 8):** allowed; the preview states plainly that no event of this limit will be shown. Turning a limit off on purpose belongs with the silencing levels (Spec 11), so this may be revisited there. |
 | Q12 | Should CAS targets accept a phase condition? | No, for now (decided 2026-10-15). The classifier already separates ground and in-flight ENGINE ECU events (Spec 10 D18/D19), and a mislabelled phase could hide an in-flight one. Revisit once phase filters on limits have been used. |
 
 ## 16. Implementation plan and status
@@ -708,7 +710,9 @@ Built in phases, each shippable on its own.
 | 5 | Copy filters between workspaces (§9) | Done, engine 0.19.0 |
 | 6 | RPM limits and overboost (v0.12): `magnitude_modes` / `duration_allowed` in `filter_policy` replacing the overboost special case (§6.3); overboost blocks merged and reported by `limit_exceedances`, `overboost_time` threshold trigger removed (§6.4, §10.3); `rpm_continuous_max` retired, `rpm_takeoff_max` ceiling with its filter policy, `time_limit_s` removed, profile corrections, all four profiles (§6.7); `insight_rules.json` version bump; characterization goldens and fleet values regenerated; acceptance 17–20 | Proposed |
 | 7 | Topic limit references (v0.13) — **done** in Spec 10 Phase B (commit 2358bf5). Remaining: the Spec 10 D6 limit fixes (§6.8) — D14 `volts_min` gate, D15/D16/D17 allowlist entries, D16 idle-established condition and profile note; acceptance 22–23 — delivered with Spec 10 Phase D | Partly done |
-| 8 | Phase-of-flight exclusion (v0.20): `phases_allowed` in `filter_policy`, false on `rpm_takeoff_max` and `overboost` in all four profiles (§6.3); `phases` on `LimitFilter` with validation (§7.3, §9); whole-event tolerance and `suppressed_by: "phase"` with event phases (§7.5, §11.3); excluded-phase events kept in the monitor's metrics (§8.1); editor chips, fleet-wide preview by phase, filter card and event-row display (§12); acceptance 24–28 | Proposed |
+| 8 | Phase-of-flight exclusion (v0.20): `phases_allowed` in `filter_policy`, false on `rpm_takeoff_max` and `overboost` in all four profiles (§6.3); `phases` on `LimitFilter` with validation (§7.3, §9); whole-event tolerance and `suppressed_by: "phase"` with event phases (§7.5, §11.3); excluded-phase events kept in the monitor's metrics (§8.1); editor chips, fleet-wide preview by phase, filter card and event-row display (§12); acceptance 24–28 | Done (f92c55c); v0.21 reason order pending; engine 0.30.0 |
+
+**Phase 8 notes.** On the full log set, `rpm_idle_min` excluding TAXI and LANDING_ROLL suppresses 42 of 52 events (35 TAXI, 7 LANDING_ROLL); 10 stay visible, each reaching APPROACH, DESCENT or WARMUP. Four of those are TAXI → WARMUP → TAXI: the whole-event rule working as written, but a WARMUP segment mid-taxi is likely a stop while taxiing labelled WARMUP — a phase-detection question, kept out of this spec. "Exclude this event's phases" is offered from an event only, not from an insight card (follow-up if wanted).
 
 **Phase 1 notes.** Rules v1.3 drop the numeric `limit` on threshold triggers; a workspace's
 older `rules/active.json` is read with `limit_ref` substituted (`workspace.upgrade_limit_refs`),

@@ -213,8 +213,8 @@ export interface InsightEvent {
   duration_s: number;
   observed_value: number;
   excess: number | null;
-  // Spec 09 §11.3: the simplest condition that tolerates it — phase, then
-  // duration, then magnitude (v0.20).
+  // Spec 09 §11.3: the condition that tolerates it — phase, then
+  // magnitude, then duration (v0.21).
   suppressed_by: "phase" | "duration" | "magnitude" | null;
   phases?: string[]; // v0.20: the phases the event's rows lie in, in order
 }
