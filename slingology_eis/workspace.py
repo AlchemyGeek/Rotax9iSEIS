@@ -1844,6 +1844,18 @@ def has_open_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> bool:
     return any(e["kind"] == kind and e["ref_id"] == ref_id and e["status"] == "open" for e in store["entries"])
 
 
+def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
+    """The log's real file name for display: the workspace's own copy if
+    it kept one, else the last import recorded in sources.json."""
+    d = ws_dir / "flights" / flight_id
+    if d.is_dir():
+        others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
+        if others:
+            return others[0]
+    src = load_sources(ws_dir, flight_id)
+    return src.imports[-1].filename if src and src.imports else None
+
+
 def backfill_journal_from_existing(ws_dir: Path) -> None:
     """
     Spec 14 Appendix A step 3: "existing filters, annotations ... must
@@ -1901,7 +1913,8 @@ def backfill_journal_from_existing(ws_dir: Path) -> None:
         for e in load_selection(ws_dir).excluded:
             if not has_open_journal_entry(ws_dir, kind="exclusion", ref_id=e["flight_id"]):
                 append_journal_entry(
-                    ws_dir, kind="exclusion", what=e["flight_id"], where={"flight_id": e["flight_id"]},
+                    ws_dir, kind="exclusion", what=source_filename(ws_dir, e["flight_id"]) or e["flight_id"],
+                    where={"flight_id": e["flight_id"]},
                     reason=e.get("reason"), ref_id=e["flight_id"], backfilled=True,
                 )
 

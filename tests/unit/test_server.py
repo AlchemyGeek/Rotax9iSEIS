@@ -1644,6 +1644,31 @@ def test_old_filters_json_migrates_to_target_shape(registry_server, tmp_path):
     assert on_disk["target"] == {"kind": "limit", "limit_id": "fuel_press_max"} and "limit_id" not in on_disk
 
 
+def test_exclusion_journal_entry_is_titled_with_the_log_file_name(registry_server):
+    """An exclusion's Journal title is the log's file name, not the flight
+    id hash — including entries written before that change (relabelled on
+    read; journal.json itself is not rewritten)."""
+    rpc(registry_server, "create_workspace", {"name": "N117ZS", "engine_model": "916iS"})
+    fid = _import_oil_temp_flight(registry_server, 3, 180)
+    assert rpc(registry_server, "exclude_flight", {"flight_id": fid, "reason": "test"})["ok"]
+    entry = next(e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "exclusion")
+    assert entry["what"] == "log_20260103_120000_TEST.csv"
+    assert entry["ref_id"] == fid and entry["where"] == {"flight_id": fid}
+
+    # An entry from before: titled with the flight id.
+    from slingology_eis import workspace as ws_mod
+    ws_id = rpc(registry_server, "get_active_workspace", {})["result"]["registry_entry"]["id"]
+    ws_dir = ws_mod.resolve_workspaces_root() / ws_id
+    store = json.loads((ws_dir / "journal.json").read_text())
+    for e in store["entries"]:
+        if e["kind"] == "exclusion":
+            e["what"] = fid
+    (ws_dir / "journal.json").write_text(json.dumps(store))
+    entry = next(e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "exclusion")
+    assert entry["what"] == "log_20260103_120000_TEST.csv"
+    assert json.loads((ws_dir / "journal.json").read_text())["entries"][0]["what"] == fid
+
+
 def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(registry_server):
     """Spec 14 §7.1 / acceptance 4, 8 — excluding a flight is a Journal
     decision with a reason and a counted effect; any OTHER flight whose

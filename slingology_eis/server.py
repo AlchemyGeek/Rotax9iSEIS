@@ -539,13 +539,7 @@ def _source_filename(workspace_dir: Path, flight_id: str) -> Optional[str]:
     folder-scanned flight still has its real filename recorded in
     FlightSources.imports regardless — that's the actual source of truth
     for "what was this log called," not the workspace copy's presence."""
-    d = workspace_dir / "flights" / flight_id
-    if d.is_dir():
-        others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
-        if others:
-            return others[0]
-    src = ws.load_sources(workspace_dir, flight_id)
-    return src.imports[-1].filename if src and src.imports else None
+    return ws.source_filename(workspace_dir, flight_id)
 
 
 def op_list_flights(params: dict, ctx: dict) -> Any:
@@ -844,7 +838,8 @@ def op_exclude_flight(params: dict, ctx: dict) -> Any:
     changed = _other_flights_whose_verdict_changes(workspace_dir, flight_id, before_fleet, after_fleet, rules, filters)
 
     entry = ws.append_journal_entry(
-        workspace_dir, kind="exclusion", what=flight_id, where={"flight_id": flight_id},
+        workspace_dir, kind="exclusion", what=_source_filename(workspace_dir, flight_id) or flight_id,
+        where={"flight_id": flight_id},
         reason=reason,
         effect=f"changed the verdict on {len(changed)} other flight{'' if len(changed) == 1 else 's'}" if changed else "no other flight's verdict changed",
         ref_id=flight_id,
@@ -1627,7 +1622,19 @@ def op_get_journal(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     ws.backfill_journal_from_existing(workspace_dir)
     store = ws.load_journal(workspace_dir)
-    return {"entries": sorted(store["entries"], key=lambda e: e["at"], reverse=True)}
+    entries = [_journal_display(workspace_dir, e) for e in store["entries"]]
+    return {"entries": sorted(entries, key=lambda e: e["at"], reverse=True)}
+
+
+def _journal_display(workspace_dir: Path, entry: dict) -> dict:
+    """An exclusion entry written before its title was the log's file name
+    carries the flight id there; show the file name instead (on read —
+    journal.json itself is history and isn't rewritten)."""
+    if entry.get("kind") == "exclusion" and entry.get("what") == entry.get("ref_id"):
+        name = _source_filename(workspace_dir, entry["ref_id"])
+        if name:
+            return {**entry, "what": name}
+    return entry
 
 
 def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
