@@ -6,7 +6,7 @@ import { FilterEditor } from "../components/FilterEditor";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { notifyFiltersChanged } from "../lib/filterAttention";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
-import { getEngineClient, type FlightSummary } from "../lib/engineClient";
+import { EngineRpcError, getEngineClient, type FlightSummary } from "../lib/engineClient";
 import type { Annotation, FilterTarget, JournalEntry, JournalEntryKind } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
 import { ScopeCaption } from "../components/ScopeCaption";
@@ -101,6 +101,9 @@ export function Journal() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [filterCount, setFilterCount] = useState<number | null>(null);
+  // The server answered but couldn't read the Journal — say so, rather
+  // than showing an empty sample page as if there were no decisions.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function load() {
     const [j, a, f] = await Promise.all([
@@ -116,10 +119,19 @@ export function Journal() {
   useEffect(() => {
     let cancelled = false;
     load()
-      .then(() => !cancelled && setUsingFixture(false))
-      .catch(() => {
+      .then(() => {
         if (!cancelled) {
-          setEntries([]);
+          setUsingFixture(false);
+          setLoadError(null);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setEntries([]);
+        if (err instanceof EngineRpcError) {
+          setUsingFixture(false);
+          setLoadError(err.message);
+        } else {
           setUsingFixture(true);
         }
       })
@@ -403,7 +415,15 @@ export function Journal() {
 
         {activeTab === "filters" && !usingFixture && <LimitFiltersSection onCount={setFilterCount} />}
 
-        {activeTab === "journal" && (
+        {activeTab === "journal" && loadError && (
+          <div role="alert" style={{ fontSize: 13, color: "var(--severity-warning)", lineHeight: 1.5 }}>
+            Couldn't load the Journal — your decisions are still saved. If the local server was started
+            before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.
+            <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{loadError}</div>
+          </div>
+        )}
+
+        {activeTab === "journal" && !loadError && (
           <>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               <button type="button" onClick={() => setKindFilter("all")} style={chip(kindFilter === "all")}>All ({entries.length})</button>

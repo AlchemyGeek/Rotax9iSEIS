@@ -8,7 +8,7 @@ import type { Annotation, JournalEntry } from "../types/contract";
 // mocked server keeps the register the way the real one does: reversing
 // a decision removes its entry; editing updates it.
 
-const state: { entries: JournalEntry[]; annotations: Annotation[] } = { entries: [], annotations: [] };
+const state: { entries: JournalEntry[]; annotations: Annotation[]; fail: string | null } = { entries: [], annotations: [], fail: null };
 const calls = vi.hoisted(() => ({
   deleteFilter: vi.fn(), revertRuleEdit: vi.fn(), includeFlight: vi.fn(), clearReference: vi.fn(),
   deleteAnnotation: vi.fn(), saveAnnotation: vi.fn(), confirmJournalNotice: vi.fn(), updateExclusionReason: vi.fn(),
@@ -18,9 +18,16 @@ const touch = (refId: string, patch: Partial<JournalEntry>) => {
   state.entries = state.entries.map((e) => (e.ref_id === refId ? { ...e, ...patch, updated_at: "2026-10-14T12:00:00Z" } : e));
 };
 
-vi.mock("../lib/engineClient", () => ({
+vi.mock("../lib/engineClient", async () => ({
+  EngineRpcError: (await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient")).EngineRpcError,
   getEngineClient: () => ({
-    getJournal: async () => ({ entries: state.entries.map((e) => ({ ...e })) }),
+    getJournal: async () => {
+      if (state.fail) {
+        const { EngineRpcError } = await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient");
+        throw new EngineRpcError("INTERNAL_ERROR", state.fail);
+      }
+      return { entries: state.entries.map((e) => ({ ...e })) };
+    },
     listAnnotations: async () => ({ annotations: state.annotations }),
     listFlights: async () => [{ flight_id: "f1", header: { date: "2026-10-01", start_utc: "2026-10-01T10:00:00Z" }, quality: [], source_filename: "log_20261001_100000_TEST.csv" }],
     previewReferenceMembership: async () => ({ changed_flight_ids: ["f3", "f4"] }),
@@ -62,6 +69,7 @@ const row = (id: string) => screen.getByTestId(`journal-entry-${id}`);
 describe("Journal — register of decisions in force", () => {
   beforeEach(() => {
     Object.values(calls).forEach((f) => f.mockClear());
+    state.fail = null;
     state.annotations = [
       { id: "ann_1", flight_id: "f1", ref: { kind: "insight", insight_id: "ins_1" }, note: "checking density altitude", created_at: "2026-10-02T00:00:00Z" },
     ];
@@ -173,6 +181,15 @@ describe("Journal — register of decisions in force", () => {
     fireEvent.click(screen.getByRole("button", { name: "Flight" }));
     expect(screen.getByRole("heading", { name: "2026-10-01 · log_20261001_100000_TEST.csv" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Whole workspace" })).toBeTruthy();
+  });
+
+  it("shows the server's error instead of an empty page when the Journal can't be read", async () => {
+    state.fail = "AttributeError: stale server";
+    renderJournal();
+    expect((await screen.findByRole("alert")).textContent).toContain("your decisions are still saved");
+    expect(screen.getByText("AttributeError: stale server")).toBeTruthy();
+    expect(screen.queryByText("No decisions in force.")).toBeNull();
+    state.fail = null;
   });
 
   it("says so in one line when nothing is in force", async () => {

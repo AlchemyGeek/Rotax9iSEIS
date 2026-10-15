@@ -201,7 +201,7 @@ export interface EngineClient {
   getTrendsPanels(): Promise<{ panels: TrendsPanel[] }>;
 }
 
-class EngineRpcError extends Error {
+export class EngineRpcError extends Error {
   code: string;
   constructor(code: string, message: string) {
     super(message);
