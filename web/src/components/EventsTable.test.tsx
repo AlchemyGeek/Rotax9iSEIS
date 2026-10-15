@@ -85,7 +85,7 @@ describe("Events table", () => {
   it("a phase-suppressed row says so, with its phases (Spec 09 v0.20)", () => {
     const iset = JSON.parse(JSON.stringify(eis)) as InsightSet;
     const filtered = iset.topics.find((t) => t.topic_id === "limit_exceedances")!.insights.find((i) => i.filter?.outcome === "suppressed")!;
-    filtered.events = filtered.events!.map((e) => ({ ...e, suppressed_by: "phase", phases: ["CRUISE"] }));
+    filtered.events = filtered.events!.map((e) => ({ ...e, suppressed_by: "phase", phases: ["CRUISE"] })) as typeof filtered.events;
     table(efa, iset);
     fireEvent.click(within(screen.getByTestId("filtered-group")).getByRole("button"));
     const rows = screen.getAllByTestId("event-row").filter((r) => r.textContent?.includes("suppressed (phase: CRUISE)"));
