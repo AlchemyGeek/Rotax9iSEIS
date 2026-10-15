@@ -42,6 +42,8 @@
       "min_duration_s": 30,
       "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance — same gate as fuel_press_min. Note the 912iS idle floor (1,400) is much closer to this gate than the 916iS (1,800).",
       "min_rpm": 1000,
+      "_requires_reached_since_start_note": "Spec 10 D16: the idle minimum applies only after rpm has reached this limit's own floor (1,400 rpm on the 912iS) at least once since engine start, so spool-up isn't an idle exceedance. A suppression condition, not an OM value. A phase exclusion can't do this — most of spool-up falls in WARMUP, and excluding WARMUP would also hide a real low warm-up idle.",
+      "requires_reached_since_start": true,
       "note": "Idle speed min. 1,400 rpm (OM 2.1 Engine speed). Short dips are normal variation."
     },
     {

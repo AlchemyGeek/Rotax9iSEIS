@@ -114,3 +114,33 @@ def test_egt_spread_topic_takes_its_om_limit_from_the_profile_or_states_none():
     assert "Cruise mean" in t912["analysis"]["text"] and "OM limit" not in t912["analysis"]["text"]
     # No split limit referenced by any topic, insight or limit card.
     assert "egt_split" not in json.dumps(iset.topics) and "392" not in json.dumps(iset.topics)
+
+
+# ── 912iS idle-established condition (Spec 10 D16) ───────────────────────────
+
+def _idle_flight(idle_floor):
+    """Spool-up below the floor for 60 s, idle 100 rpm above it, then a
+    60 s dip 100 rpm below it — all above the 1,000 rpm running gate."""
+    rpm = [idle_floor - 200.0] * 60 + [idle_floor + 100.0] * 120 + [idle_floor - 100.0] * 60 + [idle_floor + 100.0] * 60
+    n = len(rpm)
+    return _frame(n, phase=["TAXI"] * n, rpm=rpm)
+
+
+@pytest.mark.parametrize("engine", ["912iS", "915iS", "916iS"])
+def test_idle_minimum_applies_only_after_the_profiles_own_floor_is_reached(engine):
+    cfg = load_engine_config(engine)
+    lim = next(l for l in cfg["limits"] if l["id"] == "rpm_idle_min")
+    assert lim["requires_reached_since_start"] is True
+    floor = lim["min_val"]
+    events = [e for e in check_exceedances(_idle_flight(floor), cfg) if e.limit_id == "rpm_idle_min"]
+    # The spool-up isn't an event; the dip after idle was established is.
+    assert [(_offset_s(e), e.duration_s) for e in events] == [(180.0, 60.0)], engine
+
+
+def test_912is_idle_floor_is_its_own_1400_not_1800():
+    cfg = load_engine_config("912iS")
+    assert next(l for l in cfg["limits"] if l["id"] == "rpm_idle_min")["min_val"] == 1400
+    # A 912iS idling at 1,500 rpm never reaches 1,800: with an 1,800 rpm
+    # "reached" test its dip to 1,300 would never be checked.
+    events = [e for e in check_exceedances(_idle_flight(1400), cfg) if e.limit_id == "rpm_idle_min"]
+    assert len(events) == 1 and events[0].observed_value == 1300.0
