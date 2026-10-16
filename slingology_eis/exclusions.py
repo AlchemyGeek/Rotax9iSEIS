@@ -39,7 +39,11 @@ _SCHEMA_VERSION = 1
 
 # Every category exclusion_summary() reports, even at zero — callers can
 # index the result without a .get(..., 0) guard.
-_KNOWN_CATEGORIES = ("ground_session", "short_flight", "corrupt_log", "user_defined")
+_KNOWN_CATEGORIES = ("ground_session", "short_flight", "corrupt_log", "user_defined", "not_in_sender")
+
+# Spec 02 v0.11 §7.5: in an imported workspace, a log whose flight isn't in
+# the sender's manifest is held out until the user includes it.
+NOT_IN_SENDER_REASON = "Not in the sender's workspace"
 
 
 def _exclusions_path(workspace_dir: Path) -> Path:
@@ -104,6 +108,28 @@ def add_auto_exclusion(workspace_dir: Path, filename: str, category: str, reason
         "user_override": False,
     })
     save_exclusions(workspace_dir, exclusions)
+
+
+def add_imported_entry(workspace_dir: Path, filename: str, entry: dict) -> bool:
+    """Spec 02 v0.11 §7.5: an imported workspace's admission record is keyed
+    by source_key; when a scan finds that file here, its entry is recorded
+    under this machine's file name — category, reason, source and any user
+    override exactly as the sender had them. Create-only. True if added."""
+    exclusions = load_exclusions(workspace_dir)
+    if _find_entry(exclusions, filename) is not None:
+        return False
+    exclusions["entries"].append({
+        "filename": filename,
+        "source": entry.get("source", "auto"),
+        "reason": entry.get("reason", ""),
+        "category": entry.get("category", "user_defined"),
+        "excluded_at": entry.get("excluded_at") or _now_iso(),
+        "user_override": bool(entry.get("user_override", False)),
+        **({"override_reason": entry["override_reason"]} if entry.get("override_reason") else {}),
+        **({"overridden_at": entry["overridden_at"]} if entry.get("overridden_at") else {}),
+    })
+    save_exclusions(workspace_dir, exclusions)
+    return True
 
 
 def add_user_exclusion(workspace_dir: Path, filename: str, reason: str) -> None:

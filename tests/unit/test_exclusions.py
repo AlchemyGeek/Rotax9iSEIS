@@ -119,7 +119,7 @@ def test_exclusion_summary_counts_by_category_and_overridden(tmp_path):
     summary = exclusion_summary(load_exclusions(tmp_path))
     assert summary == {
         "ground_session": 2, "short_flight": 1, "corrupt_log": 0,
-        "user_defined": 1, "overridden": 1,
+        "user_defined": 1, "not_in_sender": 0, "overridden": 1,
     }
 
 
@@ -127,5 +127,5 @@ def test_exclusion_summary_empty_workspace(tmp_path):
     summary = exclusion_summary(load_exclusions(tmp_path))
     assert summary == {
         "ground_session": 0, "short_flight": 0, "corrupt_log": 0,
-        "user_defined": 0, "overridden": 0,
+        "user_defined": 0, "not_in_sender": 0, "overridden": 0,
     }

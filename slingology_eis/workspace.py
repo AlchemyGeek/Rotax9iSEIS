@@ -350,7 +350,8 @@ class AppSettings:
 
 @dataclass
 class WorkspaceSettings:
-    anonymize_by_default: bool = False
+    # anonymize_by_default: retired in Spec 02 v0.11 — anonymisation is a
+    # per-export choice (§7.6); an older settings.json's key is ignored.
     active_engine_profile: str = ""
     last_view: Optional[dict] = None
     # Spec 02 v0.8 §5.6/§6.6: groups of aircraft_ident values the pilot
@@ -366,7 +367,6 @@ class WorkspaceSettings:
 
     def to_dict(self) -> dict:
         d = {
-            "anonymize_by_default": self.anonymize_by_default,
             "active_engine_profile": self.active_engine_profile,
         }
         if self.last_view is not None:
@@ -380,7 +380,6 @@ class WorkspaceSettings:
     @classmethod
     def from_dict(cls, d: dict) -> "WorkspaceSettings":
         return cls(
-            anonymize_by_default=d.get("anonymize_by_default", False),
             active_engine_profile=d.get("active_engine_profile", ""),
             last_view=d.get("last_view"),
             aircraft_aliases=d.get("aircraft_aliases") or [],
@@ -1287,6 +1286,13 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
     return list(new_logs.values()), stale
 
 
+def _load_import_record(ws_dir: Path) -> Optional[dict]:
+    """The sender manifest an imported workspace keeps (Spec 02 v0.11 §7.5;
+    written by workspace_export.import_workspace). None otherwise."""
+    p = ws_dir / "import.json"
+    return json.loads(p.read_text()) if p.is_file() else None
+
+
 def scan_workspace(
     ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True,
     on_progress: Optional[Callable[[dict], None]] = None,
@@ -1381,6 +1387,22 @@ def scan_workspace(
 
     primary_ident = manifest.primary_tail_number or (sorted(known_idents)[0] if known_idents else None)
 
+    # Spec 02 v0.11 §7.5 — an imported workspace: the sender's admission
+    # record (keyed by source_key) applies to these files under their own
+    # names, and a log whose flight isn't in the sender's manifest is held
+    # out until included.
+    import_record = _load_import_record(ws_dir)
+    sender_fids: Optional[set] = None
+    if import_record is not None:
+        sender_fids = {f["flight_id"] for f in import_record.get("manifest", [])}
+        admission = {a["source_key"]: a for a in import_record.get("admission", []) if a.get("source_key")}
+        added = False
+        for skey, (_fp, _rel, filename, _abs) in found_by_key.items():
+            if skey in admission and skey not in known:
+                added |= _exclusions.add_imported_entry(ws_dir, filename, admission[skey])
+        if added:
+            exclusions_data = _exclusions.load_exclusions(ws_dir)
+
     new_batch: list[tuple[bytes, str, str]] = []  # (content, filename, source_key) for genuinely new flight_ids
     new_batch_meta: dict[str, tuple[str, str, str]] = {}  # source_key -> (folder_path, rel, filename)
 
@@ -1455,6 +1477,15 @@ def scan_workspace(
             on_progress({"phase": "analyzing", "current": i + 1, "total": len(parsed), "filename": filename})
         if skey in dup_groups_excluded:
             continue
+        if sender_fids is not None:
+            fid = _compute_flight_id(flight_fingerprint(df, info))
+            if fid not in sender_fids and fid not in all_sources:
+                _exclusions.add_auto_exclusion(ws_dir, filename, "not_in_sender", _exclusions.NOT_IN_SENDER_REASON)
+                if _exclusions.is_excluded(filename, _exclusions.load_exclusions(ws_dir)):
+                    result.auto_excluded.append({"filename": filename, "category": "not_in_sender",
+                                                 "reason": _exclusions.NOT_IN_SENDER_REASON})
+                    continue
+                # else: the user included it — an ordinary flight from here on.
 
         df = detect_phases(df, verbose=False)
         category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)

@@ -649,9 +649,101 @@ def cmd_rules_try(args) -> int:
     return 0
 
 
-def cmd_export_bundle(args) -> int:
-    _log("export-bundle: not yet implemented — needs Spec 02's results-bundle format.", args.quiet)
-    return 2
+# ── workspace export / import (Spec 02 v0.11 §7.8) ─────────────────────────
+
+def _registered_workspace_dir(arg: Optional[str]) -> Path:
+    """--workspace NAME_OR_ID, else the workspace that reopens on launch."""
+    registry_path = _workspace.resolve_registry_path()
+    registry = _workspace.load_registry(registry_path)
+    if arg:
+        match = next((e for e in registry.workspaces if arg in (e.id, e.name)), None)
+        if match is None:
+            raise CliUsageError(f"No workspace named {arg!r}. See: slingology-eis workspace list")
+    else:
+        last = _workspace.load_app_settings(registry_path).last_active_workspace_id
+        match = next((e for e in registry.workspaces if e.id == last), None) or (registry.workspaces[0] if registry.workspaces else None)
+        if match is None:
+            raise CliUsageError("No workspaces yet. Create one with: slingology-eis workspace create <name> --engine <model>")
+    return _workspace.resolve_workspaces_root() / match.id
+
+
+def cmd_export_workspace(args) -> int:
+    from . import workspace_export as _wx
+    ws_dir = _registered_workspace_dir(args.workspace)
+    try:
+        result = _wx.export_workspace(ws_dir, Path(args.out or "."), include_logs=args.include_logs,
+                                      anonymise=args.anonymise)
+    except _wx.ExportError as e:
+        raise CliOperationError(str(e))
+    if args.json:
+        _print_json(result.to_dict())
+        return 0
+    print(f"Exported {result.flights} flights to {result.path}"
+          + (f" with {result.logs_included} logs" if args.include_logs else " (no logs)")
+          + (", anonymised" if result.anonymised else "") + ".")
+    print("Privacy: " + _EXPORT_PRIVACY_NOTICE)
+    for n in result.notes:
+        print(f"  · {n}")
+    if args.include_logs:
+        print("The recipient unzips it and imports the folder it creates.")
+    return 0
+
+
+_EXPORT_PRIVACY_NOTICE = ("logs carry the tail number, system ID, dates, times and GPS track unless anonymised; "
+                          "annotation text, filter notes and the workspace name go as written.")
+
+
+def cmd_import_workspace(args) -> int:
+    from . import workspace_export as _wx
+    try:
+        contents = _wx.read_export(Path(args.path))
+    except _wx.ImportRefused as e:
+        raise CliOperationError(str(e))
+    summary = _wx.summarize(contents)
+    check = summary["engine_check"]
+    c = summary["carries"]
+    print(f"{summary['workspace_name']} · {summary['engine_model']} · engine {summary['engine_version']}")
+    rng = summary["date_range"]
+    print(f"{summary['flight_count']} flights" + (f", {rng[0]} to {rng[1]}" if rng else "")
+          + f"; logs {'included' if summary['logs_included'] else 'not included'}"
+          + (", anonymised" if summary["anonymised"] else ""))
+    print(f"Carries: {c['filters']} filters, {c['rule_edits']} rule edits, {c['disabled_topics']} disabled topics, "
+          f"{c['reference_exclusions']} flights excluded from the reference, {c['pins']} pins, "
+          f"{c['changed_settings']} changed settings, {c['notes']} notes")
+    if not check["ok"]:
+        raise CliOperationError(check["message"])
+    if check["message"]:
+        print(check["message"])
+
+    registry_path = _workspace.resolve_registry_path()
+    workspaces_root = _workspace.resolve_workspaces_root()
+    try:
+        manifest = _wx.import_workspace(registry_path, workspaces_root, contents, name=args.name)
+    except (_wx.ImportRefused, ValueError) as e:
+        raise CliOperationError(str(e))
+    ws_dir = workspaces_root / manifest.id
+    if args.logs:
+        manifest = _workspace.add_log_folder(ws_dir, str(Path(args.logs).expanduser().resolve()), registry_path)
+    print(f"Created workspace {manifest.name!r} (id={manifest.id}).")
+    if not manifest.log_folders:
+        print("No logs linked. Link them later with --logs, or from the app: Add logs…")
+        return 0
+
+    match = _wx.match_import(ws_dir)
+    print(f"{len(match['found'])} of {match['total']} flights found · {len(match['missing'])} missing"
+          f" · {len(match['extra'])} other logs held out")
+    for m in match["missing"]:
+        print(f"  missing: {m['date']} {m['airport_hint'] or ''} {m['sender_filename'] or ''}".rstrip())
+    if not args.yes:
+        answer = input("Analyze the matched flights now? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            print("Not analysed. Sync from the app, or run this import's workspace through `import`, later.")
+            return 0
+    result = _workspace.scan_workspace(ws_dir, registry_path)
+    if result.new_flight_ids or result.reanalyzed_flight_ids:
+        _workspace.rebuild_fleet(ws_dir)
+    print(f"Analysed {len(result.new_flight_ids)} flights.")
+    return 0
 
 
 # ── workspace subcommands (Spec 01 v0.6 §7.1, Spec 02 v0.5 Q10) ─────────────
@@ -827,8 +919,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("topic_id", nargs="?", help="Topic id to explain (default: every applicable topic)")
     p.set_defaults(func=cmd_explain)
 
-    p = sub.add_parser("export-bundle", parents=[common], help="Export a results bundle (not yet implemented)")
-    p.set_defaults(func=cmd_export_bundle)
+    p = sub.add_parser("export-workspace", parents=[common], help="Export a workspace to share (Spec 02 §7)")
+    p.add_argument("--include-logs", action="store_true", help="Pack the logs into a zip with the export")
+    p.add_argument("--anonymise", action="store_true", help="Anonymise the included logs' copies (needs --include-logs)")
+    p.add_argument("--out", metavar="DIR", help="Folder to write the export into (default: current folder)")
+    p.set_defaults(func=cmd_export_workspace)
+
+    p = sub.add_parser("import-workspace", parents=[common], help="Import a workspace export as a new workspace (Spec 02 §7)")
+    p.add_argument("path", help="An .eisworkspace file, or the folder an export zip unzips to")
+    p.add_argument("--name", help="Name for the new workspace (default: the sender's name + \" (imported)\")")
+    # --logs FOLDER (the common option): your own copies of the logs to link.
+    p.add_argument("--yes", action="store_true", help="Analyse the matched flights without asking")
+    p.set_defaults(func=cmd_import_workspace)
 
     p = sub.add_parser("serve", parents=[common], help="Start the local server + UI (Spec 04 §9.2 adapter)")
     p.add_argument("--port", type=int, default=8420, help="Port to bind on 127.0.0.1 (default: 8420)")

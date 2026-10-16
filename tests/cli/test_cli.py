@@ -147,8 +147,6 @@ def test_rules_check_invalid_file_exits_one(tmp_path, capsys):
 # tests live in tests/unit/test_server.py, since calling `main(["serve"])`
 # here would block forever on serve_forever() in-process.
 
-def test_export_bundle_stub_exits_two():
-    assert main(["export-bundle", "--quiet"]) == 2
 
 
 # ── workspace list / create (Spec 01 v0.6 §7.1, Spec 02 v0.5 Q10) ──────────

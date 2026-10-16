@@ -128,8 +128,7 @@ def test_display_only_settings_get_no_entry(registry_server):
     app = rpc(url, "get_app_settings", {})["result"]
     rpc(url, "save_app_settings", {"settings": {**app, "units": "metric"}})
     wss = rpc(url, "get_workspace_settings", {})["result"]
-    rpc(url, "save_workspace_settings", {"settings": {**wss, "anonymize_by_default": True,
-                                                      "aircraft_aliases": [["N117ZS", "N117Z"]]}})
+    rpc(url, "save_workspace_settings", {"settings": {**wss, "aircraft_aliases": [["N117ZS", "N117Z"]]}})
     assert _journal(url) == []
     assert rpc(url, "list_changed_settings", {})["result"]["settings"] == []
 

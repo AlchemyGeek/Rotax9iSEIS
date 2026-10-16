@@ -52,6 +52,12 @@ DEFAULT_BASELINE_CONFIG: dict = {
 }
 
 
+def _airport_from_filename(filename: str) -> Optional[str]:
+    import re
+    m = re.match(r"log_\d{8}_\d{6}_([^.]+)\.", filename)
+    return m.group(1) if m else None
+
+
 def _engine_major_minor(version: str) -> str:
     parts = version.split(".")
     return ".".join(parts[:2]) if len(parts) >= 2 else version
@@ -346,7 +352,9 @@ def analyze_flight(
             round(info.engine_hours + fm.duration_min / 60, 2)
             if info.engine_hours is not None else None
         ),
-        "airport_hint": filename.rsplit(".", 1)[0].split("_")[-1] if "_" in filename else None,
+        # Only Garmin's own log_YYYYMMDD_HHMMSS_<airport>.csv names carry an
+        # airport (Spec 02 v0.12): an anonymised copy's flight_001.csv has none.
+        "airport_hint": _airport_from_filename(filename),
         "aircraft": {"ident": info.aircraft_ident or None, "system_id": info.system_id or None},
     }
 

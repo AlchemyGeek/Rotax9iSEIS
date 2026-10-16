@@ -29,6 +29,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import shutil
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -1070,7 +1071,11 @@ def op_list_exclusions(params: dict, ctx: dict) -> Any:
                 manifest = None
         entries = [_enrich_exclusion_entry(e, manifest) for e in entries]
 
-    return {"entries": entries, "summary": _exclusions.exclusion_summary(exclusions)}
+    # Spec 02 v0.11 §7.5: an imported workspace's flights whose log
+    # hasn't been found — no actions; they resolve when the log is added.
+    from . import workspace_export as wx
+    sender_missing = wx.missing_flights(workspace_dir) if ctx.get("active_workspace_id") else []
+    return {"entries": entries, "summary": _exclusions.exclusion_summary(exclusions), "sender_missing": sender_missing}
 
 
 def op_include_excluded_log(params: dict, ctx: dict) -> Any:
@@ -1503,6 +1508,112 @@ def op_get_active_workspace(params: dict, ctx: dict) -> Any:
         "settings": settings.to_dict(),
         "diagnostic": ws.engine_version_diagnostic(manifest),
     }
+
+
+# ── Workspace export and import (Spec 02 v0.11 §7) ──────────────────────────
+
+def _export_dir(ctx: dict) -> Path:
+    import tempfile
+    d = ctx.get("export_dir")
+    if d is None:
+        d = Path(tempfile.mkdtemp(prefix="eis-export-"))
+        ctx["export_dir"] = d
+    return d
+
+
+def op_export_workspace(params: dict, ctx: dict) -> Any:
+    """§7.2: the whole active workspace. The file is written to a private
+    temporary folder and served once from /download/<token>, so the
+    browser saves it like any download."""
+    import uuid as _uuid
+    from . import workspace_export as wx
+    _require_active(ctx)
+    token = _uuid.uuid4().hex
+    out = _export_dir(ctx) / token
+    try:
+        result = wx.export_workspace(ctx["workspace_dir"], out, include_logs=bool(params.get("include_logs", True)),
+                                     anonymise=bool(params.get("anonymise", False)))
+    except wx.ExportError as e:
+        raise RpcError("EXPORT_FAILED", str(e))
+    ctx.setdefault("downloads", {})[token] = result.path
+    d = result.to_dict()
+    d.pop("path")
+    return {**d, "download_url": f"/download/{token}", "size": result.path.stat().st_size}
+
+
+def op_preview_workspace_export(params: dict, ctx: dict) -> Any:
+    """Before Export (Spec 02 v0.12): where the tail number or system ID
+    appears in the sender's own text, which anonymising leaves as written."""
+    from . import workspace_export as wx
+    _require_active(ctx)
+    return {"identity_mentions": wx.identity_mentions(ctx["workspace_dir"])}
+
+
+def _export_contents(params: dict, ctx: dict):
+    """An export chosen in the import flow: a path (a file, or an unzipped
+    export folder) or an uploaded .eisworkspace."""
+    from . import workspace_export as wx
+    if params.get("path"):
+        return wx.read_export(Path(str(params["path"])).expanduser())
+    if params.get("content_base64"):
+        import base64 as _b64
+        f = _export_dir(ctx) / f"upload-{uuid.uuid4().hex}{wx.EXPORT_SUFFIX}"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(_b64.b64decode(params["content_base64"]))
+        return wx.read_export(f)
+    raise RpcError("BAD_PARAMS", "choose an export file or an unzipped export folder")
+
+
+def op_inspect_workspace_export(params: dict, ctx: dict) -> Any:
+    """§7.4 step 1: the summary, and the engine check, before anything is created."""
+    from . import workspace_export as wx
+    try:
+        return wx.summarize(_export_contents(params, ctx))
+    except wx.ImportRefused as e:
+        raise RpcError("IMPORT_REFUSED", str(e))
+
+
+def op_import_workspace(params: dict, ctx: dict) -> Any:
+    """§7.4 steps 2–3: a new workspace (never a merge), switched to; an
+    export folder's logs/ is linked."""
+    from . import workspace_export as wx
+    try:
+        contents = _export_contents(params, ctx)
+        manifest = wx.import_workspace(ctx["registry_path"], ctx["workspaces_root"], contents, name=params.get("name"))
+    except wx.ImportRefused as e:
+        raise RpcError("IMPORT_REFUSED", str(e))
+    except ValueError as e:
+        raise RpcError("BAD_PARAMS", str(e))
+    _activate_workspace(ctx, manifest.id)
+    return {"manifest": manifest.to_dict(), "logs_linked": bool(manifest.log_folders)}
+
+
+def op_match_import(params: dict, ctx: dict) -> Any:
+    """§7.4 step 4: the folders against the sender's manifest, without analysing."""
+    from . import workspace_export as wx
+    _require_active(ctx)
+    try:
+        return wx.match_import(ctx["workspace_dir"])
+    except ValueError as e:
+        raise RpcError("NOT_IMPORTED", str(e))
+
+
+def op_get_import_info(params: dict, ctx: dict) -> Any:
+    """For an imported workspace: the sender's provenance and its flight
+    list (the empty state, §7.4 step 3). {imported: false} otherwise."""
+    from . import workspace_export as wx
+    if not ctx.get("active_workspace_id"):
+        return {"imported": False}
+    record = wx.load_import_record(ctx["workspace_dir"])
+    if record is None:
+        return {"imported": False}
+    present = set(ws.list_flight_ids(ctx["workspace_dir"]))
+    return {"imported": True, "provenance": record.get("provenance", {}),
+            "flights": [{"flight_id": f["flight_id"], "date": f.get("date"), "airport_hint": f.get("airport_hint"),
+                         "duration_min": f.get("duration_min"),
+                         "sender_filename": next((x.get("filename") for x in f.get("sources", [])), None),
+                         "found": f["flight_id"] in present}
+                        for f in record.get("manifest", [])]}
 
 
 def op_add_log_folder(params: dict, ctx: dict) -> Any:
@@ -2019,9 +2130,12 @@ def _rule_diff_text(current: dict, shipped: dict) -> Optional[str]:
 
 def _journal_display(workspace_dir: Path, entry: dict, limit_labels: Optional[dict] = None) -> dict:
     """Titles computed on read, so entries written by older code read the
-    same as new ones: an exclusion by its log's file name (not the flight
-    id), a filter by its limit's label (not the limit id)."""
-    if entry.get("kind") == "exclusion" and entry.get("what") == entry.get("ref_id"):
+    same as new ones: an exclusion by its log's current file name (not the
+    flight id, and not a name stored when the entry was made — after an
+    import or a rename that is another machine's or an old name), a filter
+    by its limit's label (not the limit id). A flight not in the workspace
+    (a dormant decision) keeps its stored label."""
+    if entry.get("kind") == "exclusion":
         name = _source_filename(workspace_dir, entry["ref_id"])
         if name:
             return {**entry, "what": name}
@@ -2117,6 +2231,12 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_workspace_settings": op_get_workspace_settings,
     "save_workspace_settings": op_save_workspace_settings,
     "list_changed_settings": op_list_changed_settings,
+    "export_workspace": op_export_workspace,
+    "preview_workspace_export": op_preview_workspace_export,
+    "inspect_workspace_export": op_inspect_workspace_export,
+    "import_workspace": op_import_workspace,
+    "match_import": op_match_import,
+    "get_import_info": op_get_import_info,
     "reset_setting": op_reset_setting,
     "get_journal": op_get_journal,
     "confirm_journal_notice": op_confirm_journal_notice,
@@ -2179,6 +2299,24 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path]):
             self.wfile.write(payload)
 
         def do_GET(self) -> None:  # noqa: N802
+            if self.path.startswith("/download/"):
+                # A workspace export (Spec 02 §7.2), served once.
+                token = self.path[len("/download/"):].split("?")[0]
+                f = ctx.get("downloads", {}).pop(token, None)
+                if f is None or not Path(f).is_file():
+                    self.send_response(404)
+                    self._cors()
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{Path(f).name}"')
+                self.send_header("Content-Length", str(Path(f).stat().st_size))
+                self.end_headers()
+                with open(f, "rb") as fh:
+                    shutil.copyfileobj(fh, self.wfile)
+                return
             if ui_dist is None:
                 self.send_response(200)
                 self._cors()

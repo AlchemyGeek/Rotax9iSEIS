@@ -498,12 +498,13 @@ def test_app_and_workspace_settings_round_trip(registry_server):
     got = rpc(registry_server, "get_app_settings", {})
     assert got["result"]["units"] == "metric"
 
+    # anonymize_by_default is retired (Spec 02 v0.11 §6.6): an old key is ignored.
     saved = rpc(registry_server, "save_workspace_settings", {"settings": {
-        "anonymize_by_default": True, "active_engine_profile": "916iS",
+        "anonymize_by_default": True, "active_engine_profile": "916iS", "aircraft_aliases": [["N1", "N2"]],
     }})
     assert saved["ok"], saved
     got = rpc(registry_server, "get_workspace_settings", {})
-    assert got["result"]["anonymize_by_default"] is True
+    assert got["result"]["aircraft_aliases"] == [["N1", "N2"]] and "anonymize_by_default" not in got["result"]
 
 
 def test_journal_is_a_register_of_decisions_in_force(registry_server):
