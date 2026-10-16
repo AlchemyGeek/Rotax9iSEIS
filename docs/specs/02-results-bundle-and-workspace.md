@@ -1,7 +1,7 @@
 # Spec 02 — Results Bundle & Workspace
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.10 — v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built; §5.8.1 (choosing the data location) implemented (`data_location.py`, server ops, CLI `data-location`)
+**Status:** v0.12 — §7 **workspace export and import** implemented (`workspace_export.py`, server ops, CLI `export-workspace` / `import-workspace`, Settings → App, the workspace switcher, Flights); v0.11 rewrote §7; v0.10: v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built; §5.8.1 (choosing the data location) implemented (`data_location.py`, server ops, CLI `data-location`)
 **Suggested repo path:** `docs/specs/02-results-bundle-and-workspace.md`
 **Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
 **Precedes:** Spec 03 (UI Information Architecture)
@@ -21,6 +21,8 @@
 | 0.8 | **Mixed-aircraft workspaces made explicit (§5.6).** Tail number stays informational — never a gate, never an exclusion — but v0.7 called several same-engine aircraft in one workspace "a supported case" without noting that the per-aircraft layer (baselines, models, learned patterns, filters, change monitor — Spec 10 §1) then treats them as **one** aircraft. A workspace whose admitted flights carry more than one tail number now shows a persistent notice saying so and recommending one workspace per aircraft; the pilot can confirm that differing tail numbers are the same aircraft (a G3X ident typo, a re-registration), which clears it (`WorkspaceSettings.aircraft_aliases`, §6.6). OM limit checks are unaffected. Per-aircraft learning inside one workspace, with a fleet view comparing aircraft, becomes a future investigation (Q15). |
 | 0.9 | §6.3 gains `fleet/shift_history.json` (Spec 12 §6) — a `ShiftEvent[]`, alongside `selection.json`, append-only except user deletion. Pinned references are not a new file; they're `selection.json`'s `BaselineConfig.pinned_references` (Spec 12 §5.7). |
 | 0.10 | **Choosing the data location (§5.8.1, proposed).** The data root (registry, app settings and `workspaces/`, always together) can be moved. The resolution order is `SLINGOLOGY_EIS_HOME`, then a `location.json` in the per-user configuration folder, then the existing defaults; a configured location wins in every context, a developer checkout included. Changing it from Settings → App (Spec 14 v0.12) or the CLI either **moves** the data into an empty folder (copied, checked, then switched; the old copy is kept until the pilot deletes it) or **uses** a folder that already holds a registry; anything else is refused. A configured location that's missing opens on a notice, never on the defaults. Log folders are unaffected. Q6 resolved. §6.7 points at §5.8.1. |
+| 0.11 | **Workspace export and import replace the results bundle (§7)** (2026-10-15). The primary use is a pilot sharing a workspace and its logs with someone else for custom analysis or debugging, so the recipient sees exactly what the sender sees. Getting something useful from an export *without* the logs is out of scope. An export carries the workspace's configuration and decisions, never analyses; the recipient's app re-analyses the logs (§7.1). Import always creates a new workspace (§7.4). A manifest of the sender's flights drives matching: missing flights are reported and their decisions stay dormant; extra logs are held out (§7.5). *Include logs* packs the logs into a zip the recipient unzips and opens as a folder (§7.3); *Anonymise logs* rewrites the copies' identity fields (§7.6). Engine versions: an older recipient is refused, a newer one warned (§7.7). Retired: the `ResultsBundle` schema, single-flight and subset scopes, the anonymise-by-default workspace setting (§6.6), read-only bundle preview (Spec 03 R2 / §5.8). Q2 and Q5 closed; Q12 gains the export's fingerprint keying. The spec keeps its title and file name. |
+| 0.12 | **From the implementation of v0.11** (2026-10-15). Decided with the owner: (1) *Anonymise logs* also blanks the columns that place the aircraft — Nav Identifier, Nav Distance, Nav Bearing, Nav Course, Nav Cross Track Distance, COM 1/2 and NAV frequencies — besides latitude and longitude (§7.6); none feeds the analysis (ground speed does, and is kept). (2) **One pseudonym per aircraft**, not one for all: tails the sender grouped as one aircraft share it, and each distinct system ID within an aircraft keeps its own token, so duplicate detection (which compares tail and system ID) can't merge two aircraft's flights; a single-aircraft workspace gets `ANON-1` as before. Garmin Pilot's `flightstream_header`, which embeds the system ID, is rewritten too. (3) The engine reads `airport_hint` only from Garmin's `log_YYYYMMDD_HHMMSS_<airport>.csv` names, so a neutral `flight_001.csv` has none; no real log's result changes. Recorded as built: an anonymised export is refused while any flight's log can't be read (its `flight_id` can't be recomputed, and the old one is a low-entropy hash of the tail number); annotations on insights are re-keyed to the recomputed insight ids; admission entries whose file isn't in the workspace's folders are left out (the export says how many); in an imported workspace a log not in the manifest is recorded in the admission record as `not_in_sender` (*Include* is the ordinary override); the sender manifest lives in the imported workspace's `import.json` (local: not carried by a later export); device-specific settings (`last_view`, Trends detail-strip state) are not carried. The document classification is in `workspace_export.DOCUMENTS`; an export stops on any file it doesn't cover. Also decided: (4) the sender's own text is never rewritten, but when *Anonymise logs* is chosen the export dialog lists where the tail number or system ID appears in it (workspace name, notes, filter notes, exclusion reasons, pin labels, Journal notes and reasons), so the sender can change it first or export as it is (§7.6); (5) a later export of an imported workspace describes what that workspace holds — its manifest is built from its own flights, and flights still missing from the original sender are not carried on (§7.5); (6) a Journal exclusion entry is labelled with its log's current file name whenever the flight is in the workspace, so after an import or a rename it names this machine's file; a dormant one keeps the label it was given. |
 
 ---
 
@@ -56,15 +58,15 @@ It answers: what gets stored, in what shape, where, and how three different host
 
 ## 4. Two things, not one
 
-| | **Workspace** | **Results bundle** |
+| | **Workspace** | **Workspace export** (v0.11, §7) |
 |---|---|---|
-| What | A live, growing store: every flight's analysis, the fleet baselines, models, insights, annotations, and settings | A single exported file: a snapshot, or a chosen subset |
+| What | A live, growing store: every flight's analysis, the fleet baselines, models, insights, annotations, and settings | A single file: the workspace's configuration, decisions and flight manifest, optionally with its logs |
 | Where it lives | Browser storage (OPFS/IndexedDB), or a folder on disk (CLI/local server) | Wherever the user saves or shares it |
 | Lifetime | Grows as logs are imported; rebuilt from raw logs if lost | Point-in-time; immutable once exported |
-| Who writes it | The host, after calling engine operations | The host, on export; nothing writes to an imported bundle in place |
-| Purpose | Make "import once, browse forever" possible | Backup, sharing, cross-device viewing (iPad), community sample data |
+| Who writes it | The host, after calling engine operations | The host, on export; importing it creates a new workspace |
+| Purpose | Make "import once, browse forever" possible | Share a workspace with someone else so they see what the sender sees |
 
-The bundle format is a **read of the workspace**, not a separate schema: it is a subset of the same JSON documents, plus a manifest. This keeps them from drifting apart.
+The export is a **read of the workspace**, not a separate schema: the same JSON documents, minus everything derivable from the logs, plus a manifest. This keeps them from drifting apart. (Until v0.10 this column described a *results bundle* of analyses; it is retired, §7.)
 
 ## 5. Multiple workspaces
 
@@ -384,7 +386,7 @@ interface AppSettings {
 
 // One per workspace, unchanged in spirit from v0.3 minus what moved above
 interface WorkspaceSettings {
-  anonymize_by_default: boolean;
+  // anonymize_by_default: removed in v0.11 — anonymisation is a per-export choice (§7.6)
   active_engine_profile: string;         // e.g. "916iS"
   aircraft_aliases?: string[][];         // v0.8, §5.6: groups of aircraft_ident values the pilot confirmed are one aircraft, e.g. [["N117ZS", "N117Z"]]
   last_view?: { kind: string; flight_id?: string };  // convenience, not load-bearing
@@ -425,39 +427,86 @@ interface ExclusionStore {
 
 `source: "auto"` pairs with the three rule categories, `source: "user"` with `user_defined`. `exclusion_summary()` reports a count for every category (zero included) plus a separate `overridden` tally — category counts include overridden entries, so the two are additive, not partitioned.
 
-## 7. The results bundle
+## 7. Workspace export and import (v0.11)
 
-A single file, `.eisbundle.json` (or `.eisbundle.zip` — see §7.3), containing a snapshot of some or all of the workspace, self-describing enough to be opened cold on another device.
+Replaces v0.3–v0.10's results bundle. **Purpose:** a pilot shares a workspace, usually with its logs, with someone else for custom analysis or debugging, and the recipient sees what the sender sees. The export is the workspace's *configuration and decisions*; the logs are the data; the recipient's app recomputes everything else. A recipient who has the export but not the logs gets an empty workspace that tells them which logs to ask for — getting something useful without the logs is deliberately out of scope.
 
-### 7.1 Manifest-first shape
+### 7.1 What an export carries
 
-```ts
-interface ResultsBundle {
-  bundle_version: string;                 // this spec's version
-  exported_at: string;
-  exported_by: { app: string; version: string };   // e.g. "slingology-eis-web" "0.1.0"
-  scope: "single_flight" | "fleet_subset" | "full_workspace";
-  anonymized: boolean;                    // whether identifying fields were stripped (Spec 01 §10)
-  flights: FlightAnalysis[];              // Spec 01 §8.3, per scope
-  fleet?: FleetAnalysis;                  // present unless scope === "single_flight"
-  annotations?: AnnotationEntry[];        // filtered to the included flights
-  rules_used?: RuleSet;                   // the rules that produced flights[].insights, for reproducibility
-}
-```
+Everything in the workspace that the logs and the app can't reproduce, and nothing they can:
 
-Deliberately excluded from the bundle: `exclusions.json` (it records which of *this* pilot's files were skipped — meaningless to a recipient, whose bundle contains only admitted flights by construction; whether a full-workspace backup should carry it is part of Q2's format decision), raw log bytes, full-resolution series data (Spec 01 §8.7) beyond what's needed for the flight-view charts, and any engine-internal cache. The bundle is meant to be readable and diffable, and to stay small — the "no service-side storage" principle (D7) extends naturally to "no accidental raw-data leakage in something meant to be shared."
+| Carried | Source |
+|---|---|
+| Workspace settings: engine profile, aircraft aliases | `settings.json` (§6.6), minus device-specific fields |
+| Reference & Models settings, reference exclusions, pins | `fleet/selection.json` (§6.3) |
+| Reference history | `fleet/shift_history.json` and any other reference-change record (Spec 12) |
+| Rules in effect, including disabled topics and rule edits | `rules/active.json` (§6.4) |
+| Filters | `filters.json` (Spec 09 §9) |
+| Journal entries and their records | `journal.json` (Spec 14 §6) |
+| Annotations, including acknowledged insights | `annotations.json` (§6.5) |
+| Log admission record, re-keyed by file fingerprint (§7.5) | `exclusions.json` (§6.8) |
+| **Manifest of the sender's flights**: per flight, `flight_id`, every source's fingerprint (`source_key`) and file name, date, duration, airport hint | `flights/*/sources.json`, `analysis.json` headers |
+| Provenance: app name and version, **engine version**, export time, workspace name, whether logs are included and anonymised | — |
 
-### 7.2 GPS handling
+Not carried: flight and fleet analyses, models and baselines (all recomputed from the logs); `log_folders` (paths mean nothing on another machine); app-level settings (units, last workspace, chart presets); caches. A workspace document not covered by this table is a defect in the export — the implementation lists every workspace document and classifies it as carried or derived, so new documents can't be silently dropped.
 
-Per Spec 01 §10, `anonymize` strips GPS along with `aircraft_ident`/`system_id`. The bundle format defaults `anonymized: true` for any bundle created via a "share" or "export for community" action, and `false` for a personal backup a pilot exports for themselves — this is a UI-level choice (Spec 03), not an engine one, but the bundle schema needs the field regardless so a consumer can tell which kind it's opening.
+### 7.2 Export
 
-### 7.3 File format: JSON vs. a zip
+From Settings → App: *Export workspace…* exports the **whole active workspace**. There is no subset scope: to share some flights, the sender makes an experiment workspace with just those logs (§5.4) and exports that.
 
-A `full_workspace` bundle for a pilot with 100+ flights could reach a few megabytes of JSON — fine to read, awkward to browse by hand. Proposal: `.eisbundle.json` for `single_flight` and small `fleet_subset` exports (the common "check this one flight" or "here's my ECU issue" case); `.eisbundle.zip` (containing `manifest.json` + one file per flight, mirroring the workspace's own `flights/<id>/analysis.json` layout) for `full_workspace` exports. Both share the same manifest shape; the zip just splits `flights` across files instead of inlining the array. This is a proposal, not fixed — see Q2.
+- **Include logs** (default on). Without it the output is one small file, `<name>.eisworkspace`, and the recipient links their own copies of the logs (§7.4 step 3).
+- **Anonymise logs** (default off; available only with *Include logs*, §7.6).
+- **Privacy notice**, always shown: logs carry the tail number, system ID, dates, times and GPS track unless anonymised; annotation text, filter notes and the workspace name go as written.
+
+Only admitted flights' logs are included — the logs in the manifest. Skipped logs, duplicates and logs outside the workspace's folders are not.
+
+### 7.3 Format
+
+- Without logs: `<name>.eisworkspace` — a zip holding `workspace.json` (provenance and manifest) and the carried documents under their workspace names.
+- With logs: `<name>.zip` holding a folder `<name>/` with `<name>.eisworkspace` and `logs/`, the included logs under their original file names (or neutral names when anonymised, §7.6). The recipient **unzips it themselves** (Finder, Files, Explorer) and imports the folder. The app never extracts archives and never writes log files: logs always live in a folder the user owns and can see (a workspace references logs, never stores them — §5.1), and the flow is identical on every platform including Safari and iPad.
 
 ### 7.4 Import
 
-Importing a bundle merges it into the target workspace: flights are added or updated by `flight_id` (an imported analysis from a newer engine version wins; from an older one, the host warns and keeps the newer local copy — never silently discards either), fleet analysis is recomputed locally rather than trusted from the bundle (since `update_fleet` is cheap and the local `FleetSelection` may differ), and annotations are merged additively by `id`. A bundle is never "opened in place" as the live workspace; it's always merged, even into an empty one — this keeps exactly one code path instead of two.
+*Import workspace…* (Settings → App, and the workspace switcher). Always creates a **new** workspace; an import never merges into, or changes, an existing one.
+
+1. **Choose.** Pick an `.eisworkspace` file, or an unzipped export folder. A summary shows before anything is created: the sender's workspace name, engine model and engine version, flight count and date range, what it carries (e.g. "4 filters, 2 rule edits, 3 flights excluded from the reference, 12 notes"), and whether logs are included and anonymised. The engine check (§7.7) runs here.
+2. **Name.** Default: the sender's workspace name + " (imported)". Renamable later.
+3. **Link logs.** With an export folder, its `logs/` is linked automatically. Otherwise the user picks one or more folders with the ordinary *Add logs…* control. The user can skip this and link later; the workspace then shows an empty state: *Link your logs to see this workspace's analysis*, with the manifest's flight list.
+4. **Match, without analysing.** The folders are scanned against the manifest (§7.5) and the result shown: *38 of 40 flights found · 2 missing (listed) · 12 other logs held out*. The user can add a folder and rescan, or continue.
+5. **Analyse.** The ordinary Sync confirmation (Spec 03 §5.1) analyses the matched flights with the imported configuration and decisions, then opens Flights.
+
+After import the workspace is an ordinary workspace: *Add logs…* and Sync work as usual, and the manifest's role continues through §7.5.
+
+### 7.5 Matching the logs to the manifest
+
+Flights match by `flight_id`, which is derived from the log's content (tail number, system ID, start time — Spec 01 §6.1), so file names and folder structure don't matter. Every decision in the export is keyed by `flight_id`, except the admission record, which the export re-keys from file name to `source_key` so a renamed file can't lose or gain a skip (Q12).
+
+- **Missing flights** — in the manifest, no log found. Listed in the import result and kept in the Skipped panel as *In the sender's workspace — log not found* (date, airport, the sender's file name), so the recipient knows what to ask for. Decisions tied to them are kept, dormant. When a later Sync finds the log, the flight is admitted and its decisions apply.
+- **Extra logs** — found, not in the manifest. **Held out by default**: they appear in the Skipped panel as *Not in the sender's workspace*, each with *Include*. This keeps the recipient's view identical to the sender's even when the folder holds other logs. Included extras behave as ordinary flights.
+- The manifest is kept with the imported workspace for this purpose. It has no role in a workspace that wasn't imported. A later export of an imported workspace builds its manifest from the flights it holds; still-missing flights aren't carried on (v0.12).
+
+### 7.6 Anonymised logs
+
+*Anonymise logs* rewrites the **copies** written into the export; the sender's own logs and workspace are untouched.
+
+- Tail number and system ID → a consistent pseudonym per aircraft (`ANON-1`, `ANON-2`, …; tails the sender grouped as one aircraft share one, v0.12), across all logs, including Garmin Pilot's `flightstream_header`.
+- GPS latitude and longitude → blanked; so are the navigation and radio columns that place the aircraft — Nav Identifier, Nav Distance, Bearing, Course and Cross Track Distance, COM and NAV frequencies (v0.12).
+- File names → neutral (`flight_001.csv`, …), removing Garmin's airport suffix; the manifest's airport hints are dropped.
+- `flight_id`s are recomputed from the rewritten logs, and every carried document is remapped to them consistently. Aircraft aliases are replaced by the pseudonym.
+- **Not changed:** dates and times, engine hours, and free text the sender wrote (annotations, filter notes, workspace name) — stated in the export dialog. Where that text names the aircraft (tail number or system ID), the dialog says so before export (v0.12).
+- **Requirement:** an anonymised export re-analysed by the recipient produces the same results as the sender's workspace, apart from the identity fields. Anything in the analysis that depends on a rewritten field is a blocker to be reported, not worked around.
+
+### 7.7 Engine versions
+
+The export records the sender's engine version. At import (step 1):
+
+- **Recipient's engine older** than the sender's: import refused — *This workspace needs engine X or later. Update the app to import it.* An older engine can't faithfully apply decisions it predates (e.g. a phase filter would be treated as invalid and its events shown unfiltered).
+- **Newer:** import proceeds with a notice — *Exported with engine X; you have Y. Results reflect your newer engine and may differ.* Older documents are upgraded by the app's existing upgrade paths.
+- **Same:** no message.
+
+### 7.8 CLI
+
+`export-bundle` is replaced by `export-workspace` (`--include-logs`, `--anonymise`) and `import-workspace` (`--name`, `--logs <folder>`), with the same behaviour as §7.2–7.7. The CLI reports the match result (§7.4 step 4) and requires confirmation before analysing, as the UI does.
 
 ## 8. Staleness and the workspace
 
@@ -491,7 +540,7 @@ The chart-ready series cache (`series/overview.json` in §5) is sketched but not
 This spec has no engine code to migrate — it's purely a host-side addition, built on top of Spec 01's Stage 3+ (contract) and Stage 4 (adapters). Suggested order:
 
 1. Implement the local-filesystem realization (§5.8) first, since the CLI already has the closest precedent (`data/reports/`) and it's testable without a browser.
-2. Implement `export_bundle`/`import_bundle` against the filesystem realization; test round-tripping the 23-flight fleet (pending more raw logs, per Spec 01 Q6, same limitation as before).
+2. Implement workspace export and import (§7) against the filesystem realization; acceptance: round-trip a real workspace with logs (with and without anonymisation) and get identical insights, Journal and Trends.
 3. Implement the IndexedDB realization behind the same interface used by the browser adapter (Spec 04 §9.1), and confirm identical JSON shapes between the two.
 
 Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection); steps 2 and 3 are not. §5.11's admission behavior is covered by `tests/unit/test_exclusions.py`, `test_loader.py`, `test_workspace.py` (including reclassify), `test_server.py` (Skipped list, preview) and `tests/cli/test_cli.py` (`flights` / `exclude` / `include`) — run against the project's logs, including the run-up case in §5.11.2.
@@ -501,17 +550,17 @@ Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection
 | # | Question | Leaning |
 |---|---|---|
 | Q1 | Should `series/` caching (§5, §10) be in scope for v1, or deferred until Spec 03 defines what the flight-view chart actually needs? | Defer; re-parsing on demand (Spec 01 `get_series`) is cheap per the spike numbers. |
-| Q2 | `.eisbundle.json` vs `.eisbundle.zip` for full-workspace exports (§7.3) — worth the added complexity of two formats, or always zip? | Lean toward always zip once `full_workspace` export exists, single JSON only for `single_flight`/small `fleet_subset`; revisit once real fleet sizes are known. |
+| Q2 | ~~`.eisbundle.json` vs `.eisbundle.zip`~~ | **Closed (v0.11):** the results bundle is retired; workspace export is always a zip (§7.3). |
 | Q3 | Should the workspace track its own storage usage and warn before hitting a browser quota, or rely on `navigator.storage.estimate()` at UI level? | UI-level (Spec 03), this spec just needs the data to stay small, which §9 argues it does. |
 | Q4 | Does `engine_overrides.json` need a real design now, or can it stay a placeholder until a pilot actually asks for it? | Placeholder; no evidence yet that default engine profiles are wrong for any tested aircraft. |
-| Q5 | Bundle import currently always merges (§7.4) — is there a case for a true "read-only, don't merge" viewer mode, e.g. for a community sample bundle someone doesn't want mixed into their own data? | **Sharpened by `workspaces-and-log-browser.md`'s Q3 (below), now folded in here:** with multiple workspaces, "don't merge into what I have" has a natural answer that didn't exist in v0.3 — open an imported bundle as a **new workspace** rather than merging into the active one. That's a real design change to §7.4's "always merges" rule, not just a UI mode; needs a decision, not just a leaning. |
+| Q5 | ~~Read-only, don't-merge viewer mode for bundles?~~ | **Closed (v0.11):** import always creates a new workspace and never merges (§7.4); read-only preview is retired with the bundle. |
 | Q6 | Should the packaged installer's default (`~/SlingologyEIS/`) be a fixed, hardcoded name, or configurable at install time (e.g. macOS `~/Library/Application Support/SlingologyEIS/` vs. a plain home-directory folder a non-technical user can actually find in Finder)? | **Resolved (v0.10):** the default stays a plain, visible home-directory folder, `~/SlingologyEIS/` — discoverability by a non-technical pilot matters more than platform convention — and the pilot can move it anywhere afterwards (§5.8.1). Only the small location file uses the platform's configuration folder. |
 | Q7 | ~~A log with no fingerprint match reappears "missing" indefinitely — does it drop out on its own, or stay listed until removed?~~ | **Resolved.** Stays listed as Missing, results and baseline contribution unchanged, until the pilot explicitly clears it — distinct from a whole unreachable folder, which is one event, not N missing logs. See §5.5. |
 | Q8 | ~~When a scan finds a log for a different aircraft, warn-and-exclude, or offer to create/switch workspace?~~ | **Resolved, and reframed.** Multi-aircraft-same-engine-type is a real, intended use case (a flight school, a partnership), not an edge case to guard against — a different tail number is purely informational, never excludes anything. What actually can't mix is *engine model*, and that's enforced structurally (one `engine_model` per workspace, applied to everything in it) rather than detected per-log, because engine variant isn't present in the log data at all (verified against `limits.py`) — see §5.6, and the resulting gap, Q11. |
 | Q9 | ~~Should a first-time pilot ever have to think about creating a workspace?~~ | **Resolved.** No — auto-create from the tail number in their first imported logs, plain fallback name if parsing fails, always renamable. |
 | Q10 | ~~Does the CLI need `--workspace <name>` as well as a path, plus `workspace list`/`workspace create`?~~ | **Resolved: yes.** `--workspace` accepts either a registered name/id (looked up in the registry) or a literal path (unchanged behavior — a developer-checkout invocation that predates the registry keeps working). This is a real modification to the CLI Spec 01 §7.1 already shipped (Stage 4a, v0.11.0), not a paper change to an unbuilt spec — flag it to Code as required code, not just a doc update. |
 | Q11 | No data signal is confirmed to exist for detecting a log's engine variant (912iS/914iS/915iS/916iS) automatically — `limits.py` shows engine selection is entirely user-configured, never read from the log. The by-construction design in §5.6 sidesteps this (mixing is structurally impossible, not detected-and-blocked), but nothing currently catches a pilot pointing the wrong log at the wrong workspace — it would just silently get the wrong limits. | New. Needs either a real data signal (unconfirmed — the project's dataset is 916iS-only, so this hasn't been checked against other variants) or a manual tail-number-to-engine-model mapping the pilot maintains. Not blocking Q8's resolution; worth its own follow-up. |
-| Q12 | `exclusions.json` is keyed by **filename**, while everything else in the workspace matches logs by content fingerprint (§5.7). Renaming a skipped file makes it look new — it gets classified again (usually re-skipped, but a user override or `user_defined` entry is lost to the renamed copy); and two different files with the same name in two referenced folders share one entry. | New. Leaning: add the file's `source_key` to each entry and match on it first, keeping `filename` for display and for the browser-upload case. Low urgency — G3X names embed date, time and airport, so collisions are rare in practice — but it's the one place the workspace breaks its own matching rule. |
+| Q12 | `exclusions.json` is keyed by **filename**, while everything else in the workspace matches logs by content fingerprint (§5.7). Renaming a skipped file makes it look new — it gets classified again (usually re-skipped, but a user override or `user_defined` entry is lost to the renamed copy); and two different files with the same name in two referenced folders share one entry. | New. Leaning: add the file's `source_key` to each entry and match on it first, keeping `filename` for display and for the browser-upload case. Low urgency — G3X names embed date, time and airport, so collisions are rare in practice — but it's the one place the workspace breaks its own matching rule. **v0.11:** workspace export re-keys the admission record by `source_key` (§7.5); whether the live `exclusions.json` should do the same stays open here. |
 | Q13 | The CLI's `exclude`/`include` act on **Tier 1** (admission), while the UI's exclude toggle acts on **Tier 2** (baselines). The same verb means different things on two surfaces, and the CLI's Tier 1 entry behaves differently by path: the CLI's own fleet commands honor it on their next run (`load_directory()` reads `exclusions.json` every time), but in a folder-scanned workspace (the web UI's path) a file that's *already* a flight stays one — rules only run on newly seen files (§5.11.3). | New, needs a decision. Options: (a) CLI `exclude` given an already-admitted file targets Tier 2, and only a not-yet-admitted file gets a Tier 1 `user_defined` entry; (b) rename the CLI's Tier 1 verbs `skip`/`unskip` and add `exclude`/`include` for Tier 2, matching the UI. Leaning (b): explicit beats overloaded. |
 | Q14 | `min_flight_duration_min` lives in the toolkit's `config.json` — install-wide — although per-workspace settings exist (§6.6) and an experiment workspace is exactly where a pilot might want a different threshold. And because rules apply once (§5.11.3), changing it affects only new files; `reclassify` only tightens (removes newly-short flights), never loosens (re-admits newly-long-enough skipped logs). | New. Leaning: move it into `WorkspaceSettings`, and make reclassify symmetric for `auto` entries (re-admit a skipped log whose rule no longer fires, leaving `user_defined` entries and overrides untouched). |
 | Q15 | **Fleet workspaces (future investigation).** Should one workspace hold several aircraft of the same engine type with the per-aircraft layer kept **per aircraft** — baselines, models, learned patterns, filters and change monitor keyed by aircraft — plus a fleet view comparing them side by side (per-aircraft baselines, per-limit saturation by aircraft)? That is where engine-type insights would come from: a limit saturating the same way on every aircraft points to the profile (Spec 10 D6 cause 1), on one aircraft to that installation (cause 3a). | New in v0.8; deferred, by decision, until after the current Spec 10 stage. Until then, the mixed-aircraft notice (§5.6) is the interim. Touches baselines, models, filters, Trends and the change monitor, so it needs its own spec; it is also the natural path for multi-aircraft evidence into Spec 10's register. |

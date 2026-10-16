@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.18 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.19 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -28,6 +28,7 @@
 | 0.16 | **Flight view review** (2026-10-13, five decisions; Spec 10 D20). §5.2 rewritten: header gains a **Flight facts** row with an admission rule (Spec 10 §4.3); **Events** becomes a first-class section between the chart and the topic cards (one chronological table for limit and CAS events, row actions, filtered events collapsed), and the `limit_exceedances` card shrinks to its sentence and badges; topic cards are **expanded only when they have something to say** (insight, mirrored badge, change marker, validity note) and otherwise a one-line roster entry — the "analysed with nothing to flag" line is dropped as redundant; the rule editor leaves the card for a **side panel** opened from a read-only triggers summary (Spec 14 v0.9 §7.3). The loader-skipped-log preview leaves Flight view for its own read-only **Log preview** page (new §5.9). |
 | 0.17 | **Flights review** (2026-10-15, five decisions; two changes). §5.1: the drop zone shows only while the workspace has **no folders**; afterwards it collapses to an **Add logs…** action beside **Sync**, page-wide drop still accepted, progress as a transient banner. **Sync** discovers, then asks before analysing (*Found N new logs and M flights needing re-analysis — Analyze now? / Not now*); deferred work shows as a *Needs analysis* status with a persistent **Analyze N** button. Insights column, Skipped chip-swap and the column set are confirmed unchanged. Also: §5.9 route is by file name (no fingerprint reaches the web); §5.2 roster rule notes that a *reference changed* marker expands every reference-based card while a *rule changed* marker expands only its topic. |
 | 0.18 | §5.7: the Settings changelog is removed (Spec 14 v0.13). Changed settings are marked in Settings and listed in Journal as entries; the Engine tab shows the engine version in effect and its *What's new*. |
+| 0.19 | Workspace export and import replace the results bundle (Spec 02 v0.11 §7). §5.7 App tab: *Export workspace…* and *Import workspace…*, anonymise-by-default removed. §5.8 rewritten as the import flow. R2 (read-only bundle preview) and the Flight view's *Export flight bundle* retired. |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
 ---
@@ -51,7 +52,7 @@ It defines the views, what data each one binds to (from Spec 01 §8 and Spec 02'
 | D5 | Every insight must link to the evidence that produced it (chart, table row, event). | Original design brief |
 | D6 | The UI is also meant to help *develop* the analysis — editing a rule and seeing its fleet-wide consequence is a first-class feature, not an afterthought. Since v0.13 this lives on the topic card, not a separate page (Spec 14 §7.3). | Original design brief; Spec 14 |
 | **R1** | **Resolves Spec 02 Q1.** Series caching: **not cached** in the workspace for v1. `get_series` (Spec 01 §7) re-parses on demand. The spike measured 2.1–2.6 s for a full flight's load+phases+metrics (Spec 04 Appendix A) — well inside what a "open this flight" wait tolerates, and it avoids a second stale-vs-fresh problem alongside `FlightAnalysis` itself. Revisit only if real usage shows re-parsing is a bottleneck. |
-| **R2** | **Resolves Spec 02 Q5.** Bundle import gets a **preview mode**: opening a bundle (drag-in, or a "browse community samples" flow) shows its contents in the same flight-view/trends components, tagged read-only, with an explicit "Add to my workspace" action before anything merges. Nothing merges silently. This is a UI-level choice, as Spec 02 anticipated — the bundle format itself is unchanged. |
+| **R2** | **Resolves Spec 02 Q5.** Bundle import gets a **preview mode**: opening a bundle (drag-in, or a "browse community samples" flow) shows its contents in the same flight-view/trends components, tagged read-only, with an explicit "Add to my workspace" action before anything merges. Nothing merges silently. This is a UI-level choice, as Spec 02 anticipated — the bundle format itself is unchanged. **Superseded (v0.19):** bundles are retired; import always creates a new workspace (Spec 02 v0.11 §7.4). |
 
 ## 3. Design principles for this spec
 
@@ -162,7 +163,7 @@ The most-used view, and the one D5 (evidence links) matters most for. Layout (v0
 - **Reference contribution** is stated in the header — *Contributes to reference* or *Excluded from reference (reason)* — with the toggle (Spec 14 §7.1). **Exclude this flight from reference →** on any `baseline_deviation`, outlier or trend insight; reason required.
 - **Markers.** A card whose verdict changed because the reference moved or a rule was edited carries *reference changed* / *rule changed*, showing what, when and why, with **Revert** behind the same preview (Spec 14 §7.2).
 - **Annotations** attach inline on any insight card or Events row, writing to Spec 02's `annotations.json` via the host, keyed by `flight_id` (Spec 01 R3); Journal (§5.6) browses them across the fleet.
-- **Report / export:** "Download as text" (`render_report`) and "Export flight bundle" (Spec 02 §7, `scope: "single_flight"`) as secondary actions.
+- **Report / export:** "Download as text" (`render_report`) as a secondary action. ("Export flight bundle" retired in v0.19; sharing is whole-workspace, Spec 02 §7.)
 - **Not a flight.** A log the loader skipped is no longer rendered by this view; Flights links it to Log preview (§5.9).
 
 <details><summary>v0.15 layout (superseded)</summary>
@@ -218,19 +219,21 @@ Not a top-level nav item (§4) — reached via the gear icon. The workspace swit
 
 - **Engine** — active profile and version (`engine_model` locked, read-only per Spec 02 §5.6 — changing it is a reason to make a new workspace); the OM limits it ships, read-only, with their phase-aware suppression windows; engine overrides when designed (Spec 02 §6.4, `reason`/`source` mandatory). Until then: "None".
 - **Reference & Models** — Spec 14 §5.1 (see §5.5).
-- **App** — units, which workspace reopens on launch, anonymize-by-default (Spec 02 §6.6); the **export/import bundle** flow (Spec 02 §7: scope picker, anonymize toggle, download; import is §5.8's drop-and-preview flow from a different entry point); and the **persistence nudge** (Spec 02 §9 — one-time, dismissible, browser mode only).
+- **App** — units, which workspace reopens on launch; **Export workspace…** (Spec 02 §7.2: *Include logs*, *Anonymise logs*, privacy notice) and **Import workspace…** (§5.8); and the **persistence nudge** (Spec 02 §9 — one-time, dismissible, browser mode only). Anonymise-by-default removed (v0.19).
 
 No changelog (Spec 14 v0.13). A setting that changes results and differs from shipped is marked with its shipped value and links to its Journal entry; display-only settings are unmarked. The Engine tab shows the engine version in effect and its user-facing *What's new* (Spec 13).
 
-### 5.8 Bundle preview (not top-level; a modal/overlay flow)
+### 5.8 Import workspace (v0.19; replaces Bundle preview)
 
-**Resolves R2.** Triggered by dragging a `.eisbundle.json`/`.eisbundle.zip` anywhere in the app, or a future "browse community samples" entry point (Spec 01 §9 community goal). Opens the bundle's contents in the *same* Flight-view and Trends components used for the live workspace, with:
+A modal flow, reached from Settings → App and the workspace switcher. Behaviour is Spec 02 §7.4–7.7; the screens:
 
-- A persistent "Previewing: not yet added to your workspace" banner.
-- Every write-capable action (annotate, exclude from reference, edit rules) disabled — this is a viewer, not an editing surface, until the pilot commits.
-- One explicit "Add to my workspace" button that runs the actual merge (Spec 02 §7.4) and only then makes the data live and editable.
+1. **Choose** an `.eisworkspace` file or an unzipped export folder → **summary**: sender's workspace, engine model and version, flights and date range, what it carries, logs included / anonymised. An engine too old shows the refusal here (Spec 02 §7.7) and the flow stops; a newer one shows its notice.
+2. **Name** the new workspace.
+3. **Link logs** — automatic for an export folder; otherwise *Add logs…* (one or more folders). *Skip for now* leaves the workspace with the *Link your logs* empty state.
+4. **Match result** — *38 of 40 flights found · 2 missing · 12 other logs held out*, each count expandable to its list; *Add another folder* rescans; *Continue*.
+5. **Sync confirmation** (§5.1) → Flights.
 
-This reuses rather than duplicates the flight/trends UI, which is why it's a flow layered on existing views rather than a seventh destination.
+Afterwards, the Skipped panel (§5.1) carries two more reasons: *In the sender's workspace — log not found* (no actions; it resolves when the log is added) and *Not in the sender's workspace* (*Include*).
 
 ### 5.9 Log preview (v0.16)
 

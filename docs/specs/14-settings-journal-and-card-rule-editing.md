@@ -81,7 +81,7 @@ Settings becomes a section with tabs. It holds everything that changes what the 
 |---|---|---|
 | **Engine** | Active engine profile and version; the OM limits it ships, read-only, with phase-aware suppression shown per limit; engine overrides when designed (`reason`/`source` mandatory) | `engines/<model>.json`, `engine_overrides.json` |
 | **Reference & Models** | §5.1 | `FleetSelection.baseline_config`, `baselines.json`, `models.json` |
-| **App** | Units; last active workspace; anonymise-on-export default; platform notes (Safari folder re-pick); data location (§5.2, local server only, v0.12) | app-level settings; the location file (Spec 02 §5.8.1) |
+| **App** | Units; last active workspace; workspace export and import (Spec 02 v0.11 §7; anonymise-on-export default removed); platform notes (Safari folder re-pick); data location (§5.2, local server only, v0.12) | app-level settings; the location file (Spec 02 §5.8.1) |
 
 ~~The three tabs share **one changelog**~~ — removed in v0.13. A pilot asking "why does this flight look different?" wants what is in effect now, and that has one home: Journal (§6).
 
