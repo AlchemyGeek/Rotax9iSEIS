@@ -1617,8 +1617,20 @@ def op_get_import_info(params: dict, ctx: dict) -> Any:
 
 
 def op_add_log_folder(params: dict, ctx: dict) -> Any:
+    """Link a folder of logs. It must exist: a mistyped path used to be
+    accepted silently (and shown reachable), so linking looked like it did
+    nothing and later matched nothing. `~` is expanded; the folder is
+    stored as given (not resolved: a symlinked logs folder stays as linked)."""
     _require_active(ctx)
-    manifest = ws.add_log_folder(ctx["workspace_dir"], params["path"], ctx["registry_path"])
+    raw = str(params.get("path") or "").strip()
+    if not raw:
+        raise RpcError("BAD_PATH", "Enter the folder's path.")
+    folder = Path(raw).expanduser()
+    if not folder.is_absolute():
+        raise RpcError("BAD_PATH", f"{raw} isn't a full path. Enter it from the top of the disk, e.g. /Users/you/logs.")
+    if not folder.is_dir():
+        raise RpcError("BAD_PATH", f"There's no folder at {folder}.")
+    manifest = ws.add_log_folder(ctx["workspace_dir"], str(folder), ctx["registry_path"])
     return manifest.to_dict()
 
 

@@ -335,3 +335,18 @@ def test_journal_exclusion_shows_the_logs_current_name(registry_server, tmp_path
     entry = next(e for e in rpc(url, "get_journal", {})["result"]["entries"]
                  if e["kind"] == "exclusion" and e["ref_id"] == excluded)
     assert entry["what"] == "renamed.csv"
+
+
+def test_linking_a_folder_that_does_not_exist_is_refused(registry_server, tmp_path):
+    """A mistyped folder used to be accepted silently (shown reachable),
+    so linking looked like it did nothing."""
+    url = registry_server
+    rpc(url, "create_workspace", {"name": "W", "engine_model": "916iS"})
+    for bad, msg in (("/no/such/folder", "There's no folder at /no/such/folder."),
+                     ("relative/logs", "isn't a full path"), ("  ", "Enter the folder's path.")):
+        res = rpc(url, "add_log_folder", {"path": bad})
+        assert res["ok"] is False and res["error"]["code"] == "BAD_PATH" and msg in res["error"]["message"], bad
+    assert rpc(url, "get_active_workspace", {})["result"]["manifest"]["log_folders"] == []
+    good = tmp_path / "logs"
+    good.mkdir()
+    assert rpc(url, "add_log_folder", {"path": str(good)})["result"]["log_folders"][0]["path"] == str(good)

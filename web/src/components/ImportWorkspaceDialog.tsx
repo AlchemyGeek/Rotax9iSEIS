@@ -20,8 +20,11 @@ async function fileToBase64(f: File): Promise<string> {
 }
 
 const INPUT: React.CSSProperties = { fontSize: 12, padding: "6px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", flexGrow: 1 };
-const BUTTON: React.CSSProperties = { padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" };
-const PRIMARY: React.CSSProperties = { ...BUTTON, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 };
+const BUTTON_BASE: React.CSSProperties = { padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" };
+const PRIMARY_BASE: React.CSSProperties = { ...BUTTON_BASE, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 };
+// A disabled button has to look it, or a click that does nothing reads as a fault.
+const BUTTON = (disabled = false): React.CSSProperties => ({ ...BUTTON_BASE, ...(disabled ? { opacity: 0.45, cursor: "default" } : {}) });
+const PRIMARY = (disabled = false): React.CSSProperties => ({ ...PRIMARY_BASE, ...(disabled ? { opacity: 0.45, cursor: "default" } : {}) });
 
 export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<Step>("choose");
@@ -68,14 +71,17 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // Linking a folder shows straight away what it found (§7.4 step 4):
+  // the match result, with the folder listed as linked.
   async function addFolder() {
     const p = folder.trim();
-    if (!p) return;
-    const ok = await run(() => client.addLogFolder(p));
-    if (!ok) return;
-    setLinked((l) => [...l, p]);
+    if (!p || busy) return;
+    const manifest = await run(() => client.addLogFolder(p));
+    if (!manifest) return;
+    const added = manifest.log_folders?.[manifest.log_folders.length - 1]?.path ?? p;
+    setLinked((l) => (l.includes(added) ? l : [...l, added]));
     setFolder("");
-    if (step === "match") await rematch();
+    await rematch();
   }
 
   async function rematch() {
@@ -110,8 +116,16 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
               />
             </label>
             <div style={{ display: "flex", gap: 6 }}>
-              <input aria-label="Export folder or file path" placeholder="/Users/you/Downloads/N117ZS" className="mono" value={path} onChange={(e) => setPath(e.target.value)} style={INPUT} />
-              <button type="button" style={BUTTON} disabled={busy || !path.trim()} onClick={() => inspect({ path: path.trim() })}>Open</button>
+              <input
+                aria-label="Export folder or file path"
+                placeholder="/Users/you/Downloads/N117ZS"
+                className="mono"
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && path.trim() && !busy && void inspect({ path: path.trim() })}
+                style={INPUT}
+              />
+              <button type="button" style={BUTTON(busy || !path.trim())} disabled={busy || !path.trim()} onClick={() => inspect({ path: path.trim() })}>Open</button>
             </div>
             {summary && (
               <div data-testid="import-summary" style={{ background: "var(--bg)", borderRadius: 8, padding: "10px 12px", fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -148,12 +162,26 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
               </div>
             )}
             {linked.length > 0 && (
-              <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{linked.join(" · ")}</div>
+              <div data-testid="linked-folders" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {linked.map((f) => (
+                  <div key={f} className="mono" style={{ fontSize: 11, color: "var(--text-primary)" }}>
+                    <span style={{ color: "var(--accent)" }}>✓</span> Linked {f}
+                  </div>
+                ))}
+              </div>
             )}
             <div style={{ display: "flex", gap: 6 }}>
-              <input aria-label="Log folder path" placeholder="/path/to/logs" className="mono" value={folder} onChange={(e) => setFolder(e.target.value)} style={INPUT} />
-              <button type="button" style={BUTTON} disabled={busy || !folder.trim()} onClick={addFolder}>
-                {step === "match" ? "Add another folder" : "Add folder"}
+              <input
+                aria-label="Log folder path"
+                placeholder="/path/to/logs"
+                className="mono"
+                value={folder}
+                onChange={(e) => { setFolder(e.target.value); setError(null); }}
+                onKeyDown={(e) => e.key === "Enter" && void addFolder()}
+                style={INPUT}
+              />
+              <button type="button" style={BUTTON(busy || !folder.trim())} disabled={busy || !folder.trim()} onClick={addFolder}>
+                {busy ? "Linking…" : step === "match" ? "Add another folder" : "Add folder"}
               </button>
             </div>
           </>
@@ -187,20 +215,17 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           {step === "link" && (
-            <button type="button" style={BUTTON} onClick={finishImport} title="The workspace stays empty until you link the logs">Skip for now</button>
+            <button type="button" style={BUTTON()} onClick={finishImport} title="The workspace stays empty until you link the logs">Skip for now</button>
           )}
-          {step === "choose" && <button type="button" style={BUTTON} onClick={onClose}>Cancel</button>}
+          {step === "choose" && <button type="button" style={BUTTON()} onClick={onClose}>Cancel</button>}
           {step === "choose" && summary?.engine_check.ok && (
-            <button type="button" style={PRIMARY} disabled={busy} onClick={() => setStep("name")}>Continue</button>
+            <button type="button" style={PRIMARY(busy)} disabled={busy} onClick={() => setStep("name")}>Continue</button>
           )}
           {step === "name" && (
-            <button type="button" style={PRIMARY} disabled={busy || !name.trim()} onClick={create}>Create workspace</button>
-          )}
-          {step === "link" && (
-            <button type="button" style={PRIMARY} disabled={busy || linked.length === 0} onClick={rematch}>Find flights</button>
+            <button type="button" style={PRIMARY(busy || !name.trim())} disabled={busy || !name.trim()} onClick={create}>Create workspace</button>
           )}
           {step === "match" && (
-            <button type="button" style={PRIMARY} disabled={busy} onClick={finishImport}>Continue</button>
+            <button type="button" style={PRIMARY(busy)} disabled={busy} onClick={finishImport}>Continue</button>
           )}
         </div>
       </div>

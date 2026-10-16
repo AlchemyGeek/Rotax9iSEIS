@@ -90,6 +90,12 @@ export function Settings() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [identityMentions, setIdentityMentions] = useState<{ where: string; value: string }[]>([]);
+  // Importing needs only a reachable server — not an active workspace,
+  // which a fresh install (the usual importer) doesn't have yet.
+  const [serverReachable, setServerReachable] = useState(false);
+  useEffect(() => {
+    client.listWorkspaces().then(() => setServerReachable(true), () => setServerReachable(false));
+  }, []);
 
   // Spec 02 v0.12: anonymising doesn't rewrite your own words, so say where
   // the tail number or system ID appears in them before exporting.
@@ -836,7 +842,8 @@ export function Settings() {
                   <button
                     type="button"
                     onClick={() => setImporting(true)}
-                    disabled={usingFixture}
+                    disabled={!serverReachable}
+                    title={serverReachable ? undefined : "no local server reachable"}
                     style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer" }}
                   >
                     Import workspace…
