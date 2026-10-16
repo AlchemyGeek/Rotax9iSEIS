@@ -8,8 +8,8 @@ import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } 
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import type {
-  ExclusionEntry, FlightRowStatus, FlightTableRow,
-  InsightSeverity, ScanOptions, ScanProgress, ScanResult, WorkspaceManifest,
+  ExclusionEntry, FlightRowStatus, FlightTableRow, ImportInfo,
+  InsightSeverity, ScanOptions, ScanProgress, ScanResult, SenderMissingFlight, WorkspaceManifest,
 } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 import { DROP_PROMPT_THRESHOLD, plural, promptText } from "../lib/flightsSync";
@@ -176,6 +176,10 @@ export function Flights() {
   // log / user-excluded). A separate list from `rows` above, which is
   // exclusively real, analyzed flights.
   const [exclusions, setExclusions] = useState<ExclusionEntry[]>([]);
+  // Spec 02 v0.11 §7.5: an imported workspace's flights whose log isn't
+  // here yet, and the sender's flight list for the empty state.
+  const [senderMissing, setSenderMissing] = useState<SenderMissingFlight[]>([]);
+  const [importInfo, setImportInfo] = useState<ImportInfo>({ imported: false });
   const [showSkipped, setShowSkipped] = useState(false);
   const [includingFilename, setIncludingFilename] = useState<string | null>(null);
   const [includeError, setIncludeError] = useState<string | null>(null);
@@ -191,6 +195,12 @@ export function Flights() {
       setIsRegistryActive(active.active);
       setUsingFixture(false);
       setExclusions(exclusionsResult.entries);
+      setSenderMissing(exclusionsResult.sender_missing ?? []);
+      try {
+        setImportInfo(await client.getImportInfo());
+      } catch {
+        setImportInfo({ imported: false });   // an older server, or not imported
+      }
     } catch {
       setRows(fixtureFlights.rows);
       setManifest(fixtureManifest);
@@ -308,6 +318,15 @@ export function Flights() {
     }
   }
 
+  // Spec 02 v0.11 §7.4 step 5: the import flow lands here with ?sync=1 —
+  // the ordinary Sync confirmation for the matched flights.
+  useEffect(() => {
+    if (params.get("sync") !== "1") return;
+    setParams((p) => { const c = new URLSearchParams(p); c.delete("sync"); return c; }, { replace: true });
+    void handleSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Analyze now / Analyze N / a row's "Analyze this flight": the folder
   // logs and stale flights given (all when omitted), then any dropped
   // files still waiting in the browser.
@@ -380,6 +399,7 @@ export function Flights() {
     try {
       const result = await client.listExclusions(true);
       setExclusions(result.entries);
+      setSenderMissing(result.sender_missing ?? []);
     } catch {
       // leave whatever refresh() already put there — still correct, just unenriched
     }
@@ -814,6 +834,25 @@ export function Flights() {
 
         {/* Spec 03 v0.17 §5.1: with no folders, the page is the onboarding
             surface — drop zone / file picker and Add folder. */}
+        {!hasFolders && importInfo.imported && (
+          // Spec 02 v0.11 §7.4 step 3: imported, logs not linked yet.
+          <div data-testid="link-logs-empty" style={{ background: "var(--panel)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Link your logs to see this workspace's analysis</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              Imported from {importInfo.provenance?.workspace_name ?? "another workspace"}. Add the folder that holds your copies of its logs (below); file names and folder layout don't matter.
+            </div>
+            <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+              {(importInfo.flights ?? []).map((f) => (
+                <div key={f.flight_id} className="mono" style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", gap: 10 }}>
+                  <span>{f.date ?? "—"}</span>
+                  <span>{f.airport_hint ?? ""}</span>
+                  <span>{f.duration_min != null ? `${Math.round(f.duration_min)} min` : ""}</span>
+                  <span style={{ color: "var(--text-tertiary)" }}>{f.sender_filename ?? ""}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {!hasFolders && (
           <div
             data-testid="onboarding-drop"
@@ -946,7 +985,7 @@ export function Flights() {
                 color: "var(--text-tertiary)",
               }}
             >
-              Skipped ({exclusions.length})
+              Skipped ({exclusions.length + senderMissing.length})
             </button>
           )}
           <div style={{ flexGrow: 1 }} />
@@ -1159,7 +1198,7 @@ export function Flights() {
             over it. */}
         {showSkipped && (
           <div style={{ background: "var(--panel)", borderRadius: 12, padding: "6px 14px" }}>
-            {exclusions.length > 0 && (
+            {exclusions.length + senderMissing.length > 0 && (
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", padding: "10px 10px 4px" }}>
                 {([
                   ["ground_session", "ground session"],
@@ -1172,6 +1211,8 @@ export function Flights() {
                     const n = skippedBreakdown.get(cat) ?? 0;
                     return `${n} ${label}${n === 1 ? "" : "s"}`;
                   })
+                  .concat((skippedBreakdown.get("not_in_sender") ?? 0) > 0 ? [`${skippedBreakdown.get("not_in_sender")} not in the sender's workspace`] : [])
+                  .concat(senderMissing.length > 0 ? [`${senderMissing.length} in the sender's workspace, log not found`] : [])
                   .join(" · ")}
               </div>
             )}
@@ -1234,9 +1275,28 @@ export function Flights() {
                     </td>
                   </tr>
                 ))}
+                {senderMissing.map((m) => (
+                  // No actions: it resolves when the log is added (Spec 03 v0.19 §5.8).
+                  <tr key={`sender-${m.flight_id}`} data-testid="sender-missing-row" style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "8px 10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, border: "1px solid var(--severity-watch)", color: "var(--severity-watch)", flexShrink: 0 }}>
+                          {m.reason}
+                        </span>
+                        <span className="mono" style={{ fontSize: 12 }}>{m.sender_filename ?? "—"}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 3 }}>Ask the sender for this log; it is added when found.</div>
+                    </td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>{m.date ?? "—"}</td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>—</td>
+                    <td className="mono" style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-secondary)" }}>—</td>
+                    <td style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-tertiary)" }}>{m.airport_hint ?? ""}</td>
+                    <td />
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {exclusions.length === 0 && (
+            {exclusions.length === 0 && senderMissing.length === 0 && (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)", fontSize: 13 }}>Nothing skipped.</div>
             )}
           </div>

@@ -13,7 +13,7 @@ vi.mock("../lib/engineClient", () => ({
       raw_idents: ["N117ZS", "N456CD"],
       aliases: state.aliases,
     }),
-    getWorkspaceSettings: async () => ({ anonymize_by_default: false, active_engine_profile: "916iS", aircraft_aliases: state.aliases }),
+    getWorkspaceSettings: async () => ({ active_engine_profile: "916iS", aircraft_aliases: state.aliases }),
     saveWorkspaceSettings: async (s: { aircraft_aliases: string[][] }) => {
       state.aliases = s.aircraft_aliases;
       return s;

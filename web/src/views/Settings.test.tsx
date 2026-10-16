@@ -12,7 +12,7 @@ import type { ChangedSetting } from "../types/contract";
 // entry and offers Reset to shipped. The Engine tab shows the version.
 
 const state = { changed: [] as ChangedSetting[] };
-const calls = vi.hoisted(() => ({ resetSetting: vi.fn() }));
+const calls = vi.hoisted(() => ({ resetSetting: vi.fn(), exportWorkspace: vi.fn() }));
 
 vi.mock("../lib/engineClient", async () => ({
   EngineRpcError: (await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient")).EngineRpcError,
@@ -30,6 +30,12 @@ vi.mock("../lib/engineClient", async () => ({
       return fleetAnalysis;
     },
     getDataLocation: async () => { throw new Error("not a local server"); },
+    exportWorkspace: async (o: unknown) => {
+      calls.exportWorkspace(o);
+      return { filename: "N117ZS.zip", flights: 40, logs_included: 40, anonymised: false, download_url: "/download/t", size: 1, notes: [], documents: [] };
+    },
+    downloadUrl: (p: string) => `http://127.0.0.1:8420${p}`,
+    previewWorkspaceExport: async () => ({ identity_mentions: [{ where: "workspace name", value: "N117ZS" }] }),
     // NavShell's own data (not under test here).
     filterHealth: async () => ({ health: [], attention_count: 0 }),
     listWorkspaces: async () => [],
@@ -100,5 +106,38 @@ describe("Settings — changed settings (Spec 14 v0.13)", () => {
     renderSettings("engine");
     expect(await screen.findByText("Engine version")).toBeTruthy();
     expect(screen.getByText("0.30.0")).toBeTruthy();
+  });
+});
+
+
+describe("Settings — share a workspace (Spec 02 v0.11 §7.2)", () => {
+  beforeEach(() => calls.exportWorkspace.mockClear());
+
+  it("exports with logs by default; anonymise needs logs; the privacy notice says what goes", async () => {
+    renderSettings("app");
+    const panel = await screen.findByTestId("workspace-share");
+    expect(screen.queryByText(/Anonymize by default/)).toBeNull();
+    const [includeLogs, anonymise] = within(panel).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(includeLogs.checked).toBe(true);
+    expect(anonymise.checked).toBe(false);
+    expect(screen.getByTestId("privacy-notice").textContent).toContain("tail number, system ID, dates, times and GPS track");
+    fireEvent.click(anonymise);
+    expect(screen.getByTestId("privacy-notice").textContent).toContain("pseudonym");
+    expect((await screen.findByTestId("identity-mentions")).textContent).toContain("workspace name (N117ZS)");
+    fireEvent.click(includeLogs);
+    expect(anonymise.checked).toBe(false);
+    expect(anonymise.disabled).toBe(true);
+    fireEvent.click(includeLogs);
+
+    fireEvent.click(within(panel).getByText("Export workspace…"));
+    await waitFor(() => expect(calls.exportWorkspace).toHaveBeenCalledWith({ include_logs: true, anonymise: false }));
+    expect((await screen.findByRole("status")).textContent).toContain("unzips it and imports the folder");
+  });
+
+  it("Import workspace… opens the import flow", async () => {
+    renderSettings("app");
+    const panel = await screen.findByTestId("workspace-share");
+    fireEvent.click(within(panel).getByText("Import workspace…"));
+    expect(screen.getByRole("dialog", { name: "Import workspace" })).toBeTruthy();
   });
 });

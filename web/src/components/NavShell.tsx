@@ -5,6 +5,7 @@ import { appSettings as fixtureAppSettings, workspaceRegistry as fixtureWorkspac
 import type { WorkspaceRegistryEntry } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
+import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
 
 const client = getEngineClient();
 
@@ -41,6 +42,8 @@ function WorkspaceSwitcher() {
   const [newName, setNewName] = useState("");
   const [newEngine, setNewEngine] = useState("916iS");
   const [newTail, setNewTail] = useState("");
+  // Spec 03 v0.19 §5.8: Import workspace… from the switcher too.
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,9 +154,17 @@ function WorkspaceSwitcher() {
               >
                 {busy ? "Creating…" : "Create"}
               </button>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setImporting(true); }}
+                style={{ padding: "6px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}
+              >
+                Import workspace…
+              </button>
             </div>
           </>
         )}
+        {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
       </div>
     );
   }
@@ -207,13 +218,21 @@ function WorkspaceSwitcher() {
             ))}
             <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 4 }}>
               {!showCreate ? (
-                <div
-                  onClick={() => setShowCreate(true)}
-                  style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--accent)", cursor: usingFixture ? "default" : "pointer" }}
-                  title={usingFixture ? "no local server reachable" : undefined}
-                >
-                  + New workspace
-                </div>
+                <>
+                  <div
+                    onClick={() => setShowCreate(true)}
+                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--accent)", cursor: usingFixture ? "default" : "pointer" }}
+                    title={usingFixture ? "no local server reachable" : undefined}
+                  >
+                    + New workspace
+                  </div>
+                  <div
+                    onClick={() => { if (!usingFixture) { setOpen(false); setImporting(true); } }}
+                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--text-secondary)", cursor: usingFixture ? "default" : "pointer" }}
+                  >
+                    Import workspace…
+                  </div>
+                </>
               ) : (
                 <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                   <input
@@ -251,6 +270,7 @@ function WorkspaceSwitcher() {
           </div>
         </>
       )}
+      {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
     </div>
   );
 }

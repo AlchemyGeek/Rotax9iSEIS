@@ -762,7 +762,8 @@ export interface AppSettings {
 }
 
 export interface WorkspaceSettings {
-  anonymize_by_default: boolean;
+  // anonymize_by_default retired (Spec 02 v0.11 §6.6): anonymising is a
+  // per-export choice.
   active_engine_profile: string;
   last_view?: { kind: string; flight_id?: string };
   // Spec 02 v0.8 §5.6/§6.6: groups of aircraft_ident values the pilot
@@ -904,7 +905,7 @@ export interface ScanResult {
   // exclusions.json this scan (Spec 02 §5.11) — keyed by filename,
   // never became a
   // flight_id at all, unlike `excluded` above (duplicate exports).
-  auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log"; reason: string }[];
+  auto_excluded: { filename: string; category: "ground_session" | "short_flight" | "corrupt_log" | "not_in_sender"; reason: string }[];
   // Spec 03 v0.17 §5.1 — waiting for the pilot's go-ahead after a scan that
   // deferred (or restricted) analysis.
   pending_new_logs?: { source_key: string; log_folder: string; relative_path: string; filename: string; date: string | null }[];
@@ -975,7 +976,9 @@ export interface ExclusionEntry {
   filename: string;
   source: "auto" | "user";
   reason: string;
-  category: "ground_session" | "short_flight" | "corrupt_log" | "user_defined";
+  // not_in_sender (Spec 02 v0.11 §7.5): an imported workspace holds out a
+  // log whose flight isn't in the sender's workspace, until included.
+  category: "ground_session" | "short_flight" | "corrupt_log" | "user_defined" | "not_in_sender";
   excluded_at: string;
   user_override: boolean;
   override_reason?: string;
@@ -995,8 +998,69 @@ export interface ExclusionsResult {
     short_flight: number;
     corrupt_log: number;
     user_defined: number;
+    not_in_sender?: number;
     overridden: number;
   };
+  // Spec 02 v0.11 §7.5: an imported workspace's flights whose log hasn't
+  // been found here; no actions — each resolves when its log is added.
+  sender_missing?: SenderMissingFlight[];
+}
+
+// ── Workspace export and import (Spec 02 v0.11 §7) ──────────────────────────
+
+export interface SenderMissingFlight {
+  flight_id: string;
+  date: string | null;
+  airport_hint: string | null;
+  sender_filename: string | null;
+  reason: string;
+}
+
+export interface WorkspaceExportResult {
+  filename: string;
+  flights: number;
+  logs_included: number;
+  anonymised: boolean;
+  download_url: string;
+  size: number;
+  notes: string[];
+  documents: { path: string; class: string; note: string }[];
+}
+
+export interface WorkspaceExportSummary {
+  workspace_name: string;
+  engine_model: string;
+  engine_version: string;
+  exported_at: string;
+  flight_count: number;
+  date_range: [string, string] | null;
+  carries: {
+    filters: number; phase_filters: number; rule_edits: number; disabled_topics: number;
+    reference_exclusions: number; pins: number; changed_settings: number; notes: number; journal_entries: number;
+  };
+  logs_included: boolean;
+  anonymised: boolean;
+  // Set when an unzipped export folder with logs/ was chosen.
+  logs_folder: string | null;
+  engine_check: { status: "same" | "newer" | "older"; ok: boolean; message: string | null };
+}
+
+// An export chosen in the import flow: an uploaded .eisworkspace, or (local
+// server) a path to the file or to the folder an export zip unzips to.
+export type WorkspaceExportSource = { path: string } | { content_base64: string; filename: string };
+
+export interface ImportMatchResult {
+  total: number;
+  found: { flight_id: string; filename: string | null; date: string | null }[];
+  missing: SenderMissingFlight[];
+  extra: { filename: string; date: string | null }[];
+}
+
+export interface ImportInfo {
+  imported: boolean;
+  provenance?: { workspace_name: string; engine_version: string; exported_at: string; logs_included: boolean; anonymised: boolean };
+  flights?: { flight_id: string; date: string | null; airport_hint: string | null; duration_min: number | null;
+              sender_filename: string | null; found: boolean }[];
 }
 
 export interface ActiveWorkspace {

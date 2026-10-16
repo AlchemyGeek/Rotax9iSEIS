@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { DataLocationPanel } from "../components/DataLocation";
+import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
 import { getEngineClient } from "../lib/engineClient";
@@ -13,11 +14,10 @@ import {
   engineLimits as fixtureEngineLimits,
   fleetAnalysis as fixtureFleet,
   workspaceManifest as fixtureManifest,
-  workspaceSettings as fixtureWorkspaceSettings,
 } from "../lib/fixtures";
 import type {
   AppSettings, BaselineConfig, ChartPreset, EngineLimitsResult, FleetAnalysis,
-  ChangedSetting, RuleSet, UnpinPreview, WorkspaceManifest, WorkspaceSettings,
+  ChangedSetting, RuleSet, UnpinPreview, WorkspaceManifest,
 } from "../types/contract";
 
 const client = getEngineClient();
@@ -80,12 +80,31 @@ export function Settings() {
   }
 
   const [appSettings, setAppSettings] = useState<AppSettings>(fixtureAppSettings);
-  const [workspaceSettings, setWorkspaceSettings] = useState<WorkspaceSettings>(fixtureWorkspaceSettings);
   const [manifest, setManifest] = useState<WorkspaceManifest>(fixtureManifest);
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [exportScope, setExportScope] = useState<"full_workspace" | "single_flight">("full_workspace");
-  const [exportAnonymize, setExportAnonymize] = useState(false);
+  // Spec 02 v0.11 §7.2: Include logs (default on), Anonymise logs (off).
+  const [exportIncludeLogs, setExportIncludeLogs] = useState(true);
+  const [exportAnonymise, setExportAnonymise] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [identityMentions, setIdentityMentions] = useState<{ where: string; value: string }[]>([]);
+
+  // Spec 02 v0.12: anonymising doesn't rewrite your own words, so say where
+  // the tail number or system ID appears in them before exporting.
+  async function chooseAnonymise(on: boolean) {
+    setExportAnonymise(on);
+    if (!on) {
+      setIdentityMentions([]);
+      return;
+    }
+    try {
+      setIdentityMentions((await client.previewWorkspaceExport()).identity_mentions);
+    } catch {
+      setIdentityMentions([]);
+    }
+  }
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
 
   // Spec 07 §6.6 — managing user chart presets lives here, not on the
@@ -141,7 +160,6 @@ export function Settings() {
         setAppSettings(app);
         if (active.active && active.manifest && active.settings) {
           setManifest(active.manifest);
-          setWorkspaceSettings(active.settings);
         } else {
           setManifest(LEGACY_MANIFEST);
         }
@@ -163,7 +181,6 @@ export function Settings() {
       } catch {
         if (!cancelled) {
           setAppSettings(fixtureAppSettings);
-          setWorkspaceSettings(fixtureWorkspaceSettings);
           setManifest(fixtureManifest);
           setShippedPresets([]);
           setUserPresets([]);
@@ -255,16 +272,29 @@ export function Settings() {
     }
   }
 
-  async function updateWorkspaceSettings(patch: Partial<WorkspaceSettings>) {
-    const next = { ...workspaceSettings, ...patch };
-    setWorkspaceSettings(next);
-    if (usingFixture || manifest.id === "legacy") return;
+  async function handleExport() {
+    setExporting(true);
+    setExportMessage(null);
     try {
-      await client.saveWorkspaceSettings(next);
-    } catch {
-      // server unreachable — local state already updated, nothing more to do
+      const res = await client.exportWorkspace({ include_logs: exportIncludeLogs, anonymise: exportAnonymise });
+      const a = document.createElement("a");
+      a.href = client.downloadUrl(res.download_url);
+      a.download = res.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setExportMessage(
+        `${res.filename}: ${res.flights} flights${res.logs_included ? `, ${res.logs_included} logs` : ""}` +
+        (res.logs_included ? ". The recipient unzips it and imports the folder it creates." : ".") +
+        (res.notes.length ? ` ${res.notes.join(" ")}` : ""),
+      );
+    } catch (e) {
+      setExportMessage(e instanceof Error ? e.message : "Couldn't export the workspace.");
+    } finally {
+      setExporting(false);
     }
   }
+
 
   const referenceDirty = JSON.stringify(draftBaselineConfig) !== JSON.stringify(fleet.provenance.baseline_config);
 
@@ -731,7 +761,7 @@ export function Settings() {
             {!nudgeDismissed && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(79,195,176,0.08)", border: "1px solid rgba(79,195,176,0.3)", borderRadius: 10, padding: "11px 14px" }}>
                 <span style={{ fontSize: 12, color: "var(--text-primary)", flexGrow: 1 }}>
-                  Browser storage can be evicted, especially in Safari. Allow persistent storage for this site, and export a backup bundle now and then.
+                  Browser storage can be evicted, especially in Safari. Allow persistent storage for this site, and export the workspace now and then as a backup.
                 </span>
                 <button
                   style={{ padding: "5px 12px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
@@ -768,19 +798,54 @@ export function Settings() {
                 </div>
               </div>
 
-              <div style={PANEL_STYLE}>
-                <div style={PANEL_TITLE_STYLE}>Workspace — {manifest.name}</div>
-                <div style={{ ...ROW_STYLE, marginBottom: 0 }}>
-                  <span style={{ color: "var(--text-secondary)" }}>Anonymize by default</span>
-                  <input
-                    type="checkbox"
-                    checked={workspaceSettings.anonymize_by_default}
-                    disabled={manifest.id === "legacy"}
-                    onChange={(e) => updateWorkspaceSettings({ anonymize_by_default: e.target.checked })}
-                  />
+              {/* Spec 02 v0.11 §7.2 / Spec 03 v0.19 §5.7: share the whole
+                  workspace; import one as a new workspace. */}
+              <div style={PANEL_STYLE} data-testid="workspace-share">
+                <div style={PANEL_TITLE_STYLE}>Share a workspace</div>
+                <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
+                  Export this whole workspace for someone else to open: its settings and decisions, with the logs so they see exactly what you see. To share only some flights, make a workspace with just those logs and export that.
                 </div>
+                <label style={{ ...ROW_STYLE, justifyContent: "flex-start", gap: 8 }}>
+                  <input type="checkbox" checked={exportIncludeLogs} onChange={(e) => { setExportIncludeLogs(e.target.checked); if (!e.target.checked) void chooseAnonymise(false); }} />
+                  <span style={{ color: "var(--text-secondary)" }}>Include logs</span>
+                </label>
+                <label style={{ ...ROW_STYLE, justifyContent: "flex-start", gap: 8, opacity: exportIncludeLogs ? 1 : 0.5 }}>
+                  <input type="checkbox" checked={exportAnonymise} disabled={!exportIncludeLogs} onChange={(e) => void chooseAnonymise(e.target.checked)} />
+                  <span style={{ color: "var(--text-secondary)" }}>Anonymise logs</span>
+                </label>
+                <div data-testid="privacy-notice" style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 10 }}>
+                  {exportAnonymise
+                    ? "The log copies get a pseudonym for the tail number and system ID; GPS position, navigation and radio columns are blanked; file names become neutral. Dates, times and engine hours stay. Your annotation text, filter notes and the workspace name go as written."
+                    : "The logs carry your tail number, system ID, dates, times and GPS track unless anonymised. Your annotation text, filter notes and the workspace name go as written."}
+                </div>
+                {exportAnonymise && identityMentions.length > 0 && (
+                  <div data-testid="identity-mentions" role="alert" style={{ fontSize: 11, color: "var(--severity-warning)", marginBottom: 10 }}>
+                    Your own text still names the aircraft — anonymising leaves it as written:{" "}
+                    {identityMentions.map((m) => `${m.where} (${m.value})`).join(", ")}. Change it first, or export as it is.
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={handleExport}
+                    disabled={exporting || usingFixture || manifest.id === "legacy"}
+                    style={{ padding: "6px 14px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    {exporting ? "Exporting…" : "Export workspace…"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImporting(true)}
+                    disabled={usingFixture}
+                    style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer" }}
+                  >
+                    Import workspace…
+                  </button>
+                </div>
+                {exportMessage && <div role="status" style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>{exportMessage}</div>}
               </div>
             </div>
+            {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
 
             {/* Spec 14 v0.12 §5.2 — local server only; renders nothing otherwise. */}
             <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
@@ -869,49 +934,6 @@ export function Settings() {
               )}
             </div>
 
-            <div style={PANEL_STYLE}>
-              <div style={PANEL_TITLE_STYLE}>Export &amp; import</div>
-              <div style={{ display: "flex", gap: 24 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
-                    Export this workspace as a portable bundle — for backup, or to open on another device.
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <select
-                      value={exportScope}
-                      onChange={(e) => setExportScope(e.target.value as typeof exportScope)}
-                      style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", color: "var(--text-secondary)", fontSize: 12 }}
-                    >
-                      <option value="full_workspace">Full workspace</option>
-                      <option value="single_flight">Single flight</option>
-                    </select>
-                    <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-secondary)" }}>
-                      <input type="checkbox" checked={exportAnonymize} onChange={(e) => setExportAnonymize(e.target.checked)} /> Anonymize
-                    </label>
-                    <button
-                      title="export_bundle isn't implemented yet (Spec 02 §7) — the CLI's export-bundle subcommand is the same stub"
-                      style={{ padding: "6px 14px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: 0.6 }}
-                      disabled
-                    >
-                      Export
-                    </button>
-                  </div>
-                </div>
-                <div style={{ width: 1, background: "var(--border)" }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8 }}>
-                    Import a bundle — opens as a preview first; nothing merges until you confirm (Spec 03 §5.8).
-                  </div>
-                  <button
-                    title="bundle preview isn't implemented yet"
-                    style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: 12, cursor: "pointer", opacity: 0.6 }}
-                    disabled
-                  >
-                    Choose bundle file…
-                  </button>
-                </div>
-              </div>
-            </div>
           </>
         )}
 

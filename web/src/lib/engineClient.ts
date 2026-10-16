@@ -15,6 +15,11 @@ import type {
   EngineLimitsResult,
   ExclusionsResult,
   ChangedSetting,
+  ImportInfo,
+  ImportMatchResult,
+  WorkspaceExportResult,
+  WorkspaceExportSource,
+  WorkspaceExportSummary,
   FleetAnalysis,
   FilterHealth,
   FilterListEntry,
@@ -90,6 +95,18 @@ export interface SeriesResult {
 export interface EngineClient {
   listEngines(): Promise<{ id: string; engine: string; source_status: string; hash: string }[]>;
   getEngineLimits(): Promise<EngineLimitsResult>;
+  // Spec 02 v0.11 §7 — workspace export and import. An export is served as
+  // a download from the local server (downloadUrl turns its path into a URL).
+  exportWorkspace(options: { include_logs: boolean; anonymise: boolean }): Promise<WorkspaceExportResult>;
+  // Spec 02 v0.12: where the tail number / system ID appears in the
+  // sender's own text, which anonymising leaves as written.
+  previewWorkspaceExport(): Promise<{ identity_mentions: { where: string; value: string }[] }>;
+  downloadUrl(path: string): string;
+  inspectWorkspaceExport(source: WorkspaceExportSource): Promise<WorkspaceExportSummary>;
+  importWorkspace(source: WorkspaceExportSource, name?: string): Promise<{ manifest: WorkspaceManifest; logs_linked: boolean }>;
+  matchImport(): Promise<ImportMatchResult>;
+  getImportInfo(): Promise<ImportInfo>;
+
   // Spec 14 v0.13 §5 — settings that differ from shipped, each linked to
   // its Journal entry; reset one to shipped (from Settings or Journal).
   listChangedSettings(): Promise<{ settings: ChangedSetting[] }>;
@@ -267,6 +284,34 @@ export class LocalServerClient implements EngineClient {
 
   getEngineLimits() {
     return this.rpc<EngineLimitsResult>("get_engine_limits", {});
+  }
+
+  exportWorkspace(options: { include_logs: boolean; anonymise: boolean }) {
+    return this.rpc<WorkspaceExportResult>("export_workspace", options);
+  }
+
+  previewWorkspaceExport() {
+    return this.rpc<{ identity_mentions: { where: string; value: string }[] }>("preview_workspace_export", {});
+  }
+
+  downloadUrl(path: string) {
+    return `${this.baseUrl}${path}`;
+  }
+
+  inspectWorkspaceExport(source: WorkspaceExportSource) {
+    return this.rpc<WorkspaceExportSummary>("inspect_workspace_export", source);
+  }
+
+  importWorkspace(source: WorkspaceExportSource, name?: string) {
+    return this.rpc<{ manifest: WorkspaceManifest; logs_linked: boolean }>("import_workspace", { ...source, name });
+  }
+
+  matchImport() {
+    return this.rpc<ImportMatchResult>("match_import", {});
+  }
+
+  getImportInfo() {
+    return this.rpc<ImportInfo>("get_import_info", {});
   }
 
   listChangedSettings() {

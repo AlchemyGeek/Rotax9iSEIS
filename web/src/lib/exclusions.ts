@@ -10,6 +10,7 @@ export const EXCLUSION_CATEGORY_LABEL: Record<ExclusionEntry["category"], string
   short_flight: "Short flight",
   corrupt_log: "Corrupt log",
   user_defined: "User excluded",
+  not_in_sender: "Not in the sender's workspace",
 };
 
 export const EXCLUSION_CATEGORY_COLOR: Record<ExclusionEntry["category"], string> = {
@@ -17,4 +18,5 @@ export const EXCLUSION_CATEGORY_COLOR: Record<ExclusionEntry["category"], string
   short_flight: "var(--text-tertiary)",
   corrupt_log: "var(--severity-warning)",
   user_defined: "var(--text-secondary)",
+  not_in_sender: "var(--text-secondary)",
 };
