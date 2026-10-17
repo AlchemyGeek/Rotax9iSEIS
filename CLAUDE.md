@@ -15,8 +15,8 @@
 
 ## Real flight-log test data
 
-The G3X flight logs used by the characterization, contract and CLI tests are
-private and gitignored (`/data/` in `.gitignore`). They live in a separate
+The flight logs (G3X, and from October 2026 Garmin AXIS) used by the
+characterization, contract and CLI tests are private and gitignored (`/data/` in `.gitignore`). They live in a separate
 private repo: **`AlchemyGeek/EIS-Test-Data`** (CSV files at the repo root).
 
 At the start of any session that develops or tests the engine, CLI or web UI:
@@ -39,9 +39,10 @@ At the start of any session that develops or tests the engine, CLI or web UI:
    ```
    With the logs present the full suite runs the real-data tests too and takes
    well over 10 minutes; run it in the background. Without the logs those
-   tests skip automatically — except `tests/unit/test_workspace.py::TestScanWithRealLogs`,
-   which needs specific files from the set and fails rather than skips if only
-   some logs are present.
+   tests skip automatically. With only *some* of the logs present they fail
+   rather than skip (`TestScanWithRealLogs` needs specific files; the
+   contract tests assert on the full set's counts) — link the whole set or
+   none.
 
 Rules for the data:
 
@@ -59,20 +60,23 @@ Rules for the data:
 ```bash
 cd web
 npm ci
-npx vitest run        # 129 tests; exits 1 today on a jsdom scrollIntoView error (BACKLOG P5)
-npx tsc -b --noEmit   # type check; fails today on EventsTable.test.tsx (BACKLOG P5)
-npx vite build        # produces web/dist/, which `slingology-eis serve` serves
+npx vitest run        # 169 tests; exits 1 today on a jsdom scrollIntoView error (BACKLOG P5)
+npm run build         # tsc -b + vite build → web/dist/, which `slingology-eis serve` serves
 ```
 
 Verify UI changes live: `slingology-eis serve` and open `http://127.0.0.1:8420/`
-against a copy of a real workspace, never the owner's own. Fixtures under
+against a copy of a real workspace, never the owner's own — point
+`SLINGOLOGY_EIS_HOME` at a throwaway data root so nothing touches the real
+registry. A server started before a code change serves the old RPC surface;
+restart it before blaming the page. Fixtures under
 `web/src/fixtures/` are synthetic or scrubbed (`web/scripts/gen_cas_fixture.py`);
 they carry no tail number, GPS, airport or real time.
 
 ## Changing detection heuristics
 
 Phase detection (`slingology_eis/phases.py`), exceedance checking (`limits.py`),
-per-flight metrics (`fleet.py`), ENGINE ECU classification (`cas.py`) and the
+per-flight metrics (`fleet.py`), ENGINE ECU classification (`cas.py`), the
+loader's source normalisation (`loader.py`, incl. the AXIS 1-second grid) and the
 topic/insight layer are heuristics tuned on the real logs; a fix for one flight
 can quietly change others. Before changing them, snapshot, then compare after the
 change and confirm every reported difference is intended (include the aggregate

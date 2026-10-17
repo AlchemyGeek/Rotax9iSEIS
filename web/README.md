@@ -14,7 +14,7 @@ Journal, rule editing on the card). Change the spec first.
 
 ```bash
 npm ci
-npx vite build             # → dist/, served by `slingology-eis serve`
+npm run build              # tsc -b + vite build → dist/, served by `slingology-eis serve`
 npm run dev                # Vite dev server with HMR, proxied to nothing — start
                            # `slingology-eis serve` separately; the client calls 127.0.0.1:8420
 npx vitest run             # unit/component tests (jsdom)
@@ -22,9 +22,8 @@ npx tsc -b --noEmit        # type check
 npm run lint               # oxlint
 ```
 
-`npm run build` is `tsc -b && vite build`; it fails today on one test-file type error
-(`src/components/EventsTable.test.tsx`), and `npx vitest run` exits non-zero on a jsdom
-`scrollIntoView` error although every test passes. Both are tracked in `../BACKLOG.md` (P5).
+`npm run build` is `tsc -b && vite build`. `npx vitest run` exits non-zero on a jsdom
+`scrollIntoView` error although every test passes; tracked in `../BACKLOG.md` (P5).
 
 ## Layout
 
@@ -35,9 +34,11 @@ src/
 ├── views/             # One file per screen: Flights, FlightView, LogPreview, Trends, Journal, Settings
 ├── components/        # Chart (ChannelTimeline, PhaseMinimap, EventStrip…), cards (InsightCard,
 │                      # EventsTable, FlightFacts), dialogs (ExcludeDialog, PinDialogs, RuleEditorPanel,
-│                      # FilterEditor), NavShell, ErrorBoundary, InlineHelp, ScopeCaption
-├── lib/               # engineClient (RPC), fixtures fallback, phases, scope wording, inline help
-│                      # registry, topic roster rule, flight facts allow-list, trends tiers/units
+│                      # FilterEditor, ImportWorkspaceDialog, DataLocation), NavShell, ErrorBoundary,
+│                      # InlineHelp, ScopeCaption
+├── lib/               # engineClient (RPC + /upload), fixtures fallback, phases, scope wording,
+│                      # inline help registry, topic roster rule, flight facts allow-list, trends
+│                      # tiers/units, sourceFormat, dataLocation, importWorkspace
 ├── types/contract.ts  # TypeScript mirror of the engine contract (keep in step with ../contract/schema/)
 ├── fixtures/          # Sample workspace: synthetic or scrubbed, no tail/GPS/airport/real time
 └── theme/             # Colour tokens (dark theme), mirrored for ECharts canvases
@@ -53,4 +54,6 @@ scripts/gen_cas_fixture.py   # Regenerates the synthetic CAS/Events fixture flig
   exactly where the spec lists it.
 - Readiness, suppression reasons and event classes come from the engine; the UI never infers
   one from raw numbers.
+- Pages show "Loading…" until the server's first answer; the bundled samples appear only when no
+  server answers, never as a flash before real data.
 - Tested on macOS Chrome, macOS Safari and iPad Safari only.

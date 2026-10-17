@@ -5,8 +5,8 @@
 Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines
 (912iS, 915iS, 916iS), built for how these engines actually work rather than retrofitted
 from the mixture-management assumptions behind tools like Savvy Aviation and FlySto. It reads
-Garmin G3X EIS logs and tells you two things about every flight: did anything go outside the
-Rotax Operators Manual limits, and is this flight different from how *your* engine usually
+Garmin EIS logs (G3X, Garmin Pilot exports and Garmin AXIS) and tells you two things about every
+flight: did anything go outside the Rotax Operators Manual limits, and is this flight different from how *your* engine usually
 behaves. The rules come from Rotax; the expectations come from your own flight history; you decide
 what to accept.
 
@@ -14,7 +14,7 @@ It runs as a local web app on your own computer. Your logs stay in your own fold
 references them, never copies or uploads them — and nothing listens on the network.
 
 **Status:** 1.0.0 is the first release with the web UI, merged from the `webui` branch on
-October 15, 2026. Validated on one aircraft: N117ZS, a Sling TSi with a Rotax 916iS — 53 flights
+October 17, 2026. Validated on one aircraft: N117ZS, a Sling TSi with a Rotax 916iS — 53 flights
 from a set of 115 logs. Engine profiles for the 912iS, 915iS and 916iS are verified against their
 Operators Manuals. Analytics topics validated on the 916iS are
 marked *unverified* on the other engines until data from such an aircraft exists.
@@ -33,9 +33,9 @@ topic measures.
 - **Python 3.10 or later** — runs the analysis engine and the local server.
 - **Node.js 20 or later** — only to build the web UI once. (A packaged build that removes this
   step is on the backlog.)
-- G3X log files in CSV format: either copied from the SD card
-  (`log_YYYYMMDD_HHMMSS_ICAO.csv`) or exported from Garmin Pilot (any name ending in `.csv`).
-  Both formats are detected automatically and can be mixed.
+- Engine log files in CSV format, from any of three Garmin export paths: G3X copied from the SD
+  card (`log_YYYYMMDD_HHMMSS_ICAO.csv`), a Garmin Pilot export (any name ending in `.csv`), or a
+  Garmin AXIS export. The format is detected from the file, and a workspace can mix them.
 
 ### Install
 
@@ -43,13 +43,10 @@ topic measures.
 git clone https://github.com/AlchemyGeek/Rotax9iSEIS.git
 cd Rotax9iSEIS
 pip install -e .                      # the engine and the slingology-eis command
-cd web && npm ci && npx vite build && cd ..   # build the web UI once into web/dist/
+cd web && npm ci && npm run build && cd ..   # build the web UI once into web/dist/
 ```
 
 `pip install -e .` brings in the only runtime dependencies, `pandas` and `numpy`.
-
-> `npm run build` currently fails its type check on one test file; `npx vite build` produces the
-> same `web/dist/` and is what the command above uses. See BACKLOG.
 
 ### Start
 
@@ -75,13 +72,14 @@ Safari). Use `--port` for a different port. Leave the terminal open; `Ctrl-C` st
    one active at a time. The engine model is fixed when the workspace is created; a workspace is
    deleted from the Flights page with a typed `DELETE` confirmation.
 2. **Add your logs.** On the Flights page, *Add logs…* → *Add a folder* and type the path to the
-   folder your G3X logs live in (subfolders are included); or drop files onto the page. Add as
+   folder your logs live in (subfolders are included); or drop files onto the page. Add as
    many folders as you want. The app only references them: rename, move or add logs and *Sync*
    finds them again.
 3. **Analyze.** Sync tells you what it found — *"Found N new logs. Analyze now?"* — and analyses
    with per-flight progress when you say yes. A large first folder takes a minute or two. Logs
    that are not flights (a ground run, a flight shorter than 10 minutes, a log with a gap in it)
-   are listed under *Skipped* with the reason, and can be included.
+   are listed under *Skipped* with the reason, and can be included; a file the app can't read is
+   listed as *Unreadable* with the reason.
 4. **Read.** Each flight has a timeline chart, an events table (Operators Manual limits and CAS
    alerts), and a card per analytics topic. **Trends** shows whether anything about your engine is
    changing against your own history. **Journal** lists every decision you've made in the
@@ -92,12 +90,21 @@ Your reference (what's normal for this engine) is learned only from this workspa
 the first ten or so flights report *still building* on the baseline comparisons. Nothing learned
 from one aircraft is ever applied to another.
 
+### Sharing a workspace
+
+Settings → App → *Export workspace…* writes a file you can send to another pilot or to someone
+helping you read your engine: your settings and decisions with a list of your flights, and — with
+*Include logs* — the logs themselves in one zip. *Anonymise logs* replaces the aircraft with a
+pseudonym and blanks the position, nav and radio columns; the dialog shows where your own notes
+still name the aircraft. The recipient uses *Import workspace…* (or the workspace switcher) on the
+file as is and gets a new workspace with your flights and decisions.
+
 ### Where things are stored
 
 | What | Where | Yours? |
 |---|---|---|
-| Your logs | Wherever you keep them | Yes — never copied or modified |
-| Workspaces (derived results) | `~/SlingologyEIS/workspaces/<id>/` for a packaged install, `data/workspaces/` in a git checkout; `registry.json` beside them | Derived; safe to delete and rebuild |
+| Your logs | Wherever you keep them | Yes — never copied or modified (an imported export's logs are copied into that workspace) |
+| Workspaces (derived results) | The *data location*: `~/SlingologyEIS/` by default (`data/` in a git checkout), holding `registry.json`, app settings and `workspaces/<id>/`. Change it from Settings → App or `slingology-eis data-location set PATH`; the choice is kept in a per-user `location.json`, and `SLINGOLOGY_EIS_HOME` overrides it | Derived; safe to delete and rebuild |
 | Default engine for the CLI | `config.json` (`"engine"`) | Edit freely |
 | Insight trigger rules (shipped defaults) | `insight_rules.json`; each workspace keeps its own edited copy | Edit in the app, on the topic card |
 
@@ -121,12 +128,12 @@ slingology-eis --help           # every command
 slingology-eis <command> --help # that command's options
 ```
 
-**Global options** (before or after the subcommand):
+**Global options** (before or after the subcommand; the one nearer the subcommand wins):
 
 | Option | Meaning |
 |---|---|
-| `--logs DIR` | Folder of G3X CSVs. Default: `data/logs/` in a git checkout, `~/SlingologyEIS/logs/` for a packaged install. |
-| `--workspace NAME_OR_PATH` | A registered workspace's name or id, or a folder path for derived results. Default: `data/` in a git checkout, `~/SlingologyEIS/workspace/` packaged. |
+| `--logs DIR` | Folder of log CSVs. Default: `data/logs/` in a git checkout, `~/SlingologyEIS/logs/` for a packaged install. |
+| `--workspace NAME_OR_PATH` | A registered workspace's name or id, or a folder path for derived results. Default: the active workspace in the data location. |
 | `--engine NAME` | Engine profile. Resolved as `--engine` → `SLINGOLOGY_ENGINE` env var → `config.json` → `916iS`. |
 | `--json` | Print the result as JSON (validates against `contract/schema/`). |
 | `--anonymize` | Strip aircraft ident, system id and airport from `--json` output. |
@@ -149,6 +156,7 @@ a not-yet-implemented command.
 | `explain [TOPIC]` | The pilot-facing explanation of one topic, or all of them. |
 | `rules check FILE` / `rules try FILE --flight LOG` | Validate a rules file; diff the insights it would produce for one flight. |
 | `workspace list` / `workspace create NAME [--tail-number N]` | Manage registered workspaces. |
+| `data-location [set PATH]` | Show where workspaces are kept and how that was decided, or move them. |
 | `export-workspace [--include-logs] [--anonymise] [--out DIR]` | Export a workspace to share: its settings and decisions, optionally with its logs (a zip the recipient unzips). |
 | `import-workspace PATH [--name N] [--logs FOLDER] [--yes]` | Import an export as a new workspace, match its flights to the logs, and analyse after confirming. |
 
@@ -193,7 +201,8 @@ Rotax9iSEIS/
 │   │                      #   evaluate_insights, get_topic_help, filters, trends
 │   ├── loader.py, phases.py, limits.py, egt.py, fuel.py, cas.py, climb.py, fleet.py,
 │   │   baselines.py, topics.py, filters.py, trends.py, exclusions.py, presets.py, channels.py
-│   ├── workspace.py       #   Workspace registry, manifests, scans, Journal, settings changelog
+│   ├── workspace.py       #   Workspace registry, manifests, scans, Journal
+│   ├── workspace_export.py, data_location.py   # Sharing a workspace; where the data root lives
 │   ├── server.py          #   The local HTTP server: /rpc operations and web/dist
 │   ├── cli.py             #   The slingology-eis command
 │   └── help/topics.md     #   Pilot-facing topic explanations (shipped in the package)
@@ -217,7 +226,7 @@ Rotax9iSEIS/
 ```bash
 pip install -e ".[dev]"          # pytest, jsonschema
 python -m pytest -q              # Python suite; real-log tests skip without data/logs/
-cd web && npm ci && npx vitest run && npx vite build
+cd web && npm ci && npx vitest run && npm run build
 ```
 
 Real flight logs are private and gitignored (`/data/`). The characterization, contract and CLI

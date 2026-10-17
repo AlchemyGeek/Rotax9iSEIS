@@ -15,7 +15,7 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
-## 1.0.0 — October 15, 2026
+## 1.0.0 — October 17, 2026
 
 **The web UI release.** This is the merge of the `webui` branch into `main`: everything built
 since 0.11.0 (September 23), when SlingologyEIS was a command-line toolkit with "a future browser
@@ -25,7 +25,9 @@ app references them and never copies or uploads them.
 
 **Existing workspaces:** the version jump from 0.30.0 marks every stored flight for re-analysis.
 On the next Sync the Flights page will say *"Found N flights needing re-analysis. Analyze now?"*.
-Say yes once; nothing about the analysis itself changed between 0.30.0 and 1.0.0.
+Say yes once. Between 0.30.0 and 1.0.0 no G3X log's analysis changed; the version also covers
+two small behaviour changes that alter no real log's result (the airport hint is read only from
+Garmin `log_…` file names; the EGT-split check runs only on an engine whose OM defines one).
 
 Engine versions 0.12.0 to 0.30.0 were cut on the branch as the work landed; the ledger at the end
 of this entry maps each number to the behaviour change it carried, for anyone reading a stored
@@ -63,6 +65,26 @@ kept as they were.
   recorded in `exclusions.json` with the reason, listed under *Skipped* on the Flights page, and
   can be included again. Duplicate exports of the same flight collapse to one. The same classifier
   runs in the CLI loader, the folder scan and drag-and-drop import, so the three can't disagree.
+- **Unreadable logs are said so, with the reason.** A file the loader can't read, or one that
+  reads but fails analysis, is recorded in `unreadable.json` (*Format not recognised — not a
+  Garmin engine log this app can read*, or *Couldn't be analysed …*), shown as *Unreadable* on
+  Flights, not offered by Sync again, and retried after an engine update or when the file changes.
+  One such log never stops the others.
+- **Where your data lives is yours to choose.** The data root — `registry.json`, app settings,
+  `workspaces/` — defaults to `~/SlingologyEIS` (or `data/` in a git checkout) and can be moved
+  from Settings → App or `slingology-eis data-location set PATH`: the data is copied into an empty
+  folder and checked, the old copy is kept, and the choice is remembered in a per-user
+  `location.json` (`SLINGOLOGY_EIS_HOME` overrides it). A chosen location that is missing — an
+  unplugged drive — opens on a notice with *Try again*, never silently on the defaults.
+- **Share a workspace.** Settings → App → *Export workspace…* writes `<name>.eisworkspace` (your
+  settings, decisions and a flight manifest — never analyses) or, with *Include logs*, a
+  `<name>.zip` holding it and the logs. *Anonymise logs* replaces the aircraft with a pseudonym,
+  blanks the GPS, nav and radio columns, gives the files neutral names and recomputes every id,
+  and the dialog lists where your own notes still name the aircraft. *Import workspace…* takes
+  the zip or the `.eisworkspace` as is, refuses an export from a newer engine, creates a new
+  workspace, links the zip's own logs, matches the sender's flights (found / missing / extra) and
+  lands on the Sync prompt; the sender's decisions stay dormant until their log arrives. CLI:
+  `export-workspace`, `import-workspace`.
 - **Flight exclusions from the reference.** A flight can be excluded from (and re-included in)
   the fleet reference with a reason, from the Flights row or the Flight view header, through one
   dialog that previews how many other flights' verdicts would move. CLI: `flights
@@ -77,8 +99,8 @@ kept as they were.
 
 ### Flights
 
-- One row per flight: date, duration, insight count and worst severity, source folder, reference
-  membership (✓ / ✕ with the reason on hover). Status filters, a *Skipped (N)* panel for logs that
+- One row per flight: date, duration, insight count and worst severity, source folder and format
+  (G3X / Garmin Pilot / AXIS), reference membership (✓ / ✕ with the reason on hover). Status filters, a *Skipped (N)* panel for logs that
   were not admitted (category, reason, date, recording and airborne minutes, *Include*), and an
   onboarding drop zone while the workspace has no folders; after that, *Add logs…* and *Sync*.
 - **Log preview** (`/logs/<file name>`): a read-only page for a skipped log — header, the full
@@ -184,8 +206,17 @@ kept as they were.
   the phase-aware suppression rules, read-only. *Reference & Models*: outlier z-threshold with
   per-metric overrides, the recent window and OM margin, pinned references, contributing flights
   with *Rebuild reference*, the takeoff-MAP model (R², n, residual SD, *Refit*), n_min per topic,
-  stratification bands. *App*: chart presets (rename, reorder, duplicate, delete), tail-number
-  aliases. Every saved setting is logged with before/after, tab and time in `settings_changelog.json`.
+  stratification bands. *App*: data location, share a workspace (export / import), chart presets
+  (rename, reorder, duplicate, delete), tail-number aliases.
+- **A changed setting is a Journal decision.** Every results-affecting setting that differs from
+  shipped (outlier z-threshold, recent window, OM margin, membership, frequency delta, per-metric
+  overrides, log-channel assignments) is a Journal entry with its current and shipped values and a
+  live effect; Settings marks it, links to the entry, and offers *Reset to shipped* for that
+  setting alone. The separate settings changelog that existed on the branch is gone.
+- **Engine tab → Log channels:** every raw channel seen in the workspace, which source logs it,
+  its observed range, and — for general-purpose analog inputs — the registry channel the pilot
+  assigns it to (e.g. *analog 7 is CO ppm*). An assignment is a changed setting, applies
+  workspace-wide, and marks affected flights for re-analysis.
 - **Inline help** (ⓘ, opens on click) on the settings and triggers that aren't self-explanatory,
   from one registry.
 - Every user-facing "baseline" became **"reference"**; internal identifiers are unchanged.
@@ -196,7 +227,7 @@ kept as they were.
   per-engine status (*Admitted / Admitted (provisional) / Unverified / Research / Removed*) —
   recorded in `docs/specs/10-analytics-topic-admission.md` and the test-checked
   `docs/specs/topics/register.json`. Status is per engine profile: topics validated on the 916iS
-  are *Unverified* on the 912iS/914iS/915iS until data from such an aircraft exists, and the
+  are *Unverified* on the 912iS/915iS until data from such an aircraft exists, and the
   Flight view says so.
 - **Removed:** `oil_coolant_ratio` (no sourced mechanism; the oil–coolant balance idea is
   candidate C5), `egt4_elevation` and `flight_phase_mix`. **Moved to Research:** `climb_thermal_rate`
@@ -221,6 +252,22 @@ kept as they were.
   enough flights, and the insight text says which (*your other warm flights, n=14* vs *all your
   flights, n=23*). Removes the seasonal false positives and makes insights agree with the
   stratified Trends view.
+
+### Log sources: G3X, Garmin Pilot and Garmin AXIS (Spec 01 §6.5)
+
+- **Garmin AXIS exports are read** alongside G3X-direct and Garmin Pilot files. The AXIS CSV
+  (three-row header, camelCase columns, ~0.83 Hz) is mapped onto the same channel registry in
+  the loader, so nothing downstream changes: the ident is `tail_number`, engine hours come from
+  the first `e1TachTime` row (the same meter the G3X wrote), and the frame is put on a 1-second
+  grid — numerics interpolated across holes of up to 2 s, text and CAS carried forward, longer
+  holes left missing, filled rows flagged and their share reported. G3X logs are never resampled.
+- **General-purpose analog inputs are never mapped by assumption.** They enter raw as
+  `gp_analog_<n>` and appear under a registry name only once the pilot assigns them in Settings
+  (above). `onGroundState`, `flightTime` and `e1TachTime` are carried raw and not used by phase
+  detection or admission, so a reference built from G3X flights stays valid for AXIS flights of
+  the same aircraft.
+- The flight fingerprint's second element is now the source identity (G3X `system_id`, AXIS
+  product name); an unrecognised file is rejected naming all three layouts.
 
 ### ENGINE ECU and CAS events (Spec 01 §8.6, Spec 10 D18/D19)
 
@@ -258,7 +305,15 @@ kept as they were.
 - **912iS is VERIFIED** against OM-912 i Series Edition 2 / Rev. 2 (September 2025): all limits
   from Chapter 2.1, with the manifold-pressure and EGT-split limits deliberately absent because the
   OM defines none for a naturally aspirated engine. 915iS (OM-915 i A/C24 Ed. 0 Rev. 4) and 916iS
-  (OM-916 i/C24 Ed. 0 Rev. 1) were already verified. **914iS remains a PLACEHOLDER.**
+  (OM-916 i/C24 Ed. 0 Rev. 1) were already verified.
+- **914iS is removed.** Rotax's 914 is a carburetted turbo engine, not an iS engine; there is no
+  OM for a "914iS" and the placeholder only copied 915iS values. Naming it now fails with that
+  explanation instead of loading another profile; a workspace created on it can still be deleted.
+- **The EGT-split check runs only where the OM defines one.** A profile without an `egt_spread`
+  block (912iS) gets no split check, no split limit in the catalogue and no "OM limit" sentence;
+  previously every 912iS flight was checked against the 916iS's figures. The 912iS `rpm_idle_min`
+  idle-established condition dropped by the OM rewrite is restored (its gate is the 912iS's own
+  1,400 rpm floor).
 - Every limit has a stable `id`; profiles carry `exceedance_merge_gap_s`, per-limit `min_rpm`,
   `requires_reached_since_start`, `stratify_by`, `filter_policy` (filterable, note required,
   phases allowed, pilot-facing reason), the `cas` run-extraction block, `expected_hot_cylinder`,
@@ -267,18 +322,23 @@ kept as they were.
 ### CLI
 
 - New subcommands: `flights [--show-excluded]`, `exclude FILE --reason`, `include FILE
-  [--reason]`, `workspace list|create NAME [--tail-number]`, `explain [TOPIC]`, and `serve
-  [--port]`. `--workspace` accepts a registered workspace name or id as well as a path. `report`
-  applies the workspace's filters. `ecu --json` reflects the new run classes. `export-bundle`
-  remains stubbed (exit 2) pending the results-bundle format.
+  [--reason]`, `workspace list|create NAME [--tail-number]`, `data-location [set PATH]`,
+  `explain [TOPIC]`, `export-workspace [--include-logs] [--anonymise] [--out DIR]`,
+  `import-workspace PATH [--name N] [--logs FOLDER] [--yes]`, and `serve [--port]`. `--workspace`
+  accepts a registered workspace name or id as well as a path. `report` applies the workspace's
+  filters. `ecu --json` reflects the new run classes and skips an unreadable log with a note.
+  The `export-bundle` stub is gone, replaced by workspace export.
+- **Fixed:** shared options given *before* the subcommand (`--workspace X import …`) were
+  silently overridden by the subcommand's defaults; they now work in either position, and the one
+  nearer the subcommand wins when both are given.
 
 ### Notebooks and tests
 
 - `notebooks/05_limit_events_report.py` (per-limit event statistics by weather band, used to
   choose the merge gap and stratification) and `06_phase_regression.py` (above). Notebooks 02/03/04
   use the new ECU classes.
-- Python suite: 619 tests (unit, contract, CLI, characterization) at the last branch commit;
-  those gated on the private log set skip without it. Web: 129 vitest tests. Frozen fixtures
+- Python suite: 670 tests (unit, contract, CLI, characterization) at the last branch commit;
+  those gated on the private log set skip without it. Web: 169 vitest tests. Frozen fixtures
   (`tests/characterization/golden/`, gitignored; `web/src/fixtures/`) regenerated for the grown log
   set with every regeneration confirmed additive.
 - `CLAUDE.md` records how a session fetches the private `EIS-Test-Data` logs and the phase
@@ -286,13 +346,13 @@ kept as they were.
 
 ### Known at release
 
-- `npm run build` fails type-checking on one test fixture (`web/src/components/EventsTable.test.tsx`,
-  a phase-suppressed CAS row typed as a limit event); `npx vite build` alone produces `web/dist/`
-  and the UI runs. Tracked in BACKLOG.
-- `npx vitest run` reports an unhandled `scrollIntoView is not a function` from jsdom in
-  `Trends.cas.test.tsx` and exits non-zero although all 129 tests pass. Tracked in BACKLOG.
+- `npx vitest run` reports an unhandled `scrollIntoView is not a function` from jsdom
+  (`Trends.tsx`'s panel scroll) and exits non-zero although all 169 tests pass. Tracked in BACKLOG.
 - The 912iS topic-help text cites an EGT-split limit the 912iS OM doesn't define (one expected
   test failure).
+- AXIS is validated on one log (2026-10-14). Whether AXIS names the ECU alert `ENGINE ECU` is
+  unconfirmed — that log carries none — and engine paths that count rows as seconds rely on the
+  loader's 1-second grid rather than timestamps.
 - `loader.log_summary()` would raise on a log that reaches cruise without a fuel-flow channel;
   no real log in the set lacks one.
 

@@ -1,6 +1,6 @@
 # SlingologyEIS — Backlog
 
-Last updated: October 15, 2026 (the 1.0.0 merge of `webui` into `main`)
+Last updated: October 17, 2026 (the 1.0.0 merge of `webui` into `main`)
 Toolkit version: 1.0.0 · Research paper: Edition 0.3
 
 Open work, organised by the spec or area that owns it. Everything completed between 0.11.0 and
@@ -39,13 +39,11 @@ whole workspace, openable cold on another device, with a *Previewing: not yet ad
 workspace* path in the UI. `slingology-eis export-bundle` is a stub (exit 2). Prerequisite for
 community sharing (U4). Open: one format or two (Spec 02 Q2).
 
-### P5. Web build and test hygiene
+### P5. Web test hygiene
 **Type:** code
-- `npm run build` fails `tsc -b` on `web/src/components/EventsTable.test.tsx`: the Phase 8 test
-  spreads `suppressed_by: "phase"` over a union of limit and CAS events, and the CAS member has no
-  `observed_value`/`excess`. `npx vite build` works and is what the README uses.
-- `npx vitest run` exits 1 on an unhandled `scrollIntoView is not a function` from jsdom
-  (`Trends.cas.test.tsx` → `Trends.tsx` panel scroll) while all 129 tests pass.
+`npx vitest run` exits 1 on an unhandled `scrollIntoView is not a function` from jsdom
+(`Trends.tsx`'s panel scroll after a setTimeout) while all 169 tests pass. Stub it in the
+test setup or guard the call.
 
 ### P6. Documentation site
 **Type:** docs · **Owner:** Spec 13 (deferred by decision until the app is complete)
@@ -94,7 +92,13 @@ single-aircraft ones. Interim: the mixed-aircraft notice (one workspace per airc
 same-aircraft confirmation for ident typos). Needs a decision on which learned numbers may cross
 aircraft — today none do (Spec 10 §1).
 
-### U6. Scope labels on the remaining one-click actions
+### U6. Imported workspaces — the sender's view
+**Type:** design · **Owner:** Spec 02 §7, Spec 03 §5.8
+Export/import shipped (Oct 15–17). Open: a later export of an imported workspace carries only its
+own flights; the sender's decisions stay dormant until the matching log arrives; nothing yet tells
+the recipient when their own reference diverges from what the sender saw. Revisit with U4.
+
+### U7. Scope labels on the remaining one-click actions
 **Type:** code · **Owner:** Spec 14 §7.5
 Still unlabelled: tail-number grouping (labelling only — comparisons already treat the workspace
 as one aircraft). Everything else in §7.5's table carries its scope caption.
@@ -136,7 +140,7 @@ airborne hours derived from the logs. Low urgency.
 
 ### A1. Topics are single-aircraft evidence
 **Type:** research · **Owner:** Spec 10 §4, §5.1, §8.2
-Every admitted topic rests on N117ZS alone and is *Unverified* on the 912iS/914iS/915iS. A
+Every admitted topic rests on N117ZS alone and is *Unverified* on the 912iS/915iS. A
 re-audit is triggered by data from a new aircraft or engine type. The practical path is other
 pilots' logs (U4, U5).
 
@@ -214,11 +218,13 @@ documented, not yet reconciled.
 
 ## 6. Engine profiles
 
-### E1. 914iS Operators Manual
+### E1. Other iS engines
 **Type:** docs + code
-The only PLACEHOLDER profile: values are estimates. Source the OM and verify every limit, the
-run-up band and `expected_hot_cylinder`, as done for the 912iS from OM-912 i Series Ed. 2 Rev. 2.
-(OMs are never stored in the repo.)
+Three profiles exist (912iS, 915iS, 916iS), each verified against its OM. The 914iS placeholder
+was removed — the 914 is a carburetted turbo engine, not an iS. A new profile (a 912iS variant,
+say) is added from its OM with every limit cited, the run-up band and `expected_hot_cylinder`,
+and its per-engine topic status in `docs/specs/topics/register.json`. (OMs are never stored in
+the repo.)
 
 ### E2. Fuel-pressure exceedances — root cause on N117ZS
 **Type:** research
@@ -226,11 +232,6 @@ run-up band and `expected_hot_cylinder`, as done for the 912iS from OM-912 i Ser
 and descent (Spec 10 D15, cause 3a: likely sender calibration vs regulator pressure; confirm
 with a mechanic). Allowlisted and filterable with a note. A9 would separate pump cycling from
 sensor or pressure problems. Deliberately kept apart from building the tool.
-
-### E3. 912iS `rpm_idle_min` idle-established condition
-**Type:** code · **Owner:** Spec 09 D16
-The OM rewrite of `912iS.json` dropped `requires_reached_since_start` on `rpm_idle_min`; reported
-when the `volts_min` gate was restored, not yet restored itself. 914iS/915iS/916iS have it.
 
 ---
 
@@ -256,7 +257,22 @@ handled. Needs a real pattern-work log to confirm before fixing.
 A log with an internal gap over 5 minutes is admitted as *corrupt log*; a mid-log POWERUP
 (the EIS restarting within one file) is not detected as such.
 
-### S4. `log_summary()` on a log with no fuel-flow channel
+### S4. AXIS: a time-based engine instead of rows-as-seconds
+**Type:** code · **Owner:** Spec 01 §6.5 (decision 1)
+AXIS logs at ~0.83 Hz; the loader puts them on a 1-second grid (filled rows flagged) so the
+engine's row-counting paths (airborne minutes, phase minutes, overboost blocks, ECU run durations,
+cruise dwell, smoothing windows) stay correct. The honest long-term fix is `elapsed_s` arithmetic
+throughout. Hardening, not urgent.
+
+### S5. AXIS: ENGINE ECU naming and power-up capture
+**Type:** research · **Owner:** Spec 01 Q9, Q10
+Validated on one AXIS log, which carries no ECU alert and starts with the engine running.
+Confirm on the first AXIS log with an engine start and lane check that AXIS names the alert
+`ENGINE ECU` (else the classifier is untested on AXIS) and that power-up is captured at all.
+Separately decide whether `onGroundState` should feed phase detection once the reference is
+AXIS-dominated — no change while G3X and AXIS flights share a reference.
+
+### S6. `log_summary()` on a log with no fuel-flow channel
 **Type:** code
 `loader.log_summary()` reads `cruise["fuel_flow_gph"]` guarded on `len(cruise)` only; a real log
 reaching cruise without that column would raise `KeyError` in `build_flight_metrics()`. Every
