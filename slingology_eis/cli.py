@@ -844,17 +844,30 @@ def cmd_serve(args) -> int:
 
 # ── argument parsing ──────────────────────────────────────────────────────
 
-def _build_parser() -> argparse.ArgumentParser:
-    common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--logs", metavar="DIR", help="Folder of G3X log CSVs")
-    common.add_argument("--workspace", metavar="NAME_OR_PATH",
-                         help="Registered workspace name/id, or a literal folder path")
-    common.add_argument("--engine", metavar="NAME", help="Engine profile (e.g. 916iS)")
-    common.add_argument("--json", action="store_true", help="Print the operation result as JSON")
-    common.add_argument("--anonymize", action="store_true", help="Strip aircraft ident/system_id/airport hint")
-    common.add_argument("--quiet", action="store_true", help="Suppress progress/diagnostic output on stderr")
+def _common_options(suppress_defaults: bool) -> argparse.ArgumentParser:
+    """The options every command takes, before or after its name.
 
-    parser = argparse.ArgumentParser(prog="slingology-eis", parents=[common])
+    The top-level parser holds the real defaults. Subcommands get the same
+    options with SUPPRESS defaults: argparse otherwise writes a subparser's
+    defaults over what the top level already parsed, so
+    `slingology-eis --workspace X import` silently used the default
+    workspace."""
+    kw = {"default": argparse.SUPPRESS} if suppress_defaults else {}
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--logs", metavar="DIR", help="Folder of G3X log CSVs", **kw)
+    common.add_argument("--workspace", metavar="NAME_OR_PATH",
+                         help="Registered workspace name/id, or a literal folder path", **kw)
+    common.add_argument("--engine", metavar="NAME", help="Engine profile (e.g. 916iS)", **kw)
+    common.add_argument("--json", action="store_true", help="Print the operation result as JSON", **kw)
+    common.add_argument("--anonymize", action="store_true", help="Strip aircraft ident/system_id/airport hint", **kw)
+    common.add_argument("--quiet", action="store_true", help="Suppress progress/diagnostic output on stderr", **kw)
+    return common
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    common = _common_options(suppress_defaults=True)
+
+    parser = argparse.ArgumentParser(prog="slingology-eis", parents=[_common_options(suppress_defaults=False)])
     parser.add_argument("--version", action="version", version=f"slingology-eis {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 

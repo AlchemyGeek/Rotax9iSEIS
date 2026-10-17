@@ -223,6 +223,33 @@ def test_dash_dash_workspace_resolves_registered_name(isolated_packaged_home, sy
     assert (ws_dir_by_name / "fleet" / "analysis.json").exists()
 
 
+@pytest.mark.parametrize("before", [True, False], ids=["before-subcommand", "after-subcommand"])
+def test_common_options_work_before_or_after_the_subcommand(isolated_packaged_home, synthetic_logs_dir, capsys, before):
+    """`slingology-eis --workspace X import …` must import into X. argparse
+    used to let the subcommand's own defaults overwrite options given
+    before its name, so this silently wrote into the default workspace."""
+    rc = main(["workspace", "create", "target", "--engine", "916iS", "--json", "--quiet"])
+    assert rc == 0
+    ws_dir = isolated_packaged_home / "workspaces" / json.loads(capsys.readouterr().out)["id"]
+    opts = ["--workspace", "target", "--quiet", "--json"]
+    argv = [*opts, "import", str(synthetic_logs_dir)] if before else ["import", str(synthetic_logs_dir), *opts]
+    assert main(argv) == 0
+    out = json.loads(capsys.readouterr().out)          # --json honoured in either position
+    assert Path(out["workspace"]) == ws_dir
+    assert (ws_dir / "fleet" / "analysis.json").exists()
+
+
+def test_common_option_defaults_and_nested_subcommands():
+    from slingology_eis.cli import _build_parser
+    parser = _build_parser()
+    args = parser.parse_args(["fleet"])
+    assert (args.workspace, args.logs, args.engine, args.json, args.quiet, args.anonymize) == (None, None, None, False, False, False)
+    args = parser.parse_args(["--engine", "916iS", "rules", "--quiet", "check", "--json", "f.json"])
+    assert (args.engine, args.quiet, args.json) == ("916iS", True, True)
+    # Given in both places, the one nearer the subcommand wins.
+    assert parser.parse_args(["--workspace", "a", "fleet", "--workspace", "b"]).workspace == "b"
+
+
 def test_dash_dash_workspace_literal_path_still_works_unregistered(tmp_path, isolated_packaged_home, capsys):
     """A literal path that matches no registered workspace — the
     pre-registry CLI behavior must be exactly unchanged."""
