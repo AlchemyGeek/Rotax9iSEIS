@@ -350,3 +350,17 @@ def test_linking_a_folder_that_does_not_exist_is_refused(registry_server, tmp_pa
     good = tmp_path / "logs"
     good.mkdir()
     assert rpc(url, "add_log_folder", {"path": str(good)})["result"]["log_folders"][0]["path"] == str(good)
+
+
+def test_the_export_file_inside_an_unzipped_folder_links_its_logs_too(registry_server, tmp_path):
+    url = registry_server
+    _sender(url, tmp_path)
+    _res, data = _export(url, include_logs=True)
+    folder = _unzip(data, tmp_path / "inbox")
+    s = rpc(url, "inspect_workspace_export", {"path": str(folder / "Sender.eisworkspace")})["result"]
+    assert s["logs_folder"] == str(folder / "logs")
+    assert rpc(url, "import_workspace", {"path": str(folder / "Sender.eisworkspace")})["result"]["logs_linked"] is True
+    # An uploaded file has no folder: the workspace starts empty.
+    up = rpc(url, "import_workspace", {"content_base64": base64.b64encode((folder / "Sender.eisworkspace").read_bytes()).decode(),
+                                        "filename": "Sender.eisworkspace", "name": "Empty"})["result"]
+    assert up["logs_linked"] is False and up["manifest"]["log_folders"] == []

@@ -3,14 +3,16 @@ import { getEngineClient } from "../lib/engineClient";
 import { carriesText, finishImport, matchText, plural } from "../lib/importWorkspace";
 import type { ImportMatchResult, WorkspaceExportSource, WorkspaceExportSummary } from "../types/contract";
 
-// Spec 03 v0.19 §5.8 — Import workspace, a modal flow (behaviour: Spec 02
-// v0.11 §7.4–7.7). Choose → summary (engine check) → name → link logs →
-// match result → the ordinary Sync confirmation on Flights. An import
-// always creates a new workspace; nothing is created before Name.
+// Spec 03 v0.20 §5.8 — Import workspace, a modal flow (behaviour: Spec 02
+// v0.13 §7.4–7.7). Choose → summary (engine check) → name → then either
+// the match result (an unzipped export folder's logs/ is linked
+// automatically) and the ordinary Sync confirmation on Flights, or — no
+// logs/ — an empty workspace. There is no step for linking other folders.
+// An import always creates a new workspace; nothing is created before Name.
 
 const client = getEngineClient();
 
-type Step = "choose" | "name" | "link" | "match";
+type Step = "choose" | "name" | "match" | "empty";
 
 async function fileToBase64(f: File): Promise<string> {
   const bytes = new Uint8Array(await f.arrayBuffer());
@@ -32,8 +34,7 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
   const [source, setSource] = useState<WorkspaceExportSource | null>(null);
   const [summary, setSummary] = useState<WorkspaceExportSummary | null>(null);
   const [name, setName] = useState("");
-  const [folder, setFolder] = useState("");
-  const [linked, setLinked] = useState<string[]>([]);
+  const [linked, setLinked] = useState<string | null>(null);
   const [match, setMatch] = useState<ImportMatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,24 +65,11 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
     const res = await run(() => client.importWorkspace(source, name.trim() || undefined));
     if (!res) return;
     if (res.logs_linked) {
-      setLinked([summary?.logs_folder ?? "logs/"]);
+      setLinked(summary?.logs_folder ?? "logs/");
       await rematch();
     } else {
-      setStep("link");
+      setStep("empty");
     }
-  }
-
-  // Linking a folder shows straight away what it found (§7.4 step 4):
-  // the match result, with the folder listed as linked.
-  async function addFolder() {
-    const p = folder.trim();
-    if (!p || busy) return;
-    const manifest = await run(() => client.addLogFolder(p));
-    if (!manifest) return;
-    const added = manifest.log_folders?.[manifest.log_folders.length - 1]?.path ?? p;
-    setLinked((l) => (l.includes(added) ? l : [...l, added]));
-    setFolder("");
-    await rematch();
   }
 
   async function rematch() {
@@ -100,7 +88,7 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
         {step === "choose" && (
           <>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Choose an <span className="mono">.eisworkspace</span> file, or the folder you unzipped from an export that includes logs. The import creates a new workspace; nothing you already have changes.
+              Enter the folder you unzipped from an export: its logs are linked automatically. Or choose an <span className="mono">.eisworkspace</span> file — without a logs folder the new workspace starts empty. Nothing you already have changes.
             </div>
             <label style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
               Export file
@@ -136,7 +124,11 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
                   {summary.date_range && `, ${summary.date_range[0]} to ${summary.date_range[1]}`}
                 </div>
                 <div>Carries {carriesText(summary.carries)}.</div>
-                <div>{summary.logs_included ? `Logs included${summary.anonymised ? ", anonymised" : ""}.` : "Logs not included — you'll link your own copies."}</div>
+                <div>
+                  {summary.logs_folder
+                    ? `Logs included${summary.anonymised ? ", anonymised" : ""} — linked from this folder.`
+                    : "No logs folder here — the workspace will start empty."}
+                </div>
                 {summary.engine_check.message && (
                   <div role={summary.engine_check.ok ? "status" : "alert"} style={{ color: summary.engine_check.ok ? "var(--severity-watch)" : "var(--severity-limit)", marginTop: 4 }}>
                     {summary.engine_check.message}
@@ -154,37 +146,17 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
           </label>
         )}
 
-        {(step === "link" || step === "match") && (
-          <>
-            {step === "link" && (
-              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Link the folders that hold your copies of the logs. File names and folder layout don't matter: flights are matched by their content.
-              </div>
-            )}
-            {linked.length > 0 && (
-              <div data-testid="linked-folders" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {linked.map((f) => (
-                  <div key={f} className="mono" style={{ fontSize: 11, color: "var(--text-primary)" }}>
-                    <span style={{ color: "var(--accent)" }}>✓</span> Linked {f}
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                aria-label="Log folder path"
-                placeholder="/path/to/logs"
-                className="mono"
-                value={folder}
-                onChange={(e) => { setFolder(e.target.value); setError(null); }}
-                onKeyDown={(e) => e.key === "Enter" && void addFolder()}
-                style={INPUT}
-              />
-              <button type="button" style={BUTTON(busy || !folder.trim())} disabled={busy || !folder.trim()} onClick={addFolder}>
-                {busy ? "Linking…" : step === "match" ? "Add another folder" : "Add folder"}
-              </button>
-            </div>
-          </>
+        {step === "match" && linked && (
+          <div data-testid="linked-folders" className="mono" style={{ fontSize: 11, color: "var(--text-primary)" }}>
+            <span style={{ color: "var(--accent)" }}>✓</span> Linked {linked}
+          </div>
+        )}
+
+        {step === "empty" && (
+          <div data-testid="import-empty" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            The workspace is created, empty: this export has no logs folder. It lists the sender's flights, and its
+            analysis appears once their logs are added (Flights → Add logs…).
+          </div>
         )}
 
         {step === "match" && match && (
@@ -214,9 +186,6 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
         {error && <div role="alert" style={{ fontSize: 12, color: "var(--severity-limit)" }}>{error}</div>}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          {step === "link" && (
-            <button type="button" style={BUTTON()} onClick={finishImport} title="The workspace stays empty until you link the logs">Skip for now</button>
-          )}
           {step === "choose" && <button type="button" style={BUTTON()} onClick={onClose}>Cancel</button>}
           {step === "choose" && summary?.engine_check.ok && (
             <button type="button" style={PRIMARY(busy)} disabled={busy} onClick={() => setStep("name")}>Continue</button>
@@ -225,7 +194,10 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
             <button type="button" style={PRIMARY(busy || !name.trim())} disabled={busy || !name.trim()} onClick={create}>Create workspace</button>
           )}
           {step === "match" && (
-            <button type="button" style={PRIMARY(busy)} disabled={busy} onClick={finishImport}>Continue</button>
+            <button type="button" style={PRIMARY(busy)} disabled={busy} onClick={() => finishImport(true)}>Continue</button>
+          )}
+          {step === "empty" && (
+            <button type="button" style={PRIMARY()} onClick={() => finishImport(false)}>Open workspace</button>
           )}
         </div>
       </div>

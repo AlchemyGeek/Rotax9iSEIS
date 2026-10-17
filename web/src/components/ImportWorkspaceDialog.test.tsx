@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
 import { carriesText, matchText } from "../lib/importWorkspace";
@@ -24,7 +24,7 @@ const MATCH: ImportMatchResult = {
   extra: Array.from({ length: 12 }, (_, i) => ({ filename: `other_${i}.csv`, date: null })),
 };
 
-const state = { summary: SUMMARY, logsLinked: false, badFolder: false };
+const state = { summary: SUMMARY, logsLinked: false };
 const calls = vi.hoisted(() => ({ importWorkspace: vi.fn(), addLogFolder: vi.fn(), matchImport: vi.fn() }));
 
 vi.mock("../lib/engineClient", () => ({
@@ -34,11 +34,7 @@ vi.mock("../lib/engineClient", () => ({
       calls.importWorkspace(src, name);
       return { manifest: { id: "ws_new", name }, logs_linked: state.logsLinked };
     },
-    addLogFolder: async (p: string) => {
-      calls.addLogFolder(p);
-      if (state.badFolder) throw new Error(`There's no folder at ${p}.`);
-      return { log_folders: [{ path: p, reachable: true }] };
-    },
+    addLogFolder: async (p: string) => { calls.addLogFolder(p); return {}; },
     matchImport: async () => { calls.matchImport(); return MATCH; },
   }),
 }));
@@ -48,7 +44,6 @@ describe("ImportWorkspaceDialog", () => {
     Object.values(calls).forEach((f) => f.mockClear());
     state.summary = SUMMARY;
     state.logsLinked = false;
-    state.badFolder = false;
   });
 
   it("shows the summary before creating anything, then names, links logs and matches", async () => {
@@ -64,18 +59,12 @@ describe("ImportWorkspaceDialog", () => {
     fireEvent.click(screen.getByText("Continue"));
     expect((screen.getByLabelText("Workspace name") as HTMLInputElement).value).toBe("N117ZS (imported)");
     fireEvent.click(screen.getByText("Create workspace"));
-    await screen.findByText("Skip for now");
+    // No logs folder in this export: the workspace is created empty, no folder step.
+    expect((await screen.findByTestId("import-empty")).textContent).toContain("created, empty");
     expect(calls.importWorkspace).toHaveBeenCalledWith({ path: "/x/N117ZS" }, "N117ZS (imported)");
-
-    fireEvent.change(screen.getByLabelText("Log folder path"), { target: { value: "/my/logs" } });
-    fireEvent.click(screen.getByText("Add folder"));
-    await waitFor(() => expect(calls.addLogFolder).toHaveBeenCalledWith("/my/logs"));
-    // Linking shows straight away what the folder holds, and says it's linked.
-    const result = await screen.findByTestId("match-result");
-    expect(screen.getByTestId("linked-folders").textContent).toContain("✓ Linked /my/logs");
-    expect(result.textContent).toContain("38 of 40 flights found · 2 missing · 12 other logs held out");
-    expect(screen.getByText("Add another folder")).toBeTruthy();
-    expect(screen.getByText("Continue")).toBeTruthy();
+    expect(screen.queryByLabelText("Log folder path")).toBeNull();
+    expect(screen.getByText("Open workspace")).toBeTruthy();
+    expect(calls.matchImport).not.toHaveBeenCalled();
   });
 
   it("an export folder's logs are linked automatically: straight to the match result", async () => {
@@ -87,7 +76,10 @@ describe("ImportWorkspaceDialog", () => {
     await screen.findByTestId("import-summary");
     fireEvent.click(screen.getByText("Continue"));
     fireEvent.click(screen.getByText("Create workspace"));
-    await screen.findByTestId("match-result");
+    const result = await screen.findByTestId("match-result");
+    expect(result.textContent).toContain("38 of 40 flights found · 2 missing · 12 other logs held out");
+    expect(screen.getByTestId("linked-folders").textContent).toContain("✓ Linked /x/N117ZS/logs");
+    expect(screen.queryByLabelText("Log folder path")).toBeNull();
     expect(calls.addLogFolder).not.toHaveBeenCalled();
   });
 
@@ -114,50 +106,5 @@ describe("ImportWorkspaceDialog", () => {
     expect(matchText(MATCH)).toBe("38 of 40 flights found · 2 missing · 12 other logs held out");
     expect(carriesText({ ...SUMMARY.carries, filters: 0, rule_edits: 0, reference_exclusions: 0, changed_settings: 0, notes: 0 }))
       .toBe("no decisions or settings changes");
-  });
-});
-
-
-describe("ImportWorkspaceDialog — linking logs", () => {
-  beforeEach(() => {
-    Object.values(calls).forEach((f) => f.mockClear());
-    state.summary = SUMMARY;
-    state.logsLinked = false;
-    state.badFolder = false;
-  });
-
-  async function toLinkStep() {
-    render(<ImportWorkspaceDialog onClose={() => {}} />);
-    fireEvent.change(screen.getByLabelText("Export folder or file path"), { target: { value: "/x/N117ZS" } });
-    fireEvent.keyDown(screen.getByLabelText("Export folder or file path"), { key: "Enter" });
-    await screen.findByTestId("import-summary");
-    fireEvent.click(screen.getByText("Continue"));
-    fireEvent.click(screen.getByText("Create workspace"));
-    await screen.findByText("Skip for now");
-  }
-
-  it("Enter in the folder field links it", async () => {
-    await toLinkStep();
-    fireEvent.change(screen.getByLabelText("Log folder path"), { target: { value: "/my/logs" } });
-    fireEvent.keyDown(screen.getByLabelText("Log folder path"), { key: "Enter" });
-    await screen.findByTestId("match-result");
-    expect(calls.addLogFolder).toHaveBeenCalledWith("/my/logs");
-  });
-
-  it("a folder that doesn't exist says so and stays on the link step", async () => {
-    state.badFolder = true;
-    await toLinkStep();
-    fireEvent.change(screen.getByLabelText("Log folder path"), { target: { value: "/my/typo" } });
-    fireEvent.click(screen.getByText("Add folder"));
-    expect((await screen.findByRole("alert")).textContent).toContain("There's no folder at /my/typo.");
-    expect(screen.queryByTestId("match-result")).toBeNull();
-    expect(calls.matchImport).not.toHaveBeenCalled();
-  });
-
-  it("Add folder looks disabled until a path is entered", async () => {
-    await toLinkStep();
-    const button = screen.getByText("Add folder") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.style.opacity).toBe("0.45");
   });
 });

@@ -23,9 +23,10 @@ export function matchText(m: ImportMatchResult): string {
   return `${m.found.length} of ${m.total} flights found · ${m.missing.length} missing · ${plural(m.extra.length, "other log")} held out`;
 }
 
-export function finishImport() {
-  // The new workspace is now active: reopen the app on Flights with the
-  // Sync confirmation (Spec 03 §5.1), as a switch of workspace does.
-  window.location.hash = "#/flights?sync=1";
+export function finishImport(sync: boolean) {
+  // The new workspace is now active: reopen the app on Flights — with the
+  // Sync confirmation (Spec 03 §5.1) when logs were linked, as a switch of
+  // workspace does.
+  window.location.hash = sync ? "#/flights?sync=1" : "#/flights";
   window.location.reload();
 }

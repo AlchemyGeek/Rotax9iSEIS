@@ -541,6 +541,10 @@ def read_export(path: Path) -> ExportContents:
         if (path / "logs").is_dir():
             logs_dir = path / "logs"
         path = found[0]
+    elif path.is_file() and path.suffix.lower() == EXPORT_SUFFIX and (path.parent / "logs").is_dir():
+        # The .eisworkspace inside an unzipped export folder: its logs/ sits
+        # beside it, so it is linked the same as choosing the folder.
+        logs_dir = path.parent / "logs"
     elif path.suffix.lower() == ".zip":
         raise ImportRefused("This is the zipped export. Unzip it first (Finder, Files or Explorer), then choose the "
                             "folder it creates.")
