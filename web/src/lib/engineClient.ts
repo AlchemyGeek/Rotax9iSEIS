@@ -302,11 +302,26 @@ export class LocalServerClient implements EngineClient {
   }
 
   async uploadFile(file: File) {
-    const res = await fetch(`${this.baseUrl}/upload?filename=${encodeURIComponent(file.name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: file,
-    });
+    // A server started before the page was updated has no /upload: it
+    // answers 404, or drops the connection mid-upload ("Failed to fetch").
+    // Say what to do rather than show the browser's bare error.
+    const outdated = () => new EngineRpcError(
+      "SERVER_OUTDATED",
+      "The local server is older than this page and can't take the file. Stop it (Ctrl-C in its terminal), start `slingology-eis serve` again, then choose the file again.",
+    );
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/upload?filename=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+    } catch (e) {
+      const reachable = await this.rpc("list_workspaces", {}).then(() => true, () => false);
+      if (reachable) throw outdated();
+      throw new EngineRpcError("SERVER_UNREACHABLE", `Couldn't reach the local server (${e instanceof Error ? e.message : String(e)}). Is \`slingology-eis serve\` running?`);
+    }
+    if (res.status === 404) throw outdated();
     const envelope = await res.json();
     if (!envelope.ok) throw new EngineRpcError(envelope.error?.code ?? "UNKNOWN", envelope.error?.message ?? "upload failed");
     return envelope.result as { upload_id: string; filename: string; size: number };
