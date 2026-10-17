@@ -1,317 +1,298 @@
-# SlingologyEIS — Project Backlog
+# SlingologyEIS — Backlog
 
-Last updated: September 23, 2026
-Toolkit current version: 0.11.0
-Research paper current edition: 0.2
+Last updated: October 15, 2026 (the 1.0.0 merge of `webui` into `main`)
+Toolkit version: 1.0.0 · Research paper: Edition 0.3
 
-Items organized by category. Each item notes type: **code**, **design**, or **research**.
-
----
-
-## A — Analytics
-
-### ~~A1. Analysis / Insight two-layer output format~~ — COMPLETED in v0.10.0
-**Type:** Code + design
-`insight_rules.json` at toolkit root defines trigger rules (threshold, baseline_deviation, trend).
-`reports/baselines.json` written by script 03, read by script 04.
-`reports/models.json` written by script 03, read by script 04.
-Script 04 (`04_flight_report.py`) is the new per-flight pilot report with two-layer format.
-Fleet Insights section added to end of script 03 output and saved as `reports/fleet_insights.txt`.
+Open work, organised by the spec or area that owns it. Everything completed between 0.11.0 and
+1.0.0 is in [CHANGELOG.md](CHANGELOG.md); this file no longer carries struck-through history.
+Each item names its type — **code**, **design**, **research**, **docs** — and, where one exists,
+the spec section that already designed it. Nothing here is scheduled; the next phase of the
+program is decided when the current screen reviews finish (see §2).
 
 ---
 
-### ~~A2. The 14 agreed analytics topics~~ — COMPLETED in v0.10.0
-**Type:** Code
-All 14 topics implemented in script 04:
-1. EGT spread — ✅
-2. EGT4 elevation — ✅
-3. Cylinder rank stability — ✅
-4. Oil temperature — ✅
-5. Coolant temperature — ✅
-6. Oil/coolant ratio — ✅
-7. Overboost time — ✅ (with close-call flag at 240–300s)
-8. Cruise efficiency — ✅ (DA context added)
-9. Cruise fuel flow — ✅ (with DA context and altitude note)
-10. Manifold pressure at takeoff — ✅ (empirical model, shows "still collecting" until n≥5)
-11. ENGINE ECU alerts — ✅ (uses proper classifier from cas.py)
-12. Flight phase mix — DROPPED as standalone; replaced with "no cruise detected" header note
-13. Operating limit exceedances — ✅ (phase-filtered, duration-thresholded)
-14. Climb thermal rate — ✅
+## 1. Platform and hosting
+
+### P1. In-browser analysis under Pyodide (static hosting)
+**Type:** code · **Owner:** Spec 04 (decision GO, Part B), Spec 02 §5.9
+The chosen hosting path: a static site Stathis hosts, with the engine running in the user's
+browser so logs never leave the device. Spec 04's Part A harness proved parity, speed and memory
+on macOS Chrome/Safari and iPad Safari with numpy + pandas only. Needs Part B's browser-worker
+adapter and the IndexedDB realization of the workspace (Spec 02 §5.9, not built). The local
+server mode stays supported alongside it, not replaced.
+
+### P2. Easy self-hosting
+**Type:** code · **Owner:** Spec 04 Part B
+A one-command local hosting option (Docker, Synology) for users who want the server mode without
+a Python/Node setup.
+
+### P3. Packaged build — no Node for pilots
+**Type:** code
+`serve` needs `web/dist/`, which today only `npm` produces, so every pilot installs Node once.
+Ship a built UI (a release artifact or a wheel that includes `dist/`) so `pip install` is enough.
+Until then the README documents the one-time build.
+
+### P4. Results bundle export and import
+**Type:** code · **Owner:** Spec 02 §7, Spec 03 §5.8
+`.eisbundle.json` / `.eisbundle.zip` — a self-describing snapshot of one flight, a subset or a
+whole workspace, openable cold on another device, with a *Previewing: not yet added to your
+workspace* path in the UI. `slingology-eis export-bundle` is a stub (exit 2). Prerequisite for
+community sharing (U4). Open: one format or two (Spec 02 Q2).
+
+### P5. Web build and test hygiene
+**Type:** code
+- `npm run build` fails `tsc -b` on `web/src/components/EventsTable.test.tsx`: the Phase 8 test
+  spreads `suppressed_by: "phase"` over a union of limit and CAS events, and the CAS member has no
+  `observed_value`/`excess`. `npx vite build` works and is what the README uses.
+- `npx vitest run` exits 1 on an unhandled `scrollIntoView is not a function` from jsdom
+  (`Trends.cas.test.tsx` → `Trends.tsx` panel scroll) while all 129 tests pass.
+
+### P6. Documentation site
+**Type:** docs · **Owner:** Spec 13 (deferred by decision until the app is complete)
+Two tiers — a casual-user tier (pictures, quick descriptions, steps) and a researcher tier (how
+things work) — searchable and askable through an AI assistant. Stathis will build the site; the
+README deliberately stops at getting the server running. Not to be started before the app is
+complete.
 
 ---
 
-### A3. Manifold pressure vs OM expected-power model — PARTIALLY COMPLETE
-**Type:** Code + research
-Empirical MAP model built in v0.10.0: linear regression MAP = f(pressure_alt_ft, oat_c).
-RPM capture threshold: ≥ 5,500 rpm during TAKEOFF_ROLL phase.
-Model lives in `reports/models.json`, written by script 03, read by script 04.
-Confidence thresholds: n<5 = "still collecting", n 5–14 = LOW, n≥15 = MODERATE.
-Currently at n=15, MODERATE, R²=0.71.
+## 2. Screens, workflows and program direction
 
-**Remaining:** Model needs more altitude diversity (most departures from KPAE, near sea level).
-Target: 5+ flights from departure elevations above 2,000 ft MSL for reliable altitude range.
+### U1. Screen reviews still open
+**Type:** design · **Owner:** Spec 03, Spec 14
+Each web screen is being re-evaluated for relevance and value, one at a time (Oct 7–15: Baselines
+→ Settings, Notes → Journal, ECU retired, Flight view restructured, Flights Sync/Add logs).
+Remaining: **Journal as built** (Spec 14 v0.10's register of decisions in force). After that the
+next phase of the program is chosen.
 
----
+### U2. Research mode
+**Type:** design · **Owner:** Spec 06 (number reserved; not in the nav until designed)
+Review a metric outside expected thresholds over many flights — improving, worsening or stable —
+and a path from an Explore finding to the operational side (Spec 03 principle 6). Must follow the
+spec format and numbering. Depends on and feeds: change-point detection (T4), the Research-status
+topics in §4, and C5/C6.
 
-### A4. ECO/POWER mode detection
-**Type:** Code
-BLOCKED — requires a ground-truth validation flight with deliberate known throttle positions.
-ECO/POWER threshold: ~97% throttle position per engine config.
-Do not start until validation flight data is available.
+### U3. Insights under the program principles
+**Type:** design · **Owner:** Spec 11 (drafted v0.1, paused by decision)
+The Oct 4 reset: (1) the OM is the only predefined rule; (2) the user overrides OM limits through
+operations such as filters; (3) the system's job is to say when something changed in those
+operations; (4) the user has tools to analyse anomalies and silences them as they choose — no
+severity-based policy. Decided for Spec 11 so far: observation insights on by default with their
+settings shown on the card; severity as a display label only; three silencing levels —
+acknowledge one insight on one flight (not built), filter workspace-wide (built, Spec 09),
+disable a topic (built, Spec 14). To be reassessed after U1.
 
----
+### U4. Sharing insights and research with other pilots
+**Type:** design
+Users aren't software engineers, so sharing needs a simple path — possibly a custom website.
+Builds on P4. Community-wide aggregation of data remains out of scope.
 
-### A5. Power/altitude/fuel-flow model
-**Type:** Code + research
-Build a DA band × power setting → expected gph model from fleet data.
-Compare observed cruise fuel flow against model prediction rather than blended personal average.
-Requires: sufficient data across DA and power combinations.
-Currently cruise fuel flow uses blended personal average with DA context note as interim solution.
-Park until fleet data is sufficient for a reliable multi-variable regression.
+### U5. Fleet workspaces
+**Type:** design · **Owner:** Spec 02 §5.6 (interim)
+A workspace holding many aircraft with the same engine, to get engine-type insights rather than
+single-aircraft ones. Interim: the mixed-aircraft notice (one workspace per aircraft recommended;
+same-aircraft confirmation for ident typos). Needs a decision on which learned numbers may cross
+aircraft — today none do (Spec 10 §1).
 
----
-
-### A6. MAP empirical model — altitude diversity requirement
-**Type:** Research → code
-Currently blocked on altitude diversity — most departures from KPAE (near sea level).
-Revisit when 5+ flights from departure elevations above 2,000 ft MSL are available.
-Track departure elevation distribution in fleet_metrics to monitor readiness.
-
----
-
-### A7. Fuel pump state inference model
-**Type:** Research → possible code
-The G3X log has no channel reporting which fuel pump(s) are running — confirmed across the
-full fleet's column set, identical in every log (`FPCM FAULT` is a fault flag, not a state
-indicator). `fuel_press_psi` is the only available signal, and pump transitions (a pump
-dropping out, a second pump cutting in) plausibly show up as steps/dips in that trace.
-
-Idea: a model (rule-based thresholds on the pressure signature to start; a trained
-classifier later if the rule-based version isn't reliable enough) that infers "pump 1 /
-pump 2 / both / indeterminate" per time window from `fuel_press_psi` (and possibly
-`fuel_flow_gph`, RPM, phase) as supporting signal. Output would feed in as a derived
-channel/metric for analysis, the same way the `map_at_takeoff` empirical model already
-works from fleet data (Spec 01 §6.4, §8.5) — not a claim that the raw log carries this
-information.
-
-**Needs:** example flights with a *known* pump schedule (e.g. a deliberate pump-test
-flight, or pilot-reported pump switching) to correlate against the pressure trace and
-validate any candidate model before trusting its output in reports. Directly relevant to
-G1 (fuel-pressure exceedances root cause, section G) — a pump-state signal could
-distinguish "pump test / normal pump cycling" from "genuine sensor fault or pressure
-problem" in those exceedance events.
+### U6. Scope labels on the remaining one-click actions
+**Type:** code · **Owner:** Spec 14 §7.5
+Still unlabelled: tail-number grouping (labelling only — comparisons already treat the workspace
+as one aircraft). Everything else in §7.5's table carries its scope caption.
 
 ---
 
-## B — Bug Fixes & Signal Quality
+## 3. Trends — v2 (designed in Spec 12 §13)
 
-### ~~B3. IN-FLIGHT ENGINE ECU — per-event reporting~~ — COMPLETED in v0.10.0
-**Type:** Code
-ENGINE ECU classifier moved from script 02 into `cas.py` as `classify_engine_ecu_run()`
-and `extract_engine_ecu_runs()`. Script 02 and script 04 both import from `cas.py`.
-Fleet insights reads `inflight_ecu_count` from `fleet_metrics.csv` (computed via classifier).
-KSFF OIL PRESS event correctly identified as the only genuine IN-FLIGHT event with
-engine-parameter correlation.
+### T1. OM headroom projection
+**Type:** code · **Owner:** Spec 12 §13
+"At the recent rate, headroom reaches zero at ~N h" on a strip with an OM line and a qualifying
+shift; recent-window slope only. Wait for operating experience with the shift statistic.
 
----
+### T2. Maintenance annotations on the time axis
+**Type:** code + design · **Owner:** Spec 12 §13; Spec 02 change needed
+Vertical markers for workspace-level events (oil change, plug change, filter created, software
+update) so a shift next to a marker reads as explained. Needs a workspace event log with no
+flight to attach to. Supersedes the old maintenance-log and post-maintenance-baseline ideas; the
+arbitrary historical pin ("before the oil change") is covered by zoom-based pinning already.
 
-### B4. Overboost known-cause annotation
-**Type:** Code
-Need a lightweight mechanism to attach a note/known-cause to a specific flight's flagged event
-(e.g. `annotations.json` keyed by source file). Pilot-facing report then shows:
-*"April 23 — exceeded 300s limit (+81s). Note: ATC delay at LAX."*
-This is not suppression — the event still shows — but lets the pilot's own context travel
-with the finding.
+### T3. Condition strip
+**Type:** code · **Owner:** Spec 12 §13
+Cruise DA, cruise OAT, duration and dominant climb-VS bucket per flight under each panel, so a
+high point can be read against its conditions. `cruise_da_ft`/`cruise_oat_c` already exist.
 
----
+### T4. Change-point detection
+**Type:** research → code · **Owner:** Spec 12 §13, Spec 06
+CUSUM or Bayesian change-point per metric, giving a detected step time rather than a window
+mean. Research mode first.
 
-### B5. Touch-and-go detection — LANDING_ROLL has no re-acceleration exit
-**Type:** Code
-Traced from `phases.py`'s current transition table — not yet tested against a real
-touch-and-go log, since none of the data used so far obviously contains one. `LANDING_ROLL`
-only exits via `v < 5 and r < 2500` -> `TAXI`, or `r < 500` -> `SHUTDOWN`. A genuine
-touch-and-go (wheels touch briefly, power added immediately, ground speed staying well
-above 5 kt throughout) satisfies neither condition, so the state machine likely never
-leaves `LANDING_ROLL`, and every subsequent circuit is silently misclassified for the
-rest of the flight.
-
-Stop-and-goes (full stop, taxi back, depart again) and go-arounds are both handled
-correctly already: `LANDING_ROLL -> TAXI -> TAKEOFF_ROLL` for the former, `APPROACH ->
-CLIMB` (triggered by VS > 400 fpm) for the latter. Only the no-full-stop touch-and-go
-case is the gap.
-
-**Needs:** a real touch-and-go / pattern-work log to confirm before fixing. If
-confirmed, the likely fix is a `LANDING_ROLL` exit back toward `TAKEOFF_ROLL`/`CLIMB`
-when ground speed and RPM start climbing again without ever dropping below the TAXI
-threshold — mirroring the go-around logic already in `APPROACH`.
+### T5. Engine hours as the trend x-axis
+**Type:** research
+Engine hours in the log header are the Hobbs at log creation. Compare against cumulative
+airborne hours derived from the logs. Low urgency.
 
 ---
 
-### B6. In-flight phase labels persist through taxi-in and the engine cut — DESCENT at 0 kt, LANDING_ROLL while taxiing
-**Type:** Code (`phases.py`) — needs the CLAUDE.md phase-regression snapshot
-Found by the ENGINE ECU classification work (Spec 01 v0.19/v0.20). After landing,
-`phases.py` can keep an in-flight label through the taxi-in and up to — sometimes past — the
-engine cut, switching to `SHUTDOWN` only once rpm has stopped. Examples on the project log set:
+## 4. Analytics topics (Spec 10 register)
 
-- 2026-04-17 12:13:55 — taxiing in at 7–9 kt ground speed, idle ~2,240 rpm, still
-  `LANDING_ROLL` until the engine is cut 4 rows later.
-- 2026-04-22 19:08:23 — the same, 7–8 kt at ~1,930 rpm, `LANDING_ROLL` for 5 rows to the cut.
-- 2026-06-17 17:25:09 — stopped (0 kt ground speed) at ~2,340 rpm and labelled `DESCENT`;
-  `DESCENT` continues for 9 rows after the cut, then one `TAXI` row, then `SHUTDOWN` (the
-  same flight also appears as a duplicate export).
+### A1. Topics are single-aircraft evidence
+**Type:** research · **Owner:** Spec 10 §4, §5.1, §8.2
+Every admitted topic rests on N117ZS alone and is *Unverified* on the 912iS/914iS/915iS. A
+re-audit is triggered by data from a new aircraft or engine type. The practical path is other
+pilots' logs (U4, U5).
 
-Why: an airborne state (`DESCENT`/`APPROACH`) only returns to the ground through the
-on-ground test — smoothed IAS < 30 kt **and** rpm < 2,000 for 10 s. Taxiing in at 2,300–2,600
-rpm never passes it, so the whole taxi-in stays `DESCENT` until the engine is cut, and the
-10 s dwell then adds the trailing rows. `LANDING_ROLL` exits to `TAXI` only on IAS < 5 kt,
-but the IAS channel reads ~13–15 kt at rest on these logs, so it leaves only on rpm < 500 —
-which lags the cut because rpm is median-smoothed (5 samples, missing readings as 0). Anything
-keyed on phase sees these rows, and the taxi-in before them, as in flight. The ENGINE ECU
-classifier works around it (Spec 01 §8.6 v0.20 rule 1: a run in which the engine stops and
-stays stopped is `GROUND_SHUTDOWN` whatever the labels), but other phase consumers —
-exceedance phase windows, airborne-time metrics, Spec 09 §6.6's "post-shutdown rows labelled
-DESCENT/APPROACH" note — inherit it.
+### A2. `engine_ecu_inflight` — Admitted (provisional)
+**Type:** research · **Owner:** Spec 10 D18
+Mechanism sound, positive case never seen: 0 in-flight runs on 115 logs after the phase-based
+classifier. Condition to close: a first true positive, or a deliberate test.
 
-**Likely fix:** an on-ground test that doesn't depend on rpm < 2,000 (taxi power is above
-it) — e.g. ground speed near zero or GPS-derived taxi speed with low IAS — and a `SHUTDOWN`
-transition from any phase when rpm stops (below the running threshold or missing) at
-on-ground IAS. Snapshot before and after (`notebooks/06_phase_regression.py`) and confirm
-every changed log is intended.
+### A3. C5 — oil–coolant temperature balance
+**Type:** research · **Owner:** Spec 10 §7 (Proposed)
+Successor to the dropped `oil_coolant_ratio`. Must first show industry use and a sourced
+mechanism before any code.
 
----
+### A4. C6 — lane-check adherence
+**Type:** design · **Owner:** Spec 10 §7 (procedure class, undefined)
+Pilot procedure, not an engine signal, so not a topic; the lane-check result is a flight fact.
+Needs a defined "procedure" class before it can be anything more.
 
-### B1, B2 — Ground session edge cases
-**Type:** Code
-Low urgency post-v0.8.0 loader filtering. Investigate if needed.
+### A5. `climb_thermal_rate` — Research
+**Type:** research · **Owner:** Spec 10 D2
+Rise-rate metrics are still computed; both proposed conditioners (climb VS bucket, OAT) were
+tested and found insufficient to make it discriminating. Needs a new predictor.
 
----
+### A6. Peak temperature vs flight duration
+**Type:** research · **Owner:** Spec 10 D7 (revised)
+Oil-temperature peak correlates with airborne time (r ≈ 0.6) at every candidate threshold, so no
+minimum-duration cut was applied. Predicting the peak from flight length is a Research item.
 
-## C — Fleet Statistics
+### A7. Power × density-altitude fuel-flow model
+**Type:** research · **Owner:** Spec 10 §4.2
+A DA band × power setting → expected gph model. Cruise fuel flow is a flight fact now, not a
+topic, so this is research until it earns admission.
 
-### ~~C1. Fleet count reporting~~ — RESOLVED in v0.10.0
-**Type:** Code
-Confirmed: 23 real flights (50 total log files, 27 ground sessions filtered at loader).
-All fleet metrics, baselines, and insights correctly use 23 flights.
+### A8. ECO/POWER mode detection
+**Type:** research → code
+Blocked on a ground-truth flight with deliberate known throttle positions. The 912iS OM states no
+throttle-position threshold for the switch-over (profile notes it as intentionally absent).
 
----
+### A9. Fuel pump state inference
+**Type:** research → code · **Owner:** Spec 01 §6.4
+The G3X log carries no pump-selection channel (`FPCM FAULT` is a fault flag). `fuel_press_psi`
+is the only signal; a rule-based model of pump transitions from the pressure signature could
+feed a derived channel. Needs flights with a known pump schedule to validate. Relevant to E2.
 
-### C2. Engine hours as trend x-axis — reliability
-**Type:** Research → possible code
-Engine hours in log metadata reflect the Hobbs at log creation.
-Consider using cumulative airborne hours derived from logs as alternative x-axis.
-Investigate and compare both approaches. Low urgency.
+### A10. Takeoff-MAP model altitude diversity
+**Type:** research
+Most departures are near sea level (KPAE). The model's fitted-range guard means the extreme
+flight on each axis is never judged under leave-one-out. Revisit with 5+ departures above 2,000 ft.
 
----
-
-### C3. DA/OAT stratification — remaining thermal metrics
-**Type:** Code
-`da_band` and `oat_band` captured per flight. Cruise efficiency (DA) and EGT spread (OAT)
-already stratified. Remaining thermal metrics — oil temp, coolant temp, oil/coolant ratio,
-climb thermal rate — should also trend within OAT bands rather than blended.
+### A11. Topic help for engines without an EGT-split limit
+**Type:** docs · **Owner:** Spec 10 §9 item 11
+`egt_spread`'s help cites `{limit:egt_split_high_flow}`, which OM-912 doesn't define; one strict
+xfail test. An authoring decision: wording for an engine with no such limit.
 
 ---
 
-## D — Engine Coverage & Maintenance
+## 5. Limit filters (Spec 09)
 
-### ~~D1. Multi-engine config file support~~ — COMPLETED in v0.9.0
-916iS and 915iS fully verified (915iS verified in v0.11.0, against OM-915 i A/C24 Ed. 0
-Rev. 4). 912iS and 914iS remain placeholders.
+### F1. Rename "overboost" for the 912iS
+**Type:** code · **Owner:** Spec 09 Q9 (deferred)
+A misnomer on a normally aspirated engine (`takeoff_power_time`). Renaming an id needs a filter
+and annotation migration.
 
----
+### F2. Phase-scoped bands
+**Type:** design · **Owner:** Spec 09 Q10 (deferred by decision, Oct 11)
+"Tolerate +2 psi, but only in CRUISE." Phase *exclusion* shipped first (Phase 8); a band that
+applies only within chosen phases is the follow-on.
 
-### D2. Maintenance event logging and post-maintenance baseline tracking
-**Type:** Code + design
-Ability to record maintenance events (oil change, spark plug replacement, intercooler
-service, turbo inspection, etc.) with engine hours and date. Analytics then track whether
-key metrics (oil temp, EGT spread, MAP at takeoff) shift after a maintenance event —
-useful for validating that a service had the expected effect and detecting regressions.
-Events stored in a `maintenance_log.json` at the toolkit root.
-
----
-
-## E — Documentation & Registration
-
-### ~~E1. Aircraft registration correction — N5512E → N117ZS~~ — PENDING
-**Type:** Documentation
-Research paper still references N5512E in several places. Fix in v0.10.0 release.
+### F3. z-mode divergence between Journal filter cards and Trends
+**Type:** design · **Owner:** Spec 12 §10
+A z-mode filter's reference and the Trends recent/reference comparison use different windows;
+documented, not yet reconciled.
 
 ---
 
-### E2. Research paper — ongoing updates
-**Type:** Documentation (ongoing)
-Edition 0.2. Updates needed for v0.10.0:
-- Correct registration N5512E → N117ZS throughout
-- Update fleet count: 23 real flights (50 total log files)
-- Add script 04 per-flight report section
-- Add Fleet Insights section
-- Add MAP empirical model section
-- Add two-layer format design section
-- Update §9 DA/OAT normalisation — stratification partially implemented
-- Update §11 Open Questions — close answered questions
-- Update §12 Revision History
+## 6. Engine profiles
+
+### E1. 914iS Operators Manual
+**Type:** docs + code
+The only PLACEHOLDER profile: values are estimates. Source the OM and verify every limit, the
+run-up band and `expected_hot_cylinder`, as done for the 912iS from OM-912 i Series Ed. 2 Rev. 2.
+(OMs are never stored in the repo.)
+
+### E2. Fuel-pressure exceedances — root cause on N117ZS
+**Type:** research
+`fuel_press_max` fires on most flights with a steady +0.9–1.6 psi offset through climb, cruise
+and descent (Spec 10 D15, cause 3a: likely sender calibration vs regulator pressure; confirm
+with a mechanic). Allowlisted and filterable with a note. A9 would separate pump cycling from
+sensor or pressure problems. Deliberately kept apart from building the tool.
+
+### E3. 912iS `rpm_idle_min` idle-established condition
+**Type:** code · **Owner:** Spec 09 D16
+The OM rewrite of `912iS.json` dropped `requires_reached_since_start` on `rpm_idle_min`; reported
+when the `volts_min` gate was restored, not yet restored itself. 914iS/915iS/916iS have it.
 
 ---
 
-### E3. GitHub repository — v0.10.0 release
-**Type:** Infrastructure
-- `.gitignore` excludes `data/logs/`, `data/reports/`, `__pycache__/`, `.venv/`
-- LICENSE file (MIT)
-- README updated with user manual
-- CHANGELOG updated
-- Version bumped to 0.10.0 in `slingology_eis/__init__.py`
-- Tag v0.10.0
+## 7. Phase detection and signal quality
+
+### S1. In-flight labels persisting through taxi-in and the engine cut
+**Type:** code · **Owner:** CLAUDE.md regression rule
+After landing, `DESCENT`/`APPROACH` can run through the taxi-in (taxi power is above the
+on-ground test's 2,000 rpm) and `LANDING_ROLL` only leaves on IAS < 5 kt, which some logs never
+show at rest, so an in-flight label can outlast the engine cut. The ENGINE ECU classifier works
+around it (engine-state rule); exceedance phase windows and airborne-time metrics inherit it.
+Likely fix: an on-ground test independent of rpm (ground speed) and a `SHUTDOWN` transition from
+any phase when rpm stops. Snapshot before and after.
+
+### S2. Touch-and-go detection
+**Type:** code
+`LANDING_ROLL` exits only to `TAXI` (IAS < 5 kt, rpm < 2,500) or `SHUTDOWN`; a touch-and-go
+satisfies neither, so every later circuit is misclassified. Stop-and-goes and go-arounds are
+handled. Needs a real pattern-work log to confirm before fixing.
+
+### S3. Mid-log power cycle
+**Type:** code · **Owner:** Spec 02 §5.11
+A log with an internal gap over 5 minutes is admitted as *corrupt log*; a mid-log POWERUP
+(the EIS restarting within one file) is not detected as such.
+
+### S4. `log_summary()` on a log with no fuel-flow channel
+**Type:** code
+`loader.log_summary()` reads `cruise["fuel_flow_gph"]` guarded on `len(cruise)` only; a real log
+reaching cruise without that column would raise `KeyError` in `build_flight_metrics()`. Every
+real log has the channel; the synthetic test fixtures work around it.
 
 ---
 
-## G — Engine Contract Refactor Follow-ups
+## 8. Housekeeping
 
-### G1. Fuel-pressure exceedances — root cause
-**Type:** Research → possible code
-Fixing the silent limit-checking bug in v0.11.0 (see CHANGELOG) surfaced real exceedances
-in the golden fixtures, mostly fuel-pressure related: some negative PSI readings (likely
-sensor/CAN-dropout artifacts) and some sustained near-max readings (possibly genuine, or a
-units/reference-frame mismatch — the 916iS config's fuel-pressure minimum note says
-"relative to MAP" while the logged channel may be absolute). Deliberately deferred until
-the tool's analysis capabilities are more complete. Investigate post-v0.11.0.
+### H1. Retire notebook/CLI duplication
+**Type:** code
+`notebooks/03`'s `write_baselines()` and `04`'s report loop duplicate what `operations.py` +
+`cli.py` do (not byte-identical), kept as the characterization tests' independent oracle. Once
+the web UI has a release behind it: delete 01/02/04 or shrink 03/04 to plotting wrappers, and
+rework the characterization tests that run them live.
 
-See also A7 (fuel pump state inference model) — a pump-state signal, even an
-approximate one, would help separate "pump test / pump cycling, expected" readings
-from genuine sensor or pressure problems in this investigation.
+### H2. Research paper — Edition 0.4
+**Type:** docs (on explicit instruction only)
+Edition 0.3 predates the branch. Known corrections: §7's "four in-flight ENGINE ECU events" is
+superseded by the phase-based classifier's zero; the topic register (removed/Research topics,
+flight facts); the web UI, workspaces, filters, Trends change page and Journal; 53 flights.
 
----
-
-### G2. Retire notebook/CLI orchestration duplication
-**Type:** Code
-`notebooks/03`'s `write_baselines()` and `notebooks/04`'s report loop still duplicate
-orchestration/rendering logic that `operations.py` + `cli.py` now do independently (not
-byte-identical). Kept through v0.11.0 as the characterization tests' independent oracle.
-Once the CLI has a track record post-release: either delete notebooks 01/02/04 (redundant
-with `flight`/`ecu`/`report` subcommands) or shrink 03/04 to thin plotting wrappers around
-the library, and retire or rework the characterization tests that currently run them live.
+### H3. Community announcement
+**Type:** docs
+The Discord post draft in the project space, updated for 1.0.0 and the install steps in the
+README.
 
 ---
 
-### ~~E3'. GitHub repository — v0.11.0 release~~ — this pass
-**Type:** Infrastructure
-- README rewritten: `pyproject.toml`-based install, CLI command reference, updated
-  directory structure, legacy-notebooks section
-- CHANGELOG updated with the full Stage 0–4a refactor entry
-- Version bumped to 0.11.0 in `slingology_eis/__init__.py` and `pyproject.toml`
-- `requirements.txt` removed in favor of `pyproject.toml`
-- `.gitignore` updated (`*.egg-info/`)
-- Tag v0.11.0 (after commit/push)
+## Descoped, intentionally
 
----
-
-## F — Future / Long Horizon
-
-### F1. Maintenance-interval tracking (100-hr / annual cycle)
-**Type:** Future capability
-Tying findings to actual maintenance inspection intervals.
-Requires much longer baseline than currently available. Deferred deliberately.
-
-### F2. SlingologyEIS web app
-**Type:** Future product milestone
-Free, offline-first PWA for any Sling / Rotax iS pilot.
-Analytics toolkit must be validated first.
-Script 04 per-flight report logic becomes the per-flight report page.
+- **Fuel-flow calibration against pump receipts** — full-to-full refuelling already gives true
+  consumption (CHANGELOG 0.6.0, paper §6.2).
+- **Community data aggregation** — out of scope; sharing (U4) is between pilots, not a pool.
+- **Maintenance-interval tracking (100-hr / annual)** — those metrics are engine-health
+  observables; interval bookkeeping isn't this tool's job.
+- **Ground-only sessions** — excluded at admission (Spec 02 §5.11), never post-hoc.
+- **In-app subsets or filters of the log set** — users organise subsets in their own folders;
+  an experiment is a workspace over a chosen folder.

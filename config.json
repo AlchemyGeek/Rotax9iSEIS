@@ -1,14 +1,13 @@
 {
   "_notes": [
     "SlingologyEIS toolkit configuration.",
-    "Set 'engine' to match your aircraft's engine.",
-    "Available engines: 912iS, 915iS, 916iS",
-    "The engine config files live in the engines/ directory.",
+    "Set 'engine' to the default engine profile for the CLI (the web UI fixes the engine per workspace instead).",
+    "Available engines: 912iS, 915iS, 916iS. Profiles live in engines/.",
     "912iS, 915iS and 916iS are sourced from their official Operators Manuals.",
-    "min_flight_duration_min: minutes of airborne time below which a flight",
-    "is auto-excluded from baselines as a 'short flight' (pattern work,",
-    "touch-and-goes). Set to 0 to disable. Does not affect the separate",
-    "ground-session rule, which runs regardless."
+    "min_flight_duration_min: minutes of airborne time below which a log is",
+    "not admitted as a flight ('short flight' - pattern work, touch-and-goes).",
+    "Set to 0 to disable. Does not affect the separate ground-session rule,",
+    "which runs regardless."
   ],
   "engine": "916iS",
   "min_flight_duration_min": 10
