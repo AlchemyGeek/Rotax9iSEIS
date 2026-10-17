@@ -16,47 +16,90 @@ def test_z_score_basic():
 
 
 def test_baseline_triggered_above_threshold():
-    triggered, text = topics.baseline_triggered(20, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(20, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert triggered
     assert "above" in text and "⚠" in text
+    # No "comparison" on b -> synthesized as an all-flights comparison (R8).
+    assert comparison == {"scope": "all", "band": None, "n": 0, "z": 2.0}
+    assert "all your flights, n=0" in text
 
 
 def test_baseline_triggered_below_threshold_direction():
-    triggered, text = topics.baseline_triggered(0, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(0, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert triggered
     assert "below" in text and "↓" in text
+    assert comparison["scope"] == "all"
 
 
 def test_baseline_triggered_not_triggered():
-    triggered, text = topics.baseline_triggered(11, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
+    triggered, text, comparison = topics.baseline_triggered(11, {"mean": 10, "std": 5}, {"z_score_threshold": 2.0})
     assert not triggered
     assert text == ""
+    assert comparison == {"scope": "all", "band": None, "n": 0, "z": 0.2}
 
 
 def test_baseline_triggered_missing_data():
-    triggered, text = topics.baseline_triggered(None, {"mean": 10, "std": 5}, {})
+    triggered, text, comparison = topics.baseline_triggered(None, {"mean": 10, "std": 5}, {})
     assert not triggered
-    triggered, text = topics.baseline_triggered(20, {"mean": None}, {})
+    triggered, text, comparison = topics.baseline_triggered(20, {"mean": None}, {})
     assert not triggered
+
+
+def test_baseline_triggered_uses_band_comparison_when_present():
+    # R8 (Spec 01 §8.4 v0.13): a stratified metric's b dict carries its
+    # own comparison (set by operations.py's _topic_baseline); the text
+    # names the band and its n, not "all your flights".
+    b = {"mean": 10, "std": 5, "comparison": {"scope": "band", "band": "warm", "n": 14}}
+    triggered, text, comparison = topics.baseline_triggered(20, b, {"z_score_threshold": 2.0})
+    assert triggered
+    assert comparison == {"scope": "band", "band": "warm", "n": 14, "z": 2.0}
+    assert "your other warm flights, n=14" in text
+    assert "all your flights" not in text
+
+
+def test_baseline_triggered_falls_back_to_all_comparison_text():
+    # Explicit "all" comparison (band too small this call) reads the same
+    # as no comparison at all -> unstratified wording.
+    b = {"mean": 10, "std": 5, "comparison": {"scope": "all", "band": None, "n": 23}}
+    triggered, text, comparison = topics.baseline_triggered(20, b, {"z_score_threshold": 2.0})
+    assert triggered
+    assert "all your flights, n=23" in text
 
 
 def test_trend_triggered_matches_direction():
     b = {"trend": {"direction": "increasing", "r_squared": 0.8, "n": 15, "slope": 0.5}}
-    triggered, text = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
+    triggered, text, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
     assert triggered
     assert "increasing" in text
+    assert detail == {"r_squared": 0.8, "n": 15, "direction": "increasing", "slope": 0.5}
 
 
 def test_trend_triggered_wrong_direction():
     b = {"trend": {"direction": "decreasing", "r_squared": 0.8, "n": 15, "slope": -0.5}}
-    triggered, _ = topics.trend_triggered(b, {"direction": "increasing"})
+    triggered, _, detail = topics.trend_triggered(b, {"direction": "increasing"})
     assert not triggered
+    # Spec 14 §7.3 — detail still reflects the real fit even though this
+    # particular trigger (direction mismatch) didn't fire from it.
+    assert detail == {"r_squared": 0.8, "n": 15, "direction": "decreasing", "slope": -0.5}
 
 
 def test_trend_triggered_below_r2_or_n():
-    b = {"trend": {"direction": "increasing", "r_squared": 0.1, "n": 15}}
-    triggered, _ = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5})
+    b = {"trend": {"direction": "increasing", "r_squared": 0.1, "n": 15, "slope": 0.2}}
+    triggered, _, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5})
     assert not triggered
+    assert detail == {"r_squared": 0.1, "n": 15, "direction": "increasing", "slope": 0.2}
+
+
+def test_trend_triggered_insufficient_data_contract_spelling():
+    # operations.py's Stage 3 contract path emits direction="insufficient_data"
+    # (underscore) with r_squared/n as None — a real, previously-unguarded
+    # crash (TypeError comparing None < float) whenever a fleet is too small
+    # for a fit, e.g. a fresh 2-flight local-server workspace.
+    b = {"trend": {"direction": "insufficient_data", "r_squared": None, "n": None, "slope": None}}
+    triggered, text, detail = topics.trend_triggered(b, {"direction": "increasing", "r2_min": 0.5, "n_min": 10})
+    assert not triggered
+    assert text == ""
+    assert detail is None
 
 
 def test_confidence_note_thresholds():
@@ -119,20 +162,29 @@ def test_cylinder_rank_no_data():
     assert "Insufficient" in result["analysis"]
 
 
-def test_overboost_exceeded():
-    result = topics.overboost(320, 320, 300, True)
-    assert result["insights"][0]["trigger"] == "threshold"
-    assert "Exceeded" in result["insights"][0]["text"]
+def test_overboost_past_the_limit_is_not_this_topics_job():
+    # Spec 09 v0.12 §10.3: a block past the limit is an ordinary
+    # limit_exceedances event now — this topic no longer reports it.
+    result = topics.overboost(320, 320, 300)
+    assert result["insights"] == []
 
 
 def test_overboost_close_call():
-    result = topics.overboost(250, 250, 300, False)
+    result = topics.overboost(250, 250, 300)
     assert "Close call" in result["insights"][0]["text"]
 
 
 def test_overboost_comfortable():
-    result = topics.overboost(100, 100, 300, False)
+    result = topics.overboost(100, 100, 300)
     assert result["insights"] == []
+
+
+def test_overboost_close_call_respects_explicit_threshold():
+    # close_call_s shifts with a filter band (operations.py resolves it);
+    # the topic itself just compares against whatever it's given.
+    assert topics.overboost(259, 259, 300, close_call_s=260)["insights"] == []
+    result = topics.overboost(260, 260, 300, close_call_s=260)
+    assert "Close call" in result["insights"][0]["text"]
 
 
 def test_takeoff_map_no_data():
@@ -141,28 +193,82 @@ def test_takeoff_map_no_data():
 
 
 def test_takeoff_map_still_collecting():
-    result = topics.takeoff_map(45.0, 1000, 20, {"n": 3, "confidence": "LOW"})
+    result = topics.takeoff_map(45.0, 1000, 20, {"n": 3})
     assert "Still collecting" in result["analysis"]
 
 
+def _loo_model(**overrides):
+    model = {"n": 10, "r_squared": 0.8, "residual_se": 1.0,
+             "coefficients": {"intercept": 40, "pressure_alt_ft": 0.0, "oat_c": 0.0},
+             "pa_range": (0, 5000), "oat_range": (-10, 40)}
+    model.update(overrides)
+    return model
+
+
 def test_takeoff_map_deviation_fires_insight():
-    model = {"n": 10, "confidence": "GOOD", "r_squared": 0.8,
-             "coefficients": {"intercept": 40, "pressure_alt_ft": 0.0, "oat_c": 0.0}}
-    result = topics.takeoff_map(45.0, 1000, 20, model)
-    # expected == 40, observed == 45 -> delta 5, above threshold
+    # expected == 40, observed == 45 -> delta 5, residual_se 1.0, z default
+    # 2.0 -> fires (5 >= 2.0)
+    result = topics.takeoff_map(45.0, 1000, 20, _loo_model())
     assert result["insights"]
-    assert "above" in result["insights"][0]["text"]
+    text = result["insights"][0]["text"]
+    assert "above" in text
+    # residual and tolerance (z * residual_se) shown at two decimals
+    assert "5.00 inHg above model" in text
+    assert "within ±2.00 inHg" in text
+    assert "verify sensor." in text
 
 
-def test_oil_temp_peak_fires_insight_once():
-    # notebooks/04_flight_report.py had this loop duplicated before Stage 2
-    # (every triggered insight for this topic printed twice) — fixed as
-    # part of the extraction, verified against no golden report ever
-    # exercising this path (none of the 6 golden flights exceed 248°F).
+def test_takeoff_map_deviation_below_names_turbo_underperformance():
+    # expected == 40, observed == 35 -> delta -5, fires below
+    result = topics.takeoff_map(35.0, 1000, 20, _loo_model())
+    text = result["insights"][0]["text"]
+    assert "5.00 inHg below model" in text
+    assert "within ±2.00 inHg" in text
+    assert "possible turbo underperformance, monitor trend." in text
+
+
+def test_takeoff_map_just_under_z_times_se_does_not_fire():
+    # delta 1.9, z*se == 2.0 -> below threshold
+    result = topics.takeoff_map(41.9, 1000, 20, _loo_model())
+    assert result["insights"] == []
+    assert "Model expected" in result["analysis"]
+
+
+def test_takeoff_map_just_over_z_times_se_fires():
+    # delta 2.1, z*se == 2.0 -> above threshold
+    result = topics.takeoff_map(42.1, 1000, 20, _loo_model())
+    assert result["insights"]
+
+
+def test_takeoff_map_outside_fitted_range_gives_no_insight():
+    # pa 1000 is within [0, 5000], oat 50 is outside [-10, 40]
+    result = topics.takeoff_map(45.0, 1000, 50, _loo_model())
+    assert result["insights"] == []
+    # Spec 10 D5 / Spec 03 §5.2: the "not compared" line names both why
+    # (outside the range the model has seen) and the consequence
+    # (wasn't compared) — not just one or the other.
+    assert ("This takeoff was outside the range of elevations or temperatures "
+            "your personal model has seen (n=10), so it wasn't compared.") in result["analysis"]
+
+
+def test_takeoff_map_within_fitted_range_is_compared_normally():
+    result = topics.takeoff_map(40.0, 1000, 20, _loo_model())
+    assert "wasn't compared" not in result["analysis"]
+    assert "Model expected" in result["analysis"]
+
+
+def test_oil_temp_peak_names_the_exceedance_but_raises_no_insight_of_its_own():
+    # Spec 10 §4.1 (Spec 09 §10.2, v0.13): the topic never emits its own
+    # threshold insight any more — TopicResult.limit_refs carries the
+    # reference (built in operations.py), this only names it in the
+    # analysis line when the flight has an unsuppressed event.
     b = {"mean": 200, "std": 10, "n": 20}
-    rule = {"type": "threshold", "limit": 248}
-    result = topics.oil_temp_peak(260, b, [rule])
-    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
+    om_limit = {"limit_value": 248}
+    result = topics.oil_temp_peak(260, b, [], om_limit=om_limit, limit_events=[{"start_utc": "x"}])
+    assert result["insights"] == []
+    assert "Exceeded OM limit of 248°F" in result["analysis"]
+    no_event_result = topics.oil_temp_peak(260, b, [], om_limit=om_limit, limit_events=[])
+    assert "Exceeded OM limit" not in no_event_result["analysis"]
 
 
 def test_oil_temp_peak_no_data():
@@ -171,35 +277,12 @@ def test_oil_temp_peak_no_data():
     assert result["insights"] == []
 
 
-def test_coolant_temp_peak_no_duplication():
-    # Unlike oil_temp_peak, this topic doesn't have the duplicate-loop bug.
+def test_coolant_temp_peak_names_the_exceedance_but_raises_no_insight_of_its_own():
     b = {"mean": 200, "std": 10, "n": 20}
-    rule = {"type": "threshold", "limit": 248}
-    result = topics.coolant_temp_peak(260, b, [rule])
-    assert result["insights"] == [{"trigger": "threshold", "text": "⚠ Exceeded OM limit of 248°F."}]
-
-
-def test_cruise_fuel_flow_high_da_appends_note():
-    b = {"mean": 6.0, "std": 0.5, "n": 20}
-    rule = {"type": "baseline_deviation", "z_score_threshold": 1.0}
-    result = topics.cruise_fuel_flow(
-        8.0, b, [rule], this_da=12000, fleet_da_avg=5000, fleet_da_std=1000,
-    )
-    assert "cruise DA was" in result["insights"][0]["text"]
-
-
-def test_cruise_fuel_flow_low_da_no_note():
-    b = {"mean": 6.0, "std": 0.5, "n": 20}
-    rule = {"type": "baseline_deviation", "z_score_threshold": 1.0}
-    result = topics.cruise_fuel_flow(
-        8.0, b, [rule], this_da=5000, fleet_da_avg=5000, fleet_da_std=1000,
-    )
-    assert "cruise DA was" not in result["insights"][0]["text"]
-
-
-def test_cruise_fuel_flow_still_building():
-    result = topics.cruise_fuel_flow(8.0, {"mean": None}, [])
-    assert "Still building" in result["analysis"]
+    om_limit = {"limit_value": 248}
+    result = topics.coolant_temp_peak(260, b, [], om_limit=om_limit, limit_events=[{"start_utc": "x"}])
+    assert result["insights"] == []
+    assert "Exceeded OM limit of 248°F" in result["analysis"]
 
 
 def test_limit_exceedances_none():
@@ -213,24 +296,36 @@ def test_limit_exceedances_present():
     assert result["insights"] == [{"trigger": "threshold", "text": "⚠ RPM above 5800 for 10s"}]
 
 
-def test_engine_ecu_inflight_no_events():
+def test_engine_ecu_inflight_lane_check_both_reads_with_tick():
+    """Spec 01 v0.22: displayed as both lanes ✓ / one lane only / not detected."""
+    result = topics.engine_ecu_inflight(
+        [{"classification": "LANE_CHECK"}, {"classification": "LANE_CHECK"}], lane_check="both")
+    assert result["analysis"].endswith("Lane check: both lanes ✓.")
+
+
+def test_engine_ecu_inflight_counts_by_class_blips_and_lane_check():
+    """Spec 01 §8.5 (v0.21): a referencing topic — an analysis line with the
+    class counts, blips and the lane-check summary; no events, no insight."""
     result = topics.engine_ecu_inflight([
-        {"classification": "POWERUP"}, {"classification": "LANE_CHECK"},
-    ])
-    assert result["events"] == []
-    assert "No IN-FLIGHT" in result["analysis"]
+        {"classification": "GROUND_START"}, {"classification": "GROUND_START"},
+        {"classification": "LANE_CHECK"}, {"classification": "GROUND"},
+        {"classification": "GROUND_SHUTDOWN"},
+    ], sub_threshold_blips=1, lane_check="single")
+    assert result == {"analysis": (
+        "ENGINE ECU: 2 at start · 1 in the lane check · 1 on the ground with the engine running · "
+        "1 at shutdown · 1 brief blip not counted. Lane check: one lane only."
+    )}
 
 
-def test_engine_ecu_inflight_delegates_to_cas_analysis():
-    import pandas as pd
-    runs = [{
-        "classification": "IN_FLIGHT",
-        "source_file": "x.csv",
-        "start_time": pd.Timestamp("2026-01-01 12:00:00"),
-        "duration_s": 1,
-        "oil_nan_frac": 0.0,
-        "co_alerts": ["OIL PRESS"],
-    }]
-    result = topics.engine_ecu_inflight(runs)
-    assert "1 IN-FLIGHT" in result["analysis"]
-    assert result["events"][0]["direct_correlation_alerts"] == ["OIL PRESS"]
+def test_engine_ecu_inflight_no_runs():
+    assert topics.engine_ecu_inflight([]) == {
+        "analysis": "No ENGINE ECU alerts this flight. Lane check: not detected."
+    }
+
+
+def test_cas_event_phrase_names_class_and_reason():
+    e = {"cas_id": "ENGINE ECU", "classification": "GROUND", "phase": "TAXI", "duration_s": 7,
+         "context": {"rpm": 2550.0}, "not_lane_check_reason": "rpm_below_band", "phase_uncertain": False}
+    assert topics.cas_event_phrase(e) == "ENGINE ECU during TAXI, 7 s, 2,550 rpm — below the lane-check band"
+    flight = {**e, "classification": "IN_FLIGHT", "phase": "CRUISE", "not_lane_check_reason": None}
+    assert topics.cas_event_phrase(flight) == "ENGINE ECU in flight (CRUISE), 7 s, 2,550 rpm"

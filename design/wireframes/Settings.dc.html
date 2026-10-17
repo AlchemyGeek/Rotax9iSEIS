@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings & Workspace</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body{margin:0;background:#0F1214;font-family:'IBM Plex Sans',system-ui,sans-serif;color:#E8EAED}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+  a{color:#4FC3B0;text-decoration:none}
+  a:hover{color:#6DD4C3}
+  button{font-family:inherit}
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 10px;font-size:12px;}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2A3136;border-radius:4px}
+</style>
+</helmet>
+
+<div style="width:1440px;height:1240px;box-sizing:border-box;display:flex;flex-direction:column;background:#0F1214;overflow:hidden;">
+
+  <!-- Top nav -->
+  <div style="height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid #2A3136;">
+    <div style="display:flex;align-items:center;gap:28px;">
+      <span style="font-weight:700;font-size:15px;letter-spacing:0.2px;">SlingologyEIS</span>
+      <nav style="display:flex;gap:4px;">
+        <a href="FlightView.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Flights</a>
+        <a href="Trends.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Trends</a>
+        <a href="Baselines.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Baselines</a>
+        <a href="ECU.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">ECU</a>
+        <a href="Annotations.dc.html" style="padding:6px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#9AA4AC;">Notes</a>
+      </nav>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <a href="Import.dc.html" style="display:flex;align-items:center;gap:7px;padding:7px 16px;border-radius:8px;border:1px solid #4FC3B0;color:#4FC3B0;font-size:13px;font-weight:600;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
+        Import logs
+      </a>
+      <span style="width:32px;height:32px;border-radius:8px;background:rgba(79,195,176,0.15);color:#4FC3B0;display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </span>
+    </div>
+  </div>
+
+  <div style="flex-grow:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:20px;">
+
+    <h1 style="margin:0;font-size:19px;font-weight:700;">Settings & Workspace</h1>
+
+    <!-- Workspace switcher -->
+    <div style="background:#171B1E;border-radius:12px;padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Workspaces</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(79,195,176,0.08);border:1px solid #4FC3B0;border-radius:8px;padding:11px 14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:7px;height:7px;border-radius:50%;background:#4FC3B0;"></div>
+            <div>
+              <div style="font-size:13px;font-weight:600;">N117ZS — Sling TSi</div>
+              <div class="mono" style="font-size:10px;color:#5B6570;">23 flights · 2 log folders · active</div>
+            </div>
+          </div>
+          <span style="font-size:10px;font-weight:700;letter-spacing:0.4px;color:#4FC3B0;background:rgba(79,195,176,0.15);padding:3px 8px;border-radius:10px;">ACTIVE</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:#20252A;border:1px solid #2A3136;border-radius:8px;padding:11px 14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:7px;height:7px;border-radius:50%;background:#5B6570;"></div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#E8EAED;">Short-field practice (experiment)</div>
+              <div class="mono" style="font-size:10px;color:#5B6570;">6 flights · references a subset of the same logs</div>
+            </div>
+          </div>
+          <button style="padding:5px 12px;border-radius:6px;background:transparent;border:1px solid #2A3136;color:#9AA4AC;font-size:11px;cursor:pointer;">Switch to</button>
+        </div>
+      </div>
+      <button style="padding:8px 16px;border-radius:8px;background:transparent;border:1px dashed #2A3136;color:#9AA4AC;font-size:12px;cursor:pointer;">+ New workspace</button>
+      <div style="font-size:11px;color:#5B6570;margin-top:10px;">A workspace never copies your logs — it only references the folders you point it at. An experiment workspace is a different reference to a subset of your own logs, organized in your own file system, not a separate copy.</div>
+    </div>
+
+    <!-- Log folders + browser -->
+    <div style="background:#171B1E;border-radius:12px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:13px;font-weight:600;">Log folders — N117ZS — Sling TSi</span>
+        <div style="display:flex;gap:8px;">
+          <button style="padding:6px 12px;border-radius:6px;background:transparent;border:1px solid #2A3136;color:#9AA4AC;font-size:11px;cursor:pointer;">+ Add folder</button>
+          <button style="display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;background:#20252A;border:1px solid #2A3136;color:#E8EAED;font-size:11px;cursor:pointer;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Rescan
+          </button>
+        </div>
+      </div>
+      <div class="mono" style="font-size:10px;color:#5B6570;margin-bottom:14px;">last scanned 6 minutes ago</div>
+
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <span class="mono" style="font-size:11px;color:#9AA4AC;background:#20252A;padding:5px 10px;border-radius:6px;">~/SlingologyEIS/logs/N117ZS/</span>
+        <span class="mono" style="font-size:11px;color:#9AA4AC;background:#20252A;padding:5px 10px;border-radius:6px;">~/Desktop/2026 flights/ (+subfolders)</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;background:rgba(245,165,36,0.08);border:1px solid rgba(245,165,36,0.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;">
+        <div style="width:6px;height:6px;border-radius:50%;background:#F5A524;flex-shrink:0;"></div>
+        <span style="font-size:12px;color:#E8EAED;">1 log referenced by this workspace wasn't found on the last scan — it may have been moved or renamed.</span>
+      </div>
+
+      <table>
+        <thead>
+          <tr style="border-bottom:1px solid #2A3136;">
+            <th style="color:#5B6570;font-weight:500;">Log file</th>
+            <th style="color:#5B6570;font-weight:500;">Status</th>
+            <th style="color:#5B6570;font-weight:500;">Feeds flight</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #1F2427;">
+            <td class="mono">log_20260423_200615_KACV.csv</td>
+            <td><span style="display:flex;align-items:center;gap:5px;color:#3DDC97;font-weight:600;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>OK</span></td>
+            <td class="mono">Apr 23, 2026</td>
+            <td><a href="FlightView.dc.html" style="font-size:12px;">View →</a></td>
+          </tr>
+          <tr style="border-bottom:1px solid #1F2427;">
+            <td class="mono">log_20260608_180031_KAWO.csv</td>
+            <td><span style="display:flex;align-items:center;gap:5px;color:#3DDC97;font-weight:600;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>OK</span></td>
+            <td class="mono">Jun 8, 2026</td>
+            <td><a href="#" style="font-size:12px;">View →</a></td>
+          </tr>
+          <tr style="border-bottom:1px solid #1F2427;">
+            <td class="mono">log_20260613_193731_KAWO.csv</td>
+            <td><span style="display:flex;align-items:center;gap:5px;color:#3DDC97;font-weight:600;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>OK</span></td>
+            <td class="mono">Jun 13, 2026</td>
+            <td><a href="#" style="font-size:12px;">View →</a></td>
+          </tr>
+          <tr style="border-bottom:1px solid #1F2427;background:rgba(245,165,36,0.05);">
+            <td class="mono">log_20260521_104412_KPAE.csv</td>
+            <td><span style="display:flex;align-items:center;gap:5px;color:#F5A524;font-weight:600;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#F5A524" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>Missing</span></td>
+            <td class="mono">May 21, 2026</td>
+            <td><a href="#" style="font-size:12px;">Locate…</a></td>
+          </tr>
+          <tr>
+            <td class="mono" style="color:#5B6570;">+ 19 more logs, all OK</td>
+            <td></td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bundle export/import -->
+    <div style="background:#171B1E;border-radius:12px;padding:18px 20px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Export & import</div>
+      <div style="display:flex;gap:24px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;color:#9AA4AC;margin-bottom:8px;">Export this workspace as a portable bundle — for backup, or to open on another device.</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select style="background:#0F1214;border:1px solid #2A3136;border-radius:6px;padding:6px 10px;color:#9AA4AC;font-size:12px;">
+              <option>Full workspace</option>
+              <option>Single flight</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#9AA4AC;"><input type="checkbox"/> Anonymize</label>
+            <button style="padding:6px 14px;border-radius:6px;background:#4FC3B0;border:none;color:#0F1214;font-size:12px;font-weight:600;cursor:pointer;">Export</button>
+          </div>
+        </div>
+        <div style="width:1px;background:#2A3136;"></div>
+        <div style="flex:1;">
+          <div style="font-size:12px;color:#9AA4AC;margin-bottom:8px;">Import a bundle — opens as a preview first; nothing merges until you confirm.</div>
+          <button style="padding:6px 14px;border-radius:6px;background:transparent;border:1px solid #2A3136;color:#E8EAED;font-size:12px;cursor:pointer;">Choose bundle file…</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Engine profile, units, storage -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div style="background:#171B1E;border-radius:12px;padding:16px 18px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Engine profile</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;">
+          <span style="color:#9AA4AC;">Active profile</span>
+          <span class="mono" style="color:#E8EAED;">916iS <span style="color:#3DDC97;">(verified)</span></span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:8px;">
+          <span style="color:#9AA4AC;">Overrides</span>
+          <a href="Baselines.dc.html" style="font-size:12px;">None active — edit in Baselines →</a>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-top:8px;">
+          <span style="color:#9AA4AC;">Units</span>
+          <span class="mono" style="color:#E8EAED;">Imperial</span>
+        </div>
+      </div>
+      <div style="background:#171B1E;border-radius:12px;padding:16px 18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;">Storage</span>
+          <span class="mono" style="font-size:10px;color:#5B6570;">local server — no browser quota</span>
+        </div>
+        <div style="font-size:12px;color:#9AA4AC;line-height:1.5;">Workspace data lives on this machine. Logs are never copied — only the folders above are referenced. Export a backup bundle periodically if this machine's disk isn't otherwise backed up.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

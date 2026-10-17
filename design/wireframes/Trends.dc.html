@@ -47,24 +47,48 @@
   <div style="flex-grow:1;display:flex;min-height:0;">
 
     <!-- Metric list -->
+    <!-- Metric list. Groups match Spec 01 §8.2 exactly. Phase-derived metrics    -->
+    <!-- (climb/cruise minutes) are left out while the phase-detection defect     -->
+    <!-- makes most flights' values meaningless. Takeoff MAP lives in its own     -->
+    <!-- Model view (Spec 03 §5.3), not duplicated here. Only EGT Spread has a    -->
+    <!-- real chart in this prototype — everything else is tagged "soon" rather   -->
+    <!-- than left looking finished when it isn't.                                -->
     <div style="width:280px;flex-shrink:0;border-right:1px solid #2A3136;overflow-y:auto;padding:18px 14px;">
 
       <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">EGT</div>
       <div style="padding:9px 12px;border-radius:8px;background:rgba(79,195,176,0.15);color:#4FC3B0;font-size:13px;font-weight:600;margin-bottom:2px;">EGT Spread (mean)</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">EGT4 Elevation</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">Cylinder Rank</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">
+        <span>EGT4 Elevation</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#5B6570;font-size:13px;margin-bottom:14px;opacity:0.7;">
+        <span>Cylinder Heat Rank</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">not a trend¹</span></div>
 
       <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">FUEL</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">Cruise Efficiency</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">Cruise Fuel Flow</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">
+        <span>Cruise Efficiency</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">
+        <span>Cruise Fuel Flow</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
 
       <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">THERMAL</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">Oil Temp Peak</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">Coolant Temp Peak</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">Oil/Coolant Ratio</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">
+        <span>Oil Temp Peak</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">
+        <span>Coolant Temp Peak</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">
+        <span>Oil/Coolant Ratio</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
 
       <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">BOOST</div>
-      <div style="padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;">Overboost Time</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:14px;">
+        <span>Overboost Time</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#5B6570;padding:0 8px 8px;">EVENTS</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;margin-bottom:2px;">
+        <span>ECU Alert Count</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;color:#9AA4AC;font-size:13px;">
+        <span>CAS Anomaly Count</span><span style="font-size:9px;color:#5B6570;background:#20252A;padding:2px 6px;border-radius:8px;">soon</span></div>
+
+      <div style="margin-top:18px;padding:10px 12px;border-top:1px solid #2A3136;">
+        <div style="font-size:10px;color:#5B6570;line-height:1.5;">¹ Cylinder heat rank is stable/unstable, not a number — it isn't plotted here. It shows in each flight's own Analysis panel instead.</div>
+      </div>
     </div>
 
     <!-- Main -->

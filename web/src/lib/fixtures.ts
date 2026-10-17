@@ -1,0 +1,141 @@
+import flightAnalysisRaw from "../fixtures/flight-kacv-analysis.json";
+import insightSetRaw from "../fixtures/flight-kacv-insights.json";
+import fleetAnalysisRaw from "../fixtures/fleet-analysis.json";
+import ruleOverboostRaw from "../fixtures/rule-overboost.json";
+import seriesRaw from "../fixtures/flight-kacv-series.json";
+import sourceFilenames from "../fixtures/source-filenames.json";
+import annotationStoreRaw from "../fixtures/annotations.json";
+import appSettingsRaw from "../fixtures/app-settings.json";
+import workspaceSettingsRaw from "../fixtures/workspace-settings.json";
+import workspaceRegistryRaw from "../fixtures/workspace-registry.json";
+import workspaceManifestRaw from "../fixtures/workspace-manifest.json";
+import flightsTableRaw from "../fixtures/flights-table.json";
+import insightRulesRaw from "../fixtures/insight-rules.json";
+import topicHelpRaw from "../fixtures/topic-help.json";
+import topicHelp912isRaw from "../fixtures/topic-help-912is.json";
+import aircraftSummaryRaw from "../fixtures/aircraft-summary.json";
+import trendsPanelsRaw from "../fixtures/trends-panels.json";
+import type {
+  AircraftSummary,
+  AnnotationStore,
+  AppSettings,
+  EngineLimitsResult,
+  FleetAnalysis,
+  FlightAnalysis,
+  FlightsTableFixture,
+  InsightSet,
+  RuleOverboostFixture,
+  RuleSet,
+  SeriesFixture,
+  TopicHelpResult,
+  TrendsPanel,
+  WorkspaceManifest,
+  WorkspaceRegistry,
+  WorkspaceSettings,
+} from "../types/contract";
+
+// One real flight (log_20260423_200615_KACV.csv) and one real 37-flight
+// fleet, generated from the actual engine via `slingology-eis ... --json`
+// (Spec 05 §5) — not hand-authored. See CHANGELOG / BACKLOG G-series for
+// the two contract gaps these fixtures work around (evidence backfill,
+// no literal source filename).
+//
+// Exception (Spec 08 §11): the cylinder-balance data (egt1..4_deviation,
+// cylinder_balance, and the egt_cyl_deviation topic) was added without
+// the private logs. Cyl 4 is the real egt4_deviation per flight; the
+// split across cyls 1–3 is synthetic. Everything derived from it was
+// computed by the engine.
+export const flightAnalysis = flightAnalysisRaw as FlightAnalysis;
+export const insightSet = insightSetRaw as InsightSet;
+export const fleetAnalysis = fleetAnalysisRaw as FleetAnalysis;
+
+// Spec 14 §5 Engine tab — derived from the same real flight's limit
+// catalog rather than a dedicated fixture file, so there's one source
+// of truth for sample-mode limit data. (This flight predates the
+// phase-aware-suppression fields added for the Engine tab, so those
+// show as absent in sample mode — the live server has them.)
+export const engineLimits: EngineLimitsResult = {
+  engine: {
+    id: flightAnalysis.provenance.engine_profile.id,
+    engine: `Rotax ${flightAnalysis.provenance.engine_profile.id}`,
+    variant: null,
+    om_reference: null,
+    source_status: flightAnalysis.provenance.engine_profile.source_status,
+  },
+  limits: flightAnalysis.limits ?? [],
+  // Mirrors slingology_eis/fleet.py's DA_BANDS/OAT_BANDS (research paper
+  // §9) — sample-mode only; the live RPC is the source of truth.
+  band_edges: {
+    da_band: [
+      { min: -2000, max: 2000, name: "low" },
+      { min: 2000, max: 5000, name: "moderate" },
+      { min: 5000, max: 9000, name: "high" },
+      { min: 9000, max: 20000, name: "very_high" },
+    ],
+    oat_band: [
+      { min: -40, max: 5, name: "cold" },
+      { min: 5, max: 20, name: "mild" },
+      { min: 20, max: 30, name: "warm" },
+      { min: 30, max: 55, name: "hot" },
+    ],
+  },
+};
+// Spec 12 (Session B): build_trends_panels' output for the same fleet,
+// real-engine-generated like fleetAnalysis above — not hand-authored.
+export const trendsPanels = (trendsPanelsRaw as { panels: TrendsPanel[] }).panels;
+export const ruleOverboost = ruleOverboostRaw as RuleOverboostFixture;
+// The real shipped insight_rules.json, mirrored here (Spec 03 §5.5's
+// "reset to shipped defaults" comparison baseline in fixture mode too —
+// no live workspace to diverge from, so resolved === shipped).
+export const insightRules = insightRulesRaw as RuleSet;
+export const kacvSeries = seriesRaw as SeriesFixture;
+
+// Spec 02/03 round: flights-table generated from the real
+// engine against the actual logs in data/logs/ (same "not hand-authored"
+// discipline as the fixtures above); annotations/settings/workspace
+// fixtures are hand-authored (no live source for those yet) but shaped
+// exactly to the current spec's documents, not the earlier drafts the
+// wireframes were built against.
+export const annotationStore = annotationStoreRaw as AnnotationStore;
+export const appSettings = appSettingsRaw as AppSettings;
+export const workspaceSettings = workspaceSettingsRaw as WorkspaceSettings;
+export const workspaceRegistry = workspaceRegistryRaw as WorkspaceRegistry;
+export const workspaceManifest = workspaceManifestRaw as WorkspaceManifest;
+export const flightsTable = flightsTableRaw as FlightsTableFixture;
+
+// Spec 01 §8.8 topic help, generated from the real engine (get_topic_help)
+// against the shipped insight_rules.json — 916iS (the usual fixture
+// engine) and 912iS (non-turbo, so map_at_takeoff.applies is false, and
+// nothing is Admitted so every topic.validated is false).
+export const topicHelp = topicHelpRaw as unknown as TopicHelpResult;
+export const topicHelp912iS = topicHelp912isRaw as unknown as TopicHelpResult;
+export const aircraftSummary = aircraftSummaryRaw as AircraftSummary;
+
+// FlightAnalysis.source_keys is a content hash, not a filename (Spec 05 §9
+// contract-fit finding) — this fixture-only lookup fills the gap for
+// display until Spec 01 carries the real filename. Falls back to the hash.
+const SOURCE_FILENAMES: Record<string, string> = sourceFilenames;
+export function sourceFilename(sourceKey: string): string {
+  return SOURCE_FILENAMES[sourceKey] ?? sourceKey;
+}
+
+export interface FixtureFlight {
+  analysis: FlightAnalysis;
+  insightSet: InsightSet;
+  series: SeriesFixture | null; // null renders Flight view's existing "no timeline available" state
+}
+
+// Keyed by every flight_id an annotation or other fixture might link
+// with. Both the real engine-generated id and the "fl_..." readable
+// placeholder id annotations.json uses for the *same*
+// physical KACV flight resolve to the one real fixture — not a second,
+// thinner mockup copy of it — so nothing downstream of that link sees a
+// different (poorer) version of a flight it already has full data for.
+const FIXTURE_FLIGHTS: Record<string, FixtureFlight> = {
+  [flightAnalysis.flight_id]: { analysis: flightAnalysis, insightSet, series: kacvSeries },
+  fl_20260423_200615_KACV: { analysis: flightAnalysis, insightSet, series: kacvSeries },
+};
+
+export function fixtureFlightById(flightId: string): FixtureFlight | null {
+  return FIXTURE_FLIGHTS[flightId] ?? null;
+}

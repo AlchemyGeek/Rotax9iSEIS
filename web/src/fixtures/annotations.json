@@ -1,0 +1,35 @@
+{
+  "version": "1",
+  "annotations": [
+    {
+      "id": "ann_overboost_jun13",
+      "flight_id": "fl_20260613_193731_KAWO",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_overboost"
+      },
+      "note": "Deliberate — practicing short-field go-around technique, brief overboost expected on the power-up.",
+      "created_at": "2026-06-14T00:00:00Z"
+    },
+    {
+      "id": "ann_fuel_sender_apr23",
+      "flight_id": "fl_20260423_200615_KACV",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_fuel_sender"
+      },
+      "note": "Confirmed with the mechanic — right tank sender reads high since the last annual. Replacement on order.",
+      "created_at": "2026-04-25T00:00:00Z"
+    },
+    {
+      "id": "ann_ecu_before_start_apr23",
+      "flight_id": "fl_20260423_200615_KACV",
+      "ref": {
+        "kind": "insight",
+        "insight_id": "in_ecu_before_start"
+      },
+      "note": "Pulled B.U.D.S. per the report's guidance — no stored fault found. Likely transient during avionics power-up.",
+      "created_at": "2026-04-25T00:00:00Z"
+    }
+  ]
+}

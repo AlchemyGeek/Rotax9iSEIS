@@ -23,7 +23,27 @@
     },
     "models": { "type": "array", "items": { "$ref": "#/$defs/model" } },
     "quality": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
-    "provenance": { "type": "object", "required": ["engine_version", "source_keys"] }
+    "provenance": { "type": "object", "required": ["engine_version", "source_keys"] },
+    "cylinder_balance": { "$ref": "#/$defs/cylinderBalance" },
+    "change_summary": {
+      "description": "Spec 12 §7/§11.2 — engine-computed ordering over metrics[*].shift. §7.1/D4 (Session B): a coupled panel collapses to one row — metric_id is the lead (largest |shift_z|) member; panel/members are present only for such a row.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metric_id", "rank"],
+        "properties": {
+          "metric_id": { "type": "string" },
+          "rank": { "type": "integer" },
+          "panel": { "type": "string" },
+          "members": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "shift_history": {
+      "description": "Spec 12 §6 — loaded from fleet/shift_history.json (Phase 2). §7.1/D4 (Session B): a coupled-panel event additionally carries `panel`, `members` (metric ids) and `member_detail` (each member's shift_z/direction at open time), one event for the whole panel rather than one per member.",
+      "type": "array",
+      "items": { "type": "object" }
+    }
   },
   "$defs": {
     "confidence": {
@@ -58,6 +78,27 @@
         "confidence": { "$ref": "#/$defs/confidence" }
       }
     },
+    "bandStats": {
+      "type": "object",
+      "required": ["n", "mean", "std", "min", "max", "confidence"],
+      "properties": {
+        "n": { "type": "integer" },
+        "mean": { "type": ["number", "null"] },
+        "std": { "type": ["number", "null"] },
+        "min": { "type": ["number", "null"] },
+        "max": { "type": ["number", "null"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "trend": { "$ref": "#/$defs/trend" },
+        "outliers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "z_score"],
+            "properties": { "flight_id": { "type": "string" }, "z_score": { "type": "number" } }
+          }
+        }
+      }
+    },
     "metricFleet": {
       "type": "object",
       "required": ["metric_id", "baseline", "trend", "points", "outliers"],
@@ -70,7 +111,7 @@
           "required": ["band_kind", "bands"],
           "properties": {
             "band_kind": { "type": "string", "enum": ["oat_band", "da_band"] },
-            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/baseline" } }
+            "bands": { "type": "object", "additionalProperties": { "$ref": "#/$defs/bandStats" } }
           }
         },
         "points": {
@@ -94,7 +135,151 @@
             "required": ["flight_id", "z_score"],
             "properties": { "flight_id": { "type": "string" }, "z_score": { "type": "number" } }
           }
+        },
+        "shift": { "$ref": "#/$defs/shift" },
+        "unit": {
+          "type": "string",
+          "description": "Spec 12 §11.7 — a per-limit metric's unit from the engine profile (peak_excess in the limit's own unit, time_above_pct in %, limit_<id>_block_s in s)."
+        },
+        "frequency": { "$ref": "#/$defs/frequency" },
+        "events": {
+          "description": "Spec 12 §8.4/§11.7 — one tick per eligible flight for the event strip, on every limit's full-coverage metric (and copied to its sibling per-limit metrics and overboost_time).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "date", "x", "has_event"],
+            "properties": {
+              "flight_id": { "type": "string" },
+              "date": { "type": "string" },
+              "x": { "type": ["number", "null"] },
+              "has_event": { "type": "boolean" },
+              "cas_events": {
+                "type": "array",
+                "description": "Spec 12 v0.10 §8.4: on a classified CAS alert's metric, the flight's events for the tick tooltip — class and, when set, why it isn't a lane check.",
+                "items": {
+                  "type": "object",
+                  "required": ["classification", "phase", "duration_s"],
+                  "properties": {
+                    "classification": { "type": "string", "enum": ["GROUND", "IN_FLIGHT"] },
+                    "phase": { "type": "string" },
+                    "duration_s": { "type": "number" },
+                    "not_lane_check_reason": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "readiness": { "$ref": "#/$defs/readiness" }
+      }
+    },
+    "frequency": {
+      "description": "Spec 12 §5.8/§11.7 — event frequency, the primary limit-panel signal.",
+      "type": "object",
+      "required": ["recent", "reference", "delta", "z", "qualifies"],
+      "properties": {
+        "recent": {
+          "type": "object", "required": ["events", "flights"],
+          "properties": { "events": { "type": "integer" }, "flights": { "type": "integer" } }
+        },
+        "reference": {
+          "type": "object", "required": ["events", "flights"],
+          "properties": { "events": { "type": "integer" }, "flights": { "type": "integer" } }
+        },
+        "delta": { "type": ["number", "null"] },
+        "z": { "type": ["number", "null"] },
+        "qualifies": { "type": "boolean" }
+      }
+    },
+    "readiness": {
+      "description": "Spec 12 §9.3 — the fixed readiness-badge set, engine-computed so the web never infers one from raw numbers.",
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["filtered", "building", "no_recent", "no_events", "rare", "insufficient", "pinned"]
+        },
+        "count": { "type": "integer" },
+        "label": {
+          "type": "string",
+          "description": "Spec 12 §5.7.1 (Session D) — the *pinned* badge's text: the user's own label, or the pin date formatted short."
         }
+      }
+    },
+    "shift": {
+      "description": "Spec 12 §5/§11.2 — absent below n_min or with no recent window.",
+      "type": "object",
+      "required": ["recent", "reference", "shift_z", "direction", "comparison", "level", "qualifies"],
+      "properties": {
+        "recent": {
+          "type": "object",
+          "required": ["flight_ids", "n", "hours_from", "hours_to", "mean"],
+          "properties": {
+            "flight_ids": { "type": "array", "items": { "type": "string" } },
+            "n": { "type": "integer" },
+            "hours_from": { "type": ["number", "null"] },
+            "hours_to": { "type": ["number", "null"] },
+            "mean": { "type": ["number", "null"] }
+          }
+        },
+        "reference": {
+          "type": "object",
+          "required": ["kind", "n", "mean", "std", "min", "max", "confidence"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["rolling", "pinned"] },
+            "n": { "type": "integer" },
+            "hours_from": { "type": ["number", "null"] },
+            "hours_to": { "type": ["number", "null"] },
+            "label": { "type": "string" },
+            "set_at": {
+              "type": "string",
+              "description": "Spec 12 §5.7.1 (Session D) — when the reference was pinned (ISO 8601); the pinned badge/marker's date fallback when no label was given."
+            },
+            "mean": { "type": ["number", "null"] },
+            "std": { "type": ["number", "null"] },
+            "min": { "type": ["number", "null"] },
+            "max": { "type": ["number", "null"] },
+            "confidence": { "$ref": "#/$defs/confidence" },
+            "by_band": { "type": "object" }
+          }
+        },
+        "shift_z": { "type": ["number", "null"] },
+        "direction": { "type": "string", "enum": ["higher", "lower", "none"] },
+        "comparison": {
+          "type": "object",
+          "required": ["scope", "unmatched"],
+          "properties": {
+            "scope": { "type": "string", "enum": ["band", "all", "mixed", "insufficient"] },
+            "by_band": { "type": "object" },
+            "unmatched": { "type": "integer" }
+          }
+        },
+        "bend": {
+          "type": "object",
+          "required": ["reference_slope", "recent_slope", "fires"],
+          "properties": {
+            "reference_slope": { "type": "number" },
+            "recent_slope": { "type": "number" },
+            "fires": { "type": "boolean" }
+          }
+        },
+        "level": {
+          "type": "object",
+          "required": ["om_margin", "filter_edge"],
+          "properties": {
+            "om_margin": { "type": "boolean" },
+            "filter_edge": { "type": "boolean" },
+            "limit": { "type": "number" },
+            "margin_line": { "type": "number" },
+            "filter_edge_value": {
+              "type": "number",
+              "description": "Session B: the resolved filter-band edge in this metric's own units, for the web to draw as a line (§8.3) — the boolean alone can't."
+            }
+          }
+        },
+        "qualifies": { "type": "boolean" },
+        "unit": { "type": "string" }
       }
     },
     "model": {
@@ -107,8 +292,50 @@
         "coefficients": { "type": "object", "additionalProperties": { "type": "number" } },
         "n": { "type": "integer" },
         "r_squared": { "type": ["number", "null"] },
+        "residual_se": { "type": ["number", "null"], "description": "Spec 14 §5.1 — leave-one-out-consistent residual SE from the same fit, for the Reference & Models panel." },
         "confidence": { "$ref": "#/$defs/confidence" },
         "capture": { "type": "string" }
+      }
+    },
+    "cylinderBalance": {
+      "description": "Spec 08 §5 — per-flight hottest cylinder and the aircraft's usual one. Optional: fleet results written before Spec 08 lack it.",
+      "type": "object",
+      "required": ["margin_min_f", "expected_hot_cyl", "established_hot_cyl", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "margin_min_f": { "type": "number" },
+        "expected_hot_cyl": { "type": ["integer", "null"], "minimum": 1, "maximum": 4 },
+        "established_hot_cyl": {
+          "type": "object",
+          "required": ["cyl", "share", "n", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "cyl": { "type": ["integer", "null"], "minimum": 1, "maximum": 4 },
+            "share": { "type": ["number", "null"] },
+            "n": { "type": "integer" },
+            "source": { "type": "string", "enum": ["learned", "prior", "none"] }
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["flight_id", "date", "x", "hottest_cyl", "margin_f", "rank_order", "hot_cyl_changed"],
+            "additionalProperties": false,
+            "properties": {
+              "flight_id": { "type": "string" },
+              "date": { "type": "string" },
+              "x": { "type": ["number", "null"] },
+              "hottest_cyl": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "margin_f": { "type": ["number", "null"] },
+              "rank_order": { "type": ["array", "null"], "items": { "type": "integer" } },
+              "hot_cyl_changed": {
+                "type": "boolean",
+                "description": "Spec 08 v0.3 §6 (Spec 10 D4): context flag, not an insight."
+              }
+            }
+          }
+        }
       }
     },
     "diagnostic": {

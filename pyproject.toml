@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slingology-eis"
-version = "0.11.0"
+version = "1.0.0"
 description = "Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,3 +33,14 @@ slingology-eis = "slingology_eis.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["slingology_eis*"]
+
+[tool.setuptools.package-data]
+# Spec 01 §8.8: topic help is product content needed at runtime (CLI,
+# server, notebooks), not a design document — it ships inside the
+# package. docs/specs/topics/register.json is not declared here: it's
+# resolved the same repo-root-relative way engines/*.json already is
+# (limits.py's _TOOLKIT_ROOT), since it lives outside the slingology_eis/
+# tree by design (Spec 10 §5) — true package data for it is the same
+# unresolved gap engines/*.json already has for a genuinely installed
+# wheel, not a new one.
+slingology_eis = ["help/topics.md"]

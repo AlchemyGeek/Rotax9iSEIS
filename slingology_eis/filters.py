@@ -1,0 +1,1041 @@
+"""
+filters.py — limit filters (Spec 09 §6.3, §7, §8.1).
+
+A filter is the pilot's statement about one target — an OM limit or,
+from Spec 09 v0.18, a classified CAS alert: "on my aircraft, this is
+exceeded in a way I understand and accept." It tolerates
+events by magnitude (how far past the limit) and/or by duration (how long
+each event lasted); an event needs only one reason to be tolerated
+(§4, either-filter). Tolerated events are suppressed, not deleted.
+
+Pure, like operations.py: filters arrive as plain dicts (the
+workspace's filters.json entries, §9), limits as catalogue entries
+(limits.limit_catalog / FlightAnalysis.limits), baselines as a
+FleetAnalysis. The host owns storage.
+"""
+from __future__ import annotations
+
+import math
+from typing import Optional
+
+import pandas as pd
+
+from .contract import Diagnostic
+
+# §13 constants — initial placeholders, to be tuned on the full log set.
+N_MIN = 10                    # z reference and band comparison (shared with baseline_deviation)
+REFERENCE_N = 20              # reference flights chosen at creation / re-baseline
+REFERENCE_MIN_N = 5           # below this the filter is Collecting
+Z_STD_FLOOR_FRACTION = 0.05   # z std floor: 5% of the limit value...
+Z_STD_FLOOR_MIN = 0.1         # ...but at least 0.1 engine units
+DEFAULT_REVIEW_INTERVAL_H = {"CAUTION": 50, "WARNING": 25}
+
+MAGNITUDE_MODES = ("absolute", "percent", "z")
+OVERBOOST_PARAM = "overboost"
+
+
+# ── Targets (§4, v0.18) ─────────────────────────────────────────────────────
+# A filter's target is a limit or a classified CAS alert. Internally both
+# are keyed by one string — the limit_id, or "cas:<cas_id>" — so the
+# per-target machinery below (validation, one-filter-per-target, event
+# classification) needs no second code path. A CAS target is represented
+# by a pseudo catalogue entry with a duration-only policy.
+
+CAS_KEY_PREFIX = "cas:"
+
+
+def cas_target_key(cas_id: str) -> str:
+    return CAS_KEY_PREFIX + cas_id
+
+
+def target_key(filter_: dict) -> Optional[str]:
+    """The target key of a filter: its limit_id, or "cas:<cas_id>"."""
+    t = filter_.get("target") or {}
+    if t.get("kind") == "cas":
+        return cas_target_key(t.get("cas_id", ""))
+    if t.get("kind") == "limit":
+        return t.get("limit_id")
+    return filter_.get("limit_id")  # pre-v0.18 record not yet migrated
+
+
+def event_target_key(event: dict) -> str:
+    """The target key of an event in FlightAnalysis.exceedances."""
+    if event.get("source") == "cas":
+        return cas_target_key(event["cas_id"])
+    return event.get("limit_id") or f"legacy:{event['param']}:{event['limit_type']}:{event['label']}"
+
+
+def is_cas(limit: dict) -> bool:
+    return limit.get("kind") == "cas"
+
+
+def cas_pseudo_limit(cas_id: str) -> dict:
+    """Catalogue-shaped entry for a CAS target: no value, no excess; the
+    filter policy allows the duration condition only (§7)."""
+    return {
+        "id": cas_target_key(cas_id), "kind": "cas", "cas_id": cas_id,
+        "label": f"{cas_id} (alert)", "unit": "s", "severity": "CAUTION",
+        "filter_policy": {"magnitude_modes": [], "duration_allowed": True, "note_required": False},
+    }
+
+
+def with_cas_targets(limits_by_id: dict) -> dict:
+    """limits_by_id plus a pseudo entry for every classified CAS alert."""
+    from .cas import CLASSIFIED_CAS_IDS
+    out = dict(limits_by_id)
+    for cas_id in CLASSIFIED_CAS_IDS:
+        out[cas_target_key(cas_id)] = cas_pseudo_limit(cas_id)
+    return out
+
+
+def target_label(target: dict, limit_label: Optional[str] = None) -> str:
+    """How a filter's target is named to the pilot (Journal, lists): a CAS
+    target is "ENGINE ECU (alert)" so it isn't mistaken for an OM limit."""
+    if (target or {}).get("kind") == "cas":
+        return f"{target['cas_id']} (alert)"
+    return limit_label or (target or {}).get("limit_id", "?")
+
+
+def migrate_filter(filter_: dict) -> dict:
+    """§9 migration: a pre-v0.18 record (top-level limit_id) gets
+    target {kind: "limit"}. Records already in the new shape pass through."""
+    if "target" in filter_ or "limit_id" not in filter_:
+        return filter_
+    out = {k: v for k, v in filter_.items() if k != "limit_id"}
+    return {"id": out.pop("id", None), "target": {"kind": "limit", "limit_id": filter_["limit_id"]}, **out}
+
+
+def is_overboost(limit: dict) -> bool:
+    return limit.get("param") == OVERBOOST_PARAM
+
+
+# ── Policy (§6.3) ───────────────────────────────────────────────────────────
+
+
+def resolve_filter_policy(limit: dict) -> dict:
+    """
+    The effective filter policy for a catalogue entry (§6.3). A WARNING
+    limit — an OM red line, overboost included (§6.4) — is filterable like
+    any other, but always requires a note: a consistent exceedance can be a
+    real mechanical issue, or it can be an artifact of a miscalibrated
+    sensor or other systemic quirk that isn't itself a WARNING-worthy
+    condition — the note is the pilot's record of which, and why, since the
+    engine can't tell the two apart on its own. A limit is only ever
+    non-filterable when its profile says so explicitly (`filter_policy`
+    `filterable: false`, with a pilot-facing `reason`) — e.g. oil_press_min,
+    where any reading is a direct lubrication signal to check at the
+    source, never one to annotate away. A limit may also declare optional
+    caps (`max_band_abs`, `max_duration_s`).
+
+    `magnitude_modes` and `duration_allowed` (v0.12, §6.3) are likewise
+    profile-declared, defaulting to every mode / true when absent — these
+    replace the old hard-coded overboost special case: overboost and the
+    5,800 rpm ceiling now restrict themselves the same way any limit could
+    (§6.4, §6.7), via their own profile section's `filter_policy`.
+
+    Returns {filterable, reason, severity, magnitude_modes,
+    duration_allowed, max_band_abs, max_duration_s, note_required,
+    review_interval_h}; `reason` explains a non-filterable limit.
+    """
+    raw = limit.get("filter_policy") or {}
+    severity = limit.get("severity", "CAUTION")
+    duration_allowed = bool(raw.get("duration_allowed", True))
+    # §6.3 (v0.20): may a filter on this limit carry a phase condition?
+    # Default yes; a CAS target never (Q12).
+    phases_allowed = bool(raw.get("phases_allowed", True)) and limit.get("kind") != "cas"
+    magnitude_modes = raw.get("magnitude_modes")
+    if magnitude_modes is None:
+        magnitude_modes = list(MAGNITUDE_MODES)
+
+    filterable, reason = True, None
+    if raw.get("filterable") is False:
+        # The profile says why, in words for the pilot (`reason`).
+        filterable = False
+        reason = raw.get("reason") or "The engine profile marks this limit as one that can't be filtered."
+    return {
+        "filterable": filterable,
+        "reason": reason,
+        "severity": severity,
+        "magnitude_modes": magnitude_modes,
+        "duration_allowed": duration_allowed,
+        "phases_allowed": phases_allowed,
+        "max_band_abs": raw.get("max_band_abs"),
+        "max_duration_s": raw.get("max_duration_s") if duration_allowed else None,
+        "note_required": bool(raw.get("note_required", severity == "WARNING")),
+        "review_interval_h": raw.get("review_interval_h", DEFAULT_REVIEW_INTERVAL_H.get(severity, 50)),
+    }
+
+
+# ── Frozen baseline (§4, §8.1) ──────────────────────────────────────────────
+
+def limit_metric_key(limit: dict, kind: str) -> str:
+    """Fleet metric key of a limit's §5 metric: kind is "peak_excess",
+    "time_above_pct" or (overboost) "block_s"."""
+    return f"limit_{limit['id']}_{kind}"
+
+
+def _magnitude_metric(limit: dict) -> str:
+    return limit_metric_key(limit, "block_s" if is_overboost(limit) else "peak_excess")
+
+
+def _stats(values: list[float]) -> dict:
+    """mean/std/n with the same sample std fleet.baseline() uses."""
+    from .fleet import baseline
+
+    if not values:
+        return {"n": 0, "mean": None, "std": None, "min": None, "max": None}
+    b = baseline(pd.DataFrame({"v": values}), "v")
+    return {"n": b.n, "mean": b.mean, "std": b.std, "min": b.min, "max": b.max}
+
+
+def points_baseline(points: list[dict], reference_ids: list[str]) -> dict:
+    """
+    §4: the baseline of a metric's `points` (the shape `update_fleet`
+    builds — {flight_id, value, band?, ...}) over a fixed set of flight
+    ids. Returns {n, mean, std, min, max, by_band: {band: stats}}. Pure —
+    takes `points` directly rather than a FleetAnalysis, so Spec 12's
+    shift statistic (computed inside `update_fleet`, before a
+    FleetAnalysis object exists) and this module's frozen-baseline
+    filters share the exact same stats math (Spec 12 R1.3/acceptance 2),
+    not two implementations that happen to agree today.
+    """
+    ref = set(reference_ids)
+    matched = [p for p in points if p["flight_id"] in ref and p.get("value") is not None]
+    out = _stats([p["value"] for p in matched])
+    bands: dict[str, list[float]] = {}
+    for p in matched:
+        if p.get("band") is not None:
+            bands.setdefault(p["band"], []).append(p["value"])
+    out["by_band"] = {b: _stats(v) for b, v in sorted(bands.items())}
+    return out
+
+
+def frozen_baseline(fleet, metric_key: str, reference_ids: list[str]) -> dict:
+    """
+    §4: the baseline of `metric_key` over a fixed set of flights, from the
+    fleet's current points — so it follows re-analysis, and a reference
+    flight later excluded from baselines (absent from the fleet's points)
+    drops out. Returns {n, mean, std, min, max, by_band: {band: stats}}.
+    """
+    return points_baseline((fleet.metrics.get(metric_key) or {}).get("points", []), reference_ids)
+
+
+def comparison_set(frozen: dict, band: Optional[str], n_min: int = N_MIN) -> tuple[dict, dict]:
+    """
+    Spec 01 R8, shared with baseline_deviation: the flight's own band if
+    the reference has at least n_min points in it, else the unstratified
+    frozen baseline. Returns (stats, {"scope", "band", "n"}).
+    """
+    if band is not None:
+        b = frozen.get("by_band", {}).get(band)
+        if b and b["n"] >= n_min:
+            return b, {"scope": "band", "band": band, "n": b["n"]}
+    return frozen, {"scope": "all", "band": None, "n": frozen["n"]}
+
+
+def z_std_floor(limit: dict) -> float:
+    return max(abs(limit["limit_value"]) * Z_STD_FLOOR_FRACTION, Z_STD_FLOOR_MIN)
+
+
+def flight_band(fa, limit: dict) -> Optional[str]:
+    kind = limit.get("stratify_by")
+    return fa.metrics.get(kind, {}).get("value") if kind else None
+
+
+def select_reference(fleet, limit: dict, reference_n: int = REFERENCE_N) -> list[str]:
+    """
+    §8.1: the reference_n most recent included flights, chronologically —
+    taken from the limit's time-above metric (every flight with the
+    limit's channel has a point) or, for overboost, its block metric.
+    """
+    from .operations import _chronological
+
+    points = (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])
+    seq = _chronological([p for p in points if p.get("value") is not None])
+    return [p["flight_id"] for p in seq[-reference_n:]]
+
+
+def coverage_metric(limit: dict) -> str:
+    """The target's metric with a point on every eligible flight: a CAS
+    alert's per-flight event count, overboost's block, else the limit's
+    time-above share."""
+    if is_cas(limit):
+        from .operations import cas_metric_id
+        return cas_metric_id(limit["cas_id"])
+    return limit_metric_key(limit, "block_s" if is_overboost(limit) else "time_above_pct")
+
+
+def insight_target_key(insight: dict) -> Optional[str]:
+    """Target key of a limit_exceedances insight (limit or CAS)."""
+    if insight.get("source") == "cas":
+        return cas_target_key(insight["cas_id"])
+    return insight.get("limit_id")
+
+
+# ── Validation (§7.3) ───────────────────────────────────────────────────────
+
+def resolved_band(filter_: dict, limit: dict, frozen: Optional[dict] = None) -> Optional[float]:
+    """
+    The magnitude condition's band in engine units: absolute as stored,
+    percent of |limit|, and for z the excess at `value` std devs above the
+    frozen reference mean (unstratified; per-flight z uses the band rule).
+    None without a magnitude condition, or for z without a reference.
+    """
+    m = filter_.get("magnitude")
+    if not m:
+        return None
+    if m["mode"] == "absolute":
+        return float(m["value"])
+    if m["mode"] == "percent":
+        return abs(limit["limit_value"]) * float(m["value"]) / 100.0
+    if m["mode"] == "z" and frozen and frozen.get("mean") is not None:
+        return frozen["mean"] + float(m["value"]) * max(frozen["std"] or 0.0, z_std_floor(limit))
+    return None
+
+
+def _diag(code: str, message: str, filter_: dict, **refs) -> dict:
+    key = target_key(filter_) or ""
+    target_ref = {"cas_id": key[len(CAS_KEY_PREFIX):]} if key.startswith(CAS_KEY_PREFIX) else {"limit_id": key or None}
+    return Diagnostic(code=code, severity="warn", scope="fleet", message=message,
+                      refs={"filter_id": filter_.get("id"), **target_ref, **refs}).to_dict()
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def validate_filter(filter_: dict, limits_by_id: dict, fleet=None) -> list[dict]:
+    """
+    §7.3, enforced in the engine, not only the UI: returns diagnostics;
+    empty means the filter is valid and applies. `limits_by_id` is the
+    catalogue by id; `fleet` is needed only to check a z reference's n.
+    """
+    lid = target_key(filter_)
+    limit = limits_by_id.get(lid)
+    if limit is None and (lid or "").startswith(CAS_KEY_PREFIX):
+        return [_diag("FILTER_UNKNOWN_CAS", f"Filter for {lid[len(CAS_KEY_PREFIX):]!r}: not a classified CAS alert.", filter_)]
+    if limit is None:
+        return [_diag("FILTER_UNKNOWN_LIMIT", f"Filter for {lid!r}: no such limit in this engine profile.", filter_)]
+    policy = resolve_filter_policy(limit)
+    label = limit["label"]
+    if not policy["filterable"]:
+        return [_diag("FILTER_NOT_ALLOWED", f"{label}: {policy['reason']}", filter_)]
+
+    diags = []
+    magnitude, duration = filter_.get("magnitude"), filter_.get("duration")
+    phases = filter_.get("phases") or None   # an empty list is no condition
+    if is_cas(limit) and magnitude:
+        # §7.3 / §11.4: a CAS event has no excess, so magnitude can't
+        # apply; the condition is ignored (not fatal) and the duration
+        # condition, if any, still stands.
+        diags.append(_diag("FILTER_CAS_MAGNITUDE", f"{label}: a magnitude condition doesn't apply to an alert; ignored.", filter_))
+        magnitude = None
+    if not magnitude and not duration and not phases:
+        need = "a duration condition" if is_cas(limit) else "a magnitude, duration or phase condition"
+        diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a filter needs {need}.", filter_))
+    if phases:
+        # §7.3 / §7.5 (v0.20): limit targets whose policy allows it; names
+        # the detector emits, not UNKNOWN; no duplicates.
+        if not policy["phases_allowed"]:
+            why = ("an alert's ground/in-flight split belongs to its classifier" if is_cas(limit)
+                   else "excluding phases would bypass this limit's own guardrail")
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: a phase condition isn't allowed — {why}.", filter_))
+        else:
+            bad = [p for p in phases if p not in FILTER_PHASES]
+            dupes = sorted({p for p in phases if phases.count(p) > 1})
+            if bad or dupes:
+                what = []
+                if bad:
+                    what.append("not a phase that can be excluded: " + ", ".join(map(str, bad)))
+                if dupes:
+                    what.append("listed twice: " + ", ".join(dupes))
+                diags.append(_diag("FILTER_PHASE_INVALID", f"{label}: " + "; ".join(what) + ".", filter_))
+    if magnitude:
+        mode, value = magnitude.get("mode"), magnitude.get("value")
+        if mode not in policy["magnitude_modes"]:
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: magnitude mode {mode!r} is not allowed for this limit.", filter_))
+        elif not _number(value) or value <= 0:
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: the magnitude value must be a positive number.", filter_))
+        elif policy["max_band_abs"] is not None and mode in ("absolute", "percent"):
+            band = resolved_band(filter_, limit)
+            if band > policy["max_band_abs"] + 1e-9:
+                diags.append(_diag("FILTER_NOT_ALLOWED",
+                                   f"{label}: band {band:g} {limit['unit']} exceeds the cap of "
+                                   f"{policy['max_band_abs']:g} {limit['unit']}.", filter_))
+        if mode == "z" and not diags:
+            if fleet is None:
+                diags.append(_diag("FILTER_REFERENCE_LOW_N", f"{label}: z mode needs the fleet baselines to check its reference.", filter_))
+            else:
+                ref_ids = (filter_.get("reference") or {}).get("flight_ids", [])
+                n = frozen_baseline(fleet, _magnitude_metric(limit), ref_ids)["n"]
+                if n < N_MIN:
+                    diags.append(_diag("FILTER_REFERENCE_LOW_N",
+                                       f"{label}: z reference has {n} flights with events, below {N_MIN}.", filter_, n=n))
+    if duration:
+        max_event_s = duration.get("max_event_s")
+        if not policy["duration_allowed"]:
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: this limit has no duration condition.", filter_))
+        elif not _number(max_event_s) or max_event_s <= 0:
+            diags.append(_diag("FILTER_NOT_ALLOWED", f"{label}: max event duration must be a positive number.", filter_))
+        elif policy["max_duration_s"] is not None and max_event_s > policy["max_duration_s"]:
+            diags.append(_diag("FILTER_NOT_ALLOWED",
+                               f"{label}: max event duration {max_event_s:g} s exceeds the cap of "
+                               f"{policy['max_duration_s']:g} s.", filter_))
+    if policy["note_required"] and not (filter_.get("note") or "").strip():
+        diags.append(_diag("FILTER_NOTE_REQUIRED", f"{label}: a note is required to filter this limit.", filter_))
+    return diags
+
+
+def active_filters(filters: list[dict], limits_by_id: dict, fleet=None) -> tuple[dict[str, dict], list[dict]]:
+    """
+    ({target key: valid filter}, diagnostics). With several filters on
+    one target only the newest counts (FILTER_MULTIPLE_FOR_LIMIT); an
+    invalid filter is ignored — the target reports unfiltered — with its
+    diagnostics. A CAS filter's magnitude condition is dropped from the
+    returned filter (FILTER_CAS_MAGNITUDE, a warning, not invalidity).
+    `limits_by_id` gains the CAS pseudo-targets here, so callers pass the
+    plain limit catalogue.
+    """
+    limits_by_id = with_cas_targets(limits_by_id)
+    diags: list[dict] = []
+    by_limit: dict[str, list[dict]] = {}
+    for f in filters or []:
+        f = migrate_filter(f)
+        by_limit.setdefault(target_key(f), []).append(f)
+    out: dict[str, dict] = {}
+    for lid, fs in by_limit.items():
+        fs = sorted(fs, key=lambda f: f.get("updated_at") or f.get("created_at") or "")
+        for older in fs[:-1]:
+            diags.append(_diag("FILTER_MULTIPLE_FOR_LIMIT",
+                               f"More than one filter for {lid!r}; only the newest applies.", older))
+        newest = fs[-1]
+        problems = validate_filter(newest, limits_by_id, fleet)
+        diags.extend(problems)
+        if all(p["code"] == "FILTER_CAS_MAGNITUDE" for p in problems):
+            out[lid] = ({k: v for k, v in newest.items() if k != "magnitude"}
+                        if is_cas(limits_by_id[lid]) else newest)
+    return out, diags
+
+
+# ── Suppression (§4, §7) ────────────────────────────────────────────────────
+
+# §7.5 (v0.20): the phases a filter may exclude — every phase the detector
+# emits (Spec 01 §8.3) except UNKNOWN, in the order a flight runs.
+FILTER_PHASES = (
+    "PRE_START", "ENGINE_START", "WARMUP", "TAXI", "TAKEOFF_ROLL", "CLIMB",
+    "CRUISE", "DESCENT", "APPROACH", "LANDING_ROLL", "SHUTDOWN",
+)
+
+
+def event_phases(event: dict, phase_segments: list[dict]) -> list[str]:
+    """§11.3 (v0.20): the phases an event's rows lie in, in order. Rows are
+    1 Hz samples from elapsed_s to elapsed_s + duration_s - 1 (duration_s
+    counts the last row, limits.py); a phase segment covers
+    [start_s, end_s). A row no segment covers, or an event with no time,
+    is UNKNOWN."""
+    t0 = event.get("elapsed_s")
+    if t0 is None:
+        return ["UNKNOWN"]
+    t1 = t0 + max(float(event.get("duration_s") or 1) - 1, 0)
+    out: list[str] = []
+    cursor = t0                      # rows before cursor are accounted for
+    for seg in sorted(phase_segments, key=lambda g: g["start_s"]):
+        if seg["start_s"] > t1 or seg["end_s"] <= t0:
+            continue
+        if seg["start_s"] > cursor + 1e-9:
+            out.append("UNKNOWN")    # a stretch no segment covers
+        out.append(seg["phase"])
+        cursor = max(cursor, seg["end_s"])
+    if cursor <= t1 - 1e-9 or not out:
+        out.append("UNKNOWN")
+    return [p for i, p in enumerate(out) if i == 0 or p != out[i - 1]]
+
+
+def with_event_phases(events: list[dict], phase_segments: list[dict]) -> list[dict]:
+    """Copies of `events` carrying `phases` (§11.3)."""
+    return [{**e, "phases": event_phases(e, phase_segments)} for e in events]
+
+
+def tolerated_by_phase(event: dict, filter_: dict) -> bool:
+    """§7.5 whole-event rule: every row of the event lies in an excluded
+    phase. An event touching any other phase, or UNKNOWN, is not."""
+    excluded = set(filter_.get("phases") or ())
+    phases = event.get("phases") or ["UNKNOWN"]
+    return bool(excluded) and all(p in excluded for p in phases)
+
+
+def classify_event(event: dict, filter_: dict, limit: dict, z_ref: Optional[dict] = None) -> Optional[str]:
+    """
+    Which condition tolerates this event, or None if it's a breach (§4).
+    When several do, one is named in this order: "phase", then
+    "magnitude", then "duration" (§11.3, v0.21) — magnitude before
+    duration is the order used before phases, so a flight with no phase
+    condition keeps its labels. `event["phases"]` is the event's phases
+    (with_event_phases); `z_ref` is the comparison-set stats for a z
+    filter.
+    """
+    if tolerated_by_phase(event, filter_):
+        return "phase"
+    excess = event.get("excess")
+    m = filter_.get("magnitude")
+    if m and excess is not None:
+        if m["mode"] == "z":
+            if z_ref and z_ref.get("mean") is not None:
+                std = max(z_ref.get("std") or 0.0, z_std_floor(limit))
+                if (excess - z_ref["mean"]) / std <= m["value"]:
+                    return "magnitude"
+        elif excess <= resolved_band(filter_, limit) + 1e-9:
+            return "magnitude"
+    d = filter_.get("duration")
+    if d and event["duration_s"] <= d["max_event_s"]:
+        return "duration"
+    return None
+
+
+def band_text(filter_: dict, limit: dict, frozen: Optional[dict] = None) -> str:
+    """Short human summary of a filter's conditions, in engine units:
+    "up to +2.5 psi", "events up to 10 s", or both joined by "or"."""
+    parts = []
+    m = filter_.get("magnitude")
+    if m:
+        band = resolved_band(filter_, limit, frozen)
+        unit = limit.get("unit", "")
+        side = "-" if limit.get("limit_type") == "MIN" else "+"
+        if m["mode"] == "z":
+            parts.append(f"up to z {m['value']:g}" + (f" (≈ {side}{band:.1f} {unit})" if band is not None else ""))
+        elif m["mode"] == "percent":
+            parts.append(f"up to {side}{band:.1f} {unit} ({m['value']:g}%)")
+        else:
+            parts.append(f"up to {side}{band:g} {unit}")
+    d = filter_.get("duration")
+    if d:
+        parts.append(f"events up to {d['max_event_s']:g} s")
+    if filter_.get("phases"):
+        parts.append("in " + ", ".join(_flight_order(filter_["phases"])))
+    return " or ".join(parts)
+
+
+def _flight_order(phases: list[str]) -> list[str]:
+    order = {p: i for i, p in enumerate(FILTER_PHASES)}
+    return sorted(phases, key=lambda p: order.get(p, len(order)))
+
+
+# ── Operations (§11.2) ──────────────────────────────────────────────────────
+
+def _catalog_by_id(engine_config: dict) -> dict:
+    from .limits import limit_catalog
+    return {lim["id"]: lim for lim in limit_catalog(engine_config)}
+
+
+def validate_limit_filter(filter_: dict, engine_config: dict, fleet=None) -> list[dict]:
+    """§11.2 `validate_limit_filter`: diagnostics for one filter; empty =
+    valid. The host calls it before saving; evaluate_insights applies the
+    same checks to every filter it's given."""
+    return validate_filter(migrate_filter(filter_), with_cas_targets(_catalog_by_id(engine_config)), fleet)
+
+
+def _round_up(x: float) -> float:
+    """A readable band just above x: 1 decimal below 10, whole units below
+    100, else the next multiple of 5."""
+    if x <= 0:
+        return 0.0
+    if x < 10:
+        return math.ceil(x * 10 - 1e-9) / 10
+    if x < 100:
+        return float(math.ceil(x - 1e-9))
+    return float(math.ceil(x / 5 - 1e-9) * 5)
+
+
+def filter_advisory(fleet, limit: dict, reference_ids: list[str]) -> dict:
+    """
+    Whether filtering this limit makes sense: filters are for exceedances
+    that recur. Exceeded on fewer than ADVISABLE_MIN_FLIGHTS of the
+    reference flights, a filter is still allowed but "not advisable", with
+    a plain-language message saying why.
+    """
+    ob = is_overboost(limit)
+    points = {p["flight_id"]: p.get("value") for p in (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])}
+    values = [points[fid] for fid in reference_ids if points.get(fid) is not None]
+    exceeded = sum(1 for v in values if (v > limit["limit_value"] if ob else v > 0))
+    advisable = exceeded >= ADVISABLE_MIN_FLIGHTS
+    message = None
+    if not advisable:
+        what = "occurred" if is_cas(limit) else "was exceeded"
+        kind = "events" if is_cas(limit) else "exceedances"
+        message = (f"Not advisable: {limit['label']} {what} on {exceeded} of your last {len(values)} "
+                   f"flights. Filters are meant for {kind} that happen regularly; an occasional one is "
+                   f"usually worth looking at each time. You can still save this filter.")
+    return {"advisable": advisable, "flights_exceeded": exceeded, "flights_considered": len(values),
+            "message": message}
+
+
+def propose_limit_filter(flight_analyses: list, fleet, target, engine_config: dict) -> dict:
+    """
+    §11.2 `propose_limit_filter`: a pre-filled draft for the filter
+    editor — the target and its policy (allowed modes, caps, whether a
+    note is required), the live baseline of its metrics, a suggestion,
+    the proposed reference flights and whether z is available. `target`
+    is {kind: "limit", limit_id} | {kind: "cas", cas_id} (v0.18), or a
+    bare limit id. For a limit the suggestion is an absolute band (the
+    aircraft's worst excess so far, rounded up, within any cap); for a CAS
+    target, a duration condition (the longest event on the reference
+    flights, rounded up) — the only condition a CAS target has.
+    """
+    if isinstance(target, str):
+        target = {"kind": "limit", "limit_id": target}
+    limits = with_cas_targets(_catalog_by_id(engine_config))
+    key = target_key({"target": target})
+    limit = limits.get(key)
+    if limit is None:
+        raise ValueError(f"unknown target {target!r}")
+    policy = resolve_filter_policy(limit)
+    if is_cas(limit):
+        reference_ids = select_reference(fleet, limit)
+        ref_set = set(reference_ids)
+        durations = [e["duration_s"] for fa in flight_analyses if fa.flight_id in ref_set
+                     for e in fa.exceedances if event_target_key(e) == key]
+        cov = [p for p in (fleet.metrics.get(coverage_metric(limit)) or {}).get("points", [])
+               if p.get("value") is not None]
+        longest = max(durations, default=None)
+        return {
+            "advisory": filter_advisory(fleet, limit, reference_ids),
+            "target": target,
+            "limit": limit,
+            "policy": policy,
+            "live": {"share_with_events": (sum(1 for p in cov if p["value"]) / len(cov)) if cov else None,
+                     "longest_event_s": longest},
+            "suggested": {"duration": {"max_event_s": float(math.ceil(longest))}} if longest else {},
+            "reference": {"flight_ids": reference_ids, "n_with_events": len({fa.flight_id for fa in flight_analyses
+                          if fa.flight_id in ref_set and any(event_target_key(e) == key for e in fa.exceedances)}),
+                          "collecting": len(reference_ids) < REFERENCE_MIN_N},
+            "z_available": False,
+            "z_n_min": N_MIN,
+        }
+    mag_key = _magnitude_metric(limit)
+    live_mag = (fleet.metrics.get(mag_key) or {}).get("baseline") or {"n": 0}
+    live = {"magnitude_metric": mag_key, "magnitude": live_mag}
+    if not is_overboost(limit):
+        pct = fleet.metrics.get(limit_metric_key(limit, "time_above_pct")) or {}
+        pct_points = [p for p in pct.get("points", []) if p.get("value") is not None]
+        live["time_above_pct"] = pct.get("baseline") or {"n": 0}
+        live["share_with_events"] = (sum(1 for p in pct_points if p["value"] > 0) / len(pct_points)
+                                     if pct_points else None)
+
+    worst = live_mag.get("max")
+    if is_overboost(limit) and worst is not None:
+        worst = worst - limit["limit_value"]
+    suggested_band = _round_up(worst) if worst is not None and worst > 0 else None
+    if suggested_band is not None and policy["max_band_abs"] is not None:
+        suggested_band = min(suggested_band, policy["max_band_abs"])
+
+    reference_ids = select_reference(fleet, limit)
+    frozen = frozen_baseline(fleet, mag_key, reference_ids)
+    return {
+        "advisory": filter_advisory(fleet, limit, reference_ids),
+        "target": target,
+        "limit": limit,
+        "policy": policy,
+        "live": live,
+        "suggested": {"magnitude": {"mode": "absolute", "value": suggested_band}} if suggested_band else {},
+        "reference": {"flight_ids": reference_ids, "n_with_events": frozen["n"],
+                      "collecting": len(reference_ids) < REFERENCE_MIN_N},
+        "z_available": "z" in policy["magnitude_modes"] and frozen["n"] >= N_MIN,
+        "z_n_min": N_MIN,
+    }
+
+
+def preview_limit_filter(flight_analyses: list, fleet, rules: dict, filters: list[dict], draft: dict) -> dict:
+    """
+    §11.2 `preview_limit_filter`: re-run evaluate_insights over every
+    included flight with the current filters and with the draft in place
+    of any existing filter on the same limit, and diff — events newly
+    hidden, breaches left, topic threshold insights removed. Same
+    before/after idea as the rule playground (Spec 03 §5.5).
+    """
+    from .operations import evaluate_insights
+
+    included_ids = set(fleet.flight_ids)
+    included = [fa for fa in flight_analyses if fa.flight_id in included_ids]
+    draft = migrate_filter(draft)
+    key = target_key(draft)
+    filters = [migrate_filter(f) for f in filters]
+    candidate = [f for f in filters if target_key(f) != key and f.get("id") != draft.get("id")]
+    draft = {**draft, "id": draft.get("id") or "draft"}
+    candidate.append(draft)
+    limits = with_cas_targets({lim["id"]: lim for fa in included[:1] for lim in fa.limits})
+    diagnostics = validate_filter(draft, limits, fleet) if limits else []
+
+    def _target_events(iset) -> list[dict]:
+        topic = next((t for t in iset.topics if t["topic_id"] == "limit_exceedances"), {"insights": []})
+        return [e for i in topic["insights"] if insight_target_key(i) == key for e in i.get("events", [])]
+
+    def _limit_counts(iset) -> tuple[int, int, int]:
+        """(events, suppressed, breaches) for the draft's target on one flight."""
+        topic = next((t for t in iset.topics if t["topic_id"] == "limit_exceedances"), {"insights": []})
+        mine = [i for i in topic["insights"] if insight_target_key(i) == key]
+        evs = [e for i in mine for e in i.get("events", [])]
+        suppressed = sum(1 for e in evs if e["suppressed_by"])
+        breaches = sum(len(i.get("events", [])) for i in mine
+                       if (i.get("filter") or {}).get("outcome") == "breach")
+        return len(evs), suppressed, breaches
+
+    # §12.1 (v0.20): for a phase condition, what it suppresses by phase,
+    # and what of this limit stays visible, with its phases.
+    by_phase: dict[str, dict] = {}
+    visible_by_phase: dict[str, int] = {}
+    visible_total = 0
+
+    def _topic_ids(iset) -> dict:
+        return {i["id"]: i for t in iset.topics if t["topic_id"] != "limit_exceedances" for i in t["insights"]}
+
+    flights, hidden, total_events = [], 0, 0
+    for fa in included:
+        before = evaluate_insights(fa, fleet, rules, filters=filters)
+        after = evaluate_insights(fa, fleet, rules, filters=candidate)
+        n, sup_before, _ = _limit_counts(before)
+        _, sup_after, breaches = _limit_counts(after)
+        for e in _target_events(after):
+            if e["suppressed_by"] == "phase":
+                for ph in dict.fromkeys(e.get("phases") or []):
+                    slot = by_phase.setdefault(ph, {"events": 0, "flights": set()})
+                    slot["events"] += 1
+                    slot["flights"].add(fa.flight_id)
+            elif e["suppressed_by"] is None:
+                visible_total += 1
+                for ph in dict.fromkeys(e.get("phases") or ["UNKNOWN"]):
+                    visible_by_phase[ph] = visible_by_phase.get(ph, 0) + 1
+        if n == 0 and not _topic_ids(before).keys() - _topic_ids(after).keys():
+            continue
+        b_ids, a_ids = _topic_ids(before), _topic_ids(after)
+        removed = [{"id": i, "topic_id": b_ids[i]["topic_id"], "text": b_ids[i]["message"]["text"]}
+                   for i in b_ids.keys() - a_ids.keys()]
+        total_events += n
+        hidden += max(0, sup_after - sup_before)
+        flights.append({
+            "flight_id": fa.flight_id, "date": fa.header.get("date"),
+            "events": n, "suppressed": sup_after, "newly_suppressed": max(0, sup_after - sup_before),
+            "breaches": breaches, "topic_insights_removed": removed,
+        })
+    flights.sort(key=lambda f: f["date"] or "")
+    return {
+        "target": draft.get("target"),
+        "valid": not [d for d in diagnostics if d["code"] != "FILTER_CAS_MAGNITUDE"],
+        "diagnostics": diagnostics,
+        "flights_considered": len(included),
+        "events_total": total_events,
+        "events_hidden": hidden,
+        "flights_affected": sum(1 for f in flights if f["newly_suppressed"] or f["topic_insights_removed"]),
+        "flights_with_breach": sum(1 for f in flights if f["breaches"]),
+        "flights": flights,
+        "phases": {
+            "suppressed_by_phase": {ph: {"events": v["events"], "flights": len(v["flights"])}
+                                    for ph, v in sorted(by_phase.items(), key=lambda kv: _phase_rank(kv[0]))},
+            "visible_events": visible_total,
+            "visible_by_phase": dict(sorted(visible_by_phase.items(), key=lambda kv: _phase_rank(kv[0]))),
+            # Q11 (leaning: allow, and say so plainly).
+            "excludes_every_phase": set(draft.get("phases") or ()) >= set(FILTER_PHASES),
+        } if draft.get("phases") else None,
+    }
+
+
+def _phase_rank(phase: str) -> int:
+    return FILTER_PHASES.index(phase) if phase in FILTER_PHASES else len(FILTER_PHASES)
+
+
+# ── Change monitor (§8) ─────────────────────────────────────────────────────
+
+FREQUENCY_WINDOW = 10         # monitored flights for the event-frequency test
+FREQUENCY_DELTA = 0.30        # rise in share of flights with events that counts as drift
+QUIET_WINDOW = 10             # monitored flights without events -> Quiet
+DRIFT_PERSISTENCE = 2         # consecutive monitored flights (Spec 08 cylinder_rank pattern)
+# Filtering a limit exceeded on fewer than this many of the reference flights
+# is allowed but "not advisable" (propose_limit_filter's advisory): filters
+# are for exceedances that recur, and an occasional one is worth seeing.
+ADVISABLE_MIN_FLIGHTS = 5
+
+STATUS_ORDER = ("breached", "drifting", "review_due", "quiet", "collecting", "stable")
+
+
+def _point_index(fleet, key: str) -> dict[str, dict]:
+    return {p["flight_id"]: p for p in (fleet.metrics.get(key) or {}).get("points", [])}
+
+
+def effective_reference(filter_: dict, chronology: list[dict], min_n: int = REFERENCE_MIN_N) -> tuple[list[str], bool]:
+    """
+    §8.1: the stored reference flights still included, extended forward
+    over the next included flights until it reaches min_n. Returns
+    (flight ids, collecting) — collecting while even that falls short.
+    `chronology` is every included flight with the limit's channel,
+    oldest first ({"flight_id", ...}).
+    """
+    stored = set((filter_.get("reference") or {}).get("flight_ids", []))
+    order = [p["flight_id"] for p in chronology]
+    ref = [fid for fid in order if fid in stored]
+    if len(ref) < min_n:
+        last = max((order.index(fid) for fid in ref), default=-1)
+        for fid in order[last + 1:]:
+            if len(ref) >= min_n:
+                break
+            ref.append(fid)
+    return ref, len(ref) < min_n
+
+
+# Pilot wording for weather bands (fleet.py's OAT_BANDS / DA_BANDS names).
+_OAT_BAND_WORDS = {"cold": "cold days", "mild": "mild days", "warm": "warm days", "hot": "hot days"}
+_DA_BAND_WORDS = {"low": "low density altitude", "moderate": "moderate density altitude",
+                  "high": "high density altitude", "very_high": "very high density altitude"}
+
+
+def comparison_phrase(comparison: dict, kind: Optional[str]) -> str:
+    """What a flight was compared with, for a pilot: "your reference flights
+    on cold days (12 flights)" when it compared within its weather band, else
+    "all your reference flights (20 flights)"."""
+    n = comparison.get("n", 0)
+    if comparison.get("scope") == "band" and comparison.get("band"):
+        band = comparison["band"]
+        words = (_OAT_BAND_WORDS if kind == "oat_band" else _DA_BAND_WORDS).get(band, band.replace("_", " "))
+        where = f"on {words}" if kind == "oat_band" else f"at {words}"
+        return f"your reference flights {where} ({n} flights)"
+    return f"all your reference flights ({n} flights)"
+
+
+def _fmt_value(v: float, digits: int = 1) -> str:
+    return f"{v:.{digits}f}".rstrip("0").rstrip(".") if digits else f"{v:.0f}"
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _z(value: Optional[float], stats: dict) -> Optional[float]:
+    """Std devs above the reference mean — no floor on the spread: drift is
+    "higher than your reference flights", plainly. With a zero spread
+    (every reference flight the same, e.g. never past the limit) any
+    increase counts as above (inf) and anything else as not (0)."""
+    if value is None or stats.get("mean") is None:
+        return None
+    std = stats.get("std") or 0.0
+    if std == 0:
+        return math.inf if value > stats["mean"] else 0.0
+    return (value - stats["mean"]) / std
+
+
+def evaluate_filter_health(flight_analyses: list, fleet, filters: list[dict], engine_config: Optional[dict] = None) -> list[dict]:
+    """
+    §11.2 `evaluate_filter_health`: one FilterHealth (§11.3) per filter.
+    Stateless: frozen and live baselines come from `fleet` (its points
+    already omit excluded flights, and its provenance carries the
+    baseline_config, so the drift threshold is the metric's own
+    outlier_z_threshold — §8.2's "one threshold"); breaches come from the
+    flights' events. `engine_config` resolves limits; without it, the
+    flights' own limit catalogue is used.
+    """
+    from .operations import _chronological, resolve_outlier_z_threshold
+
+    if engine_config is not None:
+        limits = _catalog_by_id(engine_config)
+    else:
+        limits = {lim["id"]: lim for fa in flight_analyses[:1] for lim in fa.limits}
+    limits = with_cas_targets(limits)
+    baseline_config = fleet.provenance.get("baseline_config") or {}
+    included = set(fleet.flight_ids)
+    fas = {fa.flight_id: fa for fa in flight_analyses if fa.flight_id in included}
+    latest_hours = max((h for fa in fas.values()
+                        for h in [fa.header.get("engine_hours_end") or fa.header.get("engine_hours_start")]
+                        if h is not None), default=None)
+    valid, _ = active_filters(filters, limits, fleet)
+
+    out = []
+    for f in filters:
+        f = migrate_filter(f)
+        lid = target_key(f)
+        limit = limits.get(lid)
+        diags = validate_filter(f, limits, fleet) if limit else validate_filter(f, limits)
+        is_valid = limit is not None and (valid.get(lid) or {}).get("id") == f.get("id")
+        if is_valid and lid in valid:
+            f = valid[lid]   # a CAS filter's ignored magnitude is already dropped here
+        health = {"filter_id": f.get("id"), "target": f.get("target"), "valid": is_valid, "status": "stable",
+                  "reasons": [], "diagnostics": diags, "series": [], "hours_since_review": None}
+        if limit is None:
+            health["reasons"].append("The alert is not classified by this engine." if (lid or "").startswith(CAS_KEY_PREFIX)
+                                     else "The limit no longer exists in this engine profile.")
+            out.append(health)
+            continue
+
+        cas = is_cas(limit)
+        ob = is_overboost(limit)
+        if cas:
+            # §8 (v0.18): a CAS target is monitored on event frequency only —
+            # its one fleet metric is the per-flight event count.
+            from .operations import cas_metric_id
+            mag_key = cas_metric_id(limit["cas_id"])
+        else:
+            mag_key = _magnitude_metric(limit)
+        pct_key = None if (ob or cas) else limit_metric_key(limit, "time_above_pct")
+        mag_pts = _point_index(fleet, mag_key)
+        pct_pts = _point_index(fleet, pct_key) if pct_key else {}
+        # Every included flight with the limit's channel, oldest first.
+        chronology = _chronological(list((pct_pts or mag_pts).values()))
+        ref_ids, collecting = effective_reference(f, chronology)
+        ref_set = set(ref_ids)
+
+        frozen_mag = frozen_baseline(fleet, mag_key, ref_ids)
+        frozen_pct = frozen_baseline(fleet, pct_key, ref_ids) if pct_key else None
+        ref_pct_values = [pct_pts[fid]["value"] for fid in ref_ids if fid in pct_pts]
+        if cas:
+            ref_counts = [mag_pts[fid]["value"] for fid in ref_ids if fid in mag_pts]
+            share_ref = (sum(1 for v in ref_counts if v) / len(ref_counts)) if ref_counts else None
+        elif ob:
+            ref_block = [mag_pts[fid]["value"] for fid in ref_ids if fid in mag_pts]
+            share_ref = (sum(1 for v in ref_block if v > limit["limit_value"]) / len(ref_block)) if ref_block else None
+        else:
+            share_ref = (sum(1 for v in ref_pct_values if v > 0) / len(ref_pct_values)) if ref_pct_values else None
+        health["frozen_baseline"] = {
+            **({} if cas else {("block_s" if ob else "peak_excess"): {k: v for k, v in frozen_mag.items()}}),
+            **({"time_above_pct": frozen_pct} if frozen_pct else {}),
+            "share_with_events": share_ref,
+        }
+        health["reference"] = {"flight_ids": ref_ids, "collecting": collecting}
+        health["resolved_band"] = ({"value": resolved_band(f, limit, frozen_mag), "unit": limit["unit"]}
+                                   if f.get("magnitude") and not cas else None)
+        health["summary"] = band_text(f, limit, frozen_mag)
+
+        # Per-flight series, with this filter's classification of each event.
+        last_ref_pos = max((i for i, p in enumerate(chronology) if p["flight_id"] in ref_set), default=-1)
+        series = []
+        for i, p in enumerate(chronology):
+            fid = p["flight_id"]
+            fa = fas.get(fid)
+            band = flight_band(fa, limit) if fa else p.get("band")
+            events = suppressed = breaches = by_phase = 0
+            if fa is not None:
+                evs = with_event_phases([e for e in fa.exceedances if event_target_key(e) == lid], fa.phases)
+                if ob:
+                    block = fa.metrics.get("overboost_max_block_s", {}).get("value")
+                    if block is not None and block > limit["limit_value"]:
+                        events = 1
+                        band_s = resolved_band(f, limit, frozen_mag) or 0.0
+                        if is_valid and block <= limit["limit_value"] + band_s:
+                            suppressed = 1
+                        else:
+                            breaches = 1
+                else:
+                    z_ref = comparison_set(frozen_mag, band)[0] if (f.get("magnitude") or {}).get("mode") == "z" else None
+                    for e in evs:
+                        events += 1
+                        why = classify_event(e, f, limit, z_ref) if is_valid else None
+                        if why:
+                            suppressed += 1
+                            by_phase += why == "phase"   # §12.2 (v0.20); never a breach
+                        else:
+                            breaches += 1
+            series.append({
+                "flight_id": fid, "date": p.get("date"), "engine_hours": p.get("x"), "band": band,
+                "in_reference": fid in ref_set, "monitored": i > last_ref_pos,
+                **({} if cas else {("block_s" if ob else "peak_excess"): (mag_pts.get(fid) or {}).get("value")}),
+                **({"time_above_pct": (pct_pts.get(fid) or {}).get("value")} if pct_key else {}),
+                "events": events, "suppressed": suppressed, "breaches": breaches,
+                "suppressed_by_phase": by_phase,
+            })
+        health["series"] = series
+        monitored = [s for s in series if s["monitored"]]
+
+        # Hours since review (or creation).
+        since = f.get("reviewed_engine_hours") or f.get("created_engine_hours")
+        if since is None and ref_ids:
+            since = next((s["engine_hours"] for s in reversed(series) if s["in_reference"]), None)
+        health["hours_since_review"] = (round(latest_hours - since, 1)
+                                        if latest_hours is not None and since is not None else None)
+
+        reasons: dict[str, list[str]] = {k: [] for k in STATUS_ORDER}
+        # Breached: a breach on a monitored flight since the last review.
+        reviewed_h = f.get("reviewed_engine_hours")
+        # An invalid filter hides nothing, so its "breaches" are just events.
+        breach_flights = [s for s in monitored if is_valid and s["breaches"] and
+                          (reviewed_h is None or (s["engine_hours"] or 0) > reviewed_h)]
+        if breach_flights:
+            last = breach_flights[-1]
+            reasons["breached"].append(
+                f"{_count(sum(s['breaches'] for s in breach_flights), 'event')} went beyond your filter, on "
+                f"{_count(len(breach_flights), 'flight')} since you {'last reviewed it' if reviewed_h is not None else 'set it'}.")
+            fa = fas.get(last["flight_id"])
+            ev = next((e for e in (fa.exceedances if fa else []) if event_target_key(e) == lid), None)
+            health["last_breach"] = {"flight_id": last["flight_id"],
+                                     "event_id": ev.get("event_id") if ev else None}
+
+        # Drifting: persistent excursions above the frozen baseline, or events getting more frequent.
+        if not collecting and len(monitored) >= DRIFT_PERSISTENCE and not cas:
+            recent = monitored[-DRIFT_PERSISTENCE:]
+            unit = limit.get("unit", "")
+            past = "under" if limit.get("limit_type") == "MIN" else "over"
+            # (field, frozen stats, z threshold, pilot wording, value format, suffix after the values)
+            checks = [("block_s" if ob else "peak_excess", frozen_mag,
+                       resolve_outlier_z_threshold(baseline_config, mag_key),
+                       "the longest overboost block was longer than usual" if ob
+                       else "went further past the limit than usual",
+                       (lambda v: f"{v:.0f} s") if ob else (lambda v: f"{_fmt_value(v)} {unit}"),
+                       "" if ob else f" {past} the limit")]
+            if frozen_pct:
+                checks.append(("time_above_pct", frozen_pct,
+                               resolve_outlier_z_threshold(baseline_config, pct_key),
+                               "spent more of the flight past the limit than usual",
+                               lambda v: f"{v:.0f}%", " of engine time"))
+            for field, frozen, z_thr, wording, fmt, suffix in checks:
+                comps = [comparison_set(frozen, s["band"]) for s in recent]
+                zs = [_z(s.get(field), stats) for s, (stats, _) in zip(recent, comps)]
+                if all(z is not None and z > z_thr for z in zs):
+                    stats, cmp = comps[-1]
+                    values = " and ".join(fmt(s[field]) for s in recent)
+                    if not stats.get("std") and not stats["mean"]:
+                        # The reference never went past the limit at all.
+                        against = f"; {comparison_phrase(cmp, limit.get('stratify_by'))} never did."
+                    else:
+                        against = (f", against a typical {fmt(stats['mean'])} for "
+                                   f"{comparison_phrase(cmp, limit.get('stratify_by'))}.")
+                    reasons["drifting"].append(
+                        f"{limit['label']} {wording} on your last {DRIFT_PERSISTENCE} flights: {values}{suffix}{against}")
+                    health.setdefault("drift_details", []).append({
+                        "metric": field, "values": [s[field] for s in recent],
+                        "typical": stats["mean"], "std": stats.get("std"),
+                        # null = above a reference with zero spread
+                        "z": [None if math.isinf(z) else round(z, 2) for z in zs],
+                        "z_threshold": z_thr, "comparison": cmp,
+                    })
+        if (not collecting and len(monitored) >= DRIFT_PERSISTENCE
+                and share_ref is not None and len(monitored) >= FREQUENCY_WINDOW):
+            window = monitored[-FREQUENCY_WINDOW:]
+            with_events = sum(1 for s in window if s["events"])
+            share_now = with_events / len(window)
+            if share_now - share_ref >= FREQUENCY_DELTA:
+                n_ref = (len(ref_pct_values) if not (ob or cas)
+                         else len([fid for fid in ref_ids if fid in mag_pts]))
+                verb = "occurs" if cas else "is exceeded"
+                reasons["drifting"].append(
+                    f"{limit['label']} {verb} more often: on {with_events} of your last "
+                    f"{FREQUENCY_WINDOW} flights, against {round(share_ref * n_ref)} of {n_ref} "
+                    f"reference flights ({share_ref:.0%}).")
+                health.setdefault("drift_details", []).append({
+                    "metric": "share_with_events", "values": [share_now], "typical": share_ref,
+                    "threshold_delta": FREQUENCY_DELTA, "window": FREQUENCY_WINDOW,
+                })
+
+        policy = resolve_filter_policy(limit)
+        if health["hours_since_review"] is not None and health["hours_since_review"] > policy["review_interval_h"]:
+            reasons["review_due"].append(
+                f"Time to review this filter: {health['hours_since_review']:g} engine hours since you "
+                f"{'last reviewed it' if reviewed_h is not None else 'set it'} (review every "
+                f"{policy['review_interval_h']:g} h for a {limit.get('severity', 'CAUTION')} limit).")
+        if len(monitored) >= QUIET_WINDOW and not any(s["events"] for s in monitored[-QUIET_WINDOW:]):
+            reasons["quiet"].append(f"No {'events' if cas else 'exceedances'} on your last {QUIET_WINDOW} flights — "
+                                    f"you may no longer need this filter.")
+        if collecting:
+            reasons["collecting"].append(
+                f"Still learning what's normal: {len(ref_ids)} of the {REFERENCE_MIN_N} flights it needs so far.")
+
+        status = next((k for k in STATUS_ORDER if reasons[k]), "stable")
+        health["status"] = status
+        health["reasons"] = [r for k in STATUS_ORDER for r in reasons[k]]
+        if not is_valid:
+            health["reasons"].insert(0, "Not applied: " + " ".join(d["message"] for d in diags))
+        out.append(health)
+    return out

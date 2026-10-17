@@ -11,6 +11,7 @@
     "analysis_key": { "type": "string" },
     "fleet_key": { "type": "string" },
     "rules_hash": { "type": "string" },
+    "filters_hash": { "type": "string", "description": "Spec 09 §11.2: hash of the limit filters applied." },
     "topics": {
       "type": "array",
       "items": {
@@ -25,7 +26,40 @@
             "properties": { "text": { "type": "string" } }
           },
           "insights": { "type": "array", "items": { "$ref": "#/$defs/insight" } },
-          "metric_ids": { "type": "array", "items": { "type": "string" } }
+          "metric_ids": { "type": "array", "items": { "type": "string" } },
+          "enabled": {
+            "type": "boolean",
+            "description": "Spec 14 §7.3 — the topic's enabled flag from rules/active.json, shown and editable on the topic card (the disable-topic silencing level)."
+          },
+          "trigger_status": {
+            "type": "array",
+            "description": "Spec 14 §7.3 — one entry per configured trigger on this topic, whether or not it fired, for the topic card's triggers disclosure.",
+            "items": {
+              "type": "object",
+              "required": ["type", "met"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "enum": ["threshold", "baseline_deviation", "trend"] },
+                "met": { "type": ["boolean", "null"], "description": "null when there isn't enough data to evaluate." },
+                "detail": { "type": ["string", "null"], "description": "e.g. \"1.2 std devs above all your flights, n=41\" or \"R² 0.30 over 23 flights\"." }
+              }
+            }
+          },
+          "limit_refs": {
+            "type": "array",
+            "description": "Spec 10 §4.1 (Spec 01 §8.5): references to the events owner — the rule's limit_refs (limit_id), or for engine_ecu_inflight its CAS alert (cas_id, v0.21) — each resolved to this flight's limit_exceedances insight for it, or null if none fired. Drives the mirrored badge (Spec 03 §5.2); never an insight of its own.",
+            "items": {
+              "type": "object",
+              "required": ["insight_id"],
+              "additionalProperties": false,
+              "properties": {
+                "limit_id": { "type": "string" },
+                "cas_id": { "type": "string" },
+                "insight_id": { "type": ["string", "null"] }
+              },
+              "oneOf": [{ "required": ["limit_id"] }, { "required": ["cas_id"] }]
+            }
+          }
         }
       }
     },
@@ -57,7 +91,23 @@
         "message": {
           "type": "object",
           "required": ["text"],
-          "properties": { "text": { "type": "string" } }
+          "properties": {
+            "text": { "type": "string" },
+            "values": {
+              "type": "object",
+              "properties": {
+                "comparison": {
+                  "type": "object",
+                  "required": ["scope", "n"],
+                  "properties": {
+                    "scope": { "type": "string", "enum": ["band", "all"] },
+                    "band": { "type": ["string", "null"] },
+                    "n": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
         },
         "evidence": {
           "type": "array",
@@ -65,7 +115,7 @@
             "type": "object",
             "required": ["kind"],
             "properties": {
-              "kind": { "type": "string", "enum": ["metric", "baseline_point", "series_window", "exceedance", "ecu_run"] }
+              "kind": { "type": "string", "enum": ["metric", "baseline_point", "series_window", "exceedance", "cas_event"], "description": "cas_event (Spec 01 v0.21): ref is the CAS event's event_id; ecu_run is retired." }
             }
           }
         },
@@ -77,7 +127,59 @@
             "n": { "type": "integer" }
           }
         },
-        "note": { "type": "string" }
+        "note": { "type": "string" },
+        "source": { "type": "string", "enum": ["limit", "cas"], "description": "Spec 01 v0.21: on limit_exceedances insights — an OM-limit target or a classified CAS alert." },
+        "limit_id": { "type": "string", "description": "Spec 09 §11.3: set on limit_exceedances insights for a limit." },
+        "cas_id": { "type": "string", "description": "Spec 09 v0.18: set on limit_exceedances insights for a CAS alert." },
+        "filterable": { "type": "boolean", "description": "Spec 09 §6.3: whether this insight's limit can be filtered." },
+        "filter": {
+          "type": "object",
+          "required": ["filter_id", "outcome"],
+          "properties": {
+            "filter_id": { "type": "string" },
+            "outcome": { "type": "string", "enum": ["suppressed", "breach"] }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["event_id", "elapsed_s", "duration_s", "observed_value", "excess", "suppressed_by"],
+                "properties": {
+                  "event_id": { "type": "string" },
+                  "start_utc": { "type": "string" },
+                  "elapsed_s": { "type": ["number", "null"] },
+                  "duration_s": { "type": "number" },
+                  "observed_value": { "type": "number" },
+                  "excess": { "type": ["number", "null"] },
+                  "suppressed_by": { "enum": ["phase", "duration", "magnitude", null], "description": "Spec 09 §11.3: the simplest condition that tolerates the event — phase, then duration, then magnitude (v0.20)." },
+                  "phases": { "type": "array", "items": { "type": "string" }, "description": "Spec 09 v0.20: the phases the event's rows lie in, in order; UNKNOWN where no phase segment covers a row." }
+                }
+              },
+              {
+                "type": "object",
+                "description": "A CAS event (Spec 01 v0.21): no observed value or excess.",
+                "required": ["event_id", "elapsed_s", "duration_s", "classification", "phase", "phase_uncertain", "suppressed_by"],
+                "additionalProperties": false,
+                "properties": {
+                  "event_id": { "type": "string" },
+                  "start_utc": { "type": "string" },
+                  "elapsed_s": { "type": ["number", "null"] },
+                  "duration_s": { "type": "number" },
+                  "classification": { "type": "string", "enum": ["GROUND", "IN_FLIGHT"] },
+                  "phase": { "type": "string" },
+                  "phase_uncertain": { "type": "boolean" },
+                  "rpm": { "type": ["number", "null"] },
+                  "not_lane_check_reason": { "type": "string", "enum": ["rpm_below_band", "rpm_above_band", "too_long", "moving"] },
+                  "lane_check_band": { "type": "object", "required": ["rpm", "tolerance"], "additionalProperties": false, "properties": { "rpm": { "type": "number" }, "tolerance": { "type": "number" } }, "description": "The profile's lane-check rpm and tolerance; present when not_lane_check_reason is an rpm miss, so a row can print it." },
+                  "suppressed_by": { "enum": ["duration", null] }
+                }
+              }
+            ]
+          }
+        }
       }
     },
     "diagnostic": {

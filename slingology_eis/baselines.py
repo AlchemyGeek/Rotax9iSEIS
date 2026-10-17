@@ -9,20 +9,29 @@ result wherever they need.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from .fleet import baseline, baseline_stratified, trend, confidence_label
+from .egt import MARGIN_MIN_F
+from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, baseline, baseline_stratified, trend, confidence_label
+
+# Spec 08 §5: the usual hottest cylinder counts as "learned" only when it
+# wins at least this share of unambiguous flights, over at least n_min.
+ESTABLISHED_SHARE = 0.7
+ESTABLISHED_N_MIN = MIN_FLIGHTS_FOR_CONFIDENCE
 
 # Fleet baseline metric definitions: (key, source column, stratification band column)
 BASELINE_METRIC_DEFS = [
     ("egt_spread", "egt_spread_mean_f", "oat_band"),
-    ("egt4_elevation", "egt4_elevation_f", "oat_band"),
+    ("egt1_deviation", "egt1_deviation_f", "oat_band"),
+    ("egt2_deviation", "egt2_deviation_f", "oat_band"),
+    ("egt3_deviation", "egt3_deviation_f", "oat_band"),
+    ("egt4_deviation", "egt4_deviation_f", "oat_band"),
     ("oil_temp_peak", "oil_temp_max_f", "oat_band"),
     ("coolant_temp_peak", "coolant_temp_max_f", "oat_band"),
-    ("oil_coolant_ratio", "oil_coolant_ratio", "oat_band"),
     ("overboost_time", "overboost_total_s", None),
     ("cruise_efficiency", "cruise_nmpg", "da_band"),
     ("cruise_fuel_flow", "cruise_fuel_flow_gph", "da_band"),
@@ -30,6 +39,26 @@ BASELINE_METRIC_DEFS = [
     ("cruise_da_ft", "cruise_da_ft", None),
     ("takeoff_map_inhg", "takeoff_map_inhg", None),
 ]
+
+
+
+def limit_baseline_metric_defs(catalog: list[dict]) -> list[tuple[str, str, Optional[str]]]:
+    """
+    Spec 09 §5: (fleet key, flight metric column, band column) for every
+    limit's per-flight metrics, generated from a limit catalogue
+    (limits.limit_catalog, or FlightAnalysis.limits) — one entry per id,
+    in catalogue order. The band is the limit's `stratify_by` (§6.5).
+    """
+    from .limits import limit_metric_ids
+
+    defs, seen = [], set()
+    for entry in catalog:
+        if entry["id"] in seen:
+            continue
+        seen.add(entry["id"])
+        for flight_id, fleet_key, _ in limit_metric_ids(entry):
+            defs.append((fleet_key, flight_id, entry.get("stratify_by")))
+    return defs
 
 
 def _baseline_dict(b) -> dict:
@@ -104,48 +133,85 @@ def build_baselines(metrics: pd.DataFrame, engine_name: str) -> dict:
     }
 
 
+def fit_takeoff_map(rows: list[dict]) -> dict:
+    """
+    Fit MAP = f(pressure_alt_ft, oat_c) by least squares on `rows` (each
+    {"pressure_alt_ft", "oat_c", "map_inhg"}). Returns {n} alone below
+    the 5-flight minimum; otherwise also {coefficients, r_squared,
+    residual_se, pa_range, oat_range} — residual_se is sqrt(SSE / (n -
+    3)), pa_range/oat_range the (min, max) of the fitted rows' inputs.
+
+    Shared by the all-flights model (build_takeoff_map_model, for
+    Trends) and each flight's leave-one-out fit (Spec 10 D5,
+    operations.evaluate_insights) so both use identical regression
+    code and a flight is never part of the model it's judged by.
+    """
+    n = len(rows)
+    if n < 5:
+        return {"n": n}
+    pa = np.array([r["pressure_alt_ft"] for r in rows])
+    oat = np.array([r["oat_c"] for r in rows])
+    y = np.array([r["map_inhg"] for r in rows])
+    X = np.column_stack([np.ones(n), pa, oat])
+    coeffs, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    y_pred = X @ coeffs
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    p = 3
+    residual_se = (ss_res / (n - p)) ** 0.5 if n > p else None
+    return {
+        "n": n,
+        "coefficients": {
+            "intercept": round(float(coeffs[0]), 4),
+            "pressure_alt_ft": round(float(coeffs[1]), 6),
+            "oat_c": round(float(coeffs[2]), 4),
+        },
+        "r_squared": round(r2, 4),
+        "residual_se": round(residual_se, 4) if residual_se is not None else None,
+        "pa_range": (float(pa.min()), float(pa.max())),
+        "oat_range": (float(oat.min()), float(oat.max())),
+    }
+
+
 def build_takeoff_map_model(metrics: pd.DataFrame) -> dict:
     """
-    Fit (or describe insufficient data for) the takeoff MAP linear
-    regression model: MAP = f(pressure_alt_ft, oat_c). Returns a dict in
-    the models.json "takeoff_map" entry shape.
+    Fit (or describe insufficient data for) the all-flights takeoff MAP
+    linear regression model. Returns a dict in the models.json
+    "takeoff_map" entry shape — this is the fleet-wide fit shown on
+    Trends; evaluate_insights fits its own leave-one-out model per
+    flight from `raw` (Spec 10 D5), not from this fit.
     """
     map_df = metrics[["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c",
-                      "engine_hours", "date"]].dropna()
-    map_model = {"n": len(map_df), "confidence": confidence_label(len(map_df))}
+                      "engine_hours", "date", "source_file"]].dropna()
+    rows = [
+        {"pressure_alt_ft": row["takeoff_pressure_alt_ft"], "oat_c": row["takeoff_oat_c"],
+         "map_inhg": row["takeoff_map_inhg"]}
+        for _, row in map_df.iterrows()
+    ]
+    fit = fit_takeoff_map(rows)
+    map_model = {"n": fit["n"], "confidence": confidence_label(fit["n"])}
 
-    if len(map_df) >= 5:
-        from numpy.linalg import lstsq as _lstsq
-        X = np.column_stack([
-            np.ones(len(map_df)),
-            map_df["takeoff_pressure_alt_ft"].values,
-            map_df["takeoff_oat_c"].values,
-        ])
-        y = map_df["takeoff_map_inhg"].values
-        coeffs, _, _, _ = _lstsq(X, y, rcond=None)
-        y_pred = X @ coeffs
-        ss_res = float(np.sum((y - y_pred) ** 2))
-        ss_tot = float(np.sum((y - y.mean()) ** 2))
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    if fit["n"] >= 5:
         map_model.update({
             "type": "linear_regression",
             "features": ["pressure_alt_ft", "oat_c"],
             "target": "map_inhg",
-            "coefficients": {
-                "intercept": round(float(coeffs[0]), 4),
-                "pressure_alt_ft": round(float(coeffs[1]), 6),
-                "oat_c": round(float(coeffs[2]), 4),
-            },
-            "r_squared": round(r2, 4),
+            "coefficients": fit["coefficients"],
+            "r_squared": fit["r_squared"],
+            # Spec 14 §5.1 Models panel — already computed by fit_takeoff_map,
+            # just not previously returned for display.
+            "residual_se": fit["residual_se"],
         })
     else:
         map_model["note"] = (
             f"Still collecting data — need 5 minimum for first model fit "
-            f"(have {len(map_df)})"
+            f"(have {fit['n']})"
         )
 
     map_model["raw"] = [
         {
+            "flight_id": row["source_file"],
             "date": str(row["date"]),
             "engine_hours": row["engine_hours"],
             "map_inhg": row["takeoff_map_inhg"],
@@ -166,3 +232,34 @@ def build_models(metrics: pd.DataFrame) -> dict:
             "takeoff_map": build_takeoff_map_model(metrics),
         },
     }
+
+
+# ── Hottest cylinder (Spec 08 §5) ─────────────────────────────────────────────
+
+def established_hot_cylinder(
+    hottest: list[tuple[Optional[int], Optional[float]]],
+    expected_cyl: Optional[int] = None,
+    margin_min_f: float = MARGIN_MIN_F,
+) -> dict:
+    """
+    The aircraft's usual hottest cylinder, from per-flight (hottest_cyl,
+    margin_f) pairs. Flights whose hottest cylinder led by less than
+    `margin_min_f` are ambiguous and don't count. Learned when one cylinder
+    wins ≥ ESTABLISHED_SHARE of at least ESTABLISHED_N_MIN counted flights;
+    otherwise the engine profile's `expected_cyl` is used as a prior, else
+    nothing is established.
+
+    Returns {"cyl", "share", "n", "source"}; source is "learned" | "prior"
+    | "none". `share` and `n` describe the counted flights either way.
+    """
+    counted = [c for c, m in hottest if c is not None and m is not None and m >= margin_min_f]
+    n = len(counted)
+    share = None
+    if n:
+        top_cyl, top_count = Counter(counted).most_common(1)[0]
+        share = round(top_count / n, 3)
+        if n >= ESTABLISHED_N_MIN and share >= ESTABLISHED_SHARE:
+            return {"cyl": int(top_cyl), "share": share, "n": n, "source": "learned"}
+    if expected_cyl is not None:
+        return {"cyl": int(expected_cyl), "share": share, "n": n, "source": "prior"}
+    return {"cyl": None, "share": share, "n": n, "source": "none"}

@@ -21,19 +21,41 @@ from collections import Counter
 import pandas as pd
 
 from . import __version__
-from .cas import analyze_inflight_pattern, extract_engine_ecu_runs, parse_cas
+from .cas import CAS_EVENT_CLASSES, CLASSIFIED_CAS_IDS, ECU_CLASSES, extract_engine_ecu_runs, parse_cas, takeoff_not_detected
 from .contract import CONTRACT_VERSION, Diagnostic, Provenance, content_hash, engine_profile_ref
 from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
-from .limits import check_exceedances
+from .limits import check_exceedances, engine_running_s, limit_catalog, per_limit_metrics
 from .loader import flight_fingerprint, flight_id as _flight_id, load_log_bytes, source_key as _source_key
 from .phases import detect_phases, phase_segments
+from .channels import CHANNEL_REGISTRY
 from .registry import METRIC_REGISTRY, missing_reason
 from . import topics
+from . import filters as _filters
 
 # Airborne time (RPM > 3000 & IAS > 30kt — the same proxy loader.py's
 # ground-session filter uses) beyond which a flight with no TAKEOFF_ROLL/
 # CLIMB phase is flagged, rather than assumed to be a ground session.
-_TAKEOFF_NOT_DETECTED_THRESHOLD_ROWS = 180  # 3 minutes at 1 Hz
+
+# Spec 01 §8.4 / Spec 12 §11.1. The one definition of BaselineConfig's
+# defaults — update_fleet's own fallback and workspace.py's persisted-
+# document default both read this, rather than each hand-listing the
+# same literal (the task's own orientation note flags that duplication
+# as a thing to fix, not a thing to leave growing by one field per spec).
+DEFAULT_BASELINE_CONFIG: dict = {
+    "membership": "leave_one_out",
+    "band_kind_by_metric": {},
+    "outlier_z_threshold": 2.0,
+    "recent_window_hours": 10,
+    "recent_window_min_flights": 5,
+    "recent_window_max_flights": 15,
+    "om_margin_fraction": 0.25,
+}
+
+
+def _airport_from_filename(filename: str) -> Optional[str]:
+    import re
+    m = re.match(r"log_\d{8}_\d{6}_([^.]+)\.", filename)
+    return m.group(1) if m else None
 
 
 def _engine_major_minor(version: str) -> str:
@@ -46,15 +68,58 @@ def _elapsed_s(t, t0) -> Optional[float]:
 
 
 def _serialize_exceedance(e, t0) -> dict:
+    start_utc = e.started_at.isoformat()
     return {
+        # Spec 01 §8.6 (v0.21): one event list, `source` says which kind.
+        "source": "limit",
+        # Spec 09 §11.1: limit_id identifies the limit (stable across
+        # engine versions); event_id identifies this event within the
+        # flight, for annotations and drill-down.
+        "limit_id": e.limit_id,
+        "event_id": f"{e.limit_id}@{start_utc}",
+        "excess": e.excess,
         "param": e.param, "label": e.label, "unit": e.unit,
         "severity": e.severity, "limit_type": e.limit_type,
         "limit_value": e.limit_value, "observed_value": e.observed_value,
-        "start_utc": e.started_at.isoformat(),
+        "start_utc": start_utc,
         "elapsed_s": _elapsed_s(e.started_at, t0),
-        "duration_s": e.duration_s, "time_limit_s": e.time_limit_s,
+        "duration_s": e.duration_s,
         "note": e.note,
     }
+
+
+def cas_metric_id(cas_id: str) -> str:
+    """Per-flight / fleet metric id for a classified CAS alert's event
+    count, e.g. "cas_engine_ecu_events"."""
+    return "cas_" + cas_id.lower().replace(" ", "_") + "_events"
+
+
+def _cas_event_from_run(r: dict, t0) -> dict:
+    """A GROUND or IN_FLIGHT ENGINE ECU run as an event in the flight's
+    event list (`exceedances`, `source: "cas"`) — Spec 01 §8.6 v0.21."""
+    start_utc = r["start_time"].isoformat()
+    ev = {
+        "source": "cas",
+        "cas_id": "ENGINE ECU",
+        "event_id": f"ENGINE ECU@{start_utc}",
+        "classification": r["classification"],
+        "phase": r["phase"],
+        "phase_uncertain": bool(r["phase_uncertain"]),
+        "start_utc": start_utc,
+        "elapsed_s": _elapsed_s(r["start_time"], t0),
+        "duration_s": r["duration_s"],
+        "context": {
+            "rpm": r.get("running_rpm"),
+            "ias_kt": r.get("mean_ias_kt"),
+            "oil_nan_frac": r.get("oil_nan_frac"),
+            "co_alerts": list(r.get("co_alerts") or []),
+        },
+    }
+    if r.get("not_lane_check_reason"):
+        ev["not_lane_check_reason"] = r["not_lane_check_reason"]
+        if r["not_lane_check_reason"] in ("rpm_below_band", "rpm_above_band") and r.get("lane_check_band"):
+            ev["lane_check_band"] = {k: float(v) for k, v in r["lane_check_band"].items()}
+    return ev
 
 
 def _serialize_cas_event(e, t0) -> dict:
@@ -70,7 +135,10 @@ def _serialize_cas_event(e, t0) -> dict:
 def _serialize_ecu_run(r, t0) -> dict:
     return {
         "classification": r["classification"],
+        "phase": r["phase"],
+        "phase_uncertain": bool(r["phase_uncertain"]),
         "start_utc": r["start_time"].isoformat() if r["start_time"] is not None else None,
+        "end_utc": r["end_time"].isoformat() if r.get("end_time") is not None else None,
         "elapsed_s": _elapsed_s(r["start_time"], t0),
         "duration_s": r["duration_s"],
         "co_alerts": list(r.get("co_alerts") or []),
@@ -79,17 +147,24 @@ def _serialize_ecu_run(r, t0) -> dict:
         "lane_check_note": r.get("lane_check_note", ""),
         "mean_rpm": r.get("mean_rpm"),
         "mean_ias_kt": r.get("mean_ias_kt"),
+        "mean_power_pct": r.get("mean_power_pct"),
+        "mean_oil_press_psi": r.get("mean_oil_press_psi"),
+        "mean_oil_temp_f": r.get("mean_oil_temp_f"),
+        "mean_coolant_temp_f": r.get("mean_coolant_temp_f"),
+        "mean_main_volts": r.get("mean_main_volts"),
+        "mean_batt_amps": r.get("mean_batt_amps"),
+        "mean_fuel_press_psi": r.get("mean_fuel_press_psi"),
+        "mean_baro_alt_ft": r.get("mean_baro_alt_ft"),
     }
 
 
 def _format_exceedance_text(e: dict) -> str:
     """
     Match limits.ExceedanceEvent.__str__'s exact text, from the
-    serialized dict form (FlightAnalysis.exceedances) instead of the
-    live dataclass — topics.limit_exceedances() just needs something
-    stringifiable, and the notebook04 path still hands it real
-    ExceedanceEvent objects directly; this keeps both paths producing
-    the same message text.
+    serialized dict form (FlightAnalysis.exceedances). This was the
+    per-event limit_exceedances insight text — and so, hashed, its id —
+    before Spec 09; workspace.migrate_limit_annotations rebuilds those
+    old ids from it to move pilot notes onto the per-limit insights.
     """
     direction = "below min" if e["limit_type"] == "MIN" else "above max"
     t = e.get("start_utc")
@@ -136,8 +211,25 @@ class FlightAnalysis:
     exceedances: list[dict] = field(default_factory=list)
     cas_events: list[dict] = field(default_factory=list)
     ecu_runs: list[dict] = field(default_factory=list)
+    # Spec 01 §8.6 (v0.19): ENGINE ECU runs shorter than the profile's
+    # cas.min_event_duration_s (counted, not runs) and this flight's lane
+    # check — "both" | "single" | "none". Defaults cover analyses stored
+    # before v0.19 until they are re-analysed.
+    ecu_sub_threshold_blips: int = 0
+    ecu_lane_check: str = "none"
     quality: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    available_channels: list[str] = field(default_factory=list)
+    # Spec 09: the engine profile's limit catalogue (limits.limit_catalog)
+    # this flight was checked against, so insight evaluation can resolve
+    # a limit_ref without the profile in hand. Empty for analyses written
+    # before Spec 09.
+    limits: list[dict] = field(default_factory=list)
+    # Spec 08 v0.3 §6 (Spec 10 D4): fleet-dependent, so analyze_flight()
+    # (pure, no fleet in hand) always leaves this False — evaluate_insights()
+    # sets the real value from FleetAnalysis.cylinder_balance before this
+    # object is serialized to a caller.
+    hot_cyl_changed: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -150,8 +242,13 @@ class FlightAnalysis:
             "exceedances": self.exceedances,
             "cas_events": self.cas_events,
             "ecu_runs": self.ecu_runs,
+            "ecu_sub_threshold_blips": self.ecu_sub_threshold_blips,
+            "ecu_lane_check": self.ecu_lane_check,
             "quality": self.quality,
             "provenance": self.provenance,
+            "available_channels": self.available_channels,
+            "limits": self.limits,
+            "hot_cyl_changed": self.hot_cyl_changed,
         }
 
 
@@ -171,7 +268,20 @@ def analyze_flight(
     params = dict(params or {})
     field_elev_ft = params.get("field_elev_ft")
 
-    df, info = load_log_bytes(log_bytes, filename)
+    # Spec 01 v0.23 §6.5: AXIS frames are resampled to 1 s with holes up to
+    # max_fill_gap_s filled; a channel assignment exposes a raw
+    # general-purpose input under a registry id. Only the assignments that
+    # apply to this log enter the params hash, so a log without such
+    # channels hashes exactly as before.
+    max_fill_gap_s = params.pop("max_fill_gap_s", 2)
+    assignments = params.pop("channel_assignments", None) or {}
+    df, info = load_log_bytes(log_bytes, filename, max_fill_gap_s=max_fill_gap_s,
+                              channel_assignments=assignments)
+    applied = {raw: target for raw, target in assignments.items() if raw in df.columns and target in df.columns}
+    if applied:
+        params["channel_assignments"] = applied
+    if max_fill_gap_s != 2:
+        params["max_fill_gap_s"] = max_fill_gap_s
     df = detect_phases(df, field_elev_ft=field_elev_ft, verbose=False)
 
     fid = _flight_id(flight_fingerprint(df, info))
@@ -179,6 +289,14 @@ def analyze_flight(
     t0 = df["datetime"].iloc[0]
     phases_present = set(df["phase"].unique()) if "phase" in df.columns else set()
     channels_present = set(df.columns)
+    # Spec 07 §5: which chartable channels this particular log actually has
+    # data for — an older or Garmin Pilot export may be missing columns the
+    # registry declares, and the picker needs to know before the user taps
+    # rather than showing an empty line for the whole flight.
+    available_channels = sorted(
+        cid for cid, cdef in CHANNEL_REGISTRY.items()
+        if cdef.chartable and cid in df.columns and df[cid].notna().any()
+    )
 
     fm = compute_flight_metrics(df, info, engine_config)
 
@@ -194,20 +312,45 @@ def analyze_flight(
         metrics[metric_id] = mv
 
     exceedances = [_serialize_exceedance(e, t0) for e in check_exceedances(df, engine_config)]
+    limits = limit_catalog(engine_config)
+    # Spec 09 §5: per-limit metrics, baselined like any other (update_fleet).
+    metrics.update(per_limit_metrics(
+        exceedances, limits, engine_running_s(df), channels_present,
+        overboost_max_block_s=metrics.get("overboost_max_block_s", {}).get("value"),
+    ))
     cas_events = [_serialize_cas_event(e, t0) for e in parse_cas(df)]
-    ecu_runs = [_serialize_ecu_run(r, t0) for r in extract_engine_ecu_runs(df, engine_config=engine_config)]
+
+    takeoff_missing, airborne_rows = takeoff_not_detected(df)
+    # Spec 01 §8.6: classification by phase; the finding-9 guard needs to
+    # know whether this flight's takeoff went undetected.
+    ecu = extract_engine_ecu_runs(df, engine_config=engine_config, takeoff_not_detected=takeoff_missing)
+    ecu_runs = [_serialize_ecu_run(r, t0) for r in ecu.runs]
+    # Spec 01 §8.6 (v0.21): GROUND/IN_FLIGHT runs join the same event list
+    # as limit exceedances. Ground-context classes never become events.
+    exceedances.extend(_cas_event_from_run(r, t0) for r in ecu.runs if r["classification"] in CAS_EVENT_CLASSES)
+    # Spec 12 §5.8 (v0.10): per-flight event count per classified CAS
+    # alert, the base of its Trends frequency panel — present on every
+    # flight that logs CAS at all, so "eligible flight" means the same
+    # thing as for a limit's time_above_pct.
+    for cas_id in CLASSIFIED_CAS_IDS:
+        mid = cas_metric_id(cas_id)
+        if "cas_alert" in channels_present:
+            metrics[mid] = {"id": mid, "value": sum(1 for e in exceedances if e.get("cas_id") == cas_id)}
+        else:
+            metrics[mid] = {"id": mid, "value": None, "missing": "CHANNEL_MISSING"}
 
     quality: list[Diagnostic] = []
-    if "rpm" in df.columns and "ias_kt" in df.columns:
-        airborne_rows = int(((df["rpm"].fillna(0) > 3000) & (df["ias_kt"].fillna(0) > 30)).sum())
-    else:
-        airborne_rows = 0
-    if (airborne_rows > _TAKEOFF_NOT_DETECTED_THRESHOLD_ROWS
-            and "TAKEOFF_ROLL" not in phases_present and "CLIMB" not in phases_present):
+    if takeoff_missing:
         quality.append(Diagnostic(
             code="PHASE_TAKEOFF_NOT_DETECTED", severity="warn", scope="flight",
             message="Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
             refs={"airborne_rows": airborne_rows},
+        ))
+    if info.source_format == "axis":
+        quality.append(Diagnostic(
+            code="LOG_RESAMPLED_TO_1HZ", severity="info", scope="file",
+            message=f"Logged at about 0.83 Hz; put on a 1-second grid — {info.filled_share:.0%} of rows filled.",
+            refs={"source_format": "axis", "filled_share": f"{info.filled_share:.3f}"},
         ))
     if "CRUISE" not in phases_present:
         quality.append(Diagnostic(
@@ -228,7 +371,9 @@ def analyze_flight(
             round(info.engine_hours + fm.duration_min / 60, 2)
             if info.engine_hours is not None else None
         ),
-        "airport_hint": filename.rsplit(".", 1)[0].split("_")[-1] if "_" in filename else None,
+        # Only Garmin's own log_YYYYMMDD_HHMMSS_<airport>.csv names carry an
+        # airport (Spec 02 v0.12): an anonymised copy's flight_001.csv has none.
+        "airport_hint": _airport_from_filename(filename),
         "aircraft": {"ident": info.aircraft_ident or None, "system_id": info.system_id or None},
     }
 
@@ -246,6 +391,7 @@ def analyze_flight(
         engine_profile=profile_ref,
         params_hash=params_hash,
         source_keys=[skey],
+        channel_assignments=applied or None,
     )
 
     return FlightAnalysis(
@@ -258,22 +404,32 @@ def analyze_flight(
         exceedances=exceedances,
         cas_events=cas_events,
         ecu_runs=ecu_runs,
+        ecu_sub_threshold_blips=ecu.sub_threshold_blips,
+        ecu_lane_check=ecu.lane_check,
         quality=[d.to_dict() for d in quality],
         provenance=provenance.to_dict(),
+        available_channels=available_channels,
+        limits=limits,
     )
 
 
 @dataclass
 class EcuAnalysis:
     """
-    Spec 01 §7 `analyze_ecu` / §8.6. A fleet-level aggregation over
+    Spec 01 §7 `analyze_ecu` / §8.6 (v0.19). A fleet-level aggregation over
     already-computed FlightAnalysis.ecu_runs — no raw data, no engine
     config: classification already happened per-flight in analyze_flight.
+    `counts` carries all five classes (zero where none); `flights` carries
+    each flight's counts, sub-threshold blips and lane check; `events`
+    is the per-event co-active-alert detail (BACKLOG B3) for every GROUND
+    and IN_FLIGHT run — never a pooled table.
     """
     flight_ids: list[str]
     runs: list[dict]
     counts: dict[str, int]
-    inflight_pattern: dict
+    sub_threshold_blips: int
+    flights: list[dict]
+    events: list[dict]
     provenance: dict
 
     def to_dict(self) -> dict:
@@ -281,42 +437,89 @@ class EcuAnalysis:
             "flight_ids": self.flight_ids,
             "runs": self.runs,
             "counts": self.counts,
-            "inflight_pattern": self.inflight_pattern,
+            "sub_threshold_blips": self.sub_threshold_blips,
+            "flights": self.flights,
+            "events": self.events,
             "provenance": self.provenance,
         }
 
 
+_ECU_CONTEXT_FIELDS = (
+    "mean_rpm", "mean_power_pct", "mean_oil_press_psi", "mean_oil_temp_f",
+    "mean_coolant_temp_f", "mean_main_volts", "mean_batt_amps",
+    "mean_fuel_press_psi", "mean_ias_kt", "mean_baro_alt_ft", "oil_nan_frac",
+)
+
+
+def _ecu_inflight_text(run: dict) -> str:
+    """The engine_ecu_inflight insight text for one IN_FLIGHT run."""
+    t = run.get("start_utc")
+    when = datetime.fromisoformat(t).strftime("%H:%M:%S") if t else "?"
+    text = f"ENGINE ECU in flight at {when} for {run.get('duration_s', 0):.0f} s ({run.get('phase', '?')})."
+    if run.get("phase_uncertain"):
+        text += " Flight phase uncertain here."
+    return text
+
+
+def _ecu_run_output(r: dict) -> dict:
+    """
+    The API-facing per-run shape (Spec 01 §8.6's `runs[]`) — channel means
+    grouped under `context`, separate from the run's own identity/timing,
+    since a co-active-alert check (B3) is judged against the context, not
+    the classification.
+    """
+    return {
+        "flight_id": r["flight_id"],
+        "classification": r["classification"],
+        "phase": r.get("phase"),
+        "phase_uncertain": bool(r.get("phase_uncertain", False)),
+        "start_utc": r.get("start_utc"),
+        "end_utc": r.get("end_utc"),
+        "duration_s": r["duration_s"],
+        "co_alerts": r.get("co_alerts") or [],
+        "lane_check_pair": bool(r.get("lane_check_pair", False)),
+        "lane_check_note": r.get("lane_check_note", ""),
+        "context": {k: r.get(k) for k in _ECU_CONTEXT_FIELDS},
+    }
+
+
+def _class_counts(runs: list[dict]) -> dict[str, int]:
+    c = Counter(r["classification"] for r in runs)
+    return {k: c.get(k, 0) for k in ECU_CLASSES}
+
+
 def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
     """
-    Aggregate ECU runs across flights: per-classification counts and,
-    per BACKLOG B3, per-event co-active-alert analysis for IN_FLIGHT runs
-    (cas.analyze_inflight_pattern) rather than a pooled table.
+    Aggregate ENGINE ECU runs across flights (Spec 01 §8.6): counts for
+    the five classes, sub-threshold blips, each flight's lane check, and
+    per-event co-active alerts for every GROUND and IN_FLIGHT run.
     """
     all_runs: list[dict] = []
+    flights: list[dict] = []
     for fa in flight_analyses:
-        for run in fa.ecu_runs:
-            r = dict(run)
-            r["flight_id"] = fa.flight_id
-            all_runs.append(r)
+        runs = [{**run, "flight_id": fa.flight_id} for run in fa.ecu_runs]
+        all_runs.extend(runs)
+        flights.append({
+            "flight_id": fa.flight_id,
+            "counts": _class_counts(runs),
+            "sub_threshold_blips": fa.ecu_sub_threshold_blips,
+            "lane_check": fa.ecu_lane_check,
+        })
 
-    counts = dict(Counter(r["classification"] for r in all_runs))
-
-    inflight_for_pattern = [
+    events = [
         {
-            "source_file": r["flight_id"],
-            "start_time": r["start_utc"],
+            "flight_id": r["flight_id"],
+            "classification": r["classification"],
+            "start_utc": r.get("start_utc"),
             "duration_s": r["duration_s"],
-            "oil_nan_frac": r["oil_nan_frac"],
-            "co_alerts": r["co_alerts"],
+            "phase": r.get("phase"),
+            "phase_uncertain": bool(r.get("phase_uncertain", False)),
+            "co_alerts": r.get("co_alerts") or [],
+            "oil_nan_frac": r.get("oil_nan_frac"),
         }
-        for r in all_runs if r["classification"] == "IN_FLIGHT"
+        for r in all_runs if r["classification"] in ("GROUND", "IN_FLIGHT")
     ]
-    inflight_pattern = analyze_inflight_pattern(inflight_for_pattern)
-    # analyze_inflight_pattern's events reuse the key "source_file" for
-    # whatever identity string was passed in; here that's a flight_id,
-    # not a filename — rename for honesty in this aggregate's output.
-    for event in inflight_pattern["events"]:
-        event["flight_id"] = event.pop("source_file")
+    runs_output = [_ecu_run_output(r) for r in all_runs]
 
     flight_ids = [fa.flight_id for fa in flight_analyses]
     source_keys = sorted({sk for fa in flight_analyses for sk in fa.source_keys})
@@ -329,9 +532,11 @@ def analyze_ecu(flight_analyses: list[FlightAnalysis]) -> EcuAnalysis:
 
     return EcuAnalysis(
         flight_ids=flight_ids,
-        runs=all_runs,
-        counts=counts,
-        inflight_pattern=inflight_pattern,
+        runs=runs_output,
+        counts=_class_counts(all_runs),
+        sub_threshold_blips=sum(f["sub_threshold_blips"] for f in flights),
+        flights=flights,
+        events=events,
         provenance=provenance,
     )
 
@@ -387,6 +592,38 @@ def _metric_points(df: pd.DataFrame, col: str, band_col: Optional[str]) -> list[
     return points
 
 
+def _takeoff_map_residuals(df: pd.DataFrame, map_model: dict) -> pd.Series:
+    """
+    Spec 12 §11.6: per-flight (model prediction − observed takeoff MAP),
+    in inHg, from the all-flights fit `build_takeoff_map_model` already
+    produced (not a leave-one-out fit — this is the same "whole-fleet"
+    model the Boost / power strip's caption shows coefficients/note
+    for, matching how FleetAnalysis.models.takeoff_map has always been
+    the all-flights view; evaluate_insights's own leave-one-out fit per
+    flight, Spec 10 D5, is a separate, unrelated computation). Null
+    without a fitted model, or for a flight missing any of the three
+    inputs the model needs.
+    """
+    if map_model.get("type") != "linear_regression":
+        return pd.Series([None] * len(df), index=df.index)
+    c = map_model["coefficients"]
+    needed = ["takeoff_pressure_alt_ft", "takeoff_oat_c", "takeoff_map_inhg"]
+    if not all(col in df.columns for col in needed):
+        return pd.Series([None] * len(df), index=df.index)
+
+    def _residual(row):
+        if row[needed].isna().any():
+            return None
+        predicted = (
+            c["intercept"]
+            + c["pressure_alt_ft"] * row["takeoff_pressure_alt_ft"]
+            + c["oat_c"] * row["takeoff_oat_c"]
+        )
+        return predicted - row["takeoff_map_inhg"]
+
+    return df.apply(_residual, axis=1)
+
+
 def _metrics_dataframe_from_flight_analyses(flight_analyses: list[FlightAnalysis]) -> pd.DataFrame:
     """
     Reconstruct a fleet.py-compatible metrics table from FlightAnalysis[]
@@ -418,9 +655,16 @@ class FleetAnalysis:
     models: list[dict] = field(default_factory=list)
     quality: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    # Spec 08 §5. Optional so fleet caches written before it still load.
+    cylinder_balance: Optional[dict] = None
+    # Spec 12 §7/§11.2. change_summary is derived fresh every update_fleet
+    # call from metrics[*].shift (never persisted on its own); shift_history
+    # is workspace-persisted (Phase 2) and merged in by the caller.
+    change_summary: list[dict] = field(default_factory=list)
+    shift_history: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "fleet_key": self.fleet_key,
             "flight_ids": self.flight_ids,
             "excluded": self.excluded,
@@ -428,13 +672,125 @@ class FleetAnalysis:
             "models": self.models,
             "quality": self.quality,
             "provenance": self.provenance,
+            "change_summary": self.change_summary,
+            "shift_history": self.shift_history,
         }
+        if self.cylinder_balance is not None:
+            d["cylinder_balance"] = self.cylinder_balance
+        return d
+
+
+_CYL_DEVIATION_KEYS = [f"egt{n}_deviation" for n in range(1, 5)]
+
+
+def resolve_outlier_z_threshold(baseline_config: dict, metric_id: str) -> float:
+    """
+    Spec 01 §8.4 v0.8: `outlier_z_threshold` (resolved per metric as
+    `overrides[metric_id] ?? outlier_z_threshold`, default 2.0 if neither
+    is set) is the ONE value behind both update_fleet's FleetMetric.outliers
+    and evaluate_insights's baseline_deviation trigger — a shared resolver
+    so the two can't drift apart the way insight_rules.json's own
+    per-rule z_score_threshold field used to let them.
+    """
+    overrides = baseline_config.get("outlier_z_threshold_overrides") or {}
+    if metric_id in overrides:
+        return overrides[metric_id]
+    # The rule playground keys overrides by rule id; one rule block covers
+    # all four cylinder-balance metrics (Spec 08 §6 `applies_to`).
+    if metric_id in _CYL_DEVIATION_KEYS and "egt_cyl_deviation" in overrides:
+        return overrides["egt_cyl_deviation"]
+    return baseline_config.get("outlier_z_threshold", 2.0)
+
+
+def _hot_cyl_points(df: pd.DataFrame) -> list[dict]:
+    """Per-flight hottest cylinder, its margin and rank order (Spec 08 §5),
+    oldest first. Flights with no hottest cylinder are left out."""
+    if "egt_hottest_cyl" not in df.columns:
+        return []
+    sub = df[df["egt_hottest_cyl"].notna()]
+    points = []
+    for _, row in sub.iterrows():
+        rank = row.get("egt_rank_order")
+        points.append({
+            "flight_id": row["source_file"],
+            "date": str(row["date"]),
+            "x": float(row["engine_hours"]) if pd.notna(row.get("engine_hours")) else None,
+            "hottest_cyl": int(row["egt_hottest_cyl"]),
+            "margin_f": _to_plain(row.get("egt_hottest_margin_f")),
+            "rank_order": [int(c) for c in rank] if isinstance(rank, list) else None,
+        })
+    return _chronological(points)
+
+
+def _chronological(points: list[dict]) -> list[dict]:
+    # Engine hours first (monotonic per engine), date as the tie-break and
+    # the fallback when a log carries no engine-hours metadata.
+    return sorted(points, key=lambda p: (p["x"] is None, p["x"] or 0.0, p["date"]))
+
+
+_HOT_CYL_CHANGED_CONSECUTIVE = 2  # matches insight_rules.json's cylinder_rank default
+
+
+def _hot_cyl_changed_flags(
+    points: list[dict], expected_cyl: Optional[int], margin_min_f: float, consecutive: int,
+) -> dict[str, bool]:
+    """
+    Spec 08 v0.3 §6: per-flight context flag — has the hottest cylinder
+    differed from the aircraft's usual one, by at least margin_min_f, for
+    `consecutive` flights running (this one and the ones immediately
+    before it)? Computed once over the whole fleet (points already
+    chronological) rather than per flight at request time, since Trends
+    needs it for every point on the strip at once, not just one flight —
+    the same leave-window-out principle established_hot_cylinder() itself
+    uses. No longer an insight (Spec 10 D4): egt_cyl_deviation is what
+    actually fires; this only feeds the flag on FlightAnalysis and the
+    Trends strip/panel marks (§7 item 4).
+    """
+    from .baselines import established_hot_cylinder
+
+    flags: dict[str, bool] = {}
+    for i, p in enumerate(points):
+        window = points[max(0, i - consecutive + 1): i + 1]
+        if len(window) < consecutive:
+            flags[p["flight_id"]] = False
+            continue
+        window_ids = {w["flight_id"] for w in window}
+        established = established_hot_cylinder(
+            [(q["hottest_cyl"], q.get("margin_f")) for q in points if q["flight_id"] not in window_ids],
+            expected_cyl, margin_min_f,
+        )
+        usual = established.get("cyl")
+        flags[p["flight_id"]] = established.get("source") != "none" and all(
+            w["hottest_cyl"] != usual and w.get("margin_f") is not None and w["margin_f"] >= margin_min_f
+            for w in window
+        )
+    return flags
+
+
+def _cylinder_balance(df: pd.DataFrame, expected_cyl: Optional[int]) -> dict:
+    from .baselines import established_hot_cylinder
+    from .egt import MARGIN_MIN_F
+
+    points = _hot_cyl_points(df)
+    flags = _hot_cyl_changed_flags(points, expected_cyl, MARGIN_MIN_F, _HOT_CYL_CHANGED_CONSECUTIVE)
+    for p in points:
+        p["hot_cyl_changed"] = flags.get(p["flight_id"], False)
+    return {
+        "margin_min_f": MARGIN_MIN_F,
+        "expected_hot_cyl": expected_cyl,
+        "established_hot_cyl": established_hot_cylinder(
+            [(p["hottest_cyl"], p["margin_f"]) for p in points], expected_cyl, MARGIN_MIN_F,
+        ),
+        "points": points,
+    }
 
 
 def update_fleet(
     flight_analyses: list[FlightAnalysis],
     excluded: Optional[list[dict]] = None,
     baseline_config: Optional[dict] = None,
+    engine_config: Optional[dict] = None,
+    filters: Optional[list[dict]] = None,
 ) -> FleetAnalysis:
     """
     Spec 01 §7 `update_fleet` / §8.4. Computes the all-flights baseline,
@@ -445,12 +801,23 @@ def update_fleet(
     numbers. Membership here is always all-flights (for display, trend
     charts); evaluate_insights derives its own leave-one-out comparison
     per flight from the `points` this returns (R2, §8.4).
+
+    `engine_config` supplies only the profile's `expected_hot_cylinder`
+    (Spec 08 §3), the prior used until an aircraft's own hottest cylinder
+    is learned; without it there is no prior.
+
+    `filters` (Spec 09 §9, optional): the workspace's limit filters, read
+    only for Spec 12 §5.5's filter-band level crossing on per-limit
+    metrics. Absent filters simply means no filter-edge crossing can
+    fire — not an error.
     """
-    from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model
-    from .fleet import baseline, baseline_stratified, outliers, trend
+    from .baselines import BASELINE_METRIC_DEFS, build_takeoff_map_model, limit_baseline_metric_defs
+    from .fleet import baseline, baseline_stratified, outliers, trend, trend_stratified
+    from . import trends as _trends
 
     excluded = excluded or []
-    baseline_config = baseline_config or {"membership": "leave_one_out", "band_kind_by_metric": {}}
+    expected_cyl = (engine_config or {}).get("expected_hot_cylinder")
+    baseline_config = baseline_config or dict(DEFAULT_BASELINE_CONFIG)
 
     if not flight_analyses:
         return FleetAnalysis(
@@ -460,43 +827,277 @@ def update_fleet(
                 "engine_version": __version__, "schema_version": CONTRACT_VERSION,
                 "source_keys": [], "flight_analysis_keys": [], "baseline_config": baseline_config,
             },
+            cylinder_balance=_cylinder_balance(pd.DataFrame(), expected_cyl),
         )
 
     df = _metrics_dataframe_from_flight_analyses(flight_analyses)
 
+    # Spec 12 §11.6: the takeoff-MAP residual needs the all-flights model
+    # fit before the metric loop below can baseline it as an ordinary
+    # fleet metric — computed once here and reused for the `models` list
+    # output further down, rather than fit twice.
+    map_model = build_takeoff_map_model(df)
+    df["takeoff_map_residual_inhg"] = _takeoff_map_residuals(df, map_model)
+
+    # Spec 12 §5: the same limit catalogue evaluate_insights uses per
+    # flight, built fleet-wide here since the shift statistic is
+    # computed once per metric, not once per flight. Later flights'
+    # catalogue entries win on an id collision (a profile change
+    # mid-fleet) — consistent with analyses being replayed oldest first
+    # wherever replay order matters (R1.1).
+    limits_by_id = {lim["id"]: lim for fa in flight_analyses for lim in fa.limits}
+    # Spec 12 R3.3: worsening direction reads from the topic register
+    # (Spec 10) once one is on disk; absent (e.g. some unit tests' CWD),
+    # resolve_worsening_direction falls back to the Phase 1 provisional
+    # table.
+    from . import help as _help
+    register = _help.load_register()
+
     metrics_out: dict[str, dict] = {}
     quality: list[Diagnostic] = []
-    for key, col, band_col in BASELINE_METRIC_DEFS:
+    # Spec 09 §5: the per-limit metrics' defs are generated from the limit
+    # catalogue the flights were analysed against, not hand-listed.
+    metric_defs = (
+        BASELINE_METRIC_DEFS
+        + [("takeoff_map_residual_inhg", "takeoff_map_residual_inhg", None)]
+        + limit_baseline_metric_defs([lim for fa in flight_analyses for lim in fa.limits])
+        + [(cas_metric_id(c), cas_metric_id(c), None) for c in CLASSIFIED_CAS_IDS]
+    )
+    # Pass 1: baseline/trend/points/outliers for every metric. A z-mode
+    # filter's own reference validity (Spec 09 §7.3) needs a fleet's
+    # baselines to check against, which don't exist until this pass
+    # completes — active_filters() runs after it (below), not before,
+    # so z-mode filters resolve correctly instead of always invalidating
+    # with FILTER_REFERENCE_LOW_N (Session B R3b.2; Session A left
+    # z-mode out of scope specifically because of this ordering).
+    shift_inputs: list[tuple[str, Optional[str], float]] = []
+    for key, col, band_col in metric_defs:
         if col not in df.columns:
             continue
         b = baseline(df, col)
         t = trend(df, col, x="engine_hours")
 
+        z_threshold = resolve_outlier_z_threshold(baseline_config, key)
         entry = {
             "metric_id": key,
             "baseline": _fleet_baseline_dict(b),
             "trend": _fleet_trend_dict(t),
             "points": _metric_points(df, col, band_col),
-            "outliers": [{"flight_id": o.source_file, "z_score": o.z_score} for o in outliers(df, col)],
+            "outliers": [
+                {"flight_id": o.source_file, "z_score": o.z_score}
+                for o in outliers(df, col, z_threshold=z_threshold)
+            ],
         }
         if band_col and band_col in df.columns:
             stratified = baseline_stratified(df, col, band_column=band_col)
+            # Spec 03 §5.3 v0.10: stratified view redraws one trend line
+            # per band too, same n_min gate as the unstratified one — not
+            # just a split baseline. trend_stratified existed in fleet.py
+            # unused until now; nothing else in the pipeline needed it.
+            trend_by_band = trend_stratified(df, col, x="engine_hours", band_column=band_col)
             if stratified:
                 entry["by_band"] = {
                     "band_kind": band_col,
-                    "bands": {name: _fleet_baseline_dict(sb) for name, sb in stratified.items()},
+                    "bands": {
+                        name: {
+                            **_fleet_baseline_dict(sb),
+                            **({"trend": _fleet_trend_dict(trend_by_band[name])} if name in trend_by_band else {}),
+                            # Per-band outliers (R8, Spec 01 §8.4 v0.13) —
+                            # against that band's own all-flights baseline,
+                            # same threshold as the unstratified outliers
+                            # above, so the Trends view's rings agree with
+                            # the stratified baseline region when
+                            # stratification is on (Spec 03 §5.3 v0.11).
+                            "outliers": [
+                                {"flight_id": o.source_file, "z_score": o.z_score}
+                                for o in outliers(df[df[band_col] == name], col, z_threshold=z_threshold)
+                            ],
+                        }
+                        for name, sb in stratified.items()
+                    },
                 }
+        band_kind = band_col if (band_col and band_col in df.columns and entry.get("by_band")) else None
+        shift_inputs.append((key, band_kind, z_threshold))
+
+        # Spec 12 §11.7: per-limit fleet metrics carry the limit's own
+        # unit from the engine profile (peak_excess in the limit's unit,
+        # time_above_pct in %, limit_<id>_block_s in s).
+        limit_unit = _metric_unit(key, limits_by_id)
+        if limit_unit is not None:
+            entry["unit"] = limit_unit
+
         metrics_out[key] = entry
 
-        if 0 < b.n < MIN_FLIGHTS_FOR_CONFIDENCE:
+        # Per-limit metrics have no insight rules (Spec 09 §3); the filter
+        # monitor reports its own low-n condition (FILTER_REFERENCE_LOW_N).
+        if 0 < b.n < MIN_FLIGHTS_FOR_CONFIDENCE and not key.startswith("limit_"):
             quality.append(Diagnostic(
                 code="BASELINE_LOW_N", severity="info", scope="fleet",
                 message=f"{key}: baseline n={b.n}, below {MIN_FLIGHTS_FOR_CONFIDENCE} for a stable baseline.",
                 refs={"metric_id": key, "n": b.n},
             ))
 
+    # Resolving filters needs metrics_out's baselines in hand (the loop
+    # above) for a z-mode filter's own reference-validity check
+    # (filters.validate_filter reads fleet.metrics.get(...)) — a minimal
+    # stand-in exposing just that, rather than the full FleetAnalysis,
+    # which doesn't exist yet at this point in the call.
+    from types import SimpleNamespace
+    valid_filters, filter_diagnostics = _filters.active_filters(
+        filters or [], limits_by_id, fleet=SimpleNamespace(metrics=metrics_out))
+    quality.extend(Diagnostic(**d) if isinstance(d, dict) else d for d in filter_diagnostics)
+
+    # Pass 2: shift/bend/level crossing per metric, now that valid_filters
+    # (z-mode included) is resolved against this fleet's own baselines.
+    n_min = MIN_FLIGHTS_FOR_CONFIDENCE
+    for key, band_kind, z_threshold in shift_inputs:
+        shift, shift_diags = _compute_shift_for_metric(
+            key, metrics_out[key]["points"], band_kind, baseline_config, limits_by_id, valid_filters,
+            z_threshold, register=register,
+        )
+        if shift is not None:
+            metrics_out[key]["shift"] = shift
+            if "unit" in metrics_out[key]:
+                shift["unit"] = metrics_out[key]["unit"]
+        quality.extend(shift_diags)
+
+        # Spec 12 §9.3 readiness, non-limit metrics only — limit metrics
+        # (and overboost_time) get theirs in Pass 3 below, since "no
+        # events"/"rare" need the limit's lifetime event count, not just
+        # this one metric's own window. Skip metrics with no worsening
+        # direction at all (no shift possible, not "below n_min" — they
+        # simply aren't tracked for change, Phase 1 R1.6).
+        if not key.startswith("limit_") and key != "overboost_time" \
+                and resolve_worsening_direction(key, register) is not None:
+            # §9.3/§5.7.1: *pinned* is checked ahead of building/
+            # insufficient — a successfully pinned reference is already
+            # validated above n_min (REFERENCE_LOW_N reverts it to
+            # rolling otherwise), so it can't actually collide with
+            # "building"; visibility of the pin matters more than an
+            # "insufficient" comparison on the rare metric where both
+            # could apply.
+            if shift is not None and shift["reference"]["kind"] == "pinned":
+                metrics_out[key]["readiness"] = {"kind": "pinned", "label": _pin_badge_label(shift["reference"])}
+            elif shift is None:
+                metrics_out[key]["readiness"] = {"kind": "no_recent"}
+            elif shift["reference"]["n"] < n_min:
+                metrics_out[key]["readiness"] = {
+                    "kind": "building", "count": max(n_min - shift["reference"]["n"], 0),
+                }
+            elif shift["comparison"]["scope"] == "insufficient":
+                metrics_out[key]["readiness"] = {"kind": "insufficient"}
+
+    # Pass 3: event frequency per limit (Spec 12 §5.8), the primary
+    # limit-panel signal, and the limit-specific readiness badges
+    # (no_events/rare) it enables — additive over Pass 2, using each
+    # limit's own full-coverage metric (`time_above_pct`, or `block_s`
+    # for overboost — populated on every checked flight, unlike the
+    # sparse `peak_excess`) for "eligible flights" and its own window,
+    # independent of whatever window (or lack of one) that limit's
+    # sparse peak_excess resolved in Pass 2. The result is shared
+    # verbatim across every one of the limit's sub-metrics — peak_excess,
+    # time_above_pct, block_s, and overboost_time — since they all name
+    # the same limit (§9.3: badges shown "everywhere a metric is named").
+    hours = baseline_config.get("recent_window_hours", DEFAULT_BASELINE_CONFIG["recent_window_hours"])
+    min_flights = baseline_config.get("recent_window_min_flights", DEFAULT_BASELINE_CONFIG["recent_window_min_flights"])
+    max_flights = baseline_config.get("recent_window_max_flights", DEFAULT_BASELINE_CONFIG["recent_window_max_flights"])
+    frequency_delta = baseline_config.get("frequency_delta", _filters.FREQUENCY_DELTA)
+    cas_events_by_flight = {fa.flight_id: [e for e in fa.exceedances if e.get("source") == "cas"]
+                            for fa in flight_analyses}
+    # Targets for the pass: every limit, and (Spec 12 v0.10 §3.7 G1) every
+    # classified CAS alert — whose one metric is its per-flight event count
+    # and whose frequency is the panel's only signal (G2).
+    freq_targets = []
+    for lid, limit in limits_by_id.items():
+        ob = _filters.is_overboost(limit)
+        full_key = f"limit_{lid}_block_s" if ob else f"limit_{lid}_time_above_pct"
+        sibling_keys = [k for k in (
+            f"limit_{lid}_peak_excess", f"limit_{lid}_time_above_pct", f"limit_{lid}_block_s",
+            "overboost_time" if ob else None,
+        ) if k and k in metrics_out]
+        freq_targets.append((lid, limit, ob, full_key, sibling_keys))
+    for cas_id in CLASSIFIED_CAS_IDS:
+        key = cas_metric_id(cas_id)
+        freq_targets.append((_filters.cas_target_key(cas_id), _filters.cas_pseudo_limit(cas_id), False, key, [key]))
+    for lid, limit, ob, full_key, sibling_keys in freq_targets:
+        if full_key not in metrics_out:
+            continue
+        filtered = lid in valid_filters
+
+        points = metrics_out[full_key]["points"]
+        window = _trends.recent_window(points, hours, min_flights, max_flights)
+        if window is None:
+            for k in sibling_keys:
+                metrics_out[k]["readiness"] = {"kind": "filtered"} if filtered else {"kind": "no_recent"}
+            continue
+
+        if ob:
+            limit_value = limit["limit_value"]
+            has_event = lambda v, lv=limit_value: v is not None and v > lv
+        else:
+            has_event = lambda v: v is not None and v > 0
+
+        window_ids = set(window["flight_ids"])
+        all_ids = {p["flight_id"] for p in points if p.get("value") is not None}
+        reference_ids = list(all_ids - window_ids)
+        freq = _trends.event_frequency(points, window, reference_ids, has_event, frequency_delta, n_min)
+        total_events = freq["recent"]["events"] + freq["reference"]["events"]
+        # Spec 12 §8.4/§11.7: one tick per eligible flight for the event
+        # strip — the web is given the boolean directly rather than the
+        # has_event threshold (overboost's is the OM limit_value, not a
+        # bare >0), so it never has to reconstruct that logic itself.
+        events = [
+            {"flight_id": p["flight_id"], "date": p["date"], "x": p["x"], "has_event": has_event(p.get("value"))}
+            for p in _chronological([p for p in points if p.get("value") is not None])
+        ]
+        if _filters.is_cas(limit):
+            # Spec 12 v0.10 §8.4: a CAS tick's tooltip names each event's
+            # class and, when set, why it isn't a lane check.
+            for ev in events:
+                if ev["has_event"]:
+                    ev["cas_events"] = [
+                        {"classification": e["classification"], "phase": e["phase"], "duration_s": e["duration_s"],
+                         **({"not_lane_check_reason": e["not_lane_check_reason"]} if e.get("not_lane_check_reason") else {})}
+                        for e in cas_events_by_flight.get(ev["flight_id"], []) if e.get("cas_id") == limit["cas_id"]
+                    ]
+
+        for k in sibling_keys:
+            metrics_out[k]["frequency"] = freq
+            metrics_out[k]["events"] = events
+            if "unit" not in metrics_out[k]:
+                # overboost_time: a topic metric, not limit_-prefixed, so
+                # Pass 1's per-limit unit resolution skips it — but §8.4
+                # puts it in the same strip as limit_overboost_block_s,
+                # so it gets the same unit (seconds) here instead.
+                metrics_out[k]["unit"] = "s"
+            shift = metrics_out[k].get("shift")
+            if shift is not None:
+                shift["qualifies"] = bool(shift.get("qualifies") or freq["qualifies"])
+            # total_events (the limit's lifetime count, from the
+            # full-coverage metric) is the right denominator for
+            # no_events/rare — peak_excess's *own* reference is sparse by
+            # construction and would otherwise misfire "building" for any
+            # limit with a modest exceedance history. "insufficient" is
+            # the one fallback still worth keeping: it reflects a real
+            # stratification mismatch on this metric's own shift, not a
+            # thin reference.
+            # Pin state is per sub-metric (pinned_references is keyed by
+            # the exact metric_id — peak_excess and time_above_pct can
+            # be pinned independently), unlike frequency/no_events/rare
+            # above, which are shared across the whole limit.
+            pinned_here = shift is not None and shift["reference"]["kind"] == "pinned"
+            if filtered:
+                metrics_out[k]["readiness"] = {"kind": "filtered"}
+            elif total_events == 0:
+                metrics_out[k]["readiness"] = {"kind": "no_events"}
+            elif total_events < n_min:
+                metrics_out[k]["readiness"] = {"kind": "rare", "count": total_events}
+            elif pinned_here:
+                metrics_out[k]["readiness"] = {"kind": "pinned", "label": _pin_badge_label(shift["reference"])}
+            elif shift is not None and shift["comparison"]["scope"] == "insufficient":
+                metrics_out[k]["readiness"] = {"kind": "insufficient"}
+
     models: list[dict] = []
-    map_model = build_takeoff_map_model(df)
     if map_model.get("type") == "linear_regression":
         models.append({
             "id": "takeoff_map",
@@ -505,8 +1106,14 @@ def update_fleet(
             "coefficients": map_model["coefficients"],
             "n": map_model["n"],
             "r_squared": map_model["r_squared"],
+            "residual_se": map_model.get("residual_se"),
             "confidence": _confidence(map_model["n"]),
             "capture": "RPM>=5500 during TAKEOFF_ROLL",
+            # Spec 10 D5: every flight's own (pressure_alt_ft, oat_c,
+            # map_inhg), so evaluate_insights can fit its own leave-one-out
+            # model per flight rather than judging a flight against a fit
+            # that includes itself.
+            "points": map_model["raw"],
         })
     else:
         quality.append(Diagnostic(
@@ -514,6 +1121,8 @@ def update_fleet(
             message=f"takeoff_map: {map_model.get('note', 'insufficient data for a model fit')}",
             refs={"model_id": "takeoff_map", "n": map_model.get("n", 0)},
         ))
+
+    change_summary = _build_change_summary(metrics_out, register)
 
     flight_ids = [fa.flight_id for fa in flight_analyses]
     analysis_keys = sorted(fa.analysis_key for fa in flight_analyses)
@@ -535,6 +1144,8 @@ def update_fleet(
         models=models,
         quality=[d.to_dict() for d in quality],
         provenance=provenance,
+        cylinder_balance=_cylinder_balance(df, expected_cyl),
+        change_summary=change_summary,
     )
 
 
@@ -543,14 +1154,516 @@ def update_fleet(
 # topic-shaped keys) — this is the one place that reconciles them.
 _TOPIC_METRIC_MAP = {
     "egt_spread": ("egt_spread_mean_f", "egt_spread"),
-    "egt4_elevation": ("egt4_elevation_f", "egt4_elevation"),
     "oil_temp_peak": ("oil_temp_max_f", "oil_temp_peak"),
     "coolant_temp_peak": ("coolant_temp_max_f", "coolant_temp_peak"),
-    "oil_coolant_ratio": ("oil_coolant_ratio", "oil_coolant_ratio"),
-    "cruise_efficiency": ("cruise_nmpg", "cruise_efficiency"),
-    "cruise_fuel_flow": ("cruise_fuel_flow_gph", "cruise_fuel_flow"),
     "climb_thermal_rate": ("climb_oil_rise_f_per_min", "climb_thermal_rate"),
 }
+
+
+# Spec 12 R1.6: provisional worsening direction, in the engine for Phase
+# 1 only. Phase 3 replaces the lookup with the topic register's
+# `trends.worsening` declaration (resolve_worsening_direction, below) —
+# this dict becomes its fallback for anything the register doesn't
+# cover (there shouldn't be anything, once Phase 3 lands). A metric with
+# no entry here and no register declaration gets no shift at all — this
+# is how cruise_da_ft and the raw takeoff_map_inhg entry stay off the
+# change summary (Spec 12 §8.2 removes both as standalone Trends
+# entries).
+_PROVISIONAL_WORSENING: dict[str, str] = {
+    "egt_spread": "higher",
+    "egt1_deviation": "either", "egt2_deviation": "either",
+    "egt3_deviation": "either", "egt4_deviation": "either",
+    "oil_temp_peak": "higher",
+    "coolant_temp_peak": "higher",
+    "oil_coolant_ratio": "either",
+    "overboost_time": "higher",
+    "cruise_efficiency": "lower",
+    "cruise_fuel_flow": "higher",
+    "climb_thermal_rate": "higher",
+}
+
+
+#  Fleet metric id -> topic_id, for the metrics whose topic covers more
+#  than one fleet metric (egt_cyl_deviation's four egtN_deviation metrics)
+#  or is named differently (baselines.py's "egt_spread" vs. no topic
+#  rename needed there, kept for metrics whose id already equals its
+#  topic_id for symmetry/clarity). Metrics absent here and not
+#  limit_-prefixed have no topic at all (cruise_da_ft, takeoff_map_inhg —
+#  Spec 12 §8.2 removes both as standalone Trends entries) and fall
+#  through to no declaration, i.e. no shift (Phase 3, R3.1/R3.2).
+_FLEET_METRIC_TOPIC: dict[str, str] = {
+    "egt_spread": "egt_spread",
+    "egt1_deviation": "egt_cyl_deviation", "egt2_deviation": "egt_cyl_deviation",
+    "egt3_deviation": "egt_cyl_deviation", "egt4_deviation": "egt_cyl_deviation",
+    "oil_temp_peak": "oil_temp_peak",
+    "coolant_temp_peak": "coolant_temp_peak",
+    "oil_coolant_ratio": "oil_coolant_ratio",
+    "overboost_time": "overboost_time",
+    "cruise_efficiency": "cruise_efficiency",
+    "cruise_fuel_flow": "cruise_fuel_flow",
+    "climb_thermal_rate": "climb_thermal_rate",
+    "takeoff_map_residual_inhg": "map_at_takeoff",
+}
+
+
+def _topic_trends(topic_id: str, register: dict) -> Optional[dict]:
+    entry = next((t for t in register.get("topics", []) if t.get("topic_id") == topic_id), None)
+    return entry.get("trends") if entry else None
+
+
+def resolve_worsening_direction(metric_id: str, register: Optional[dict] = None) -> Optional[str]:
+    """
+    Spec 12 §8.1/§11.5/R3.3. Per-limit metrics always derive `higher` from
+    the limit itself (an excess or a time-above-limit share can only
+    worsen upward). Otherwise, the topic register's `trends.worsening`
+    for this metric's topic (Phase 3) if a `register` dict is supplied;
+    otherwise the Phase 1 provisional table (now the fallback, not the
+    primary source — kept for callers that don't load the register, e.g.
+    existing unit tests). None means "no shift for this metric" —
+    deliberate for a topic whose register entry has no `trends` block,
+    or no topic at all.
+    """
+    if metric_id.startswith("limit_"):
+        return "higher"
+    if register is not None:
+        topic_id = _FLEET_METRIC_TOPIC.get(metric_id)
+        if topic_id is None:
+            return None
+        trends_decl = _topic_trends(topic_id, register)
+        return trends_decl.get("worsening") if trends_decl else None
+    return _PROVISIONAL_WORSENING.get(metric_id)
+
+
+# Spec 09 §10.2's limit_refs convention, read directly here since
+# update_fleet has no rule set in hand to resolve a topic's OM limit
+# through evaluate_insights's own mechanism. egt_spread has two OM
+# limits depending on fuel flow at the time (Spec 09 §6.1's EGT split);
+# Phase 1 decision (see report): use the high-flow one, matching what
+# topics.egt_spread() already shows as "the" limit in its analysis line.
+_METRIC_LIMIT_REF = {
+    "oil_temp_peak": "oil_temp_max",
+    "coolant_temp_peak": "coolant_temp_max",
+    "overboost_time": "overboost",
+    "egt_spread": "egt_split_high_flow",
+}
+
+
+def _limit_id_for_metric(metric_id: str) -> Optional[str]:
+    """
+    OM limit id for a metric whose values are directly comparable to the
+    limit's own units — the basis for level crossing (§5.5). Deliberately
+    excludes `_time_above_pct` metrics (Phase 1 decision, see report):
+    a percentage share of flight time isn't commensurable with the
+    limit's raw units or a magnitude filter band, so those get neither
+    an OM-margin nor a filter-edge crossing.
+    """
+    if metric_id in _METRIC_LIMIT_REF:
+        return _METRIC_LIMIT_REF[metric_id]
+    if metric_id.startswith("limit_") and metric_id.endswith("_block_s"):
+        return metric_id[len("limit_"):-len("_block_s")]
+    if metric_id.startswith("limit_") and metric_id.endswith("_peak_excess"):
+        return metric_id[len("limit_"):-len("_peak_excess")]
+    return None
+
+
+def _metric_is_excess_scale(metric_id: str) -> bool:
+    """
+    True for `limit_<id>_peak_excess` metrics, whose own values are
+    already an excess above the limit (observed − limit_value) — the
+    OM margin line (defined on the limit's raw scale) doesn't apply to
+    them, and a filter's resolved band *is* their edge value directly,
+    with no + limit_value offset (Phase 1 decision, see report).
+    """
+    return metric_id.startswith("limit_") and metric_id.endswith("_peak_excess")
+
+
+def _om_limit_for_metric(metric_id: str, limits_by_id: dict) -> Optional[dict]:
+    lid = _limit_id_for_metric(metric_id)
+    return limits_by_id.get(lid) if lid else None
+
+
+def full_coverage_counterpart(metric_id: str) -> str:
+    """Spec 12 §5.8: the limit sub-metric populated on every checked
+    flight, not just exceeding ones — `peak_excess`'s sibling
+    `time_above_pct`; every other metric (including `block_s`, already
+    full coverage) is its own counterpart. Pure string mapping, no
+    engine config needed, so workspace.py's history logging can use it
+    without the limit catalogue in hand."""
+    if metric_id.endswith("_peak_excess"):
+        return metric_id[: -len("_peak_excess")] + "_time_above_pct"
+    return metric_id
+
+
+def _pin_badge_label(reference: dict) -> str:
+    """Spec 12 §5.7.1 item 1: the *pinned* badge/marker text is the
+    user's own label, or else the pin date formatted short ("12 Oct") —
+    resolved here, engine-side, like every other badge's text inputs,
+    so the web never reformats a raw ISO timestamp itself."""
+    if reference.get("label"):
+        return reference["label"]
+    set_at = reference.get("set_at")
+    if set_at:
+        try:
+            return datetime.fromisoformat(set_at).strftime("%-d %b")
+        except ValueError:
+            pass
+    return "pinned reference"
+
+
+def _metric_unit(metric_id: str, limits_by_id: dict) -> Optional[str]:
+    """Spec 12 §11.7: a per-limit metric's unit — `time_above_pct` is
+    always `%`, `block_s` (overboost) is always `s`, and `peak_excess`
+    takes the limit's own unit from the engine profile."""
+    if metric_id.endswith("_time_above_pct"):
+        return "%"
+    if metric_id.endswith("_block_s"):
+        return "s"
+    if metric_id.endswith("_peak_excess") and metric_id.startswith("limit_"):
+        lid = metric_id[len("limit_"):-len("_peak_excess")]
+        limit = limits_by_id.get(lid)
+        return limit.get("unit") if limit else None
+    return None
+
+
+def _compute_shift_for_metric(
+    metric_id: str,
+    points: list[dict],
+    band_kind: Optional[str],
+    baseline_config: dict,
+    limits_by_id: dict,
+    valid_filters: dict,
+    z_threshold: float,
+    register: Optional[dict] = None,
+) -> tuple[Optional[dict], list[Diagnostic]]:
+    """Spec 12 §5: the full `Shift` dict for one fleet metric, or (None,
+    diagnostics) when there's no shift to compute at all (no worsening
+    direction declared, or fewer than the minimum eligible flights)."""
+    from . import trends as _trends
+    from .filters import resolved_band, z_std_floor
+
+    diags: list[Diagnostic] = []
+    worsening = resolve_worsening_direction(metric_id, register)
+    if worsening is None:
+        return None, diags
+
+    hours = baseline_config.get("recent_window_hours", DEFAULT_BASELINE_CONFIG["recent_window_hours"])
+    min_flights = baseline_config.get("recent_window_min_flights", DEFAULT_BASELINE_CONFIG["recent_window_min_flights"])
+    max_flights = baseline_config.get("recent_window_max_flights", DEFAULT_BASELINE_CONFIG["recent_window_max_flights"])
+    window = _trends.recent_window(points, hours, min_flights, max_flights)
+    if window is None:
+        diags.append(Diagnostic(
+            code="RECENT_WINDOW_LOW_N", severity="info", scope="fleet",
+            message=f"{metric_id}: fewer than {min_flights} eligible flights — no recent window.",
+            refs={"metric_id": metric_id},
+        ))
+        return None, diags
+    if window["capped"]:
+        diags.append(Diagnostic(
+            code="RECENT_WINDOW_CAPPED", severity="info", scope="fleet",
+            message=f"{metric_id}: recent window capped at {max_flights} flights before reaching {hours} h.",
+            refs={"metric_id": metric_id},
+        ))
+
+    window_ids = set(window["flight_ids"])
+    all_ids = {p["flight_id"] for p in points if p.get("value") is not None}
+    n_min = MIN_FLIGHTS_FOR_CONFIDENCE
+    pinned = (baseline_config.get("pinned_references") or {}).get(metric_id)
+    reference_kind, reference_label, reference_set_at = "rolling", None, None
+    reference_ids = list(all_ids - window_ids)
+    if pinned:
+        pinned_ids = [fid for fid in pinned["flight_ids"] if fid in all_ids]
+        if len(pinned_ids) >= n_min:
+            reference_ids, reference_kind = pinned_ids, "pinned"
+            reference_label, reference_set_at = pinned.get("label"), pinned.get("set_at")
+        else:
+            diags.append(Diagnostic(
+                code="REFERENCE_LOW_N", severity="warn", scope="fleet",
+                message=f"{metric_id}: pinned reference has {len(pinned_ids)} flights after exclusions, "
+                         f"below {n_min} — reverted to rolling.",
+                refs={"metric_id": metric_id},
+            ))
+
+    limit = _om_limit_for_metric(metric_id, limits_by_id)
+    std_floor = z_std_floor(limit) if (limit is not None and metric_id.startswith("limit_")) else 0.0
+
+    result = _trends.shift_stat(points, window, reference_ids, band_kind, n_min, std_floor=std_floor)
+    if result["comparison"]["scope"] == "insufficient":
+        diags.append(Diagnostic(
+            code="SHIFT_COMPARISON_INSUFFICIENT", severity="info", scope="fleet",
+            message=f"{metric_id}: more than half the recent flights were unmatched to a reference band.",
+            refs={"metric_id": metric_id},
+        ))
+
+    ref_points = [p for p in points if p["flight_id"] in set(reference_ids) and p.get("x") is not None]
+    result["reference"]["kind"] = reference_kind
+    if reference_label is not None:
+        result["reference"]["label"] = reference_label
+    if reference_set_at is not None:
+        # Spec 12 §5.7.1 item 1: the pin marker/badge falls back to the
+        # pinned date when no label was given ("pinned · 12 Oct").
+        result["reference"]["set_at"] = reference_set_at
+    result["reference"]["hours_from"] = min((p["x"] for p in ref_points), default=None)
+    result["reference"]["hours_to"] = max((p["x"] for p in ref_points), default=None)
+    # Spec 01 §8.4's Baseline shape (Spec 12 §11.2's `reference: ... & Baseline`).
+    result["reference"]["confidence"] = _confidence(result["reference"]["n"])
+    for band_stats in result["reference"].get("by_band", {}).values():
+        band_stats["confidence"] = _confidence(band_stats["n"])
+
+    window_points = [p for p in points if p["flight_id"] in window_ids]
+    bend = _trends.bend(window_points, ref_points, worsening, n_min)
+    if bend is not None:
+        result["bend"] = bend
+
+    excess_scale = _metric_is_excess_scale(metric_id)
+    filter_edge_value = None
+    limit_id = _limit_id_for_metric(metric_id)
+    if limit_id and limit is not None:
+        filt = valid_filters.get(limit_id)
+        magnitude = filt.get("magnitude") if filt else None
+        if magnitude and magnitude["mode"] == "z":
+            # Spec 12 v0.3 §5.5 (Session B R3b.2): a z-mode band resolves
+            # against *this metric's* current reference (rolling or
+            # pinned) — not Spec 09's separately-frozen filter reference
+            # (that stays untouched for Spec 09's own monitor, §10) — so
+            # the result is already an absolute value on this metric's
+            # own scale, unlike absolute/percent's margin-above-the-limit
+            # convention below. No limit_value offset, regardless of
+            # excess_scale: result["reference"] is itself on the excess
+            # scale for a _peak_excess metric, or the raw scale for any
+            # other, and resolved_band's z branch returns a value already
+            # in that same scale.
+            filter_edge_value = resolved_band(filt, limit, result["reference"])
+        elif magnitude:
+            band = resolved_band(filt, limit)
+            # filters.py's band is a margin above the limit (§7.3's
+            # exceedance test is `excess <= band`). On a raw-scale metric
+            # (oil_temp_peak, overboost's block/total-time, etc.) the
+            # edge in that metric's own units is limit + band; on a
+            # `_peak_excess` metric the metric IS already that margin,
+            # so the band itself is the edge (no + limit_value).
+            if band is not None:
+                filter_edge_value = band if excess_scale else limit["limit_value"] + band
+
+    om_margin_fraction = baseline_config.get("om_margin_fraction", DEFAULT_BASELINE_CONFIG["om_margin_fraction"])
+    level = _trends.level_crossing(
+        result["recent"]["mean"], result["reference"].get("mean"), worsening,
+        None if excess_scale else limit, filter_edge_value, om_margin_fraction,
+    )
+    result["level"] = level
+
+    shift_z = result["shift_z"]
+    qualifies = bool(level["om_margin"] or level["filter_edge"] or (shift_z is not None and abs(shift_z) >= z_threshold))
+    result["qualifies"] = qualifies
+    return result, diags
+
+
+def _build_change_summary(metrics_out: dict[str, dict], register: Optional[dict] = None) -> list[dict]:
+    """
+    Spec 12 §7/§11.2, extended by v0.3 §7.1/D4 for coupled panels.
+
+    Ordinarily `{metric_id, rank}` for every qualifying metric. A panel
+    declared `coupled: true` in the register (today: cylinder_balance)
+    collapses every one of its qualifying members into a *single* row
+    instead — Session A's EGT3/EGT2 result (+4.0σ and −2.5σ in the same
+    window) is largely one event seen twice through four coupled
+    EGT-deviation metrics, and D4's plain-statement framing ("names the
+    member that moved most") only makes sense naming one metric. Decision
+    (Session B R3b.3): the coupled row's `metric_id` is that lead member
+    (the largest |shift_z|) — so the row still resolves directly to a
+    real `Shift` for its own detail, with no new "panel pseudo-metric"
+    concept — plus `panel` and `members` (every *qualifying* member;
+    full panel membership, qualifying or not, is `build_trends_panels`'s
+    job, not duplicated here). A level crossing on *any* member still
+    overrides ranking for the whole row (D4's "ranks by the largest
+    member, level crossings still override").
+
+    Ranked: level crossings first (OM margin before filter edge), then
+    by magnitude descending (acceptance 8) — §5.8: for a limit metric
+    whose event frequency qualifies, that is `|frequency.z|` (frequency
+    is the primary limit-panel signal); otherwise `|shift_z|` as before.
+    A metric carrying a §9.3 readiness badge is excluded outright —
+    "a metric with a badge other than *filtered* or *pinned* is never
+    ranked in the summary" (v0.5 §9.3) — those two badges describe a
+    choice the pilot made about the metric, not a data limitation, so a
+    filtered or pinned metric still ranks normally when it qualifies.
+    Without a `register` (e.g. some unit tests), no panel is coupled
+    and this is exactly Session A's one-row-per-metric behaviour.
+    """
+    qualifying: dict[str, dict] = {}
+    for metric_id, entry in metrics_out.items():
+        readiness_kind = (entry.get("readiness") or {}).get("kind")
+        if readiness_kind is not None and readiness_kind not in ("filtered", "pinned"):
+            continue
+        shift = entry.get("shift")
+        freq = entry.get("frequency")
+        shift_qualifies = bool(shift and shift.get("qualifies"))
+        freq_qualifies = bool(freq and freq.get("qualifies"))
+        if not (shift_qualifies or freq_qualifies):
+            continue
+        magnitude = -1.0
+        if freq_qualifies and freq.get("z") is not None:
+            magnitude = abs(freq["z"])
+        elif shift and shift.get("shift_z") is not None:
+            magnitude = abs(shift["shift_z"])
+        qualifying[metric_id] = {"_magnitude": magnitude, "_level": (shift.get("level") if shift else None) or {}}
+
+    coupled_panel_of: dict[str, str] = {}
+    if register is not None:
+        for metric_id in qualifying:
+            topic_id = _FLEET_METRIC_TOPIC.get(metric_id)
+            trends_decl = _topic_trends(topic_id, register) if topic_id else None
+            if trends_decl and trends_decl.get("coupled") and trends_decl.get("panel"):
+                coupled_panel_of[metric_id] = trends_decl["panel"]
+
+    rows = []
+    seen_panels: set = set()
+    for metric_id, info in qualifying.items():
+        panel = coupled_panel_of.get(metric_id)
+        if panel is None:
+            rows.append({"metric_id": metric_id, "_magnitude": info["_magnitude"], "_level": info["_level"]})
+            continue
+        if panel in seen_panels:
+            continue
+        seen_panels.add(panel)
+        members = [m for m in qualifying if coupled_panel_of.get(m) == panel]
+        lead = max(members, key=lambda m: qualifying[m]["_magnitude"])
+        rows.append({
+            "metric_id": lead, "panel": panel, "members": members,
+            "_magnitude": qualifying[lead]["_magnitude"],
+            "_level": {
+                "om_margin": any(qualifying[m]["_level"].get("om_margin") for m in members),
+                "filter_edge": any(qualifying[m]["_level"].get("filter_edge") for m in members),
+            },
+        })
+
+    def _sort_key(row):
+        priority = 0 if row["_level"].get("om_margin") else (1 if row["_level"].get("filter_edge") else 2)
+        return (priority, -row["_magnitude"])
+
+    ordered = sorted(rows, key=_sort_key)
+    out = []
+    for i, row in enumerate(ordered):
+        entry = {"metric_id": row["metric_id"], "rank": i}
+        if "panel" in row:
+            entry["panel"] = row["panel"]
+            entry["members"] = row["members"]
+        out.append(entry)
+    return out
+
+
+def _any_limit_id(metric_id: str) -> Optional[str]:
+    """Every per-limit metric's limit id, for panel grouping — unlike
+    _limit_id_for_metric (which deliberately excludes _time_above_pct,
+    R1.4's OM-margin scale decision), a panel just needs to know which
+    limit a metric belongs to, not whether the metric's own scale
+    matches the limit's."""
+    if not metric_id.startswith("limit_"):
+        return None
+    for suffix in ("_peak_excess", "_time_above_pct", "_block_s"):
+        if metric_id.endswith(suffix):
+            return metric_id[len("limit_"):-len(suffix)]
+    return None
+
+
+def build_trends_panels(
+    fleet: "FleetAnalysis", register: dict, filtered_limit_ids: Optional[set] = None,
+) -> list[dict]:
+    """
+    Spec 12 R3.3/§8: panel layout the web can build without a frontend
+    metric list. One entry per register-declared panel (metrics grouped
+    by their topic's trends.panel — §8.1), plus one generated entry per
+    limit that has a filter or at least one exceedance on an eligible
+    flight (R3.2: limit panels are generated, not declared, and never
+    appear for a limit that's neither). Removing a topic's trends field
+    (or its whole register entry) removes it from here too, since lookup
+    always goes through the live register — nothing here is cached from
+    a build where the declaration existed (acceptance 7).
+    """
+    filtered_limit_ids = filtered_limit_ids or set()
+    panels: dict[str, dict] = {}
+
+    for metric_id in fleet.metrics:
+        topic_id = _FLEET_METRIC_TOPIC.get(metric_id)
+        if topic_id is None:
+            continue
+        trends_decl = _topic_trends(topic_id, register)
+        if not trends_decl or not trends_decl.get("panel"):
+            continue
+        panel_id = trends_decl["panel"]
+        panels.setdefault(panel_id, {"panel": panel_id, "metrics": []})
+        panels[panel_id]["metrics"].append({
+            "metric_id": metric_id, "role": trends_decl.get("role", "primary"),
+            "worsening": trends_decl.get("worsening", "either"),
+            "phrasing": trends_decl.get("phrasing"),
+        })
+
+    # R3.2: per-limit metrics carry no register entry — phrasing/worsening
+    # derive from the limit itself (always "higher", R1.6), generic rather
+    # than per-limit wording.
+    _LIMIT_PHRASING = {
+        "higher": "spending more time or margin past the limit than it used to",
+        "lower": "spending less time or margin past the limit than it used to",
+    }
+    limit_has_exceedance: dict[str, bool] = {}
+    for metric_id, entry in fleet.metrics.items():
+        lid = _any_limit_id(metric_id)
+        if lid is not None:
+            limit_has_exceedance[lid] = limit_has_exceedance.get(lid, False) or entry["baseline"]["n"] > 0
+
+    for lid, has_exceedance in limit_has_exceedance.items():
+        filtered = lid in filtered_limit_ids
+        if not (has_exceedance or filtered):
+            continue
+        metrics = [m for m in (f"limit_{lid}_peak_excess", f"limit_{lid}_time_above_pct", f"limit_{lid}_block_s")
+                   if m in fleet.metrics]
+        # Most recent exceedance's engine hours — peak_excess/block_s points
+        # only exist for a flight that actually had one (unlike
+        # time_above_pct, which is 0-but-present on every flight), so the
+        # max x among them is exactly "most recently exceeded".
+        excess_key = f"limit_{lid}_block_s" if f"limit_{lid}_block_s" in fleet.metrics else f"limit_{lid}_peak_excess"
+        excess_points = fleet.metrics.get(excess_key, {}).get("points", [])
+        most_recent_hours = max((p["x"] for p in excess_points if p.get("x") is not None), default=-1.0)
+        panels[f"limit:{lid}"] = {
+            "panel": f"limit:{lid}", "limit_id": lid, "filtered": filtered,
+            "metrics": [{"metric_id": m, "role": "primary", "worsening": "higher", "phrasing": _LIMIT_PHRASING}
+                        for m in metrics],
+            "_most_recent_hours": most_recent_hours,
+        }
+
+    # Spec 12 v0.10 §3.7 G1–G3: one generated panel per classified CAS
+    # alert, from its per-flight event count — the event strip and the
+    # frequency header only (G2), no excess metric. Like a limit panel it
+    # is present whenever its eligible flights exist; with no events and no
+    # filter its readiness is no_events and the page groups it with the
+    # never-exceeded limits (G3).
+    _CAS_PHRASING = {
+        "higher": "occurring on more flights than it used to",
+        "lower": "occurring on fewer flights than it used to",
+    }
+    for cas_id in CLASSIFIED_CAS_IDS:
+        key = cas_metric_id(cas_id)
+        entry = fleet.metrics.get(key)
+        if not entry or not entry["baseline"]["n"]:
+            continue
+        target = _filters.cas_target_key(cas_id)
+        with_events = [p["x"] for p in entry.get("points", []) if p.get("value") and p.get("x") is not None]
+        panels[target] = {
+            "panel": target, "cas_id": cas_id, "filtered": target in filtered_limit_ids,
+            "metrics": [{"metric_id": key, "role": "primary", "worsening": "higher", "phrasing": _CAS_PHRASING}],
+            "_most_recent_hours": max(with_events, default=-1.0),
+        }
+
+    # §8.2 panel order: the four register-declared panels in their fixed
+    # order, then one entry per limit or CAS alert — filtered first, then
+    # by most recent exceedance (descending).
+    fixed_order = {"cylinder_balance": 0, "thermal": 1, "boost_power": 2, "fuel": 3}
+
+    def _sort_key(p):
+        if p["panel"] in fixed_order:
+            return (0, fixed_order[p["panel"]], 0.0)
+        return (1, 0 if p.get("filtered") else 1, -p.pop("_most_recent_hours", -1.0))
+
+    return sorted(panels.values(), key=_sort_key)
 
 
 def _leave_one_out_baseline(points: list[dict], flight_id: str) -> dict:
@@ -565,25 +1678,145 @@ def _leave_one_out_baseline(points: list[dict], flight_id: str) -> dict:
     return {"mean": round(mean, 4), "std": round(std, 4), "n": n}
 
 
-def _topic_baseline(fleet_metric: Optional[dict], flight_id: str) -> dict:
+def _leave_one_out_map_fit(points: list[dict], flight_id: str) -> dict:
+    """The takeoff-MAP regression fit on every other flight's point
+    (Spec 10 D5) — same exclusion pattern as _leave_one_out_baseline,
+    but for the regression model rather than a mean/std."""
+    from .baselines import fit_takeoff_map
+    others = [p for p in points if p["flight_id"] != flight_id]
+    return fit_takeoff_map(others)
+
+
+def _topic_baseline(fleet_metric: Optional[dict], flight_id: str, n_min: int = 10) -> dict:
     """
-    The {mean, std, n, trend} shape topics.py's baseline_triggered/
-    trend_triggered expect: leave-one-out for the baseline (R2), but the
-    all-flights trend unchanged — a trend over engine hours naturally
+    The {mean, std, n, trend, comparison} shape topics.py's
+    baseline_triggered/trend_triggered expect: leave-one-out for the
+    baseline (R2), taken within the flight's own weather band when the
+    metric is stratified and that band has at least n_min OTHER flights
+    (R8, Spec 01 §8.4 v0.13) — falling back to the unstratified
+    leave-one-out baseline otherwise. `comparison` records which was
+    used: {"scope": "band"|"all", "band": str|None, "n": int}. The trend
+    is always unstratified — a trend is over engine hours across all
+    flights regardless of weather, never split by band, and naturally
     includes the flight being evaluated as its newest point.
     """
     if not fleet_metric:
         return {}
-    loo = _leave_one_out_baseline(fleet_metric.get("points", []), flight_id)
+    points = fleet_metric.get("points", [])
     trend = fleet_metric.get("trend", {})
+
+    own_band = next((p.get("band") for p in points if p["flight_id"] == flight_id), None)
+    loo = _leave_one_out_baseline(points, flight_id)
+    comparison = {"scope": "all", "band": None, "n": loo["n"]}
+    if own_band is not None:
+        band_points = [p for p in points if p.get("band") == own_band]
+        band_loo = _leave_one_out_baseline(band_points, flight_id)
+        if band_loo["n"] >= n_min:
+            loo = band_loo
+            comparison = {"scope": "band", "band": own_band, "n": band_loo["n"]}
+
     return {
         "mean": loo["mean"], "std": loo["std"], "n": loo["n"],
+        "comparison": comparison,
         "trend": {
             "direction": trend.get("direction"),
             "r_squared": trend.get("r_squared"),
             "n": trend.get("n", 0),
             "slope": trend.get("slope"),
         },
+    }
+
+
+def exceedance_limit_id(e: dict) -> str:
+    """An exceedance's limit_id — or, for an analysis written before Spec
+    09 (no limit_id), a stand-in built from what it does carry, so its
+    events still group per limit until the flight is re-analysed."""
+    return e.get("limit_id") or f"legacy:{e['param']}:{e['limit_type']}:{e['label']}"
+
+
+def _event_id(e: dict) -> str:
+    """An exceedance's event_id — or, for an analysis written before Spec
+    09 (no event_id), the same stand-in _event_summary below already
+    falls back to on the way out. Used as a dict key wherever an event
+    needs to be looked up by identity (suppressed_by), so every reader
+    has to agree on this, not just the one write site that already
+    tolerated a missing key with .get()."""
+    return e.get("event_id") or f"{exceedance_limit_id(e)}@{e['start_utc']}"
+
+
+def _events_by_limit(exceedances: list[dict]) -> dict[str, list[dict]]:
+    """Events grouped by target — a limit_id, or "cas:<cas_id>" for a CAS
+    event (Spec 09 v0.18) — groups in order of each target's first event
+    (limit events are sorted by start time; CAS events follow them)."""
+    out: dict[str, list[dict]] = {}
+    for e in exceedances:
+        out.setdefault(_filters.event_target_key(e), []).append(e)
+    return out
+
+
+def _cas_event_window(e: dict) -> dict:
+    """series_window evidence for a CAS event — rpm and oil pressure, the
+    pair a CAN dropout or an engine cut shows up in."""
+    elapsed_s, duration_s = e.get("elapsed_s") or 0, e["duration_s"]
+    pad = max(duration_s * 0.5, 15)
+    return {
+        "kind": "series_window",
+        "channels": [c for c in ("rpm", "oil_press_psi") if c in CHANNEL_REGISTRY],
+        "start_s": max(0, elapsed_s - pad),
+        "end_s": elapsed_s + duration_s + pad,
+        "marker_start_s": elapsed_s,
+        "marker_end_s": elapsed_s + max(duration_s, 1),
+    }
+
+
+def _cas_event_summary(e: dict, suppressed_by: Optional[str] = None) -> dict:
+    out = {
+        "event_id": e["event_id"],
+        "start_utc": e["start_utc"],
+        "elapsed_s": e["elapsed_s"],
+        "duration_s": e["duration_s"],
+        "classification": e["classification"],
+        "phase": e["phase"],
+        "phase_uncertain": e["phase_uncertain"],
+        "rpm": e["context"].get("rpm"),
+        "suppressed_by": suppressed_by,
+    }
+    if e.get("not_lane_check_reason"):
+        out["not_lane_check_reason"] = e["not_lane_check_reason"]
+    if e.get("lane_check_band"):
+        out["lane_check_band"] = e["lane_check_band"]
+    return out
+
+
+def _limit_insight_id(flight_id: str, limit_id: str, kind: str) -> str:
+    """Spec 09 §10.1: stable across wording changes, so a pilot's note stays
+    attached when the message text changes."""
+    return content_hash({"flight_id": flight_id, "topic_id": "limit_exceedances",
+                         "limit_id": limit_id, "kind": kind})[:16]
+
+
+def _event_window(exc: dict) -> dict:
+    pad = max(exc["duration_s"] * 0.5, 15)
+    return {
+        "kind": "series_window",
+        "channels": [exc["param"]] if exc["param"] in CHANNEL_REGISTRY else [],
+        "start_s": max(0, (exc["elapsed_s"] or 0) - pad),
+        "end_s": (exc["elapsed_s"] or 0) + exc["duration_s"] + pad,
+    }
+
+
+def _event_summary(exc: dict, suppressed_by: Optional[str] = None) -> dict:
+    return {
+        "event_id": _event_id(exc),
+        "start_utc": exc["start_utc"],
+        "elapsed_s": exc["elapsed_s"],
+        "duration_s": exc["duration_s"],
+        "observed_value": exc["observed_value"],
+        "excess": exc.get("excess") if exc.get("excess") is not None else (
+            exc["observed_value"] - exc["limit_value"] if exc["limit_type"] == "MAX"
+            else exc["limit_value"] - exc["observed_value"]),
+        "suppressed_by": suppressed_by,
+        "phases": exc.get("phases") or ["UNKNOWN"],
     }
 
 
@@ -596,7 +1829,167 @@ def _severity_for(rules: dict, topic_id: str, trigger_type: str) -> str:
     return "limit" if trigger_type == "threshold" else "watch"
 
 
-def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict) -> "InsightSet":
+# Spec 14 §7.3 (v0.5): topics that ship disabled because the engine
+# doesn't surface them — context-only (cylinder_rank, Spec 10 D4) or
+# Research (climb_thermal_rate, D2) — not because a user turned them off.
+# They get no card, disabled or not, so they're never editable (§7.2
+# guards). Same set as register.json's help: false non-removed topics.
+NO_CARD_TOPICS = frozenset({"cylinder_rank", "climb_thermal_rate"})
+
+
+def _disabled_topic(topic_id: str) -> dict:
+    """Spec 14 §7.3 (v0.5): a topic the user disabled still returns a
+    result, so its card stays (collapsed, with Enable) — enabled: false,
+    no analysis, no insight, nothing to report on its triggers."""
+    return {
+        "topic_id": topic_id,
+        "analysis": {"text": ""},
+        "insights": [],
+        "metric_ids": [],
+        "enabled": False,
+        "trigger_status": [],
+    }
+
+
+def _emit_cyl_deviation(fa, fleet, r_data, baseline_config, emit, topics_out) -> None:
+    """Spec 08 §6 `egt_cyl_deviation`: one rule block applied to each
+    cylinder's balance metric (`applies_to`), each against its own
+    leave-one-out baseline."""
+    rule = r_data.get("egt_cyl_deviation", {})
+    if not rule.get("enabled", True):
+        topics_out.append(_disabled_topic("egt_cyl_deviation"))
+        return
+    all_triggers = rule.get("triggers", [])
+    applies_to = set(rule.get("applies_to") or _CYL_DEVIATION_KEYS)
+    bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
+
+    cyls, metric_ids, low_n, fleet_n = [], [], False, 0
+    status_cyls = []  # (cyl_n, value, b, z_threshold) for every applies_to cylinder
+    for n, key in enumerate(_CYL_DEVIATION_KEYS, start=1):
+        fleet_metric = fleet.metrics.get(key)
+        value = fa.metrics.get(f"{key}_f", {}).get("value")
+        if fleet_metric is None and value is None:
+            continue
+        metric_ids.append(key)
+        b = _topic_baseline(fleet_metric, fa.flight_id, bd_n_min)
+        fleet_n = max(fleet_n, b.get("n", 0))
+        cyl_low_n = 0 < b.get("n", 0) < bd_n_min
+        low_n = low_n or cyl_low_n
+        z = resolve_outlier_z_threshold(baseline_config, key)
+        triggers = [] if key not in applies_to else [
+            {**t, "z_score_threshold": z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+            if not (cyl_low_n and t.get("type") == "baseline_deviation")
+        ]
+        cyls.append({"cyl": n, "value": value, "b": b, "triggers": triggers})
+        if key in applies_to:
+            status_cyls.append((n, value, b, z))
+
+    if not cyls:
+        return
+    raw = topics.cyl_deviation(cyls)
+    for ins in raw["insights"]:
+        ins["evidence"] = [{"kind": "metric", "metric_id": f"egt{ins.pop('cyl')}_deviation"}]
+
+    # Spec 14 §7.3 — one topic card, four cylinders behind one rule: the
+    # disclosure shows one status per trigger, naming whichever cylinder
+    # comes closest to (or already meets) it, rather than four rows for
+    # a rule that's edited once for all of them.
+    trigger_status = []
+    for t in all_triggers:
+        ttype = t.get("type")
+        if ttype == "baseline_deviation":
+            candidates = []
+            for cyl_n, value, b, z_thr in status_cyls:
+                _, _, comparison = topics.baseline_triggered(value, b, {**t, "z_score_threshold": z_thr})
+                z = comparison.get("z")
+                if z is not None and comparison.get("n", 0) >= t.get("n_min", 10):
+                    candidates.append((abs(z), cyl_n, value, b, z_thr))
+            if candidates:
+                _, cyl_n, value, b, z_thr = max(candidates, key=lambda c: c[0])
+                st = _trigger_status({**t, "z_score_threshold": z_thr}, value, b)
+                st["detail"] = f"cyl {cyl_n}: {st['detail']}"
+                trigger_status.append(st)
+            else:
+                trigger_status.append({"type": ttype, "met": None, "detail": None})
+        elif ttype == "trend":
+            candidates = []
+            for cyl_n, _, b, _z in status_cyls:
+                _, _, detail = topics.trend_triggered(b, t)
+                if detail is not None:
+                    candidates.append((detail["r_squared"], cyl_n, b))
+            if candidates:
+                _, cyl_n, b = max(candidates, key=lambda c: c[0])
+                st = _trigger_status(t, None, b)
+                st["detail"] = f"cyl {cyl_n}: {st['detail']}"
+                trigger_status.append(st)
+            else:
+                trigger_status.append({"type": ttype, "met": None, "detail": None})
+        else:
+            trigger_status.append({"type": ttype, "met": None, "detail": None})
+
+    emit("egt_cyl_deviation", raw, metric_ids, fleet_n, trigger_status)
+    if low_n:
+        topics_out[-1]["_low_n"] = True
+
+
+def _hot_cyl_changed_for(fa, fleet) -> bool:
+    """Spec 08 v0.3 §6: `hot_cyl_changed` is a flag on FlightAnalysis, not
+    a rule condition — `cylinder_rank` emits no TopicResult. The flag
+    itself is computed fleet-wide, once per update_fleet() (same
+    leave-window-out principle as established_hot_cylinder), not
+    recomputed here with rule-playground overrides — Trends needs the
+    same flag for every flight on the strip at once, not just the one
+    being evaluated, so there is exactly one computation to agree with
+    (_hot_cyl_changed_flags)."""
+    cb = fleet.cylinder_balance or {}
+    point = next((p for p in cb.get("points", []) if p["flight_id"] == fa.flight_id), None)
+    return bool(point and point.get("hot_cyl_changed"))
+
+
+def _trigger_status(trigger: dict, value, b: dict) -> dict:
+    """Spec 14 §7.3 — whether `trigger` was met on this flight and by how
+    much, for the topic card's triggers disclosure, independent of
+    whether it actually produced a firing insight. Reuses topics.py's
+    own baseline_triggered/trend_triggered for the met/not-met decision
+    (the exact same call the topic function already makes for the
+    insight itself) rather than re-deriving it — only the text
+    formatting below is new, not the computation. `met` is None when
+    there isn't enough data to evaluate at all (distinct from False,
+    "evaluated and not met")."""
+    ttype = trigger.get("type")
+    if ttype == "baseline_deviation":
+        triggered, _, comparison = topics.baseline_triggered(value, b, trigger)
+        z = comparison.get("z")
+        # Below n_min, the same "not a reliable comparison" rule
+        # BASELINE_LOW_N already applies elsewhere — insufficient, not
+        # evaluated, regardless of what z happens to say.
+        if z is None or comparison.get("n", 0) < trigger.get("n_min", 10):
+            return {"type": ttype, "met": None, "detail": None}
+        direction = "above" if z > 0 else "below"
+        scope_text = (
+            f"your other {comparison['band']} flights, n={comparison['n']}"
+            if comparison.get("scope") == "band" and comparison.get("band")
+            else f"all your flights, n={comparison.get('n', 0)}"
+        )
+        return {"type": ttype, "met": triggered, "detail": f"{abs(z):.1f} std devs {direction} {scope_text}"}
+    if ttype == "trend":
+        triggered, _, detail = topics.trend_triggered(b, trigger)
+        if detail is None:
+            return {"type": ttype, "met": None, "detail": None}
+        dir_text = f", trending {detail['direction']}" if detail["direction"] in ("increasing", "decreasing") else ""
+        return {
+            "type": ttype, "met": triggered,
+            "detail": f"R² {detail['r_squared']:.2f} over {detail['n']} flights{dir_text}",
+        }
+    return {"type": ttype, "met": None, "detail": None}
+
+
+def evaluate_insights(
+    flight_analysis: FlightAnalysis, fleet_analysis: FleetAnalysis, rules: dict,
+    annotations: Optional[list[dict]] = None,
+    filters: Optional[list[dict]] = None,
+) -> "InsightSet":
     """
     Spec 01 §7 `evaluate_insights` / §8.5. Wraps topics.py's 13 topic
     functions, attributing each triggered insight to a rule and severity
@@ -611,139 +2004,509 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
     what the current text report actually prints. Per §8's own note,
     "type sketches are illustrative."
 
-    Known gap: `cylinder_rank` isn't wired here — its analysis needs
-    per-cylinder rank order (egt_health()'s rank_order), which isn't a
-    registered metric on FlightAnalysis today, only the boolean
-    `egt_rank_stable` is. Extending the registry to carry it is a
-    reasonable follow-up, not done in this pass.
+    `annotations` (Spec 02 §6.5, R3): pilot notes already filtered to
+    this flight_id — "the host is responsible for matching; the engine
+    only attaches." Matched here by insight_id, which is itself a
+    content_hash of {flight_id, topic_id, trigger, text} (below) — stable
+    across re-evaluations only as long as an insight's exact wording
+    doesn't change; a Sync reanalysis or a rule-playground edit that
+    shifts a z-score enough to change the rendered text would orphan an
+    existing note. A real edge, not fixed here, just not silently
+    smoothed over either. `limit_exceedances` insights are the exception
+    (Spec 09 §10.1): one per limit per flight, id'd by limit, not text.
+
+    `filters` (Spec 09 §7, §10): the workspace's limit filters
+    (filters.json entries). Each is validated here, not only by the UI —
+    an invalid one is ignored with a diagnostic, the limit reporting
+    unfiltered. A filtered limit's events split into a quiet "filtered"
+    insight and a "breach" insight at the rule's severity; topic threshold
+    insights for that limit fire only on breaching events. baseline_
+    deviation and trend insights are never filtered. InsightSet.
+    filters_hash identifies the filters applied.
+
+    `cylinder_rank` (Spec 08 §6) compares this flight's hottest cylinder
+    with the aircraft's usual one, from FleetAnalysis.cylinder_balance;
+    `egt_cyl_deviation` baselines each cylinder's balance separately.
     """
     r_data = rules.get("rules", {})
     rules_hash = content_hash(rules)
     fm = flight_analysis.metrics
     flight_id = flight_analysis.flight_id
+    notes_by_insight_id = {
+        a["ref"]["insight_id"]: a["note"] for a in (annotations or []) if a.get("ref", {}).get("kind") == "insight"
+    }
+    # Same BaselineConfig update_fleet resolved fleet_analysis's outliers
+    # from (carried in provenance) — not a fresh param, so this can never
+    # be called with a config that disagrees with the fleet it's paired
+    # with (Spec 01 §8.4 v0.8's "one threshold, two consumers").
+    baseline_config = fleet_analysis.provenance.get("baseline_config") or {}
 
     topics_out: list[dict] = []
+    limit_diagnostics: list[dict] = []
+    filters_hash = content_hash(sorted(filters or [], key=lambda f: str(f.get("id"))))
 
-    def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int):
+    # Spec 09: limits resolve through the catalogue the flight was checked
+    # against. Empty for a pre-Spec-09 analysis — topics then fall back to
+    # the legacy numeric thresholds until the flight is re-analysed.
+    limits_by_id = _filters.with_cas_targets({lim["id"]: lim for lim in flight_analysis.limits})
+    # Spec 09 §11.3 (v0.20): each limit event carries the phases its rows
+    # lie in — from the flight's own phase segments, so it applies to
+    # analyses stored before v0.20 too. CAS events keep their classifier phase.
+    events_by_limit = _events_by_limit([
+        e if e.get("source") == "cas" else {**e, "phases": _filters.event_phases(e, flight_analysis.phases)}
+        for e in flight_analysis.exceedances
+    ])
+
+    # Spec 09 §7: classify each filtered limit's events. `unsuppressed`
+    # (breaches, or every event on an unfiltered limit) is what topic
+    # thresholds react to (§10.2).
+    valid_filters, filter_diagnostics = _filters.active_filters(filters or [], limits_by_id, fleet_analysis)
+    limit_diagnostics.extend(filter_diagnostics)
+    suppressed_by: dict[str, Optional[str]] = {}   # event_id -> "phase" | "duration" | "magnitude" | None
+    frozen_by_limit: dict[str, dict] = {}
+    for lid, flt in valid_filters.items():
+        lim = limits_by_id[lid]
+        z_ref = None
+        if (flt.get("magnitude") or {}).get("mode") == "z":
+            frozen = _filters.frozen_baseline(fleet_analysis, _filters._magnitude_metric(lim),
+                                              (flt.get("reference") or {}).get("flight_ids", []))
+            frozen_by_limit[lid] = frozen
+            z_ref, _ = _filters.comparison_set(frozen, _filters.flight_band(flight_analysis, lim))
+        for e in events_by_limit.get(lid, []):
+            suppressed_by[_event_id(e)] = _filters.classify_event(e, flt, lim, z_ref)
+    unsuppressed_by_limit = {
+        lid: [e for e in evs if suppressed_by.get(_event_id(e)) is None]
+        for lid, evs in events_by_limit.items()
+    }
+
+    def _resolve_limit_ref_events(topic_id: str) -> tuple[Optional[dict], Optional[list]]:
+        """
+        Spec 10 §4.1 (Spec 09 §10.2, §10.3): (om_limit, unsuppressed events)
+        for a topic's rule-level `limit_refs` — the one mechanism every
+        limit-referencing topic uses now (oil_temp_peak, coolant_temp_peak,
+        overboost_time alike; Phase 6's overboost-only fallback is gone).
+        `limit_refs` can in principle list more than one limit, but every
+        current topic lists exactly one — the one this drives the analysis
+        line and TopicResult.limit_refs for. An unresolvable entry reports
+        a diagnostic rather than silently comparing against nothing.
+        """
+        refs = r_data.get(topic_id, {}).get("limit_refs") or []
+        if not refs or not flight_analysis.limits:
+            return None, None
+        ref = refs[0]
+        om_limit = limits_by_id.get(ref)
+        if om_limit is None:
+            limit_diagnostics.append(Diagnostic(
+                code="RULES_LIMIT_REF_UNRESOLVED", severity="warn", scope="topic",
+                message=f"{topic_id}: limit_refs entry {ref!r} is not a limit in this engine profile.",
+                refs={"topic_id": topic_id, "limit_ref": ref},
+            ).to_dict())
+            return None, None
+        return om_limit, unsuppressed_by_limit.get(ref, [])
+
+    def _emit(topic_id: str, raw: dict, metric_ids: list[str], fleet_n: int, trigger_status: Optional[list] = None):
         confidence = _confidence(fleet_n)
         insights = []
         for ins in raw["insights"]:
-            severity = _severity_for(rules, topic_id, ins["trigger"])
-            insights.append({
-                "id": content_hash({"flight_id": flight_id, "topic_id": topic_id,
-                                     "trigger": ins["trigger"], "text": ins["text"]})[:16],
+            severity = ins.get("severity") or _severity_for(rules, topic_id, ins["trigger"])
+            insight_id = content_hash({"flight_id": flight_id, "topic_id": topic_id,
+                                        "trigger": ins["trigger"], "text": ins["text"]})[:16]
+            # comparison (R8, Spec 01 §8.4 v0.13): only baseline_deviation
+            # insights carry one — topics.py's baseline_triggered() is the
+            # only thing that sets it on the raw insight dict.
+            message = {"text": ins["text"]}
+            if ins.get("comparison"):
+                message["values"] = {"comparison": ins["comparison"]}
+            extra = {"filter": ins["filter"]} if ins.get("filter") else {}
+            if "filterable" in ins:
+                extra["filterable"] = ins["filterable"]
+            insight = {
+                "id": insight_id,
                 "topic_id": topic_id,
                 "rule_id": f"{topic_id}.{ins['trigger']}",
                 "trigger": ins["trigger"],
                 "severity": severity,
-                "message": {"text": ins["text"]},
-                "evidence": [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
+                "message": message,
+                "evidence": ins.get("evidence") or [{"kind": "metric", "metric_id": mid} for mid in metric_ids],
                 "confidence": confidence,
-            })
+                **extra,
+            }
+            if insight_id in notes_by_insight_id:
+                insight["note"] = notes_by_insight_id[insight_id]
+            insights.append(insight)
         topics_out.append({
             "topic_id": topic_id,
             "analysis": {"text": raw["analysis"]},
             "insights": insights,
             "metric_ids": metric_ids,
+            # Spec 14 §7.3 — every topic the engine evaluates carries its
+            # own enabled flag, read from the same rules dict evaluate_
+            # insights resolved everything else from (true for every
+            # caller today — the generic loop and egt_cyl_deviation
+            # already skip _emit entirely when disabled; this is the
+            # honest read rather than an assumption), and, where
+            # computable, one entry per trigger for the topic card's
+            # disclosure.
+            "enabled": r_data.get(topic_id, {}).get("enabled", True),
+            "trigger_status": trigger_status or [],
         })
 
     # ── The 8 topics driven by a single flight metric + fleet baseline ──────
     for topic_id, (flight_metric_id, fleet_key) in _TOPIC_METRIC_MAP.items():
+        # Spec 10 D2: climb_thermal_rate ships disabled (Research status)
+        # and has no Flight view card at all; a topic the user disabled
+        # keeps a collapsed one (Spec 14 §7.3 v0.5). The rise-rate metrics
+        # themselves stay computed (fm/fleet_analysis) either way.
+        if not r_data.get(topic_id, {}).get("enabled", True):
+            if topic_id not in NO_CARD_TOPICS:
+                topics_out.append(_disabled_topic(topic_id))
+            continue
         value = fm.get(flight_metric_id, {}).get("value")
         fleet_metric = fleet_analysis.metrics.get(fleet_key)
-        b = _topic_baseline(fleet_metric, flight_id)
         all_triggers = r_data.get(topic_id, {}).get("triggers", [])
-        fleet_n = b.get("n", 0)
-
         # BASELINE_LOW_N (R2): below n_min, no baseline_deviation insight
         # may fire — drop those triggers before calling the topic function
         # (not after: the insight would already exist in its output).
+        # Resolved before _topic_baseline() now (R8, Spec 01 §8.4 v0.13):
+        # the same n_min also gates whether a stratified metric compares
+        # within-band or falls back to all-flights.
         bd_n_min = next((t.get("n_min", 10) for t in all_triggers if t.get("type") == "baseline_deviation"), 10)
+        b = _topic_baseline(fleet_metric, flight_id, bd_n_min)
+        fleet_n = b.get("n", 0)
         low_n = 0 < fleet_n < bd_n_min
-        triggers = [t for t in all_triggers if not (low_n and t.get("type") == "baseline_deviation")]
+        resolved_z = resolve_outlier_z_threshold(baseline_config, fleet_key)
+        triggers = [
+            {**t, "z_score_threshold": resolved_z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+            if not (low_n and t.get("type") == "baseline_deviation")
+        ]
+        # Spec 14 §7.3 — status is computed from *all* configured
+        # triggers, not the low-n-filtered list above: a trigger below
+        # n_min still belongs on the topic card (met: None), it just
+        # can't fire an insight.
+        status_triggers = [
+            {**t, "z_score_threshold": resolved_z} if t.get("type") == "baseline_deviation" else t
+            for t in all_triggers
+        ]
+        trigger_status = [_trigger_status(t, value, b) for t in status_triggers]
 
         if topic_id == "egt_spread":
             enabled = r_data.get(topic_id, {}).get("enabled", True)
-            raw = topics.egt_spread(value, 392, b, triggers, enabled)
-        elif topic_id == "egt4_elevation":
-            raw = topics.egt4_elevation(value, b, triggers)
-        elif topic_id == "oil_temp_peak":
-            raw = topics.oil_temp_peak(value, b, triggers)
-        elif topic_id == "coolant_temp_peak":
-            raw = topics.coolant_temp_peak(value, b, triggers)
-        elif topic_id == "oil_coolant_ratio":
-            raw = topics.oil_coolant_ratio(value, b, triggers)
-        elif topic_id == "cruise_efficiency":
-            raw = topics.cruise_efficiency(value, b, triggers)
-        elif topic_id == "cruise_fuel_flow":
-            da_fleet = fleet_analysis.metrics.get("cruise_da_ft", {}).get("baseline", {})
-            raw = topics.cruise_fuel_flow(
-                value, b, triggers,
-                this_da=fm.get("cruise_da_ft", {}).get("value"),
-                fleet_da_avg=da_fleet.get("mean"), fleet_da_std=da_fleet.get("std"),
-            )
+            # The high-flow EGT split limit from this engine's profile, or
+            # none: an engine whose OM defines no split (912iS) gets no
+            # OM-limit line, never another engine's 392 °F.
+            split = limits_by_id.get(_METRIC_LIMIT_REF["egt_spread"])
+            raw = topics.egt_spread(value, split["limit_value"] if split else None, b, triggers, enabled)
+        elif topic_id in ("oil_temp_peak", "coolant_temp_peak"):
+            om_limit, limit_events = _resolve_limit_ref_events(topic_id)
+            fn = topics.oil_temp_peak if topic_id == "oil_temp_peak" else topics.coolant_temp_peak
+            raw = fn(value, b, triggers, om_limit=om_limit, limit_events=limit_events)
         elif topic_id == "climb_thermal_rate":
             raw = topics.climb_thermal_rate(value, b, triggers)
         else:  # pragma: no cover — exhaustive per _TOPIC_METRIC_MAP
             continue
 
-        _emit(topic_id, raw, [flight_metric_id], fleet_n)
+        # Evidence and the topic's own metric_ids must carry the fleet-side
+        # key (Trends/get_fleet's naming), not flight_metric_id — "View
+        # evidence" navigates with this id as ?metric=, and the two sides
+        # of _TOPIC_METRIC_MAP disagree on naming for 7 of 8 topics.
+        _emit(topic_id, raw, [fleet_key], fleet_n, trigger_status)
         if low_n:
             topics_out[-1]["_low_n"] = True
 
+    _emit_cyl_deviation(flight_analysis, fleet_analysis, r_data, baseline_config, _emit, topics_out)
+    flight_analysis.hot_cyl_changed = _hot_cyl_changed_for(flight_analysis, fleet_analysis)
+
+    cyl_dev_topic = next((t for t in topics_out if t["topic_id"] == "egt_cyl_deviation"), None)
+
+    # Spec 08 §6 (Spec 10 D4): the deviation insight for the cylinder that
+    # is now hottest names the change and the usual cylinder — only when
+    # that specific cylinder's own insight fired, matched via its evidence
+    # (the "cyl" key _emit_cyl_deviation pops is gone by the time a topic
+    # reaches topics_out). The flag itself and its margin/consecutive-flight
+    # logic are unchanged from Phase A.
+    if flight_analysis.hot_cyl_changed and cyl_dev_topic and cyl_dev_topic["insights"]:
+        hottest_cyl = fm.get("egt_hottest_cyl", {}).get("value")
+        usual_cyl = (fleet_analysis.cylinder_balance or {}).get("established_hot_cyl", {}).get("cyl")
+        if hottest_cyl is not None and usual_cyl is not None:
+            target_metric = f"egt{int(hottest_cyl)}_deviation"
+            for ins in cyl_dev_topic["insights"]:
+                if any(e.get("metric_id") == target_metric for e in ins["evidence"]):
+                    ins["message"]["text"] += f" It is now the hottest cylinder (usually cylinder {usual_cyl})."
+
+    # Spec 08 §6 (Spec 10 D8): egt_spread's baseline_deviation insight
+    # folds into the cylinder insight(s) whenever any egt_cyl_deviation
+    # trigger fired — one insight instead of two reporting the same
+    # underlying imbalance. The trend trigger is never affected.
+    egt_spread_topic = next((t for t in topics_out if t["topic_id"] == "egt_spread"), None)
+    if cyl_dev_topic and cyl_dev_topic["insights"] and egt_spread_topic:
+        spread_bd = [i for i in egt_spread_topic["insights"] if i["trigger"] == "baseline_deviation"]
+        if spread_bd:
+            egt_spread_topic["insights"] = [i for i in egt_spread_topic["insights"] if i["trigger"] != "baseline_deviation"]
+            for ins in cyl_dev_topic["insights"]:
+                ins["message"]["text"] += " EGT spread is also outside its usual range."
+
     # ── Topics with their own data source (no shared baseline pattern) ──────
-    ob_triggers = r_data.get("overboost_time", {}).get("triggers", [])
-    ob_limit = next((t.get("limit", 300) for t in ob_triggers if t.get("type") == "threshold"), 300)
-    ob_total = fm.get("overboost_total_s", {}).get("value")
-    ob_max = fm.get("overboost_max_block_s", {}).get("value")
-    ob_exceeded = (ob_max is not None and ob_max > ob_limit)
-    raw = topics.overboost(ob_total, ob_max, ob_limit, ob_exceeded)
-    _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
+    # Spec 09 v0.12 §6.4/§10.3, Spec 10 §4.1: a block past the limit is an
+    # ordinary limit_exceedances event (below); this topic only resolves
+    # the close call, whose threshold still shifts with any active filter
+    # band. `_resolve_limit_ref_events` is the same resolution oil_temp_peak
+    # / coolant_temp_peak use — overboost no longer gets its own mechanism.
+    # Spec 14 §7.3 guard (v0.4) — found disabled-but-still-evaluated in
+    # v0.3: this topic's own insight (the close call) only exists when
+    # the topic is enabled, same as every other topic. The underlying
+    # limit *events* this close call compares against are unaffected —
+    # they come from flight_analysis.exceedances / events_by_limit,
+    # computed above, independent of this topic entirely.
+    if r_data.get("overboost_time", {}).get("enabled", True):
+        ob_om, _ = _resolve_limit_ref_events("overboost_time")
+        if ob_om is not None:
+            ob_limit = ob_om["limit_value"]
+            ob_filter = valid_filters.get(ob_om["id"])
+            ob_band = (_filters.resolved_band(ob_filter, ob_om, frozen_by_limit.get(ob_om["id"])) or 0.0
+                       if ob_filter is not None else 0.0)
+            ob_close_call = (ob_limit + ob_band) - ob_om.get("close_call_margin_s", 60)
+        else:
+            ob_limit = 300
+            ob_close_call = None
+        ob_total = fm.get("overboost_total_s", {}).get("value")
+        ob_max = fm.get("overboost_max_block_s", {}).get("value")
+        raw = topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_close_call)
+        for ins in raw["insights"]:
+            if ob_om is not None:
+                ins["filterable"] = _filters.resolve_filter_policy(ob_om)["filterable"]
+        _emit("overboost_time", raw, ["overboost_total_s", "overboost_max_block_s"], 0)
+    else:
+        topics_out.append(_disabled_topic("overboost_time"))
 
-    map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
-    map_model_dict = {
-        "n": map_model["n"], "confidence": map_model["confidence"].get("level", ""),
-        "r_squared": map_model["r_squared"], "coefficients": map_model["coefficients"],
-    } if map_model else {"n": 0, "confidence": "", "coefficients": {}}
-    raw = topics.takeoff_map(
-        fm.get("takeoff_map_inhg", {}).get("value"),
-        fm.get("takeoff_pressure_alt_ft", {}).get("value"),
-        fm.get("takeoff_oat_c", {}).get("value"),
-        map_model_dict,
-    )
-    _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0)
+    # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time above: this
+    # topic's own leave-one-out model/insight only gets built when enabled.
+    if r_data.get("map_at_takeoff", {}).get("enabled", True):
+        map_model = next((m for m in fleet_analysis.models if m["id"] == "takeoff_map"), None)
+        map_points = (map_model or {}).get("points", [])
+        map_loo_fit = _leave_one_out_map_fit(map_points, flight_id)
+        map_trigger = next(
+            (t for t in r_data.get("map_at_takeoff", {}).get("triggers", []) if t.get("type") == "threshold"),
+            {},
+        )
+        map_z = map_trigger.get("z", 2.0)
+        raw = topics.takeoff_map(
+            fm.get("takeoff_map_inhg", {}).get("value"),
+            fm.get("takeoff_pressure_alt_ft", {}).get("value"),
+            fm.get("takeoff_oat_c", {}).get("value"),
+            map_loo_fit, z=map_z,
+        )
+        # Spec 14 §7.3 — same delta/tolerance topics.takeoff_map computes
+        # internally for its own insight text, kept inline here (it's the
+        # only caller) rather than threaded back out through that function's
+        # return shape.
+        map_status = {"type": "threshold", "met": None, "detail": None}
+        obs_map = fm.get("takeoff_map_inhg", {}).get("value")
+        n_model = map_loo_fit.get("n", 0)
+        if obs_map is not None and n_model >= 5:
+            obs_pa = fm.get("takeoff_pressure_alt_ft", {}).get("value")
+            obs_oat = fm.get("takeoff_oat_c", {}).get("value")
+            pa_range = map_loo_fit.get("pa_range")
+            oat_range = map_loo_fit.get("oat_range")
+            outside_range = (
+                (pa_range is not None and obs_pa is not None and not (pa_range[0] <= obs_pa <= pa_range[1]))
+                or (oat_range is not None and obs_oat is not None and not (oat_range[0] <= obs_oat <= oat_range[1]))
+            )
+            if not outside_range:
+                exp_map = topics.predict_takeoff_map(map_loo_fit, obs_pa, obs_oat) if obs_pa is not None and obs_oat is not None else None
+                se = map_loo_fit.get("residual_se")
+                if exp_map is not None and se is not None:
+                    delta = obs_map - exp_map
+                    tolerance = map_z * se
+                    direction = "below" if delta < 0 else "above"
+                    map_status = {
+                        "type": "threshold", "met": abs(delta) >= tolerance,
+                        "detail": f"{abs(delta):.2f} inHg {direction} model (tolerance ±{tolerance:.2f} inHg)",
+                    }
+        _emit("map_at_takeoff", raw, ["takeoff_map_inhg", "takeoff_pressure_alt_ft", "takeoff_oat_c"], 0, [map_status])
+    else:
+        topics_out.append(_disabled_topic("map_at_takeoff"))
 
-    # FlightAnalysis.ecu_runs is keyed start_utc/duration_s/... (Spec 01
-    # §8.3 shape); topics.engine_ecu_inflight -> cas.analyze_inflight_pattern
-    # expects source_file/start_time (§8.6-adjacent, cas.py's own shape).
-    # Adapt rather than let the mismatch silently produce a None timestamp.
-    adapted_runs = [
-        {**r, "source_file": flight_id, "start_time": r.get("start_utc")}
-        for r in flight_analysis.ecu_runs
-    ]
-    raw = topics.engine_ecu_inflight(adapted_runs)
-    ecu_topic = {
-        "topic_id": "engine_ecu_inflight",
-        "analysis": {"text": raw["analysis"]},
-        "insights": [{
-            "id": content_hash({"flight_id": flight_id, "topic_id": "engine_ecu_inflight", "event": e})[:16],
-            "topic_id": "engine_ecu_inflight", "rule_id": "engine_ecu_inflight.threshold",
-            "trigger": "threshold", "severity": _severity_for(rules, "engine_ecu_inflight", "threshold"),
-            "message": {"text": f"⚠ IN-FLIGHT ENGINE ECU event at {e['start_time']}"},
-            "evidence": [{"kind": "ecu_run", "ref": str(e["start_time"])}],
-            "confidence": _confidence(0),
-        } for e in raw["events"]],
-        "metric_ids": ["inflight_ecu_count"],
-    }
-    topics_out.append(ecu_topic)
+    # Spec 14 §7.3 guard (v0.4) — same gap as overboost_time/map_at_takeoff
+    # above: this topic's own insights only get built when enabled.
+    if r_data.get("engine_ecu_inflight", {}).get("enabled", True):
+        # Spec 01 §8.5 (v0.21) / Spec 10 §4.1 (D19): a referencing topic.
+        # The GROUND / IN_FLIGHT runs are CAS events owned by
+        # limit_exceedances; this topic emits no insight — its analysis
+        # line gives the class counts and the lane-check summary, and its
+        # limit_refs (resolved below) point at the CAS insight, mirroring
+        # its badge as overboost_time does for its limit.
+        raw = topics.engine_ecu_inflight(
+            flight_analysis.ecu_runs,
+            sub_threshold_blips=flight_analysis.ecu_sub_threshold_blips,
+            lane_check=flight_analysis.ecu_lane_check,
+        )
+        topics_out.append({
+            "topic_id": "engine_ecu_inflight",
+            "analysis": {"text": raw["analysis"]},
+            "insights": [],
+            "metric_ids": ["inflight_ecu_count", "ground_ecu_count"],
+            "enabled": True,
+            "trigger_status": [],
+        })
+    else:
+        topics_out.append(_disabled_topic("engine_ecu_inflight"))
 
-    raw = topics.limit_exceedances([_format_exceedance_text(e) for e in flight_analysis.exceedances])
-    _emit("limit_exceedances", raw, [], 0)
+    # Bypasses _emit(): limit_exceedances is per-limit (Spec 09 §10.1), not
+    # metric-shaped. One insight per limit per flight, carrying its events;
+    # its evidence is one series_window per event, in time order, so the
+    # card's click zooms to the first and the expanded rows to each.
+    #
+    # Spec 14 §7.3 guard (v0.4) — disabling this topic hides its insights
+    # only. `events_by_limit`/`valid_filters`/`suppressed_by` above are
+    # computed from flight_analysis.exceedances independent of this block,
+    # so Spec 09 filters and the Trends per-limit metrics (which read those,
+    # not this topic's output) are unaffected either way. `limit_insights`
+    # is still needed below (the mirrored-badge resolution on oil_temp_peak
+    # / coolant_temp_peak / overboost_time) only when this topic actually
+    # produced insights to mirror — empty when disabled, same as it would
+    # be on a flight with no exceedances at all.
+    if r_data.get("limit_exceedances", {}).get("enabled", True):
+        groups = []
+        for lid, evs in events_by_limit.items():
+            first = evs[0]
+            lim = limits_by_id.get(lid) if first.get("source") == "cas" else limits_by_id.get(lid) or {
+                "id": lid, "label": first["label"], "unit": first["unit"], "limit_type": first["limit_type"],
+                "limit_value": first["limit_value"], "severity": first["severity"],
+            }
+            flt = valid_filters.get(lid)
+            if flt is None:
+                groups.append({"limit_id": lid, "limit": lim, "events": evs, "kind": "exceedance"})
+                continue
+            text = _filters.band_text(flt, lim, frozen_by_limit.get(lid))
+            breaches = [e for e in evs if suppressed_by.get(_event_id(e)) is None]
+            tolerated = [e for e in evs if suppressed_by.get(_event_id(e)) is not None]
+            if breaches:
+                groups.append({"limit_id": lid, "limit": lim, "events": breaches, "kind": "breach",
+                               "filter": flt, "filter_text": text})
+            if tolerated:
+                groups.append({"limit_id": lid, "limit": lim, "events": tolerated, "kind": "filtered",
+                               "filter": flt, "filter_text": text})
+        raw = topics.limit_exceedance_groups(groups)
+        limit_insights = []
+        noted_limits: set[str] = set()
+        for ins in raw["insights"]:
+            g = groups[ins.pop("group")]
+            kind = g["kind"]
+            iid = _limit_insight_id(flight_id, g["limit_id"], kind)
+            if kind == "filtered":
+                # Quiet: info for a CAUTION limit, watch for a WARNING one (§10.1).
+                severity = "watch" if g["limit"].get("severity") == "WARNING" else "info"
+            else:
+                severity = _severity_for(rules, "limit_exceedances", ins["trigger"])
+            if _filters.is_cas(g["limit"]):
+                # Spec 09 v0.18 §10.1 / Spec 10 §4.1: a CAS target's insight —
+                # same shape as a limit's; its severity is the rule set's
+                # display label (`cas`), nothing branches on it.
+                cas_sev = (r_data.get("limit_exceedances", {}).get("cas") or {}).get("severity", "watch")
+                limit_insight = {
+                    "id": iid,
+                    "topic_id": "limit_exceedances",
+                    "rule_id": "limit_exceedances.cas",
+                    "trigger": ins["trigger"],
+                    "severity": "info" if kind == "filtered" else cas_sev,
+                    "message": {"text": ins["text"]},
+                    "evidence": ([_cas_event_window(e) for e in g["events"]]
+                                 + [{"kind": "cas_event", "ref": e["event_id"]} for e in g["events"]]),
+                    "confidence": _confidence(0),
+                    "source": "cas",
+                    "cas_id": g["limit"]["cas_id"],
+                    "events": [_cas_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+                    "filterable": True,
+                }
+            else:
+                limit_insight = {
+                    "id": iid,
+                    "topic_id": "limit_exceedances",
+                    "rule_id": "limit_exceedances.threshold",
+                    "trigger": ins["trigger"],
+                    "severity": severity,
+                    "message": {"text": ins["text"]},
+                    "evidence": [_event_window(e) for e in g["events"]],
+                    "confidence": _confidence(0),
+                    "source": "limit",
+                    "limit_id": g["limit_id"],
+                    "events": [_event_summary(e, suppressed_by.get(_event_id(e))) for e in g["events"]],
+                    # Whether "Filter this limit…" can succeed (Spec 09 §6.3), so the UI
+                    # can say up front when it can't.
+                    "filterable": (_filters.resolve_filter_policy(g["limit"])["filterable"]
+                                   if g["limit_id"] in limits_by_id else False),
+                }
+            if kind != "exceedance":
+                limit_insight["filter"] = {"filter_id": g["filter"]["id"],
+                                           "outcome": "breach" if kind == "breach" else "suppressed"}
+            # A note saved on this limit before it was filtered (or while it had
+            # no breach) is keyed to another kind's id; show it on the limit's
+            # first insight rather than lose it from view.
+            note = notes_by_insight_id.get(iid)
+            if note is None and g["limit_id"] not in noted_limits:
+                note = next((notes_by_insight_id[k] for k in (
+                    _limit_insight_id(flight_id, g["limit_id"], other)
+                    for other in ("exceedance", "breach", "filtered") if other != kind)
+                    if k in notes_by_insight_id), None)
+            if note is not None:
+                limit_insight["note"] = note
+                noted_limits.add(g["limit_id"])
+            limit_insights.append(limit_insight)
+        topics_out.append({
+            "topic_id": "limit_exceedances",
+            "analysis": {"text": raw["analysis"]},
+            "insights": limit_insights,
+            "metric_ids": [],
+            "enabled": True,
+            "trigger_status": [{"type": "threshold", "met": len(limit_insights) > 0, "detail": None}],
+        })
+    else:
+        limit_insights = []
+        topics_out.append(_disabled_topic("limit_exceedances"))
+
+    # Spec 10 §4.1 (Spec 01 §8.5 TopicResult.limit_refs, Spec 09 §10.2/
+    # §10.3): every topic that declares limit_refs at rule level gets each
+    # entry resolved to this flight's limit_exceedances insight for that
+    # limit, or None if none fired — drives the mirrored badge (Spec 03
+    # §5.2/§12.1). A limit can carry two insights on one flight only when a
+    # filter splits events into breach + filtered (§10.1); breach (or a
+    # plain, unfiltered exceedance) is preferred over a filtered one so the
+    # badge mirrors the more actionable state.
+    for t in topics_out:
+        refs = r_data.get(t["topic_id"], {}).get("limit_refs")
+        if not refs or not t.get("enabled", True):
+            continue
+        resolved = []
+        for lid in refs:
+            candidates = [li for li in limit_insights if li.get("limit_id") == lid]
+            best = max(
+                candidates,
+                key=lambda li: 0 if (li.get("filter") or {}).get("outcome") == "suppressed" else 1,
+            ) if candidates else None
+            resolved.append({"limit_id": lid, "insight_id": best["id"] if best else None})
+        t["limit_refs"] = resolved
+
+    # Spec 01 §8.5 (v0.21): engine_ecu_inflight references its CAS events
+    # the same way — one entry per classified CAS alert, resolved to this
+    # flight's insight for it (breach preferred over filtered), or None.
+    for t in topics_out:
+        if t["topic_id"] != "engine_ecu_inflight" or not t.get("enabled", True):
+            continue
+        refs = []
+        for cas_id in CLASSIFIED_CAS_IDS:
+            candidates = [li for li in limit_insights if li.get("cas_id") == cas_id]
+            best = max(
+                candidates,
+                key=lambda li: 0 if (li.get("filter") or {}).get("outcome") == "suppressed" else 1,
+            ) if candidates else None
+            refs.append({"cas_id": cas_id, "insight_id": best["id"] if best else None})
+        t["limit_refs"] = refs
 
     # header_warnings carries the flight's own quality diagnostics (e.g.
     # PHASE_NO_CRUISE — the "no stable cruise phase" banner the old text
     # report printed at the top) forward from FlightAnalysis, plus...
-    header_warnings_dicts: list[dict] = list(flight_analysis.quality)
+    header_warnings_dicts: list[dict] = list(flight_analysis.quality) + limit_diagnostics
 
     # ...BASELINE_LOW_N: swap in a note instead of a fired insight.
     for t in topics_out:
@@ -771,6 +2534,7 @@ def evaluate_insights(flight_analysis: FlightAnalysis, fleet_analysis: FleetAnal
         topics=topics_out,
         header_warnings=header_warnings_dicts,
         provenance=provenance,
+        filters_hash=filters_hash,
     )
 
 
@@ -783,6 +2547,9 @@ class InsightSet:
     topics: list[dict] = field(default_factory=list)
     header_warnings: list[dict] = field(default_factory=list)
     provenance: dict = field(default_factory=dict)
+    # Spec 09 §11.2: identifies the filters applied; a host caching insight
+    # sets keys on it alongside analysis_key/fleet_key/rules_hash.
+    filters_hash: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -790,7 +2557,85 @@ class InsightSet:
             "analysis_key": self.analysis_key,
             "fleet_key": self.fleet_key,
             "rules_hash": self.rules_hash,
+            "filters_hash": self.filters_hash,
             "topics": self.topics,
             "header_warnings": self.header_warnings,
             "provenance": self.provenance,
         }
+
+
+def get_topic_help(
+    topic_ids: Optional[list[str]],
+    engine_profile_id: str,
+    engine_config: dict,
+    rules: dict,
+    baseline_config: Optional[dict] = None,
+) -> tuple[list["help.TopicHelp"], list[dict]]:
+    """
+    Spec 01 §8.8: the fifth engine-contract operation. Never raises — a
+    broken help entry becomes a HELP_MISSING/HELP_PLACEHOLDER_UNRESOLVED
+    diagnostic, not an exception, so a content regression can't crash the
+    server, the CLI or a notebook (acceptance 10 is what catches it, in
+    CI, before it ships).
+    """
+    from . import help as _help
+
+    baseline_config = baseline_config or {"outlier_z_threshold": 2.0}
+    diagnostics: list[dict] = []
+
+    try:
+        entries = _help.load_help_entries()
+    except Exception as e:
+        diagnostics.append(Diagnostic(
+            code="HELP_MISSING", severity="error", scope="file",
+            message=f"topics.md failed to parse: {e}", refs={},
+        ).to_dict())
+        return [], diagnostics
+
+    register = _help.load_register()
+    register_by_id = {t["topic_id"]: t for t in (register or {}).get("topics", [])}
+
+    ids = topic_ids if topic_ids is not None else list(entries.keys())
+    results: list[_help.TopicHelp] = []
+    for topic_id in ids:
+        entry = entries.get(topic_id)
+        if entry is None:
+            diagnostics.append(Diagnostic(
+                code="HELP_MISSING", severity="warn", scope="topic",
+                message=f"{topic_id}: no help entry in topics.md", refs={"topic_id": topic_id},
+            ).to_dict())
+            continue
+
+        applies = entry.applies_to == "all" or engine_profile_id in entry.applies_to
+        reg_entry = register_by_id.get(topic_id)
+        # A non-topic entry (flight_summary) has no register status to be
+        # "unvalidated" against — vacuously validated, so the UI never
+        # shows an unverified tag on it.
+        validated = True if reg_entry is None else \
+            reg_entry.get("status", {}).get(engine_profile_id) == "Admitted"
+
+        try:
+            values, text, unresolved = _help.resolve_template(
+                entry.template, engine_config=engine_config, rules=rules, baseline_config=baseline_config,
+            )
+        except Exception as e:
+            diagnostics.append(Diagnostic(
+                code="HELP_PLACEHOLDER_UNRESOLVED", severity="error", scope="topic",
+                message=f"{topic_id}: {e}", refs={"topic_id": topic_id},
+            ).to_dict())
+            continue
+
+        for placeholder in unresolved:
+            diagnostics.append(Diagnostic(
+                code="HELP_PLACEHOLDER_UNRESOLVED", severity="warn", scope="topic",
+                message=f"{topic_id}: placeholder {placeholder!r} did not resolve",
+                refs={"topic_id": topic_id, "placeholder": placeholder},
+            ).to_dict())
+
+        results.append(_help.TopicHelp(
+            id=entry.id, title=entry.title, template=entry.template,
+            values=values, text=text, applies=applies, validated=validated,
+            last_reviewed=entry.last_reviewed,
+        ))
+
+    return results, diagnostics

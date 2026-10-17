@@ -7,6 +7,7 @@ doesn't have (our local fleet has grown past that) — so leave-one-out
 correctness is verified structurally (excludes the right flight, uses
 the right n) rather than against those exact numbers.
 """
+import copy
 import json
 
 import jsonschema
@@ -52,20 +53,55 @@ def test_evaluate_insights_touches_no_filesystem(monkeypatch, real_flight_analys
 
 
 @requires_flight_logs
-def test_evaluate_insights_covers_twelve_of_thirteen_topics(real_flight_analyses, real_fleet_analysis, rules):
-    """cylinder_rank is a known, documented gap (needs rank_order data
-    not on the FlightAnalysis metric registry) — everything else fires."""
+def test_evaluate_insights_covers_every_topic(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 10 Phase A: oil_coolant_ratio and egt4_elevation are removed
+    completely (D1, D3); cylinder_rank (D4) and climb_thermal_rate (D2)
+    ship disabled and emit no TopicResult; cruise_efficiency and
+    cruise_fuel_flow raise no insight (Q4) but their metrics/baselines
+    still exist, so they're absent here too."""
     if not real_flight_analyses:
         pytest.skip("no local flight logs")
     iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, rules)
     topic_ids = {t["topic_id"] for t in iset.to_dict()["topics"]}
     expected = {
-        "egt_spread", "egt4_elevation", "oil_temp_peak", "coolant_temp_peak",
-        "oil_coolant_ratio", "cruise_efficiency", "cruise_fuel_flow", "climb_thermal_rate",
+        "egt_spread", "egt_cyl_deviation", "oil_temp_peak", "coolant_temp_peak",
         "overboost_time", "map_at_takeoff", "engine_ecu_inflight", "limit_exceedances",
     }
     assert topic_ids == expected
-    assert "cylinder_rank" not in topic_ids
+
+
+def test_no_flight_has_more_than_one_insight_per_limit(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 10 acceptance 3: across the whole log set, no flight's
+    limit_exceedances topic carries more than one insight for the same
+    limit_id (the mixed breach+filtered case is structurally possible per
+    §10.1 but doesn't occur without a filter saved, which this fixture
+    fleet has none of)."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        limit_topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
+        limit_ids = [i["limit_id"] for i in limit_topic["insights"] if i.get("source") == "limit"]
+        assert len(limit_ids) == len(set(limit_ids)), (fa.flight_id, limit_ids)
+
+
+def test_limit_refs_mirror_a_real_insight_when_one_fires(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 10 §4.1: wherever a topic's limit_refs resolves to a non-null
+    insight_id on real data, that id is actually present in the same
+    flight's limit_exceedances insights (the mirror points at something
+    real, never a dangling id)."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    checked_a_resolved_ref = False
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        limit_ids_present = {i["id"] for t in iset.topics if t["topic_id"] == "limit_exceedances" for i in t["insights"]}
+        for t in iset.topics:
+            for ref in t.get("limit_refs") or []:
+                if ref["insight_id"] is not None:
+                    checked_a_resolved_ref = True
+                    assert ref["insight_id"] in limit_ids_present, (fa.flight_id, t["topic_id"], ref)
+    assert checked_a_resolved_ref, "no flight in the log set exercised a resolved limit_refs entry"
 
 
 # ── Leave-one-out baseline membership (R2) ───────────────────────────────────
@@ -123,6 +159,57 @@ def test_evaluate_insights_baseline_deviation_uses_leave_one_out_not_self_inclus
     assert loo["mean"] != self_inclusive_mean
 
 
+@requires_flight_logs
+def test_limit_exceedances_insights_carry_series_window_evidence(real_flight_analyses, real_fleet_analysis, rules):
+    """
+    _emit() builds evidence generically from metric_ids, but
+    limit_exceedances is per-event, not metric-shaped, and was always
+    called with metric_ids=[] — so every limit_exceedances insight had
+    evidence=[] regardless of the flight, silently breaking
+    evidence-click-to-zoom for the most common real insight severity.
+    """
+    flight_with_exceedances = next((fa for fa in real_flight_analyses if fa.exceedances), None)
+    if flight_with_exceedances is None:
+        pytest.skip("no local flight with a real exceedance")
+    iset = evaluate_insights(flight_with_exceedances, real_fleet_analysis, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "limit_exceedances")
+    assert topic["insights"], "expected at least one limit_exceedances insight"
+    for insight in topic["insights"]:
+        assert insight["evidence"], f"insight {insight['id']} has no evidence"
+        ev = insight["evidence"][0]
+        assert ev["kind"] == "series_window"
+        assert ev["end_s"] > ev["start_s"] >= 0
+
+
+@requires_flight_logs
+def test_metric_evidence_uses_fleet_key_not_flight_metric_id(real_flight_analyses, real_fleet_analysis, rules):
+    """
+    _TOPIC_METRIC_MAP's two sides use different naming conventions
+    (registry.py's flight_metric_id vs. baselines.py's fleet_key) — for 7
+    of the 8 shared-baseline topics they're spelled differently (e.g.
+    "egt4_elevation_f" vs "egt4_elevation"). Evidence's metric_id feeds
+    straight into "View evidence" -> Trends ?metric=<id>, which only
+    recognizes fleet_key spellings; sending flight_metric_id there was a
+    real bug (Trends showed "No fleet data for this metric" for any
+    topic whose two names actually differ).
+    """
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    fleet_keys = set(real_fleet_analysis.to_dict()["metrics"].keys())
+    checked = 0
+    iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, rules)
+    for topic in iset.to_dict()["topics"]:
+        for insight in topic["insights"]:
+            for ev in insight["evidence"]:
+                if ev["kind"] == "metric":
+                    checked += 1
+                    assert ev["metric_id"] in fleet_keys, (
+                        f"{topic['topic_id']}: evidence metric_id {ev['metric_id']!r} "
+                        f"is not a real fleet metric key"
+                    )
+    assert checked > 0, "expected at least one metric-kind evidence to check"
+
+
 def test_leave_one_out_baseline_empty_points():
     from slingology_eis.operations import _leave_one_out_baseline
     result = _leave_one_out_baseline([], "any_flight")
@@ -139,6 +226,25 @@ def test_leave_one_out_baseline_excludes_only_matching_flight_id():
     result = _leave_one_out_baseline(points, "b")
     assert result["n"] == 2
     assert result["mean"] == 20.0  # mean of 10, 30
+
+
+def test_leave_one_out_map_fit_excludes_only_the_judged_flight():
+    # Spec 10 D5: a flight is never part of the model it's judged by.
+    from slingology_eis.operations import _leave_one_out_map_fit
+    points = [
+        {"flight_id": f"f{i}", "pressure_alt_ft": float(i * 100), "oat_c": 15.0, "map_inhg": 44.0 + i * 0.1}
+        for i in range(8)
+    ]
+    held_out = points[3]
+    fit_excluding = _leave_one_out_map_fit(points, held_out["flight_id"])
+    assert fit_excluding["n"] == 7
+
+    # Fitting on all 8 (including the held-out point) gives a different n,
+    # proving the exclusion actually happened rather than being a no-op.
+    from slingology_eis.baselines import fit_takeoff_map
+    fit_including = fit_takeoff_map(points)
+    assert fit_including["n"] == 8
+    assert fit_excluding["n"] != fit_including["n"]
 
 
 # ── BASELINE_LOW_N gating (R2) — synthetic, since no local metric has n<10 ──
@@ -180,3 +286,375 @@ def test_evaluate_insights_low_n_suppresses_insight_and_adds_warning():
     egt_topic = next(t for t in d["topics"] if t["topic_id"] == "egt_spread")
     assert egt_topic["insights"] == []  # gated, despite an enormous z-score
     assert any(w["code"] == "BASELINE_LOW_N" for w in d["header_warnings"])
+
+
+# ── Stratified baseline comparison (R8, Spec 01 §8.4 v0.13) ──────────────────
+
+def test_evaluate_insights_baseline_deviation_uses_band_scoped_comparison():
+    """
+    Synthetic: a flight in the "warm" band, well inside the fleet-wide
+    spread but a clear outlier against just the warm-band flights. Only
+    a band-scoped comparison should fire — the unstratified comparison
+    (against all 12 flights, mean 10) would not.
+    """
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 30.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    # 10 "warm" flights tightly clustered around 10 (mean 10, std ~1) plus
+    # 10 "cold" flights clustered around 50 — the unstratified fleet mean
+    # sits around 30 (right where the target's own value is: no
+    # unstratified deviation), but 30 is a huge outlier against the warm
+    # band it actually belongs to.
+    points = (
+        # The target's own point must be present so _topic_baseline can
+        # look up its band — _leave_one_out_baseline excludes it from
+        # the comparison set by flight_id regardless.
+        [{"flight_id": "target", "date": "2026-01-01", "x": 99.0, "value": 30.0, "band": "warm"}]
+        + [{"flight_id": f"warm{i}", "date": "2026-01-01", "x": float(i), "value": 10.0 + (i % 2), "band": "warm"}
+           for i in range(10)]
+        + [{"flight_id": f"cold{i}", "date": "2026-01-01", "x": float(i), "value": 50.0 + (i % 2), "band": "cold"}
+           for i in range(10)]
+    )
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target"] + [p["flight_id"] for p in points if p["flight_id"] != "target"],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 21, "mean": 30.0, "std": 1.0, "min": 10.0, "max": 51.0,
+                         "confidence": {"level": "GOOD", "n": 21}},
+            "trend": {"n": 21, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "GOOD", "n": 21}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 5, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    egt_topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    assert len(egt_topic["insights"]) == 1
+    insight = egt_topic["insights"][0]
+    comparison = insight["message"]["values"]["comparison"]
+    assert comparison == {"scope": "band", "band": "warm", "n": 10, "z": 37.00189753320683}
+    assert "your other warm flights, n=10" in insight["message"]["text"]
+
+
+def test_evaluate_insights_baseline_deviation_falls_back_below_band_n_min():
+    """A flight in a band with fewer than n_min other flights compares
+    against the unstratified leave-one-out baseline instead — the whole
+    point of the fallback (R8)."""
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 100.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    # Target is in "rare", shared with only 2 OTHER flights — below
+    # n_min=5 — plus 10 "common" flights to keep the unstratified n
+    # comfortably above n_min. All 12 non-target points cluster around 10
+    # (with some spread, so the fallback comparison has a real, nonzero
+    # std) — target's 100 is a clear outlier against that fallback,
+    # regardless of the (too-small-to-use) "rare" band it's nominally in.
+    points = (
+        [{"flight_id": "target", "date": "2026-01-01", "x": 99.0, "value": 100.0, "band": "rare"}]
+        + [{"flight_id": "rare0", "date": "2026-01-01", "x": 0.0, "value": 8.0, "band": "rare"}]
+        + [{"flight_id": "rare1", "date": "2026-01-01", "x": 1.0, "value": 12.0, "band": "rare"}]
+        + [{"flight_id": f"common{i}", "date": "2026-01-01", "x": float(i),
+            "value": 9.0 if i % 2 == 0 else 11.0, "band": "common"} for i in range(10)]
+    )
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target"] + [p["flight_id"] for p in points if p["flight_id"] != "target"],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 13, "mean": 17.9, "std": 25.1, "min": 8.0, "max": 100.0,
+                         "confidence": {"level": "GOOD", "n": 13}},
+            "trend": {"n": 13, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "GOOD", "n": 13}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 5, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    egt_topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    assert not any(w["code"] == "BASELINE_LOW_N" for w in iset.to_dict()["header_warnings"])
+    assert len(egt_topic["insights"]) == 1
+    comparison = egt_topic["insights"][0]["message"]["values"]["comparison"]
+    # Fallen back to the unstratified comparison (n=12, all non-target
+    # points) — NOT the "rare" band it's nominally in, which only had 2
+    # other flights, below n_min=5.
+    assert comparison == {"scope": "all", "band": None, "n": 12, "z": 70.3564727954972}
+
+
+@requires_flight_logs
+def test_evaluate_insights_baseline_deviation_band_comparison_matches_recomputed_loo(
+    real_flight_analyses, real_fleet_analysis, rules,
+):
+    """
+    Real-data sanity check for R8: whenever a baseline_deviation insight
+    reports a band-scoped comparison, the n it names matches independently
+    recomputing the leave-one-out baseline from just that band's points —
+    and, whenever the fleet has more than one band for that metric, that
+    n differs from the unstratified leave-one-out n (otherwise band
+    scoping wouldn't be doing anything observable).
+    """
+    from slingology_eis.operations import _leave_one_out_baseline
+
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+
+    fleet_dict = real_fleet_analysis.to_dict()
+    checked_a_differing_case = False
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        for topic in iset.to_dict()["topics"]:
+            if not topic["metric_ids"]:
+                continue
+            fleet_metric = fleet_dict["metrics"].get(topic["metric_ids"][0])
+            if not fleet_metric:
+                continue
+            for ins in topic["insights"]:
+                if ins["trigger"] != "baseline_deviation":
+                    continue
+                comparison = ins["message"].get("values", {}).get("comparison")
+                if not comparison or comparison["scope"] != "band":
+                    continue
+                band_points = [p for p in fleet_metric["points"] if p.get("band") == comparison["band"]]
+                band_loo = _leave_one_out_baseline(band_points, fa.flight_id)
+                assert band_loo["n"] == comparison["n"]
+                all_loo = _leave_one_out_baseline(fleet_metric["points"], fa.flight_id)
+                if all_loo["n"] != band_loo["n"]:
+                    checked_a_differing_case = True
+    if not checked_a_differing_case:
+        pytest.skip("no band-scoped insight with a differing all-flights n found in this fleet")
+
+
+# ── Spec 09 §14 acceptance 4 and 5, across the whole local log set ──────────
+
+@requires_flight_logs
+def test_one_limit_insight_per_limit_matching_exceedances(real_flight_analyses, real_fleet_analysis, rules):
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        topic = next(t for t in iset.topics if t["topic_id"] == "limit_exceedances")
+        limit_ids = [i["limit_id"] for i in topic["insights"] if i.get("source") == "limit"]
+        assert len(limit_ids) == len(set(limit_ids)), fa.flight_id
+        events = sorted(e["event_id"] for i in topic["insights"] for e in i["events"])
+        assert events == sorted(e["event_id"] for e in fa.exceedances), fa.flight_id
+        jsonschema.validate(iset.to_dict(), _SCHEMA)
+
+
+@requires_flight_logs
+def test_topic_thresholds_match_limit_events(real_flight_analyses, real_fleet_analysis, rules):
+    """oil/coolant peak thresholds fire exactly when the flight has an event
+    for the referenced limit; overboost exactly when its block passes the
+    profile limit."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    for fa in real_flight_analyses:
+        iset = evaluate_insights(fa, real_fleet_analysis, rules)
+        by_topic = {t["topic_id"]: t for t in iset.topics}
+        has_baseline = lambda tid: "not available" not in by_topic[tid]["analysis"]["text"]
+        for topic_id, limit_id in (("oil_temp_peak", "oil_temp_max"), ("coolant_temp_peak", "coolant_temp_max")):
+            if not has_baseline(topic_id):
+                continue
+            fired = any(i["trigger"] == "threshold" for i in by_topic[topic_id]["insights"])
+            assert fired == any(e.get("limit_id") == limit_id for e in fa.exceedances), (fa.flight_id, topic_id)
+        # v0.12 (Spec 09 §6.4/§10.3): a block past the limit is an ordinary
+        # limit_exceedances event now, not an overboost_time insight —
+        # overboost_time only ever reports a close call for the same flight.
+        ob_max = fa.metrics.get("overboost_max_block_s", {}).get("value")
+        ob_exceeded_event = any(e.get("limit_id") == "overboost" for e in fa.exceedances)
+        assert ob_exceeded_event == (ob_max is not None and ob_max > 300), fa.flight_id
+        ob_time_insights = by_topic["overboost_time"]["insights"]
+        assert all("Close call" in i["message"]["text"] for i in ob_time_insights), fa.flight_id
+        if ob_exceeded_event:
+            lim_insights = [i for i in by_topic["limit_exceedances"]["insights"] if i.get("limit_id") == "overboost"]
+            assert len(lim_insights) == 1 and ob_time_insights == [], fa.flight_id
+
+
+def test_topic_card_trigger_status_reports_met_and_detail_even_when_not_fired():
+    """Spec 14 §7.3 — a topic's triggers disclosure needs a value for
+    every configured trigger, not just the ones that fired. egt_spread's
+    flight sits inside its baseline (no deviation) and has no trend fit
+    at all; both triggers should still report a readable status."""
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 10.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    points = (
+        [{"flight_id": "target", "date": "2026-01-01", "x": 10.0, "value": 10.0}]
+        + [{"flight_id": f"f{i}", "date": "2026-01-01", "x": float(i), "value": 10.0 + (i % 2)} for i in range(12)]
+    )
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target"] + [p["flight_id"] for p in points[1:]],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 12, "mean": 10.5, "std": 0.5, "min": 10.0, "max": 11.0,
+                         "confidence": {"level": "GOOD", "n": 12}},
+            # No real trend fit (direction "insufficient_data", r_squared/n None).
+            "trend": {"n": 13, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "GOOD", "n": 13}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 5, "severity": "watch"},
+        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    assert topic["insights"] == []  # nothing fired
+    assert topic["enabled"] is True
+
+    status_by_type = {s["type"]: s for s in topic["trigger_status"]}
+    assert set(status_by_type) == {"baseline_deviation", "trend"}
+
+    bd = status_by_type["baseline_deviation"]
+    assert bd["met"] is False  # evaluated, didn't cross the threshold
+    assert "std devs" in bd["detail"] and "n=12" in bd["detail"]
+
+    trend = status_by_type["trend"]
+    assert trend["met"] is None  # no fit at all — insufficient data, not "not met"
+    assert trend["detail"] is None
+
+
+def test_topic_card_trigger_status_below_n_min_reports_insufficient_not_a_verdict():
+    """A baseline comparison below n_min is never meaningful (BASELINE_LOW_N
+    elsewhere) — the topic card must say so (met=None), not claim a false
+    "not met" from too few points to trust."""
+    from slingology_eis.operations import FlightAnalysis, FleetAnalysis, evaluate_insights
+
+    flight = FlightAnalysis(
+        flight_id="target", analysis_key="ak0", source_keys=["sk0"],
+        header={"date": "2026-01-01", "start_utc": "2026-01-01T00:00:00"},
+        metrics={"egt_spread_mean_f": {"id": "egt_spread_mean_f", "value": 10.0, "unit": "°F"}},
+        provenance={"schema_version": "0.1.0", "engine_profile": None, "params_hash": "x"},
+    )
+    points = [{"flight_id": "target", "date": "2026-01-01", "x": 3.0, "value": 10.0}] + [
+        {"flight_id": f"f{i}", "date": "2026-01-01", "x": float(i), "value": 10.0} for i in range(2)
+    ]
+    fleet = FleetAnalysis(
+        fleet_key="fk0", flight_ids=["target", "f0", "f1"],
+        metrics={"egt_spread": {
+            "metric_id": "egt_spread", "points": points, "outliers": [],
+            "baseline": {"n": 2, "mean": 10.0, "std": 0.0, "min": 10.0, "max": 10.0,
+                         "confidence": {"level": "LOW", "n": 2}},
+            "trend": {"n": 3, "slope": None, "r_squared": None, "direction": "insufficient_data",
+                      "x": "engine_hours", "confidence": {"level": "LOW", "n": 3}},
+        }},
+        models=[],
+    )
+    rules = {"rules": {"egt_spread": {"enabled": True, "triggers": [
+        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"},
+    ]}}}
+
+    iset = evaluate_insights(flight, fleet, rules)
+    topic = next(t for t in iset.to_dict()["topics"] if t["topic_id"] == "egt_spread")
+    bd = next(s for s in topic["trigger_status"] if s["type"] == "baseline_deviation")
+    assert bd["met"] is None
+    assert bd["detail"] is None
+
+
+@requires_flight_logs
+def test_topic_card_enabled_and_structural_trigger_status_on_real_flights(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 14 §7.3 — every evaluated topic on a real flight carries
+    `enabled` and a non-empty trigger_status for topics with configured
+    triggers (overboost_time ships with none, so its list may be empty);
+    limit_exceedances' structural trigger reports met as exactly whether it
+    fired; engine_ecu_inflight has none (Spec 10 D19)."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    fa = real_flight_analyses[0]
+    iset = evaluate_insights(fa, real_fleet_analysis, rules)
+    by_topic = {t["topic_id"]: t for t in iset.topics}
+    for topic_id, topic in by_topic.items():
+        assert isinstance(topic["enabled"], bool), topic_id
+        assert isinstance(topic["trigger_status"], list), topic_id
+
+    # Spec 01 v0.21 / Spec 10 D19: a referencing topic — no trigger, no
+    # insight; its GROUND/IN_FLIGHT runs are limit_exceedances' CAS events.
+    ecu = by_topic["engine_ecu_inflight"]
+    assert ecu["trigger_status"] == [] and ecu["insights"] == []
+
+    lim = by_topic["limit_exceedances"]
+    lim_status = lim["trigger_status"][0]
+    assert lim_status["met"] == (len(lim["insights"]) > 0)
+
+
+@requires_flight_logs
+def test_every_evaluated_topic_honours_enabled(real_flight_analyses, real_fleet_analysis, rules):
+    """Spec 14 §7.3 guard / §9 criteria 13 and 17 — each evaluated topic,
+    disabled in turn, produces no insight on any flight, and still returns
+    one collapsed result (enabled: false, no analysis, no insight) so its
+    card stays — uniformly, egt_cyl_deviation included (v0.5).
+    Found in v0.3: overboost_time, map_at_takeoff, engine_ecu_inflight and
+    limit_exceedances ignored the flag. Disabling limit_exceedances hides
+    its insights only — the flight's limit events (what Spec 09 filters and
+    the Trends per-limit metrics read) are untouched, and the mirrored
+    limit_refs badges on other topics resolve to nothing."""
+    if not real_flight_analyses:
+        pytest.skip("no local flight logs")
+    shipped = [evaluate_insights(fa, real_fleet_analysis, rules) for fa in real_flight_analyses]
+    evaluated = {t["topic_id"] for iset in shipped for t in iset.topics}
+    assert {"overboost_time", "map_at_takeoff", "engine_ecu_inflight", "limit_exceedances"} <= evaluated
+
+    for topic_id in sorted(evaluated):
+        disabled = copy.deepcopy(rules)
+        disabled["rules"][topic_id]["enabled"] = False
+        for fa, before in zip(real_flight_analyses, shipped):
+            events_before = copy.deepcopy(fa.exceedances)
+            iset = evaluate_insights(fa, real_fleet_analysis, disabled)
+            assert not [i for t in iset.topics for i in t["insights"] if i["topic_id"] == topic_id], (topic_id, fa.flight_id)
+            mine = [t for t in iset.topics if t["topic_id"] == topic_id]
+            assert len(mine) == 1, (topic_id, fa.flight_id)
+            assert mine[0]["enabled"] is False, (topic_id, fa.flight_id)
+            assert mine[0]["analysis"]["text"] == "" and mine[0]["insights"] == [], (topic_id, fa.flight_id)
+            assert not mine[0].get("limit_refs"), (topic_id, fa.flight_id)
+            # Same topics, same order: the disabled card stays where it was.
+            assert [t["topic_id"] for t in iset.topics] == [t["topic_id"] for t in before.topics], (topic_id, fa.flight_id)
+            # Every other topic keeps the same insights, counted by (id,
+            # rule_id, severity) as the §7.2 preview counts them — wording
+            # may change: the egt_spread / egt_cyl_deviation fold (Spec 10
+            # D8) appends a sentence to the cylinder insight. The one count
+            # change allowed is that fold's: egt_spread's baseline_deviation
+            # insight returns when egt_cyl_deviation is disabled.
+            skip = {topic_id} | ({"egt_spread"} if topic_id == "egt_cyl_deviation" else set())
+
+            def _counted(topics):
+                return {t["topic_id"]: [(i["id"], i["rule_id"], i["severity"]) for i in t["insights"]]
+                        for t in topics if t["topic_id"] not in skip}
+
+            others_before = _counted(before.topics)
+            others_after = _counted(iset.topics)
+            assert others_after == others_before, (topic_id, fa.flight_id)
+            if topic_id == "limit_exceedances":
+                assert fa.exceedances == events_before
+                for t in iset.topics:
+                    assert all(r["insight_id"] is None for r in t.get("limit_refs", [])), fa.flight_id
+
+    # A disabled result is still a valid TopicResult.
+    all_off = copy.deepcopy(rules)
+    for topic_id in evaluated:
+        all_off["rules"][topic_id]["enabled"] = False
+    iset = evaluate_insights(real_flight_analyses[0], real_fleet_analysis, all_off)
+    jsonschema.validate(iset.to_dict(), _SCHEMA)
+    assert {t["topic_id"] for t in iset.topics} == evaluated
+
+    # The limit_exceedances case is only meaningful if some flight has events.
+    assert any(fa.exceedances for fa in real_flight_analyses)

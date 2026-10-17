@@ -25,6 +25,10 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 
+from . import exclusions as _exclusions
+from .limits import resolve_min_flight_duration_min
+from .phases import detect_phases
+
 
 # ── Column renaming: G3X names → short aliases ───────────────────────────────
 
@@ -106,6 +110,69 @@ NUMERIC_COLS = [
     "efis_bkup_v", "nav_bkup_v", "flap_pos",
 ]
 
+# ── Garmin AXIS (Spec 01 v0.23 §6.5) → the same registry ids ───────────────────
+# Every AXIS column with a registry equivalent; the rest keep their AXIS
+# names (like unmapped G3X columns) and are not part of the contract.
+AXIS_COLUMN_MAP = {
+    "localDate":                         "date",
+    "localTime":                         "time",
+    "utcOffset":                         "utc_offset",
+    "latitudePosition":                  "lat",
+    "longitudePosition":                 "lon",
+    "gpsWgs84Altitude":                  "gps_alt_ft",
+    "groundSpeed":                       "gnd_spd_kt",
+    "trueGpsGroundTrack":                "track_deg",
+    "pressureAltitude":                  "press_alt_ft",
+    "indicatedBarometricAltitude":       "baro_alt_ft",
+    "verticalSpeed":                     "vs_fpm",
+    "indicatedAirspeed":                 "ias_kt",
+    "trueAirspeed":                      "tas_kt",
+    "attitudePitchAngle":                "pitch_deg",
+    "attitudeRollAngle":                 "roll_deg",
+    "lateralYAcceleration":              "lat_g",
+    "verticalZAcceleration":             "norm_g",
+    "aoa":                               "aoa",
+    "outsideAirTemperature":             "oat_c",
+    "densityAltitude":                   "da_ft",
+    "selectedBarometricPressureSetting": "baro_inhg",
+    "windSpeed":                         "wind_spd_kt",
+    "windDirection":                     "wind_dir_deg",
+    # Engine
+    "engine1RevolutionsPerMinute":       "rpm",
+    "engine1PowerPercent":               "power_pct",
+    "engine1ManifoldPressure":           "map_inhg",
+    "engine1OilPressure":                "oil_press_psi",
+    "engine1OilTemperature":             "oil_temp_f",
+    "engine1CoolantTemp":                "coolant_temp_f",
+    "fuelLevel1":                        "fuel_qty_l_gal",
+    "fuelLevel2":                        "fuel_qty_r_gal",
+    "engine1FuelFlow":                   "fuel_flow_gph",
+    "engine1FuelPressure":               "fuel_press_psi",
+    "engine1ExhaustGasTemperature1":     "egt1_f",
+    "engine1ExhaustGasTemperature2":     "egt2_f",
+    "engine1ExhaustGasTemperature3":     "egt3_f",
+    "engine1ExhaustGasTemperature4":     "egt4_f",
+    "flapPosition":                      "flap_pos",
+    "elevatorTrim":                      "elev_trim",
+    # Electrical: Volts1 is the main bus (13.7–13.9 V in flight, as the
+    # G3X "Main Volts"); Amps2 is the only current sensor, as the G3X's
+    # single "Batt Amps". Volts2 has no registry equivalent and stays raw.
+    "engine1Volts1":                     "main_volts",
+    "engine1Amps2":                      "batt_amps",
+    # Annunciations
+    "crewAlertingSystemAlert":           "cas_alert",
+    "autopilotState":                    "ap_state",
+    "activeNavSource":                   "nav_source",
+    # AXIS-only, carried raw; not used by phase detection or admission (Q10)
+    "onGroundState":                     "on_ground",
+    "flightTime":                        "flight_time_h",
+    "e1TachTime":                        "tach_time_h",
+}
+_AXIS_GP_ANALOG = re.compile(r"^engine1GeneralPurposeAnalog(\d+)$")
+AXIS_NUMERIC_COLS = ["flight_time_h", "tach_time_h"]
+# Never resampled-in by interpolation: text, booleans and annunciations.
+_CARRY_FORWARD_COLS = {"date", "time", "utc_offset", "cas_alert", "ap_state", "nav_source", "on_ground"}
+
 EGT_COLS   = ["egt1_f", "egt2_f", "egt3_f", "egt4_f"]
 ENGINE_COLS = ["rpm", "power_pct", "map_inhg", "oil_press_psi", "oil_temp_f",
                "coolant_temp_f", "fuel_flow_gph", "fuel_press_psi"] + EGT_COLS
@@ -124,7 +191,9 @@ class AirframeInfo:
     airframe_hours: Optional[float] = None
     engine_hours: Optional[float] = None
     log_version: str = ""
-    source_format: str = "unknown"   # "g3x_direct" | "garmin_pilot" | "unknown"
+    source_format: str = "unknown"   # "g3x_direct" | "garmin_pilot" | "axis" | "unknown"
+    # AXIS frames are put on a 1 s grid (Spec 01 §6.5); share of rows filled.
+    filled_share: float = 0.0
     raw: dict = field(default_factory=dict)
 
     @classmethod
@@ -142,8 +211,10 @@ class AirframeInfo:
         except ValueError:
             eng_h = None
         return cls(
-            aircraft_ident=d.get("aircraft_ident", ""),
-            product=d.get("product", ""),
+            # AXIS writes the ident as tail_number and the product key
+            # capitalised (Spec 01 §6.5).
+            aircraft_ident=d.get("aircraft_ident", "") or d.get("tail_number", ""),
+            product=d.get("product", "") or d.get("Product", ""),
             software_version=d.get("software_version", ""),
             system_id=d.get("system_id", ""),
             unit=d.get("unit", ""),
@@ -154,7 +225,7 @@ class AirframeInfo:
         )
 # ── Source format detection ────────────────────────────────────────────────────
 
-def _detect_source_format(header_row: str) -> str:
+def _detect_source_format(header_row: str, meta: Optional[dict] = None, third_row: str = "") -> str:
     """
     Identify which export path produced this CSV.
 
@@ -166,6 +237,11 @@ def _detect_source_format(header_row: str) -> str:
                    rather than silently guessing)
     """
     stripped = header_row.lstrip("\ufeff")  # tolerate a UTF-8 BOM from Excel re-saves
+    # Garmin AXIS (Spec 01 §6.5): Product="AXIS" in the metadata, a
+    # '#'-prefixed units row, then camelCase column names.
+    product = ((meta or {}).get("Product") or (meta or {}).get("product") or "").strip()
+    if product.upper() == "AXIS" and stripped.startswith("#") and third_row.lstrip().startswith("localDate"):
+        return "axis"
     if stripped.startswith("#Date"):
         return "garmin_pilot"
     if stripped.startswith("Date "):
@@ -179,6 +255,8 @@ def load_log_bytes(
     data: bytes,
     filename: str,
     tz_aware: bool = False,
+    max_fill_gap_s: float = 2,
+    channel_assignments: Optional[dict] = None,
 ) -> tuple[pd.DataFrame, AirframeInfo]:
     """
     Load a single G3X EIS log from raw bytes — no filesystem access.
@@ -220,17 +298,22 @@ def load_log_bytes(
     buf = io.StringIO(text)
     meta_row   = buf.readline()
     header_row = buf.readline()
+    third_row  = buf.readline()
 
     info = AirframeInfo.from_row(meta_row)
-    info.source_format = _detect_source_format(header_row)
+    info.source_format = _detect_source_format(header_row, info.raw, third_row)
 
     if info.source_format == "unknown":
         raise ValueError(
             f"{filename}: unrecognised header format — expected a G3X-direct "
-            f"download ('Date (yyyy-mm-dd)...') or a Garmin Pilot export "
-            f"('#Date (yyyy-mm-dd)...'). Got: {header_row[:60]!r}. "
+            f"download ('Date (yyyy-mm-dd)...'), a Garmin Pilot export "
+            f"('#Date (yyyy-mm-dd)...') or a Garmin AXIS export (Product=\"AXIS\", "
+            f"a '#' units row, then 'localDate,...'). Got: {header_row[:60]!r}. "
             f"This file may be corrupted or from an unsupported source."
         )
+
+    if info.source_format == "axis":
+        return _load_axis(text, filename, info, max_fill_gap_s, channel_assignments)
 
     # Read data (skip metadata row, row 1 is headers)
     df = pd.read_csv(io.StringIO(text), skiprows=1, low_memory=False)
@@ -266,6 +349,11 @@ def load_log_bytes(
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    return _finish_frame(df, filename), info
+
+
+def _finish_frame(df: pd.DataFrame, filename: str) -> pd.DataFrame:
+    """Derived columns and source metadata — the same for every source."""
     # ── Derived columns ───────────────────────────────────────────────────────
     # EGT analytics
     egt_avail = [c for c in EGT_COLS if c in df.columns]
@@ -302,7 +390,96 @@ def load_log_bytes(
     # Source file metadata
     df["_source_file"] = filename
 
-    return df, info
+    return df
+
+
+def _load_axis(text: str, filename: str, info: AirframeInfo, max_fill_gap_s: float,
+               channel_assignments: Optional[dict]) -> tuple[pd.DataFrame, AirframeInfo]:
+    """A Garmin AXIS export (Spec 01 §6.5): metadata · units · column names ·
+    ~0.83 Hz rows. Normalised to the registry ids and put on a 1-second
+    grid so that every downstream module sees the same frame as for a G3X
+    log. General-purpose analog inputs enter raw (`gp_analog_<n>`) and are
+    exposed under a registry id only through a channel assignment."""
+    import io
+
+    # Skip the metadata and units rows; row 3 holds the column names.
+    df = pd.read_csv(io.StringIO(text), skiprows=2, low_memory=False)
+    df.columns = [str(c).lstrip("#").strip() for c in df.columns]
+    renames = dict(AXIS_COLUMN_MAP)
+    gp_ids = []
+    for c in df.columns:
+        m = _AXIS_GP_ANALOG.match(c)
+        if m:
+            renames[c] = f"gp_analog_{int(m.group(1))}"
+            gp_ids.append(renames[c])
+    df = df.rename(columns=renames)
+
+    df["datetime"] = pd.to_datetime(
+        df["date"].astype(str) + " " + df["time"].astype(str),
+        format="%Y-%m-%d %H:%M:%S",
+        errors="coerce",
+    )
+    df = df.dropna(subset=["datetime"]).reset_index(drop=True)
+    for col in NUMERIC_COLS + AXIS_NUMERIC_COLS + gp_ids:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "on_ground" in df.columns:
+        df["on_ground"] = df["on_ground"].astype(str).str.strip().str.lower().map({"true": True, "false": False})
+
+    df, filled_share = _resample_1hz(df, max_fill_gap_s)
+    df = df.copy()   # one block, not dozens of per-column inserts
+    df["elapsed_s"] = (df["datetime"] - df["datetime"].iloc[0]).dt.total_seconds()
+    info.filled_share = filled_share
+
+    # Engine hours: the tach time at the start (the same hour meter the G3X
+    # wrote into its header); there is no airframe-hours field.
+    if "tach_time_h" in df.columns and df["tach_time_h"].notna().any():
+        info.engine_hours = float(df["tach_time_h"].dropna().iloc[0])
+    info.airframe_hours = None
+
+    _apply_channel_assignments(df, channel_assignments)
+    return _finish_frame(df, filename), info
+
+
+def _apply_channel_assignments(df: pd.DataFrame, channel_assignments: Optional[dict]) -> None:
+    """Spec 01 §6.5: a host-supplied {raw_id: registry_id} exposes a raw
+    general-purpose channel under a registry id — only for a raw channel
+    this frame has, and only for a registry channel it lacks natively."""
+    for raw, target in (channel_assignments or {}).items():
+        if not str(raw).startswith("gp_analog_") or raw not in df.columns:
+            continue
+        if not target or target in df.columns:
+            continue
+        df[target] = df[raw]
+
+
+def _resample_1hz(df: pd.DataFrame, max_fill_gap_s: float) -> tuple[pd.DataFrame, float]:
+    """Reindex onto a 1-second grid from the first to the last timestamp
+    (Spec 01 §6.5 decision 1). Numeric channels are interpolated across
+    holes of at most `max_fill_gap_s`; text, boolean and CAS channels carry
+    the previous value forward across the same holes; longer holes stay
+    missing. Filled rows are marked in `_filled`. Returns (frame, share)."""
+    df = df.drop_duplicates(subset="datetime", keep="first").set_index("datetime")
+    grid = pd.date_range(df.index[0], df.index[-1], freq="1s")
+    out = df.reindex(grid)
+    missing = ~out.index.isin(df.index)
+    # Length of each run of missing seconds, per row.
+    run_id = (missing != np.roll(missing, 1)).cumsum()
+    run_len = pd.Series(missing).groupby(run_id).transform("sum").to_numpy()
+    fillable = missing & (run_len <= max_fill_gap_s)
+    limit = max(int(max_fill_gap_s), 0)
+    for col in out.columns:
+        numeric = pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
+        if col in _CARRY_FORWARD_COLS or not numeric or not pd.api.types.is_numeric_dtype(out[col]):
+            filled = out[col].ffill(limit=limit) if limit else out[col]
+        else:
+            filled = out[col].interpolate(method="time", limit=limit, limit_area="inside") if limit else out[col]
+        # Only holes up to the limit are filled; rows of longer holes stay missing.
+        out[col] = out[col].where(~fillable, filled)
+    out["_filled"] = fillable
+    out = out.rename_axis("datetime").reset_index()
+    share = float(fillable.mean()) if len(fillable) else 0.0
+    return out, share
 
 
 def load_log(
@@ -325,7 +502,7 @@ def load_directory(
     directory: str | Path,
     pattern: str = "*.csv",
     skip_ground_sessions: bool = True,
-    min_airborne_min: float = 3.0,
+    workspace_dir: Optional[Path] = None,
     verbose: bool = True,
 ) -> list[tuple[pd.DataFrame, AirframeInfo]]:
     """
@@ -339,34 +516,69 @@ def load_directory(
     Parameters
     ----------
     skip_ground_sessions : bool, default True
-        Exclude ground-only sessions (engine run-up, taxi test, avionics
-        check) where the aircraft never actually flew. These sessions have
-        near-zero airborne time and no useful flight analytics — including
-        them produces misleading results in every downstream module
-        (false temperature outliers, meaningless phase labels, blank cells
-        across most analytics columns). They also inflate counts and degrade
-        trend quality by adding x-axis points with identical engine-hours.
+        Exclude ground-only sessions, short flights, and files with a
+        large internal time gap (see workspace_dir below) — none of these
+        have useful flight analytics, and including them produces
+        misleading results in every downstream module (false temperature
+        outliers, meaningless phase labels, blank cells across most
+        analytics columns; short flights and ground sessions also inflate
+        counts and degrade trend quality with x-axis points at identical
+        engine-hours).
 
-        Ground-session detection: a file is excluded if its estimated
-        airborne time (rows with RPM > 3,000 AND IAS > 30kt) is less than
-        min_airborne_min. This is an approximation that doesn't require
-        running the full phase-detection state machine at load time.
+        Ground-session detection (Spec 02 §5.11.2): a file
+        is excluded if and only if `detect_phases()` finds no row in an
+        airborne phase (`phases.AIRBORNE_PHASES` — CLIMB, CRUISE, DESCENT,
+        APPROACH, LANDING_ROLL; deliberately not TAKEOFF_ROLL, which is
+        reachable from a ground run-up alone with no confirmed liftoff —
+        see the comment on AIRBORNE_PHASES). This replaced an earlier
+        RPM/IAS threshold approximation that was a proxy for what the phase
+        detector already answers definitively — same state machine that
+        labels the rest of the flight, not a second, cruder opinion.
 
         Pass skip_ground_sessions=False only if you specifically need to
-        examine ground sessions (e.g. for ENGINE ECU powerup behavior
+        examine ground sessions (e.g. for ENGINE ECU start-up behavior
         in isolation from flight operations — but note that full flights
-        contain all the same POWERUP/LANE_CHECK/SHUTDOWN patterns and are
-        sufficient to establish those baselines without the noise).
+        contain all the same GROUND_START/LANE_CHECK/GROUND_SHUTDOWN patterns and are
+        sufficient to establish those baselines without the noise). This
+        also disables the short-flight and time-gap checks below, and
+        exclusions.json is neither read nor written.
 
-    min_airborne_min : float, default 3.0
-        Threshold in minutes for the ground-session filter. Files with
-        estimated airborne time below this are excluded when
-        skip_ground_sessions=True.
+    workspace_dir : Path, optional
+        Spec 02 §5.11. When given (and
+        skip_ground_sessions is True), every exclusion decision is looked
+        up and recorded in `workspace_dir/exclusions.json` (see
+        `exclusions.py`) instead of being silently dropped:
+          - A file with an existing entry (any category, auto or user) is
+            skipped without re-parsing or re-running phase detection —
+            the answer is already on record.
+          - A newly-detected ground session, short flight (airborne time
+            below `min_flight_duration_min` from the toolkit's
+            config.json, default 10 min, 0 disables the check), or file
+            with an internal time gap over 5 minutes (a strong signal of
+            a mid-session avionics restart or SD card error —
+            `corrupt_log`) gets a fresh auto-exclusion entry written
+            before being skipped.
+          - Ground session takes priority over short flight, which takes
+            priority over the time-gap check, when more than one would
+            apply — one entry per file, not a pile-up.
+        A `user_override: true` entry (set via
+        `exclusions.set_user_override`) always keeps its flight in the
+        results despite matching one of the rules above. When
+        workspace_dir is None (the default), only the ground-session rule
+        applies (Spec 02 §5.11.2): auto-detect and skip, but don't persist
+        anything.
 
-    Returns a list of (DataFrame, AirframeInfo) tuples,
-    sorted chronologically by the datetime of the first record.
+    Returns a list of (DataFrame, AirframeInfo) tuples, sorted
+    chronologically by the datetime of the first record. Every DataFrame
+    carries a populated `phase` column (`detect_phases()` runs on every
+    file regardless of `skip_ground_sessions`) — downstream callers that
+    already re-run `detect_phases()` on the result get the same answer,
+    just redundantly; nothing breaks either way.
     """
     directory = Path(directory)
+
+    exclusions_data = _exclusions.load_exclusions(workspace_dir) if workspace_dir is not None else None
+    min_flight_duration_min = resolve_min_flight_duration_min()
 
     # Case-insensitive glob: build a regex from the pattern and scan once,
     # rather than relying on Path.glob (which is case-sensitive on
@@ -398,23 +610,49 @@ def load_directory(
 
     for f in files:
         try:
+            filename = f.name
+
+            # An existing exclusions.json entry (auto or user) is
+            # authoritative — don't re-parse or re-run phase detection to
+            # confirm what's already on record (Spec 02 §5.11.3).
+            if (skip_ground_sessions and exclusions_data is not None
+                    and _exclusions.is_excluded(filename, exclusions_data)):
+                skipped.append(filename)
+                if verbose:
+                    print(f"  · {filename}  already excluded — skipped")
+                continue
+
             df, info = load_log(f)
 
-            # ── Ground-session detection ───────────────────────────────────
-            # Estimate airborne time without running the full phase-detection
-            # state machine: count rows where the engine is running AND the
-            # aircraft is moving at flight speed. This is fast (no VS/altitude
-            # smoothing needed) and sufficient for a binary ground/flight split.
+            # ── Phase detection ──────────────────────────────────────────────
+            # Runs regardless of skip_ground_sessions so every returned
+            # DataFrame carries a populated 'phase' column (Spec 02
+            # §5.11.2) — ground-session status is then read
+            # directly off it rather than approximated separately.
+            df = detect_phases(df, verbose=False)
+
             if skip_ground_sessions:
-                ias = df["ias_kt"].fillna(0) if "ias_kt" in df.columns else pd.Series(0, index=df.index)
-                rpm = df["rpm"].fillna(0)    if "rpm"    in df.columns else pd.Series(0, index=df.index)
-                airborne_rows = ((rpm > 3000) & (ias > 30)).sum()
-                airborne_min  = airborne_rows / 60.0   # 1Hz logging → rows ≈ seconds
-                if airborne_min < min_airborne_min:
-                    skipped.append(f.name)
+                category, reason = _exclusions.classify_for_auto_exclusion(
+                    df, min_flight_duration_min, check_short_flight_and_gap=workspace_dir is not None,
+                )
+
+                if category is not None and workspace_dir is not None:
+                    _exclusions.add_auto_exclusion(workspace_dir, filename, category, reason)
+                    # add_auto_exclusion() is a no-op if an entry already
+                    # exists — which includes one a user already overrode
+                    # (e.g. a prior run's auto-exclusion since flagged
+                    # user_override: true). Re-check against the current
+                    # on-disk state rather than the stale copy loaded at
+                    # the top of this call, so that override wins here
+                    # too, not just on this file's *next* run.
+                    if not _exclusions.is_excluded(filename, _exclusions.load_exclusions(workspace_dir)):
+                        category = None
+
+                if category is not None:
+                    skipped.append(filename)
                     if verbose:
-                        print(f"  · {f.name}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
-                              f"ground session ({airborne_min:.1f} min airborne) — skipped")
+                        print(f"  · {filename}  [{df['datetime'].iloc[0]:%Y-%m-%d %H:%M}]  "
+                              f"{reason} — skipped")
                     continue
 
             results.append((df, info))
@@ -442,7 +680,6 @@ def load_directory(
             print(f"⚠ Failed files:")
             for name, err in failed:
                 print(f"    {name}: {err}")
-    return results
     return results
 
 
@@ -551,7 +788,10 @@ def flight_fingerprint(df: pd.DataFrame, info: AirframeInfo) -> tuple:
     match is too strict and would miss genuine duplicates.
     """
     start_minute = df["datetime"].iloc[0].floor("min") if len(df) else None
-    return (info.aircraft_ident, info.system_id, start_minute)
+    # Source identity (Spec 01 §6.1/§6.5): the G3X system_id, or the
+    # product name for AXIS files, which carry no system id.
+    source_identity = info.product if info.source_format == "axis" else info.system_id
+    return (info.aircraft_ident, source_identity, start_minute)
 
 
 def find_duplicate_flights(

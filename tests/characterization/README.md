@@ -36,3 +36,23 @@ without the snapshot being refreshed to match.
 If `data/logs/` or `golden/` is absent, these tests are skipped rather
 than failed — they require private local flight data that isn't part of
 the repo.
+
+## Spec 12 (Trends) golden: `fleet_analysis.json` / `shift_history.json`
+
+A second, separate pair of golden files locks `update_fleet`'s own
+output — `shift`, `change_summary`, `shift_history`, and the
+takeoff-MAP residual metric — by value (Spec 12 v0.3 acceptance 10,
+Session B R3b.4). Regenerate with:
+
+```bash
+python tests/characterization/regen_fleet_analysis_golden.py
+```
+
+Unlike the snapshot above, this one is **pinned to a cut-off date**
+(`CUTOFF_DATE` in the regen script and in
+`tests/characterization/test_fleet_analysis_golden.py` — keep the two in
+sync) rather than to "however many logs happen to be in `data/logs/`
+today": new flights added after the cut-off don't move it, so the
+fixture stays meaningful without needing a regen every time someone
+drops a new log in. Move the cut-off forward and regenerate only when
+you want the fixture to include newer flights.

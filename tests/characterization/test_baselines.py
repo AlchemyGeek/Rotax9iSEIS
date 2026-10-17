@@ -9,11 +9,11 @@ match exactly.
 """
 import json
 
-from slingology_eis.loader import deduplicate_flights, find_duplicate_flights, load_directory
+from slingology_eis.loader import deduplicate_flights, find_duplicate_flights
 from slingology_eis.fleet import build_flight_metrics
 from slingology_eis.limits import load_engine_config
 
-from ..conftest import GOLDEN_DIR, LOGS_DIR, import_notebook, requires_flight_logs, requires_golden_fixtures
+from ..conftest import GOLDEN_DIR, load_golden_flights, import_notebook, requires_flight_logs, requires_golden_fixtures
 
 
 def _without_generated_at(doc: dict) -> dict:
@@ -25,7 +25,7 @@ def _without_generated_at(doc: dict) -> dict:
 def test_baselines_and_models_match_golden(tmp_path):
     notebook_03 = import_notebook("03_multi_flight_insights")
 
-    flights = load_directory(str(LOGS_DIR), verbose=False)
+    flights = load_golden_flights()
     if find_duplicate_flights(flights):
         flights = deduplicate_flights(flights, prefer="most_rows", verbose=False)
     metrics = build_flight_metrics(flights, field_elev_ft=None, verbose=False)

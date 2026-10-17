@@ -27,7 +27,7 @@ from slingology_eis.loader import load_log
 from slingology_eis.phases import detect_phases, overboost_time
 from slingology_eis.egt import egt_health
 from slingology_eis.limits import check_exceedances, load_engine_config
-from slingology_eis.cas import extract_engine_ecu_runs
+from slingology_eis.cas import extract_engine_ecu_runs, takeoff_not_detected
 from slingology_eis import topics
 
 BASELINES_PATH    = _TOOLKIT / "data" / "reports" / "baselines.json"
@@ -150,13 +150,6 @@ def _main():
     enabled = r_data.get("egt_spread", {}).get("enabled", True)
     render_topic(topics.egt_spread(spread, egt.get("spread_hi_limit_f", 392), b, rule_triggers, enabled))
 
-    # ── EGT4 ELEVATION ───────────────────────────────────────────────────────
-    section("EGT4 ELEVATION")
-    elev = egt.get("egt4_elevation_f")
-    b = b_data.get("egt4_elevation", {})
-    rule_triggers = r_data.get("egt4_elevation", {}).get("triggers", [])
-    render_topic(topics.egt4_elevation(elev, b, rule_triggers))
-
     # ── CYLINDER RANK ─────────────────────────────────────────────────────────
     section("CYLINDER RANK")
     rank_stable = egt.get("rank_stable")
@@ -172,12 +165,16 @@ def _main():
     render_topic(topics.cylinder_rank(rank_order, rank_stable, fleet_note))
 
     # ── OVERBOOST ─────────────────────────────────────────────────────────────
+    # v0.12: a block past the limit is an ordinary limit_exceedances event
+    # now (see the LIMITS section below) — this topic only ever reports the
+    # close call, no filters in this legacy report so no band shift.
     section("OVERBOOST")
     ob = overboost_time(df, engine_cfg)
     ob_total  = ob.get("overboost_total_s", 0)
     ob_max    = ob.get("overboost_max_block_s", 0)
     ob_limit  = ob.get("overboost_limit_s", 300)
-    render_topic(topics.overboost(ob_total, ob_max, ob_limit, ob.get("overboost_exceeded")))
+    ob_close_call_margin = engine_cfg.get("overboost", {}).get("close_call_margin_s", 60)
+    render_topic(topics.overboost(ob_total, ob_max, ob_limit, close_call_s=ob_limit - ob_close_call_margin))
 
     # ── TAKEOFF MAP ───────────────────────────────────────────────────────────
     section("TAKEOFF MAP")
@@ -208,75 +205,32 @@ def _main():
     rule_triggers = r_data.get("coolant_temp_peak", {}).get("triggers", [])
     render_topic(topics.coolant_temp_peak(coolant_max, b, rule_triggers))
 
-    # ── OIL/COOLANT RATIO ────────────────────────────────────────────────────
-    section("OIL/COOLANT RATIO")
-    oc_ratio = float(fm_row["oil_coolant_ratio"]) \
-        if fm_row is not None and not math.isnan(fm_row["oil_coolant_ratio"]) else None
-    b = b_data.get("oil_coolant_ratio", {})
-    rule_triggers = r_data.get("oil_coolant_ratio", {}).get("triggers", [])
-    render_topic(topics.oil_coolant_ratio(oc_ratio, b, rule_triggers))
-
-    # ── CRUISE EFFICIENCY ─────────────────────────────────────────────────────
-    section("CRUISE EFFICIENCY")
-    b = b_data.get("cruise_efficiency", {})
-    rule_triggers = r_data.get("cruise_efficiency", {}).get("triggers", [])
-    # Pull from fleet_metrics for this flight if available
-    fm_path = _TOOLKIT / "data" / "reports" / "fleet_metrics.csv"
-    nmpg = None
-    if fm_path.exists():
-        import pandas as pd
-        fm = pd.read_csv(fm_path)
-        match = fm[fm["source_file"] == log_path.name]
-        if len(match):
-            nmpg = match["cruise_nmpg"].iloc[0]
-            nmpg = None if (isinstance(nmpg, float) and math.isnan(nmpg)) else nmpg
-    render_topic(topics.cruise_efficiency(nmpg, b, rule_triggers))
-
-    # ── CRUISE FUEL FLOW ─────────────────────────────────────────────────────
-    section("CRUISE FUEL FLOW")
-    fuel_flow = float(fm_row["cruise_fuel_flow_gph"]) \
-        if fm_row is not None and not math.isnan(fm_row["cruise_fuel_flow_gph"]) else None
-    b = b_data.get("cruise_fuel_flow", {})
-    rule_triggers = r_data.get("cruise_fuel_flow", {}).get("triggers", [])
-    this_da = float(fm_row["cruise_da_ft"]) \
-        if fm_row is not None and not math.isnan(fm_row["cruise_da_ft"]) else None
-    da_b = b_data.get("cruise_da_ft", {})
-    render_topic(topics.cruise_fuel_flow(
-        fuel_flow, b, rule_triggers,
-        this_da=this_da, fleet_da_avg=da_b.get("mean"), fleet_da_std=da_b.get("std"),
-    ))
+    # ── FLIGHT SUMMARY (fuel burned, cruise nm/gal, cruise fuel flow) ────────
+    # Spec 10 Q4: planning numbers, not topics — no insight, no rule. Values
+    # only, matching the web Flight view's summary line.
+    section("FLIGHT SUMMARY")
+    fuel_used_gal = fm_row["fadec_gallons"] \
+        if fm_row is not None and "fadec_gallons" in fm_row.index and not math.isnan(fm_row["fadec_gallons"]) else None
+    nmpg = fm_row["cruise_nmpg"] \
+        if fm_row is not None and "cruise_nmpg" in fm_row.index and not math.isnan(fm_row["cruise_nmpg"]) else None
+    fuel_flow = fm_row["cruise_fuel_flow_gph"] \
+        if fm_row is not None and "cruise_fuel_flow_gph" in fm_row.index and not math.isnan(fm_row["cruise_fuel_flow_gph"]) else None
+    print(f"    Fuel burned: {fuel_used_gal:.1f} gal" if fuel_used_gal is not None else "    Fuel burned: —")
+    print(f"    Cruise: {nmpg:.1f} nm/gal" if nmpg is not None else "    Cruise: — (no cruise detected)")
+    print(f"    Cruise fuel flow: {fuel_flow:.1f} gal/hr" if fuel_flow is not None else "    Cruise fuel flow: — (no cruise detected)")
 
     # ── ENGINE ECU ────────────────────────────────────────────────────────────
     section("ENGINE ECU")
-    ecu_runs = extract_engine_ecu_runs(df, engine_config=engine_cfg)
-    ecu_result = topics.engine_ecu_inflight(ecu_runs)
+    # Spec 01 §8.6 / Spec 10 D19: runs classified by flight phase. This topic
+    # explains (counts by class, lane check); its GROUND and IN_FLIGHT runs
+    # are CAS events, reported under LIMIT EXCEEDANCES below.
+    ecu = extract_engine_ecu_runs(
+        df, engine_config=engine_cfg, takeoff_not_detected=takeoff_not_detected(df)[0],
+    )
+    ecu_runs = ecu.runs
+    ecu_result = topics.engine_ecu_inflight(
+        ecu_runs, sub_threshold_blips=ecu.sub_threshold_blips, lane_check=ecu.lane_check)
     analysis_line(ecu_result["analysis"])
-    if ecu_result["events"]:
-        for event in ecu_result["events"]:
-            co = event["co_alerts"]
-            direct = set(event["direct_correlation_alerts"])
-            oil_nan = event["oil_nan_frac"]
-            oil_str = f"  oil_NaN:{oil_nan * 100:.0f}%" if oil_nan is not None else ""
-            print(f"    ⚡ {event['start_time']:%H:%M:%S}  {event['duration_s']:.0f}s{oil_str}")
-            if co:
-                for alert in co:
-                    if alert in direct:
-                        insight_line(
-                            f"⚠ Co-active: {alert} — only IN-FLIGHT event with a "
-                            f"direct engine-parameter correlation. Verify oil pressure "
-                            f"was genuine, not a CAN dropout."
-                        )
-                    else:
-                        print(f"      · Co-active: {alert}")
-            else:
-                print(
-                    "      · No co-active alerts — ENGINE ECU isolated "
-                    "→ CAN fault, not ECU hardware."
-                )
-        print(
-            "    Run 02_engine_ecu_correlation.py for full CAN bus "
-            "pattern analysis and recommended actions."
-        )
 
     # ── CLIMB THERMAL RATE ───────────────────────────────────────────────────
     section("CLIMB THERMAL RATE")
@@ -291,6 +245,12 @@ def _main():
     section("LIMIT EXCEEDANCES")
     exceedances = check_exceedances(df, engine_cfg)
     render_topic(topics.limit_exceedances(exceedances))
+    # Spec 10 D19: classified CAS alert events, one line each.
+    for run in ecu_runs:
+        if run["classification"] in ("GROUND", "IN_FLIGHT"):
+            insight_line("⚠ " + topics.cas_event_phrase({**run, "context": {"rpm": run.get("running_rpm")}}))
+            for alert in run["co_alerts"]:
+                print(f"      · Co-active: {alert}")
 
     print("\n" + "═" * 70 + "\n")
 

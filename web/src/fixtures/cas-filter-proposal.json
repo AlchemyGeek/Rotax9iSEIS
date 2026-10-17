@@ -1,0 +1,62 @@
+{
+  "advisory": {
+    "advisable": false,
+    "flights_exceeded": 2,
+    "flights_considered": 8,
+    "message": "Not advisable: ENGINE ECU (alert) occurred on 2 of your last 8 flights. Filters are meant for events that happen regularly; an occasional one is usually worth looking at each time. You can still save this filter."
+  },
+  "target": {
+    "kind": "cas",
+    "cas_id": "ENGINE ECU"
+  },
+  "limit": {
+    "id": "cas:ENGINE ECU",
+    "kind": "cas",
+    "cas_id": "ENGINE ECU",
+    "label": "ENGINE ECU (alert)",
+    "unit": "s",
+    "severity": "CAUTION",
+    "filter_policy": {
+      "magnitude_modes": [],
+      "duration_allowed": true,
+      "note_required": false
+    }
+  },
+  "policy": {
+    "filterable": true,
+    "reason": null,
+    "severity": "CAUTION",
+    "magnitude_modes": [],
+    "duration_allowed": true,
+    "phases_allowed": false,
+    "max_band_abs": null,
+    "max_duration_s": null,
+    "note_required": false,
+    "review_interval_h": 50
+  },
+  "live": {
+    "share_with_events": 0.25,
+    "longest_event_s": 7.0
+  },
+  "suggested": {
+    "duration": {
+      "max_event_s": 7.0
+    }
+  },
+  "reference": {
+    "flight_ids": [
+      "b8b8edef0d406f34",
+      "4f1e929325b05868",
+      "c4af7205106917e6",
+      "4bb827061597da2d",
+      "406553ae00a1d6a9",
+      "082e0e30107a9279",
+      "73da172dc63e7379",
+      "3c0d6e994448776a"
+    ],
+    "n_with_events": 2,
+    "collecting": false
+  },
+  "z_available": false,
+  "z_n_min": 10
+}

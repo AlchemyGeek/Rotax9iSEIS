@@ -26,6 +26,15 @@ requires_golden_fixtures = pytest.mark.skipif(
 )
 
 
+def load_golden_flights():
+    """The logs the Stage 0 goldens were captured on: every G3X log in
+    data/logs. Logs of a source added later (Garmin AXIS, Spec 01 v0.23)
+    are left out, so the goldens keep checking that G3X loads unchanged."""
+    from slingology_eis.loader import load_directory
+    return [(df, info) for df, info in load_directory(str(LOGS_DIR), verbose=False)
+            if info.source_format != "axis"]
+
+
 def import_notebook(name: str):
     """Import a notebooks/NN_name.py module by file path.
 
@@ -37,3 +46,15 @@ def import_notebook(name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def _no_chosen_data_location(tmp_path_factory, monkeypatch):
+    """Spec 02 v0.10 §5.8.1: neither SLINGOLOGY_EIS_HOME nor a data location
+    chosen on this machine may reach a test. Each test sees no environment
+    override and an empty configuration folder, so resolution falls through
+    to the defaults (which the registry tests isolate further)."""
+    from slingology_eis import data_location
+    monkeypatch.delenv(data_location.ENV_VAR, raising=False)
+    cfg = tmp_path_factory.mktemp("eis-config")
+    monkeypatch.setattr(data_location, "config_dir", lambda: cfg)

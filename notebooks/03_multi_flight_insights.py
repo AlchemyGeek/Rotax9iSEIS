@@ -125,9 +125,8 @@ def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, ou
         if len(inflight_ecu):
             for _, row in inflight_ecu.iterrows():
                 warnings.append(
-                    f"⚠ IN-FLIGHT ENGINE ECU event — {row['source_file']} "
-                    f"({row['inflight_ecu_count']:.0f} event(s)). "
-                    f"Run 02_engine_ecu_correlation.py for full analysis."
+                    f"⚠ In-flight ENGINE ECU event — {row['source_file']} "
+                    f"({row['inflight_ecu_count']:.0f} event(s))."
                 )
         else:
             checks.append("✓ No IN-FLIGHT ENGINE ECU events across all flights.")
@@ -135,7 +134,6 @@ def write_fleet_insights(metrics: pd.DataFrame, baselines: dict, rules: dict, ou
     # ── Confirmed trends (R²≥0.5) ─────────────────────────────────────────────
     trend_metrics = [
         ("egt_spread_mean_f",  "EGT spread",         "increasing", "widening cylinder imbalance"),
-        ("egt4_elevation_f",   "EGT4 elevation",     "increasing", "cylinder 4 running progressively hotter"),
         ("oil_temp_max_f",     "Oil temp peak",      "increasing", "oil temperature creeping up"),
         ("coolant_temp_max_f", "Coolant temp peak",  "increasing", "coolant temperature creeping up"),
         ("cruise_nmpg",        "Cruise efficiency",  "decreasing", "fuel efficiency declining"),
@@ -261,10 +259,8 @@ def main():
 
     baseline_metrics = [
         ("egt_spread_mean_f",   "EGT spread, cruise mean (°F)"),
-        ("egt4_elevation_f",    "EGT4 elevation vs cyl 1-3 (°F)"),
         ("oil_temp_max_f",      "Oil temp, per-flight max (°F)"),
         ("coolant_temp_max_f",  "Coolant temp, per-flight max (°F)"),
-        ("oil_coolant_ratio",   "Oil/coolant temp ratio"),
         ("cruise_fuel_flow_gph","Cruise fuel flow (gal/hr)"),
         ("cruise_nmpg",         "Cruise efficiency (nm/gal)"),
     ]
@@ -286,8 +282,6 @@ def main():
 
         trend_metrics = [
             ("egt_spread_mean_f",   "EGT spread (cylinder balance health)"),
-            ("egt4_elevation_f",    "EGT4 elevation"),
-            ("oil_coolant_ratio",   "Oil/coolant ratio (cooling system health)"),
             ("oil_temp_below_optimal_pct", "% time oil below optimal band"),
         ]
         for col, label in trend_metrics:
@@ -340,7 +334,6 @@ def main():
 
     outlier_metrics = [
         ("egt_spread_max_f",    "EGT spread max"),
-        ("egt4_elevation_f",    "EGT4 elevation"),
         ("oil_temp_max_f",      "Oil temp max"),
         ("coolant_temp_max_f",  "Coolant temp max"),
         ("overboost_total_s",   "Overboost time"),
@@ -361,7 +354,7 @@ def main():
     engine_cfg  = load_engine_config()
     engine_name = engine_cfg.get("_metadata", {}).get("engine", "unknown engine")
     ob_cfg      = engine_cfg.get("overboost", {})
-    ob_limit_s  = ob_cfg.get("time_limit_s", 300)
+    ob_limit_s  = ob_cfg.get("limit_s", 300)
     ob_rpm      = ob_cfg.get("rpm_threshold", 5500)
     ob_close_s  = int(ob_limit_s * 0.8)   # "close call" = within 80% of the limit
 
@@ -502,9 +495,9 @@ def main():
     print(f"  added at the pump is the more accurate ground-truth consumption figure.)")
 
     subsection("ENGINE ECU anomaly tracking")
-    print(f"  For full ENGINE ECU classification (powerup/lane-check/shutdown/")
-    print(f"  in-flight), run 02_engine_ecu_correlation.py — that script applies")
-    print(f"  the dedicated classifier this summary doesn't duplicate.")
+    print(f"  ENGINE ECU runs are classified per flight by flight phase (ground start,")
+    print(f"  lane check, ground, in flight, ground shutdown) — see each flight's")
+    print(f"  report; this summary lists only flights with an in-flight event, above.")
 
     # ═══════════════════════════════════════════════════════════════════════
     section("Saving outputs")

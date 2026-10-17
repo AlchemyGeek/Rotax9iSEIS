@@ -29,7 +29,7 @@ import pandas as pd
 
 from .loader import log_summary
 from .phases import detect_phases, overboost_time
-from .egt import egt_health
+from .egt import cyl_number, egt_health
 from .fuel import integrate_fuel, cruise_efficiency
 from .cas import parse_cas
 from .climb import climb_thermal_profile, VS_BUCKETS
@@ -101,7 +101,13 @@ class FlightMetrics:
     # EGT
     egt_spread_mean_f: Optional[float] = None
     egt_spread_max_f: Optional[float] = None
-    egt4_elevation_f: Optional[float] = None
+    egt1_deviation_f: Optional[float] = None
+    egt2_deviation_f: Optional[float] = None
+    egt3_deviation_f: Optional[float] = None
+    egt4_deviation_f: Optional[float] = None
+    egt_hottest_cyl: Optional[int] = None
+    egt_hottest_margin_f: Optional[float] = None
+    egt_rank_order: Optional[list] = None   # cylinder numbers, hottest first
     egt_rank_stable: Optional[bool] = None
 
     # Fuel
@@ -113,7 +119,6 @@ class FlightMetrics:
     oil_temp_max_f: Optional[float] = None
     oil_temp_below_optimal_pct: Optional[float] = None
     coolant_temp_max_f: Optional[float] = None
-    oil_coolant_ratio: Optional[float] = None
 
     # Overboost
     overboost_total_s: Optional[int] = None
@@ -149,6 +154,7 @@ class FlightMetrics:
     takeoff_pressure_alt_ft: Optional[float] = None
     takeoff_oat_c: Optional[float] = None
     inflight_ecu_count: int = 0
+    ground_ecu_count: int = 0
 
 
 def build_flight_metrics(
@@ -200,6 +206,25 @@ def build_flight_metrics(
     return metrics_df
 
 
+def takeoff_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Full-power (RPM ≥ 5,500) TAKEOFF_ROLL rows of the first real departure.
+    A multi-leg log has one TAKEOFF_ROLL segment per departure, and pooling
+    them would average different airports' pressure altitude and OAT into a
+    takeoff that never happened. "Real" = the segment is followed by CLIMB;
+    a high-power runup can briefly read as TAKEOFF_ROLL and fall back to
+    TAXI. With no such segment, every full-power TAKEOFF_ROLL row.
+    """
+    rows = df[(df["phase"] == "TAKEOFF_ROLL") & (df["rpm"].fillna(0) >= 5500)]
+    if len(rows):
+        segment = (df["phase"] != df["phase"].shift()).cumsum()
+        next_phase = df.groupby(segment)["phase"].first().shift(-1)
+        departures = [s for s in segment.loc[rows.index].unique() if next_phase.get(s) == "CLIMB"]
+        if departures:
+            rows = rows[segment.loc[rows.index] == departures[0]]
+    return rows
+
+
 def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) -> FlightMetrics:
     """
     Compute one flight's full metrics row. `df` must already have phases
@@ -233,10 +258,6 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
     )
     coolant_max = airborne["coolant_temp_f"].max() if "coolant_temp_f" in airborne.columns else None
     oil_max     = airborne["oil_temp_f"].max() if "oil_temp_f" in airborne.columns else None
-    oc_ratio    = (
-        round(float(oil_max / coolant_max), 3)
-        if oil_max and coolant_max and coolant_max > 0 else None
-    )
 
     phase_min = {}
     if "phase" in df.columns:
@@ -248,10 +269,7 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
     takeoff_pressure_alt_ft = None
     takeoff_oat_c = None
     if "phase" in df.columns and "rpm" in df.columns and "map_inhg" in df.columns:
-        to_rows = df[
-            (df["phase"] == "TAKEOFF_ROLL") &
-            (df["rpm"].fillna(0) >= 5500)
-            ]
+        to_rows = takeoff_rows(df)
         if len(to_rows) >= 3:
             takeoff_map_inhg = round(float(to_rows["map_inhg"].median()), 2)
             takeoff_pressure_alt_ft = round(float(to_rows["press_alt_ft"].median()), 0) \
@@ -259,12 +277,12 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
             takeoff_oat_c = round(float(to_rows["oat_c"].median()), 1) \
                 if "oat_c" in to_rows.columns else None
 
-    # ── IN-FLIGHT ENGINE ECU count using proper classifier ────────────
-    from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu
-    _ecu_runs = _extract_ecu(df, engine_config=engine_config)
-    inflight_ecu_count = sum(
-        1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT"
-    )
+    # ── ENGINE ECU counts by flight phase (Spec 01 §8.6) ──────────────
+    from slingology_eis.cas import extract_engine_ecu_runs as _extract_ecu, takeoff_not_detected
+    _ecu_runs = _extract_ecu(df, engine_config=engine_config,
+                             takeoff_not_detected=takeoff_not_detected(df)[0]).runs
+    inflight_ecu_count = sum(1 for r in _ecu_runs if r["classification"] == "IN_FLIGHT")
+    ground_ecu_count = sum(1 for r in _ecu_runs if r["classification"] == "GROUND")
 
     # ── Density altitude / OAT — cruise-phase median ──────────────────────
     cruise_rows = df[df["phase"] == "CRUISE"] if "phase" in df.columns else pd.DataFrame()
@@ -290,7 +308,13 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         airborne_min=round(s["airborne_min"], 1),
         egt_spread_mean_f=egt.get("spread_mean_f"),
         egt_spread_max_f=egt.get("spread_max_f"),
-        egt4_elevation_f=egt.get("egt4_elevation_f"),
+        egt1_deviation_f=egt.get("egt1_deviation_f"),
+        egt2_deviation_f=egt.get("egt2_deviation_f"),
+        egt3_deviation_f=egt.get("egt3_deviation_f"),
+        egt4_deviation_f=egt.get("egt4_deviation_f"),
+        egt_hottest_cyl=egt.get("hottest_cyl"),
+        egt_hottest_margin_f=egt.get("hottest_margin_f"),
+        egt_rank_order=[cyl_number(c) for c in egt["rank_order"]] if egt.get("rank_order") else None,
         egt_rank_stable=egt.get("rank_stable"),
         fadec_gallons=fuel_total.get("fadec_gallons"),
         cruise_nmpg=eff.get("nmpg") if eff else None,
@@ -298,7 +322,6 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         oil_temp_max_f=round(float(oil_max), 1) if oil_max else None,
         oil_temp_below_optimal_pct=below_optimal_pct,
         coolant_temp_max_f=round(float(coolant_max), 1) if coolant_max else None,
-        oil_coolant_ratio=oc_ratio,
         overboost_total_s=ob.get("overboost_total_s"),
         overboost_max_block_s=ob.get("overboost_max_block_s"),
         cas_inflight_anomaly_count=inflight_anomalies,
@@ -318,6 +341,7 @@ def compute_flight_metrics(df: pd.DataFrame, info: object, engine_config: dict) 
         takeoff_pressure_alt_ft=takeoff_pressure_alt_ft,
         takeoff_oat_c=takeoff_oat_c,
         inflight_ecu_count=inflight_ecu_count,
+        ground_ecu_count=ground_ecu_count,
     )
 
 

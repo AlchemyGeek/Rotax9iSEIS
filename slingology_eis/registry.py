@@ -67,8 +67,14 @@ _register("phases", [
 _register("egt", [
     ("egt_spread_mean_f", "°F", "Mean EGT spread during cruise", "CRUISE"),
     ("egt_spread_max_f", "°F", "Max EGT spread during cruise", "CRUISE"),
-    ("egt4_elevation_f", "°F", "Cylinder 4 EGT elevation vs. cylinders 1-3", "CRUISE"),
-    ("egt_rank_stable", None, "Whether the hottest cylinder was stable throughout cruise", "CRUISE"),
+    ("egt1_deviation_f", "°F", "Cylinder 1 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt1_f"),
+    ("egt2_deviation_f", "°F", "Cylinder 2 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt2_f"),
+    ("egt3_deviation_f", "°F", "Cylinder 3 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt3_f"),
+    ("egt4_deviation_f", "°F", "Cylinder 4 cruise EGT vs. mean of the other cylinders", "CRUISE", "egt4_f"),
+    ("egt_hottest_cyl", None, "Cylinder with the highest cruise-mean EGT (1-4)", "CRUISE"),
+    ("egt_hottest_margin_f", "°F", "Cruise-mean EGT of the hottest cylinder minus the next hottest", "CRUISE"),
+    ("egt_rank_order", None, "Cylinders ordered hottest to coldest by cruise-mean EGT", "CRUISE"),
+    ("egt_rank_stable", None, "Whether the same cylinder was hottest for at least 80% of cruise", "CRUISE"),
 ])
 
 _register("fuel", [
@@ -81,7 +87,6 @@ _register("thermal", [
     ("oil_temp_below_optimal_pct", "%",
      "Percent of airborne time with oil temp below 194°F/90°C", None, "oil_temp_f"),
     ("coolant_temp_max_f", "°F", "Peak coolant temperature (airborne)", None, "coolant_temp_f"),
-    ("oil_coolant_ratio", None, "Oil/coolant peak-temperature ratio", None, "oil_temp_f"),
     ("climb_oil_rise_f_per_min", "°F/min", "Oil temperature rise rate during climb", "CLIMB"),
     ("climb_coolant_rise_f_per_min", "°F/min", "Coolant temperature rise rate during climb", "CLIMB"),
     ("climb_vs_bucket_dominant", None, "Most common vertical-speed bucket during climb", "CLIMB"),
@@ -108,7 +113,8 @@ _register("takeoff_map", [
 _register("events", [
     ("cas_inflight_anomaly_count", None,
      "Raw in-flight ENGINE ECU CAS occurrences (heuristic count, not classified)"),
-    ("inflight_ecu_count", None, "Count of classified IN_FLIGHT ENGINE ECU runs"),
+    ("inflight_ecu_count", None, "Count of ENGINE ECU runs classified IN_FLIGHT (by flight phase)"),
+    ("ground_ecu_count", None, "Count of ENGINE ECU runs classified GROUND (engine running on the ground, not start, lane check or shutdown)"),
 ])
 
 

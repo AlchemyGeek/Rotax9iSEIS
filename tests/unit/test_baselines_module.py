@@ -12,6 +12,7 @@ def _metrics(n=3, with_takeoff=True):
     rows = []
     for i in range(n):
         row = {
+            "source_file": f"flight{i}",
             "date": f"2026-01-{i+1:02d}",
             "engine_hours": 10.0 + i,
             "egt_spread_mean_f": 50.0 + i,
@@ -62,6 +63,7 @@ def test_build_takeoff_map_model_insufficient_data():
     assert "note" in model
     assert "type" not in model
     assert model["raw"][0]["map_inhg"] == 44.0
+    assert model["raw"][0]["flight_id"] == "flight0"
 
 
 def test_build_takeoff_map_model_fits_regression_with_enough_data():

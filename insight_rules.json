@@ -1,93 +1,115 @@
 {
-  "version": "1.1",
+  "version": "1.8",
   "rules": {
     "egt_spread": {
       "enabled": true,
       "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"},
-        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10, "severity": "watch"}
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        },
+        {
+          "type": "trend",
+          "direction": "increasing",
+          "r2_min": 0.5,
+          "n_min": 10,
+          "severity": "watch"
+        }
       ]
     },
-    "egt4_elevation": {
+    "egt_cyl_deviation": {
       "enabled": true,
+      "applies_to": ["egt1_deviation", "egt2_deviation", "egt3_deviation", "egt4_deviation"],
       "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"},
-        {"type": "trend", "direction": "increasing", "r2_min": 0.5, "n_min": 10, "severity": "watch"}
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        },
+        {
+          "type": "trend",
+          "direction": "either",
+          "r2_min": 0.5,
+          "n_min": 10,
+          "severity": "watch"
+        }
       ]
     },
     "cylinder_rank": {
-      "enabled": true,
-      "triggers": [
-        {"type": "threshold", "condition": "rank_changed", "severity": "warning"}
-      ]
+      "enabled": false,
+      "_comment": "Retired as an insight (Spec 10 D4): egt_cyl_deviation fires first on the same event. Rank stays as context — see Spec 08 §6.",
+      "margin_min_f": 15,
+      "consecutive_flights": 2
     },
     "oil_temp_peak": {
       "enabled": true,
+      "limit_refs": ["oil_temp_max"],
       "triggers": [
-        {"type": "threshold", "limit": 248, "unit": "f", "severity": "limit"},
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        }
       ]
     },
     "coolant_temp_peak": {
       "enabled": true,
+      "limit_refs": ["coolant_temp_max"],
       "triggers": [
-        {"type": "threshold", "limit": 248, "unit": "f", "severity": "limit"},
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
-      ]
-    },
-    "oil_coolant_ratio": {
-      "enabled": true,
-      "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        }
       ]
     },
     "overboost_time": {
+      "_comment": "v0.12 (Spec 09 §6.4/§10.3): the threshold trigger is removed — a block past the limit is now an ordinary limit_exceedances event. This topic only reports the close call, which isn't rule-driven (no trigger needed for it). v0.13 (Spec 10 §4.1): limit_refs drives the mirrored badge, the same mechanism oil_temp_peak/coolant_temp_peak use.",
       "enabled": true,
-      "triggers": [
-        {"type": "threshold", "limit": 300, "unit": "s", "severity": "limit"}
-      ]
-    },
-    "cruise_efficiency": {
-      "enabled": true,
-      "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"},
-        {"type": "trend", "direction": "decreasing", "r2_min": 0.5, "n_min": 10, "severity": "watch"}
-      ]
-    },
-    "cruise_fuel_flow": {
-      "enabled": true,
-      "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
-      ]
+      "limit_refs": ["overboost"],
+      "triggers": []
     },
     "map_at_takeoff": {
+      "_comment": "v0.14 (Spec 10 §6.1/D5): the model is fitted leave-one-out per flight, and the tolerance is z times that fit's residual standard error, not a fixed inHg band — z default 2.0. A flight whose pressure altitude or OAT falls outside the range the model was fitted on gets no insight at all (fitted-range guard); the analysis line says why.",
       "enabled": true,
       "triggers": [
-        {"type": "threshold", "condition": "vs_om_expected", "tolerance_hpa": 20, "severity": "warning"}
+        {
+          "type": "threshold",
+          "condition": "vs_personal_model",
+          "z": 2.0,
+          "severity": "warning"
+        }
       ]
     },
     "engine_ecu_inflight": {
       "enabled": true,
-      "triggers": [
-        {"type": "threshold", "condition": "any_inflight", "severity": "warning"}
-      ]
-    },
-    "flight_phase_mix": {
-      "enabled": true,
-      "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
-      ]
+      "_comment": "Spec 01 v0.21 / Spec 10 D19: a referencing topic — no trigger; its GROUND/IN_FLIGHT runs are CAS events reported by limit_exceedances.",
+      "triggers": []
     },
     "limit_exceedances": {
       "enabled": true,
       "triggers": [
-        {"type": "threshold", "condition": "any_exceedance", "severity": "limit"}
-      ]
+        {
+          "type": "threshold",
+          "condition": "any_exceedance",
+          "severity": "limit"
+        }
+      ],
+      "cas": {
+        "_comment": "Spec 09 v0.18 §10.1: display label for classified CAS alert events (ENGINE ECU GROUND/IN_FLIGHT); no policy branches on it.",
+        "severity": "watch"
+      }
     },
     "climb_thermal_rate": {
-      "enabled": true,
+      "enabled": false,
+      "_comment": "Research (Spec 10 D2): fails A7; metrics still computed for research. Not shown to casual users.",
       "triggers": [
-        {"type": "baseline_deviation", "z_score_threshold": 2.0, "n_min": 10, "severity": "watch"}
+        {
+          "type": "baseline_deviation",
+          "n_min": 10,
+          "severity": "watch"
+        }
       ]
     }
   }

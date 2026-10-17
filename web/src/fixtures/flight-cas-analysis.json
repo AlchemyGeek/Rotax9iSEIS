@@ -1,0 +1,950 @@
+{
+  "flight_id": "3c0d6e994448776a",
+  "analysis_key": "6c397fe327e7e5bf83402307b69a0c63c8ba6dd250b44756cccd001280fc9c26",
+  "source_keys": [
+    "b3bfa0649c80dbb7"
+  ],
+  "header": {
+    "date": "2026-01-08",
+    "start_utc": "2026-01-08T12:00:00",
+    "engine_hours_start": 20.1,
+    "engine_hours_end": 20.31,
+    "airport_hint": "TEST",
+    "aircraft": {
+      "ident": "N999XX",
+      "system_id": "123456789"
+    }
+  },
+  "phases": [
+    {
+      "phase": "PRE_START",
+      "start_s": 0.0,
+      "end_s": 5.0
+    },
+    {
+      "phase": "ENGINE_START",
+      "start_s": 5.0,
+      "end_s": 6.0
+    },
+    {
+      "phase": "WARMUP",
+      "start_s": 6.0,
+      "end_s": 15.0
+    },
+    {
+      "phase": "TAXI",
+      "start_s": 15.0,
+      "end_s": 25.0
+    },
+    {
+      "phase": "TAKEOFF_ROLL",
+      "start_s": 25.0,
+      "end_s": 26.0
+    },
+    {
+      "phase": "CLIMB",
+      "start_s": 26.0,
+      "end_s": 85.0
+    },
+    {
+      "phase": "CRUISE",
+      "start_s": 85.0,
+      "end_s": 756.0
+    }
+  ],
+  "metrics": {
+    "date": {
+      "id": "date",
+      "value": "2026-01-08"
+    },
+    "engine_hours": {
+      "id": "engine_hours",
+      "value": 20.1,
+      "unit": "hr"
+    },
+    "duration_min": {
+      "id": "duration_min",
+      "value": 12.6,
+      "unit": "min"
+    },
+    "airborne_min": {
+      "id": "airborne_min",
+      "value": 12.2,
+      "unit": "min"
+    },
+    "max_altitude_ft": {
+      "id": "max_altitude_ft",
+      "value": 2368.0,
+      "unit": "ft"
+    },
+    "max_ias_kt": {
+      "id": "max_ias_kt",
+      "value": 110.0,
+      "unit": "kt"
+    },
+    "fadec_gallons": {
+      "id": "fadec_gallons",
+      "value": 1.365,
+      "unit": "gal"
+    },
+    "phase_climb_min": {
+      "id": "phase_climb_min",
+      "value": 1.0,
+      "unit": "min"
+    },
+    "phase_cruise_min": {
+      "id": "phase_cruise_min",
+      "value": 11.2,
+      "unit": "min"
+    },
+    "phase_descent_min": {
+      "id": "phase_descent_min",
+      "value": 0.0,
+      "unit": "min"
+    },
+    "egt_spread_mean_f": {
+      "id": "egt_spread_mean_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "egt_spread_max_f": {
+      "id": "egt_spread_max_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "egt1_deviation_f": {
+      "id": "egt1_deviation_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "egt2_deviation_f": {
+      "id": "egt2_deviation_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "egt3_deviation_f": {
+      "id": "egt3_deviation_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "egt4_deviation_f": {
+      "id": "egt4_deviation_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "egt_hottest_cyl": {
+      "id": "egt_hottest_cyl",
+      "value": null,
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "egt_hottest_margin_f": {
+      "id": "egt_hottest_margin_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "egt_rank_order": {
+      "id": "egt_rank_order",
+      "value": null,
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "egt_rank_stable": {
+      "id": "egt_rank_stable",
+      "value": null,
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "cruise_nmpg": {
+      "id": "cruise_nmpg",
+      "value": null,
+      "unit": "nm/gal",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "cruise_fuel_flow_gph": {
+      "id": "cruise_fuel_flow_gph",
+      "value": 6.5,
+      "unit": "gal/hr"
+    },
+    "oil_temp_max_f": {
+      "id": "oil_temp_max_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "oil_temp_below_optimal_pct": {
+      "id": "oil_temp_below_optimal_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "coolant_temp_max_f": {
+      "id": "coolant_temp_max_f",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "climb_oil_rise_f_per_min": {
+      "id": "climb_oil_rise_f_per_min",
+      "value": null,
+      "unit": "\u00b0F/min",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "climb_coolant_rise_f_per_min": {
+      "id": "climb_coolant_rise_f_per_min",
+      "value": null,
+      "unit": "\u00b0F/min",
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "climb_vs_bucket_dominant": {
+      "id": "climb_vs_bucket_dominant",
+      "value": null,
+      "missing": "INSUFFICIENT_DATA"
+    },
+    "overboost_total_s": {
+      "id": "overboost_total_s",
+      "value": 0,
+      "unit": "s"
+    },
+    "overboost_max_block_s": {
+      "id": "overboost_max_block_s",
+      "value": 0,
+      "unit": "s"
+    },
+    "cruise_da_ft": {
+      "id": "cruise_da_ft",
+      "value": null,
+      "unit": "ft",
+      "missing": "CHANNEL_MISSING"
+    },
+    "cruise_oat_c": {
+      "id": "cruise_oat_c",
+      "value": null,
+      "unit": "\u00b0C",
+      "missing": "CHANNEL_MISSING"
+    },
+    "da_band": {
+      "id": "da_band",
+      "value": null,
+      "missing": "CHANNEL_MISSING"
+    },
+    "oat_band": {
+      "id": "oat_band",
+      "value": null,
+      "missing": "CHANNEL_MISSING"
+    },
+    "takeoff_map_inhg": {
+      "id": "takeoff_map_inhg",
+      "value": null,
+      "unit": "inHg",
+      "missing": "CHANNEL_MISSING"
+    },
+    "takeoff_pressure_alt_ft": {
+      "id": "takeoff_pressure_alt_ft",
+      "value": null,
+      "unit": "ft",
+      "missing": "CHANNEL_MISSING"
+    },
+    "takeoff_oat_c": {
+      "id": "takeoff_oat_c",
+      "value": null,
+      "unit": "\u00b0C",
+      "missing": "CHANNEL_MISSING"
+    },
+    "cas_inflight_anomaly_count": {
+      "id": "cas_inflight_anomaly_count",
+      "value": 2
+    },
+    "inflight_ecu_count": {
+      "id": "inflight_ecu_count",
+      "value": 1
+    },
+    "ground_ecu_count": {
+      "id": "ground_ecu_count",
+      "value": 1
+    },
+    "lim_rpm_idle_min_peak_excess": {
+      "id": "lim_rpm_idle_min_peak_excess",
+      "value": null,
+      "unit": "rpm",
+      "missing": "NOT_APPLICABLE"
+    },
+    "lim_rpm_idle_min_time_above_pct": {
+      "id": "lim_rpm_idle_min_time_above_pct",
+      "value": 0.0,
+      "unit": "%"
+    },
+    "lim_rpm_takeoff_max_peak_excess": {
+      "id": "lim_rpm_takeoff_max_peak_excess",
+      "value": null,
+      "unit": "rpm",
+      "missing": "NOT_APPLICABLE"
+    },
+    "lim_rpm_takeoff_max_time_above_pct": {
+      "id": "lim_rpm_takeoff_max_time_above_pct",
+      "value": 0.0,
+      "unit": "%"
+    },
+    "lim_oil_press_min_peak_excess": {
+      "id": "lim_oil_press_min_peak_excess",
+      "value": null,
+      "unit": "psi",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_press_min_time_above_pct": {
+      "id": "lim_oil_press_min_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_press_max_peak_excess": {
+      "id": "lim_oil_press_max_peak_excess",
+      "value": null,
+      "unit": "psi",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_press_max_time_above_pct": {
+      "id": "lim_oil_press_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_press_cold_max_peak_excess": {
+      "id": "lim_oil_press_cold_max_peak_excess",
+      "value": null,
+      "unit": "psi",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_press_cold_max_time_above_pct": {
+      "id": "lim_oil_press_cold_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_temp_takeoff_min_peak_excess": {
+      "id": "lim_oil_temp_takeoff_min_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_temp_takeoff_min_time_above_pct": {
+      "id": "lim_oil_temp_takeoff_min_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_temp_max_peak_excess": {
+      "id": "lim_oil_temp_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_oil_temp_max_time_above_pct": {
+      "id": "lim_oil_temp_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_coolant_temp_max_peak_excess": {
+      "id": "lim_coolant_temp_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_coolant_temp_max_time_above_pct": {
+      "id": "lim_coolant_temp_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt1_max_peak_excess": {
+      "id": "lim_egt1_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt1_max_time_above_pct": {
+      "id": "lim_egt1_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt2_max_peak_excess": {
+      "id": "lim_egt2_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt2_max_time_above_pct": {
+      "id": "lim_egt2_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt3_max_peak_excess": {
+      "id": "lim_egt3_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt3_max_time_above_pct": {
+      "id": "lim_egt3_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt4_max_peak_excess": {
+      "id": "lim_egt4_max_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt4_max_time_above_pct": {
+      "id": "lim_egt4_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_map_max_peak_excess": {
+      "id": "lim_map_max_peak_excess",
+      "value": null,
+      "unit": "inHg",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_map_max_time_above_pct": {
+      "id": "lim_map_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_fuel_press_min_peak_excess": {
+      "id": "lim_fuel_press_min_peak_excess",
+      "value": null,
+      "unit": "psi",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_fuel_press_min_time_above_pct": {
+      "id": "lim_fuel_press_min_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_fuel_press_max_peak_excess": {
+      "id": "lim_fuel_press_max_peak_excess",
+      "value": null,
+      "unit": "psi",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_fuel_press_max_time_above_pct": {
+      "id": "lim_fuel_press_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_volts_min_peak_excess": {
+      "id": "lim_volts_min_peak_excess",
+      "value": null,
+      "unit": "V",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_volts_min_time_above_pct": {
+      "id": "lim_volts_min_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_volts_max_peak_excess": {
+      "id": "lim_volts_max_peak_excess",
+      "value": null,
+      "unit": "V",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_volts_max_time_above_pct": {
+      "id": "lim_volts_max_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt_split_high_flow_peak_excess": {
+      "id": "lim_egt_split_high_flow_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt_split_high_flow_time_above_pct": {
+      "id": "lim_egt_split_high_flow_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt_split_low_flow_peak_excess": {
+      "id": "lim_egt_split_low_flow_peak_excess",
+      "value": null,
+      "unit": "\u00b0F",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_egt_split_low_flow_time_above_pct": {
+      "id": "lim_egt_split_low_flow_time_above_pct",
+      "value": null,
+      "unit": "%",
+      "missing": "CHANNEL_MISSING"
+    },
+    "lim_overboost_block_s": {
+      "id": "lim_overboost_block_s",
+      "value": 0,
+      "unit": "s"
+    },
+    "cas_engine_ecu_events": {
+      "id": "cas_engine_ecu_events",
+      "value": 2
+    }
+  },
+  "exceedances": [
+    {
+      "source": "cas",
+      "cas_id": "ENGINE ECU",
+      "event_id": "ENGINE ECU@2026-01-08T12:00:16",
+      "classification": "GROUND",
+      "phase": "TAXI",
+      "phase_uncertain": false,
+      "start_utc": "2026-01-08T12:00:16",
+      "elapsed_s": 16.0,
+      "duration_s": 7.0,
+      "context": {
+        "rpm": 2550.0,
+        "ias_kt": 10.0,
+        "oil_nan_frac": null,
+        "co_alerts": []
+      },
+      "not_lane_check_reason": "rpm_below_band",
+      "lane_check_band": {
+        "rpm": 4000.0,
+        "tolerance": 500.0
+      }
+    },
+    {
+      "source": "cas",
+      "cas_id": "ENGINE ECU",
+      "event_id": "ENGINE ECU@2026-01-08T12:02:36",
+      "classification": "IN_FLIGHT",
+      "phase": "CRUISE",
+      "phase_uncertain": false,
+      "start_utc": "2026-01-08T12:02:36",
+      "elapsed_s": 156.0,
+      "duration_s": 6.0,
+      "context": {
+        "rpm": 5000.0,
+        "ias_kt": 110.0,
+        "oil_nan_frac": null,
+        "co_alerts": []
+      }
+    }
+  ],
+  "cas_events": [
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-01-08T12:00:16",
+      "elapsed_s": 16.0,
+      "duration_s": 7.0,
+      "rows": 7,
+      "started_before_engine": false
+    },
+    {
+      "alert": "ENGINE ECU",
+      "severity": "WARNING",
+      "start_utc": "2026-01-08T12:02:36",
+      "elapsed_s": 156.0,
+      "duration_s": 6.0,
+      "rows": 6,
+      "started_before_engine": false
+    }
+  ],
+  "ecu_runs": [
+    {
+      "classification": "GROUND",
+      "phase": "TAXI",
+      "phase_uncertain": false,
+      "start_utc": "2026-01-08T12:00:16",
+      "end_utc": "2026-01-08T12:00:22",
+      "elapsed_s": 16.0,
+      "duration_s": 7.0,
+      "co_alerts": [],
+      "oil_nan_frac": null,
+      "lane_check_pair": false,
+      "lane_check_note": "",
+      "mean_rpm": 2550.0,
+      "mean_ias_kt": 10.0,
+      "mean_power_pct": null,
+      "mean_oil_press_psi": null,
+      "mean_oil_temp_f": null,
+      "mean_coolant_temp_f": null,
+      "mean_main_volts": null,
+      "mean_batt_amps": null,
+      "mean_fuel_press_psi": null,
+      "mean_baro_alt_ft": 100.0
+    },
+    {
+      "classification": "IN_FLIGHT",
+      "phase": "CRUISE",
+      "phase_uncertain": false,
+      "start_utc": "2026-01-08T12:02:36",
+      "end_utc": "2026-01-08T12:02:41",
+      "elapsed_s": 156.0,
+      "duration_s": 6.0,
+      "co_alerts": [],
+      "oil_nan_frac": null,
+      "lane_check_pair": false,
+      "lane_check_note": "",
+      "mean_rpm": 5000.0,
+      "mean_ias_kt": 110.0,
+      "mean_power_pct": null,
+      "mean_oil_press_psi": null,
+      "mean_oil_temp_f": null,
+      "mean_coolant_temp_f": null,
+      "mean_main_volts": null,
+      "mean_batt_amps": null,
+      "mean_fuel_press_psi": null,
+      "mean_baro_alt_ft": 1175.0
+    }
+  ],
+  "ecu_sub_threshold_blips": 0,
+  "ecu_lane_check": "none",
+  "quality": [],
+  "provenance": {
+    "engine_version": "0.29.0",
+    "schema_version": "0.1.0",
+    "engine_profile": {
+      "id": "916iS",
+      "hash": "62c4e519df1fe08eb85c8ba61b296a1abb422c5b7ed34ba61d64dd0c76500789",
+      "source_status": "VERIFIED"
+    },
+    "params_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "source_keys": [
+      "b3bfa0649c80dbb7"
+    ]
+  },
+  "available_channels": [
+    "baro_alt_ft",
+    "fuel_flow_gph",
+    "ias_kt",
+    "rpm",
+    "vs_fpm"
+  ],
+  "limits": [
+    {
+      "id": "rpm_idle_min",
+      "param": "rpm",
+      "label": "Idle RPM minimum",
+      "unit": "rpm",
+      "limit_type": "MIN",
+      "limit_value": 1800,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": 1000,
+      "min_duration_s": 30,
+      "requires_reached_since_start": true,
+      "note": "Engine must idle at or above 1,800 rpm \u2014 the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
+    },
+    {
+      "id": "rpm_takeoff_max",
+      "param": "rpm",
+      "label": "Takeoff RPM (5-min limit)",
+      "unit": "rpm",
+      "limit_type": "MAX",
+      "limit_value": 5800,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": null,
+      "filter_policy": {
+        "magnitude_modes": [
+          "absolute"
+        ],
+        "duration_allowed": false,
+        "phases_allowed": false,
+        "max_band_abs": 30
+      },
+      "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit"
+    },
+    {
+      "id": "oil_press_min",
+      "param": "oil_press_psi",
+      "label": "Oil pressure min (>3500 rpm)",
+      "unit": "psi",
+      "limit_type": "MIN",
+      "limit_value": 29.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": null,
+      "filter_policy": {
+        "filterable": false,
+        "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading."
+      },
+      "phases": [
+        "CLIMB",
+        "CRUISE",
+        "DESCENT"
+      ],
+      "note": "Minimum 2.0 bar / 29 psi above 3,500 rpm. Phase-filtered \u2014 pre-flight and engine start readings excluded."
+    },
+    {
+      "id": "oil_press_max",
+      "param": "oil_press_psi",
+      "label": "Oil pressure max (>3500 rpm)",
+      "unit": "psi",
+      "limit_type": "MAX",
+      "limit_value": 72.5,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": null,
+      "note": "Maximum 5.0 bar / 72.5 psi normal operation"
+    },
+    {
+      "id": "oil_press_cold_max",
+      "param": "oil_press_psi",
+      "label": "Oil pressure max (cold start)",
+      "unit": "psi",
+      "limit_type": "MAX",
+      "limit_value": 101.5,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": null,
+      "note": "Up to 7.0 bar / 101.5 psi acceptable during cold start warmup"
+    },
+    {
+      "id": "oil_temp_takeoff_min",
+      "param": "oil_temp_f",
+      "label": "Oil temp minimum (takeoff)",
+      "unit": "\u00b0F",
+      "limit_type": "MIN",
+      "limit_value": 122.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "phases": [
+        "TAKEOFF",
+        "CLIMB",
+        "CRUISE"
+      ],
+      "note": "Must reach 50\u00b0C / 122\u00b0F before takeoff. Phase-filtered \u2014 pre-flight readings excluded."
+    },
+    {
+      "id": "oil_temp_max",
+      "param": "oil_temp_f",
+      "label": "Oil temp maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 248.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "Maximum 120\u00b0C / 248\u00b0F normal operation"
+    },
+    {
+      "id": "oil_temp_optimal_low",
+      "param": "oil_temp_f",
+      "label": "Oil temp optimal band (low)",
+      "unit": "\u00b0F",
+      "limit_type": "MIN",
+      "limit_value": 194.0,
+      "severity": "CAUTION",
+      "report_in_exceedances": false,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "Below 90\u00b0C / 194\u00b0F risks condensation in sump \u2014 reach 100\u00b0C once daily. Reported in oil temp analysis section, not exceedances."
+    },
+    {
+      "id": "coolant_temp_max",
+      "param": "coolant_temp_f",
+      "label": "Coolant temp maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 248.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "Maximum 120\u00b0C / 248\u00b0F at normal operation up to critical altitude"
+    },
+    {
+      "id": "egt1_max",
+      "param": "egt1_f",
+      "label": "EGT1 maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 1742.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "950\u00b0C / 1,742\u00b0F absolute max per cylinder"
+    },
+    {
+      "id": "egt2_max",
+      "param": "egt2_f",
+      "label": "EGT2 maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 1742.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "950\u00b0C / 1,742\u00b0F absolute max per cylinder"
+    },
+    {
+      "id": "egt3_max",
+      "param": "egt3_f",
+      "label": "EGT3 maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 1742.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "950\u00b0C / 1,742\u00b0F absolute max per cylinder"
+    },
+    {
+      "id": "egt4_max",
+      "param": "egt4_f",
+      "label": "EGT4 maximum",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 1742.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "note": "950\u00b0C / 1,742\u00b0F absolute max per cylinder"
+    },
+    {
+      "id": "map_max",
+      "param": "map_inhg",
+      "label": "Manifold pressure maximum",
+      "unit": "inHg",
+      "limit_type": "MAX",
+      "limit_value": 53.15,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "da_band",
+      "min_rpm": null,
+      "note": "1,800 hPa / 53.15 inHg absolute max"
+    },
+    {
+      "id": "fuel_press_min",
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure minimum",
+      "unit": "psi",
+      "limit_type": "MIN",
+      "limit_value": 42.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": 1000,
+      "min_duration_s": 10,
+      "note": "2.9 bar / 42 psi minimum at fuel rail relative to MAP"
+    },
+    {
+      "id": "fuel_press_max",
+      "param": "fuel_press_psi",
+      "label": "Fuel pressure maximum",
+      "unit": "psi",
+      "limit_type": "MAX",
+      "limit_value": 46.0,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band",
+      "min_rpm": null,
+      "min_duration_by_phase": {
+        "TAXI": null,
+        "TAKEOFF": null,
+        "CLIMB": 10,
+        "CRUISE": 30,
+        "DESCENT": 10,
+        "LANDING": null
+      },
+      "note": "3.2 bar / 46 psi nominal max. Transient exceedances suppressed during taxi/pump test and tank switching in cruise. 51 psi allowed for 3 sec after power change per OM."
+    },
+    {
+      "id": "volts_min",
+      "param": "main_volts",
+      "label": "Bus voltage minimum",
+      "unit": "V",
+      "limit_type": "MIN",
+      "limit_value": 11.5,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": 1000,
+      "note": "Below ~12V indicates alternator failure or excessive load"
+    },
+    {
+      "id": "volts_max",
+      "param": "main_volts",
+      "label": "Bus voltage maximum",
+      "unit": "V",
+      "limit_type": "MAX",
+      "limit_value": 14.5,
+      "severity": "CAUTION",
+      "report_in_exceedances": true,
+      "stratify_by": null,
+      "min_rpm": null,
+      "note": "Above 14.5V indicates voltage regulator fault"
+    },
+    {
+      "id": "egt_split_high_flow",
+      "param": "egt_spread_f",
+      "label": "EGT Split (high fuel flow)",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 392.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band"
+    },
+    {
+      "id": "egt_split_low_flow",
+      "param": "egt_spread_f",
+      "label": "EGT Split (low fuel flow)",
+      "unit": "\u00b0F",
+      "limit_type": "MAX",
+      "limit_value": 932.0,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "oat_band"
+    },
+    {
+      "id": "overboost",
+      "param": "overboost",
+      "label": "Overboost (max continuous block)",
+      "unit": "s",
+      "limit_type": "MAX",
+      "limit_value": 300,
+      "severity": "WARNING",
+      "report_in_exceedances": true,
+      "stratify_by": "da_band",
+      "close_call_margin_s": 60,
+      "filter_policy": {
+        "magnitude_modes": [
+          "absolute",
+          "percent"
+        ],
+        "duration_allowed": false,
+        "phases_allowed": false
+      }
+    }
+  ],
+  "hot_cyl_changed": false
+}

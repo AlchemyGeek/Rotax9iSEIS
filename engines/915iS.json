@@ -12,49 +12,68 @@
   "fadec": true,
   "turbocharged": true,
   "cylinders": 4,
+  "_expected_hot_cylinder_note": "Spec 08 §3: prior for the usual hottest cylinder until an aircraft's own is learned; a display hint, never a limit. Same turbo layout family as the 916iS; confirm against fleet data.",
+  "expected_hot_cylinder": 4,
   "rated_power_kw": 104,
   "rated_power_hp": 139,
   "rated_rpm": 5800,
 
+  "_exceedance_merge_gap_s_note": "Spec 09 §6.2: an exceedance event ends only after the reading has stayed within the limit this many seconds; shorter dips are absorbed into the event.",
+  "exceedance_merge_gap_s": 30,
+
+  "_cas_note": "Spec 01 \u00a78.6: ENGINE ECU run extraction. Runs separated by less than merge_gap_s are merged; runs shorter than min_event_duration_s after merging are not events (counted as sub-threshold blips \u2014 at 1 Hz a one-row CAS token is indistinguishable from a sampling artefact). Distinct from exceedance_merge_gap_s. Not OM values.",
+  "cas": {
+    "merge_gap_s": 5,
+    "min_event_duration_s": 3
+  },
+
   "limits": [
 
     {
+      "id": "rpm_idle_min",
       "param": "rpm",
       "label": "Idle RPM minimum",
       "unit": "rpm",
       "min_val": 1800,
       "severity": "CAUTION",
+      "_exceedance_merge_gap_s_note": "Spec 09 Q3: no merging — min_duration_s 30 exists to ignore brief governor dips, and merging would join them into long events (54 → 100 events on the N117ZS log set at a 30 s gap).",
+      "exceedance_merge_gap_s": 0,
       "min_duration_s": 30,
-      "note": "Engine must idle at or above 1,800 rpm. Short dips are normal governor variation."
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, so a stopped engine (0 rpm before start or after shutdown) isn't an idle exceedance — same gate as fuel_press_min. A real low idle stays well above 1,000 rpm.",
+      "min_rpm": 1000,
+      "_requires_reached_since_start_note": "Spec 10 D16: the idle minimum applies only after rpm has reached 1,800 at least once since engine start, so spool-up isn't an idle exceedance. A phase exclusion can't do this — most of spool-up falls in WARMUP, and excluding WARMUP would also hide a real low warm-up idle.",
+      "requires_reached_since_start": true,
+      "note": "Engine must idle at or above 1,800 rpm — the OM states this as a minimum, with no band or duration. min_duration_s absorbs momentary dips during throttle changes, which the 10 rpm reporting resolution can't resolve reliably."
     },
     {
-      "param": "rpm",
-      "label": "Max continuous RPM",
-      "unit": "rpm",
-      "max_val": 5500,
-      "severity": "CAUTION",
-      "note": "5,500 rpm is max continuous (99 kW); 5,800 rpm allowed for 5 min (104 kW take-off)"
-    },
-    {
+      "id": "rpm_takeoff_max",
       "param": "rpm",
       "label": "Takeoff RPM (5-min limit)",
       "unit": "rpm",
       "max_val": 5800,
-      "time_limit_s": 300,
       "severity": "WARNING",
-      "note": "5,800 rpm permitted for maximum 5 minutes"
+      "note": "5,800 rpm is the absolute ceiling, never permitted; the 5-minute allowance above 5,500 rpm is the overboost limit",
+      "filter_policy": {
+        "magnitude_modes": ["absolute"],
+        "duration_allowed": false, "phases_allowed": false,
+        "max_band_abs": 30
+      }
     },
 
     {
+      "id": "oil_press_min",
       "param": "oil_press_psi",
       "label": "Oil pressure min (>3500 rpm)",
       "unit": "psi",
       "min_val": 29.0,
       "severity": "WARNING",
+      "_filter_policy_note": "Spec 09 Q1: the most direct sign of lubrication failure — never filterable.",
+      "filter_policy": { "filterable": false, "reason": "Low oil pressure at power is the most direct sign of a lubrication problem, so it is always reported. If you suspect the sender or gauge, have it checked rather than filtering the reading." },
       "phases": ["CLIMB", "CRUISE", "DESCENT"],
       "note": "Minimum 2.0 bar / 29 psi above 3,500 rpm (0.8 bar / 11.6 psi minimum below 3,500 rpm). Phase-filtered — pre-flight and engine start readings excluded."
     },
     {
+      "id": "oil_press_max",
       "param": "oil_press_psi",
       "label": "Oil pressure max (>3500 rpm)",
       "unit": "psi",
@@ -63,6 +82,7 @@
       "note": "Maximum 5.0 bar / 72.5 psi normal operation"
     },
     {
+      "id": "oil_press_cold_max",
       "param": "oil_press_psi",
       "label": "Oil pressure max (cold start)",
       "unit": "psi",
@@ -72,6 +92,7 @@
     },
 
     {
+      "id": "oil_temp_takeoff_min",
       "param": "oil_temp_f",
       "label": "Oil temp minimum (takeoff)",
       "unit": "°F",
@@ -81,6 +102,7 @@
       "note": "Must reach 50°C / 122°F before takeoff. Phase-filtered — pre-flight readings excluded."
     },
     {
+      "id": "oil_temp_max",
       "param": "oil_temp_f",
       "label": "Oil temp maximum",
       "unit": "°F",
@@ -89,6 +111,7 @@
       "note": "Maximum 130°C / 266°F normal operation (915iS; differs from 916iS 120°C)"
     },
     {
+      "id": "oil_temp_optimal_low",
       "param": "oil_temp_f",
       "label": "Oil temp optimal band (low)",
       "unit": "°F",
@@ -99,6 +122,7 @@
     },
 
     {
+      "id": "coolant_temp_max",
       "param": "coolant_temp_f",
       "label": "Coolant temp maximum",
       "unit": "°F",
@@ -108,6 +132,7 @@
     },
 
     {
+      "id": "egt1_max",
       "param": "egt1_f",
       "label": "EGT1 maximum",
       "unit": "°F",
@@ -116,6 +141,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt2_max",
       "param": "egt2_f",
       "label": "EGT2 maximum",
       "unit": "°F",
@@ -124,6 +150,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt3_max",
       "param": "egt3_f",
       "label": "EGT3 maximum",
       "unit": "°F",
@@ -132,6 +159,7 @@
       "note": "950°C / 1,742°F absolute max per cylinder"
     },
     {
+      "id": "egt4_max",
       "param": "egt4_f",
       "label": "EGT4 maximum",
       "unit": "°F",
@@ -141,6 +169,7 @@
     },
 
     {
+      "id": "map_max",
       "param": "map_inhg",
       "label": "Manifold pressure maximum",
       "unit": "inHg",
@@ -150,20 +179,26 @@
     },
 
     {
+      "id": "fuel_press_min",
       "param": "fuel_press_psi",
       "label": "Fuel pressure minimum",
       "unit": "psi",
       "min_val": 42.0,
       "severity": "WARNING",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm: with the engine stopped the fuel pump is off and the reading falls to 0 psi. Phase labels can't be relied on at the end of a log (the N117ZS logs label post-shutdown rows as DESCENT/APPROACH), so an RPM gate, not a phase list. Removed 102 false WARNING events on 53 flights and no real ones (Spec 09 §16).",
+      "min_rpm": 1000,
       "min_duration_s": 10,
       "note": "2.9 bar / 42 psi minimum at fuel rail. 36 psi allowed for 3 sec after power change per OM."
     },
     {
+      "id": "fuel_press_max",
       "param": "fuel_press_psi",
       "label": "Fuel pressure maximum",
       "unit": "psi",
       "max_val": 46.0,
       "severity": "CAUTION",
+      "_stratify_by_note": "Spec 09 Q7: peak excess varies with OAT on the N117ZS log set (eta² 0.18, cold +4.1 vs mild +3.3 psi); time above does not.",
+      "stratify_by": "oat_band",
       "min_duration_by_phase": {
         "TAXI": null,
         "TAKEOFF": null,
@@ -176,14 +211,18 @@
     },
 
     {
+      "id": "volts_min",
       "param": "main_volts",
       "label": "Bus voltage minimum",
       "unit": "V",
       "min_val": 11.5,
       "severity": "CAUTION",
+      "_min_rpm_note": "Checked only with the engine at or above 1,000 rpm, same gate as fuel_press_min and rpm_idle_min: with the engine stopped (master or avionics off at shutdown) the bus reads 0.0 V, which is not a fault.",
+      "min_rpm": 1000,
       "note": "Not an OM limit — 12 V airframe bus heuristic. Below ~12V indicates alternator failure or excessive load. Not valid for C24 (24 V bus) installations."
     },
     {
+      "id": "volts_max",
       "param": "main_volts",
       "label": "Bus voltage maximum",
       "unit": "V",
@@ -194,6 +233,8 @@
   ],
 
   "egt_spread": {
+    "high_flow_limit_id": "egt_split_high_flow",
+    "low_flow_limit_id": "egt_split_low_flow",
     "note": "EGT split limits are conditional on fuel flow — two separate thresholds per OM Chapter 2.1",
     "high_flow_threshold_lph": 3.0,
     "high_flow_spread_limit_f": 392.0,
@@ -205,10 +246,16 @@
   },
 
   "overboost": {
+    "id": "overboost",
+    "close_call_margin_s": 60,
     "rpm_threshold": 5500,
     "power_pct_threshold": 100,
-    "time_limit_s": 300,
-    "note": "5-minute (300s) limit on operation at or above 5,800 rpm / 100% power"
+    "limit_s": 300,
+    "note": "Above 5,500 rpm or 100 % power for more than 5 minutes",
+    "filter_policy": {
+      "magnitude_modes": ["absolute", "percent"],
+      "duration_allowed": false, "phases_allowed": false
+    }
   },
 
   "eco_power_mode": {
@@ -218,11 +265,12 @@
 
   "phase_detection": {
     "idle_rpm_min": 1800,
-    "runup_rpm_min": 3000,
-    "runup_rpm_max": 5000,
+    "_runup_rpm_note": "Lane-check RPM band (ENGINE ECU LANE_CHECK detection, Spec 01 §8.6 — the only use of these two keys). 2,500 rpm is the OM procedure RPM per this profile's existing OM-915 citation (lane/ignition check at 2,500 rpm; section not cited, OM not in this repo — to be confirmed). The ±500 rpm tolerance is ours, not the OM's: how pilots actually hold the run-up.",
+    "runup_rpm_min": 2000,
+    "runup_rpm_max": 3000,
     "takeoff_rpm_min": 4500,
     "overboost_rpm_threshold": 5500,
     "lane_check_max_duration_s": 15,
-    "note": "Values derived from operating limits above — not separately sourced. Mirrors 916iS; OM-915 lane/ignition check is performed at 2,500 rpm."
+    "note": "Values derived from operating limits above — not separately sourced, except the run-up (lane-check) band: see _runup_rpm_note. Mirrors 916iS; OM-915 lane/ignition check is performed at 2,500 rpm."
   }
 }
