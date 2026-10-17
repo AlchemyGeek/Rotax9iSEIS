@@ -161,8 +161,11 @@ def test_get_channel_registry(server):
     assert result["max_chart_slots"] == 6
     assert result["slot_groups"] == [{"id": "egt_cyl", "label": "Cylinder EGTs (1–4)", "members": ["egt1_f", "egt2_f", "egt3_f", "egt4_f"]}]
     ids = {c["id"] for c in result["channels"]}
-    assert len(ids) == 36
+    # 36 named channels + Spec 01 v0.23's raw general-purpose analogs 1–16.
+    assert len(ids) == 52 and {f"gp_analog_{n}" for n in range(1, 17)} <= ids
     assert "rpm" in ids
+    # Carried AXIS state is not chartable.
+    assert not {"on_ground", "flight_time_h", "tach_time_h"} & ids
     # Non-chartable channels (map/GPS track, wrapping-angle channels, the
     # phase band, unit-variant twins) must never appear in this list.
     assert "lat" not in ids and "lon" not in ids and "phase" not in ids
@@ -1922,3 +1925,72 @@ def test_sync_discovers_then_analyses_on_consent(registry_server, tmp_path):
     done = rpc(registry_server, "scan_workspace", {"flight_ids": [fid]})["result"]
     assert done["reanalyzed_flight_ids"] == [fid]
     assert all(r["status"] == "analyzed" for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"])
+
+
+# ── Log channels (Spec 01 v0.23 §6.5, Spec 14 v0.14 §5.3) ─────────────────
+
+def _axis_flying_log_bytes(analog7=lambda i: 3.0) -> bytes:
+    """A Garmin AXIS export of the same synthetic flight, at 1 s, with a
+    general-purpose analog 7 input."""
+    meta = '#airframe_info, log_version="1.04", Product="AXIS", tail_number="N999XX"\n'
+    units = "#yyyy-mm-dd,hh:mm:ss,+/-hh:mm,rotations per minute,knots,feet,feet per minute,gallons per hour,hour,float\n"
+    header = ("localDate,localTime,utcOffset,engine1RevolutionsPerMinute,indicatedAirspeed,"
+              "indicatedBarometricAltitude,verticalSpeed,engine1FuelFlow,e1TachTime,engine1GeneralPurposeAnalog7\n")
+    lines = [f"2026-10-14,12:{i // 60:02d}:{i % 60:02d},+00:00,{rpm},{ias},{alt},{vs},6.5,119.6,{analog7(i)}\n"
+             for i, (rpm, ias, alt, vs) in enumerate(_flying_rows())]
+    return (meta + units + header + "".join(lines)).encode("utf-8")
+
+
+def test_log_channel_assignment_round_trip(registry_server):
+    """Unassigned by default; assigning analog 7 → CO ppm is a changed
+    setting with a Journal entry, marks the AXIS flight for re-analysis,
+    and after Sync the flight carries co_ppm; Reset clears it all."""
+    rpc(registry_server, "create_workspace", {"name": "AXIS", "engine_model": "916iS"})
+    imported = rpc(registry_server, "import_files", {"files": [
+        {"content_base64": base64.b64encode(_axis_flying_log_bytes(lambda i: 2.0 + i % 5)).decode(), "filename": "axis.csv"},
+        {"content_base64": base64.b64encode(_flying_log_bytes()).decode(), "filename": "log_20260101_120000_TEST.csv"},
+    ]})
+    assert imported["ok"], imported
+    axis_id = imported["result"]["results"][0]["flight_id"]
+    # An uploaded log's Source names its format (Spec 03 v0.22 §5.1).
+    formats = {r["filename"]: r.get("source_format") for r in rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]}
+    assert formats == {"axis.csv": "axis", "log_20260101_120000_TEST.csv": "g3x_direct"}
+
+    rows = {r["raw"]: r for r in rpc(registry_server, "get_log_channels", {})["result"]["channels"]}
+    assert list(rows) == ["gp_analog_7"]
+    a7 = rows["gp_analog_7"]
+    assert a7["assignment"] is None and a7["sources"] == ["AXIS"] and a7["flights"] == 1
+    assert (a7["min"], a7["max"]) == (2.0, 6.0)
+    offered = {o["channel"] for o in a7["options"]}
+    assert "co_ppm" in offered and "rpm" not in offered and "ias_kt" not in offered
+
+    # A channel the source logs natively can't be an assignment target.
+    bad = rpc(registry_server, "set_channel_assignment", {"raw": "gp_analog_7", "target": "rpm"})
+    assert not bad["ok"]
+
+    done = rpc(registry_server, "set_channel_assignment", {"raw": "gp_analog_7", "target": "co_ppm"})
+    assert done["ok"], done
+    assert done["result"]["channels"][0]["assignment"]["channel"] == "co_ppm"
+    changed = rpc(registry_server, "list_changed_settings", {})["result"]["settings"]
+    assert [c["ref_id"] for c in changed] == ["channel_assignment:gp_analog_7"]
+    assert changed[0]["shipped"] == "Not assigned"
+    entry, = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
+    assert entry["what"] == "Log channels — analog 7 is CO ppm (AXIS)"
+    assert entry["where"]["tab"] == "engine"
+    assert entry["effect"]["text"] == "names analog 7 CO ppm on 1 flight once re-analysed"
+
+    # Only the AXIS flight waits for re-analysis; Sync applies the assignment.
+    pending = rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_reanalysis_flight_ids"]
+    assert pending == [axis_id]
+    rpc(registry_server, "scan_workspace", {})
+    fa = rpc(registry_server, "get_flight", {"flight_id": axis_id})["result"]["flight_analysis"]
+    assert "co_ppm" in fa["available_channels"]
+    assert fa["provenance"]["channel_assignments"] == {"gp_analog_7": "co_ppm"}
+    entry, = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
+    assert entry["effect"]["text"] == "names analog 7 CO ppm on 1 flight"
+
+    reset = rpc(registry_server, "reset_setting", {"ref_id": "channel_assignment:gp_analog_7"})
+    assert reset["ok"], reset
+    assert rpc(registry_server, "list_changed_settings", {})["result"]["settings"] == []
+    assert not [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
+    assert rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_reanalysis_flight_ids"] == [axis_id]

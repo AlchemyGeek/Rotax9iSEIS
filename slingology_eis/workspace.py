@@ -78,8 +78,15 @@ def check_engine_model(engine_model: str, workspace_name: str = "") -> None:
 _SOURCE_FORMAT_TO_VIA = {
     "g3x_direct": "sd_card",
     "garmin_pilot": "garmin_pilot",
+    "axis": "axis",
     "unknown": "unknown",
 }
+
+
+def via_for_source_format(source_format: Optional[str]) -> str:
+    """ImportRecord.via for a loader source_format ("unknown" if none)."""
+    return _SOURCE_FORMAT_TO_VIA.get(source_format or "", "unknown")
+
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -364,6 +371,10 @@ class WorkspaceSettings:
     # web already round-trips through (Session F report: app settings
     # vs. workspace settings).
     trends_detail_strips: dict[str, bool] = field(default_factory=dict)
+    # Spec 02 v0.15 §6.6 / Spec 01 §6.5: raw general-purpose analog id →
+    # registry channel id, e.g. {"gp_analog_7": "co_ppm"}. Set by the pilot
+    # (Settings → Engine → Log channels); never pre-filled.
+    channel_assignments: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = {
@@ -375,6 +386,8 @@ class WorkspaceSettings:
             d["aircraft_aliases"] = self.aircraft_aliases
         if self.trends_detail_strips:
             d["trends_detail_strips"] = self.trends_detail_strips
+        if self.channel_assignments:
+            d["channel_assignments"] = self.channel_assignments
         return d
 
     @classmethod
@@ -384,6 +397,7 @@ class WorkspaceSettings:
             last_view=d.get("last_view"),
             aircraft_aliases=d.get("aircraft_aliases") or [],
             trends_detail_strips=d.get("trends_detail_strips") or {},
+            channel_assignments=d.get("channel_assignments") or {},
         )
 
 
@@ -1306,6 +1320,7 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
     source can still be read. Hashing a folder is cheap; nothing is parsed."""
     manifest = load_manifest(ws_dir)
     exclusions_data = _exclusions.load_exclusions(ws_dir)
+    assignments = load_workspace_settings(ws_dir).channel_assignments
     known: set[str] = set()
     stale: list[str] = []
     for fid in list_flight_ids(ws_dir):
@@ -1316,7 +1331,7 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
         if src.missing:
             continue
         fa = load_flight_analysis(ws_dir, fid)
-        if fa is not None and fa.provenance.get("engine_version") != __version__ and read_source_bytes(ws_dir, src) is not None:
+        if fa is not None and analysis_is_stale(fa, assignments) and read_source_bytes(ws_dir, src) is not None:
             stale.append(fid)
     new_logs: dict[str, dict] = {}
     unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
@@ -1340,6 +1355,29 @@ def _unreadable(ws_dir: Path, result: "ScanResult", meta: dict, skey: str, filen
     reason = unreadable_reason(e, stage)
     _record_unreadable(ws_dir, skey, filename, folder_path, rel, reason, f"{type(e).__name__}: {e}")
     result.unreadable.append({"filename": filename, "reason": reason})
+
+
+def analysis_params(ws_dir: Path) -> dict:
+    """The per-workspace inputs analyze_flight takes (Spec 01 §6.5): the
+    channel assignments, when any are set."""
+    assignments = load_workspace_settings(ws_dir).channel_assignments
+    return {"channel_assignments": dict(assignments)} if assignments else {}
+
+
+def applicable_assignments(fa: FlightAnalysis, assignments: dict) -> dict:
+    """The assignments that bear on this flight: those whose raw channel
+    its log carries."""
+    available = set(fa.available_channels or [])
+    return {raw: target for raw, target in (assignments or {}).items() if raw in available}
+
+
+def analysis_is_stale(fa: FlightAnalysis, assignments: dict) -> bool:
+    """Spec 02 §8: analysed by another engine version, or with channel
+    assignments other than the ones now set for the raw channels its log
+    carries (Spec 02 v0.15 §6.6)."""
+    if fa.provenance.get("engine_version") != __version__:
+        return True
+    return (fa.provenance.get("channel_assignments") or {}) != applicable_assignments(fa, assignments)
 
 
 def _load_import_record(ws_dir: Path) -> Optional[dict]:
@@ -1570,7 +1608,7 @@ def scan_workspace(
 
         fid = _compute_flight_id(flight_fingerprint(df, info))
         folder_path, rel, filename = new_batch_meta[skey]
-        via = _SOURCE_FORMAT_TO_VIA.get(info.source_format, "unknown")
+        via = via_for_source_format(info.source_format)
         imp = ImportRecord(
             source_key=skey, log_folder_path=folder_path, relative_path=rel,
             filename=filename, imported_at=_now(), via=via,
@@ -1585,7 +1623,7 @@ def scan_workspace(
             continue
 
         try:
-            fa = analyze_flight(content, filename, engine_cfg, manifest.engine_model)
+            fa = analyze_flight(content, filename, engine_cfg, manifest.engine_model, params=analysis_params(ws_dir))
         except Exception as e:
             # One log the engine can't analyse must not abort the whole sync.
             _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "analyse")
@@ -1631,12 +1669,13 @@ def scan_workspace(
     # per known flight, not the actual re-analysis) so on_progress can
     # report a real total instead of counting down from "however many
     # flights this workspace has," most of which won't need it at all.
+    assignments_now = load_workspace_settings(ws_dir).channel_assignments
     stale: list[tuple[str, FlightSources, FlightAnalysis, bytes, str]] = []
     for fid, src in all_sources.items():
         if fid in result.new_flight_ids or src.missing:
             continue
         fa = load_flight_analysis(ws_dir, fid)
-        if fa is None or fa.provenance.get("engine_version") == __version__:
+        if fa is None or not analysis_is_stale(fa, assignments_now):
             continue
         if reanalyze_ids is not None and fid not in reanalyze_ids:
             result.pending_reanalysis_flight_ids.append(fid)
@@ -1651,7 +1690,7 @@ def scan_workspace(
         if on_progress:
             on_progress({"phase": "reanalyzing", "current": i + 1, "total": len(stale), "filename": filename})
         try:
-            fresh = analyze_flight(content, filename, engine_cfg, manifest.engine_model)
+            fresh = analyze_flight(content, filename, engine_cfg, manifest.engine_model, params=analysis_params(ws_dir))
         except Exception:
             continue  # leave the stale analysis in place rather than losing it
         if fresh.flight_id != fid:
@@ -2102,6 +2141,12 @@ def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, ship
             live[("reference_pin", metric_id)] = {
                 "what": metric_id, "where": {"metric_id": metric_id}, "note": ref.get("label"), "at": ref.get("set_at"),
             }
+        # Spec 14 v0.14 §5.3: each channel assignment is a changed setting.
+        for raw, target in load_workspace_settings(ws_dir).channel_assignments.items():
+            ref = f"channel_assignment:{raw}"
+            live[("changed_setting", ref)] = {
+                "what": channel_assignment_title(raw, target), "where": {"setting": ref, "tab": "engine"},
+            }
         for d in setting_decisions(selection.baseline_config):
             live[("changed_setting", d["ref_id"])] = {
                 "what": f"Setting: {d['label']}", "where": {"setting": d["ref_id"], "tab": "reference"},
@@ -2186,6 +2231,15 @@ _PER_METRIC_SETTINGS = (
     ("outlier_z_threshold_overrides", "Outlier z-threshold"),
     ("band_kind_by_metric", "Weather band"),
 )
+
+
+def channel_assignment_title(raw: str, target: str, sources: Optional[list] = None) -> str:
+    """"Log channels — analog 7 is CO ppm (AXIS)" (Spec 14 v0.14 §5.3)."""
+    from .channels import CHANNEL_REGISTRY
+    cdef = CHANNEL_REGISTRY.get(target)
+    name = target if cdef is None else (f"{cdef.label} {cdef.unit}" if cdef.unit and cdef.unit not in cdef.label else cdef.label)
+    src = f" ({', '.join(sources)})" if sources else ""
+    return f"Log channels — analog {raw.rsplit('_', 1)[-1]} is {name}{src}"
 
 
 def shipped_baseline_config() -> dict:

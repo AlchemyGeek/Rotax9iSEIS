@@ -68,6 +68,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("flights/*/*", "log", "An uploaded log's own copy"),
     ("logs/*", "log", "Logs extracted from an imported export zip (Spec 02 v0.14); linked as a log folder"),
     (IMPORT_RECORD, "local", "An imported workspace's sender manifest (§7.5); no role in another export"),
+    ("channel_ranges.json", "derived", "Observed ranges of raw general-purpose channels (Log channels panel); recomputed"),
     ("unreadable.json", "derived", "Logs a scan couldn't read or analyse (Spec 03 §5.1 Unreadable); recomputed by scanning"),
     ("settings_changelog.json", "retired", "Settings changelog, unread since Spec 14 v0.13"),
 ]
@@ -75,7 +76,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
 _IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 # WorkspaceSettings fields that travel; the rest are device- or view-local.
-_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases")
+_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases", "channel_assignments")
 
 # §7.6 (and Spec 02 v0.12): columns blanked in anonymised copies — GPS
 # position, and the navigation and radio columns that place the aircraft.
@@ -84,6 +85,11 @@ ANONYMISED_COLUMNS = (
     "Latitude (deg)", "Longitude (deg)",
     "Nav Identifier", "Nav Distance (nm)", "Nav Bearing (deg)", "Nav Course (deg)", "Nav Cross Track Distance (nm)",
     "COM Frequency 1 (MHz)", "COM Frequency 2 (MHz)", "NAV Frequency (MHz)",
+    # Garmin AXIS names (Spec 01 v0.23 §6.5); bestGlideAirport names a
+    # nearby airport on every row, so it places the aircraft too.
+    "latitudePosition", "longitudePosition",
+    "navIdentifier", "navDistance", "navBearing", "navCourse", "crossTrackDistance",
+    "navigationRadio1Frequency", "bestGlideAirport",
 )
 
 
@@ -174,26 +180,31 @@ def anonymise_log(data: bytes, pseudonyms: dict[tuple[str, str], tuple[str, str]
     newline = "\r\n" if "\r\n" in text[:4096] else "\n"
     lines = text.split(newline)
     meta = _meta_fields(lines[0])
-    tail, system = meta.get("aircraft_ident", ""), meta.get("system_id", "")
+    axis = (meta.get("Product") or meta.get("product") or "").upper() == "AXIS"
+    tail_key = "tail_number" if axis else "aircraft_ident"
+    tail, system = meta.get(tail_key, ""), meta.get("system_id", "")
     p_tail, p_system = pseudonyms[(tail, system)]
 
     def sub(field_name: str, value: str, row: str) -> str:
         return re.sub(rf'({field_name}=")[^"]*(")', lambda m: m.group(1) + value + m.group(2), row)
 
-    first = sub("aircraft_ident", p_tail, lines[0])
-    first = sub("system_id", p_system, first)
+    first = sub(tail_key, p_tail, lines[0])
+    if "system_id" in meta:
+        first = sub("system_id", p_system, first)
     if "flightstream_header" in meta:
         fs = meta["flightstream_header"]
         first = sub("flightstream_header", fs.replace(system, p_system) if system else p_system, first)
     lines[0] = first
 
-    header = next(csv.reader([lines[1]]))
+    # AXIS: metadata · units · column names; G3X: metadata · column names.
+    header_at = 2 if axis else 1
+    header = next(csv.reader([lines[header_at]]))
     names = [h.lstrip("#").strip() for h in header]
     blank = {i for i, h in enumerate(names) if h in ANONYMISED_COLUMNS}
     if blank:
         out = io.StringIO()
         writer = csv.writer(out, lineterminator="")
-        for i in range(2, len(lines)):
+        for i in range(header_at + 1, len(lines)):
             if not lines[i]:
                 continue
             row = next(csv.reader([lines[i]]))
@@ -399,7 +410,7 @@ def export_workspace(ws_dir: Path, out_dir: Path, include_logs: bool = True, ano
     name_map: dict[str, str] = {}
     if anonymise:
         heads = [_meta_fields(log[0].decode("utf-8-sig", errors="replace").split("\n", 1)[0]) for *_x, log in flights]
-        identities = [(h.get("aircraft_ident", ""), h.get("system_id", "")) for h in heads]
+        identities = [(h.get("aircraft_ident", "") or h.get("tail_number", ""), h.get("system_id", "")) for h in heads]
         pseudonyms = _aircraft_pseudonyms(identities, settings.aircraft_aliases)
     entries = []
     used_names: set[str] = set()
@@ -681,6 +692,7 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
     settings = ws.load_workspace_settings(ws_dir)
     settings.active_engine_profile = carried_settings.get("active_engine_profile") or settings.active_engine_profile
     settings.aircraft_aliases = carried_settings.get("aircraft_aliases") or []
+    settings.channel_assignments = carried_settings.get("channel_assignments") or {}   # Spec 02 v0.15 §7.1
     ws.save_workspace_settings(ws_dir, settings)
     carried = {p for p, c, _n in DOCUMENTS if c == "carried"} - {"settings.json", "exclusions.json"}
     for rel, obj in docs.items():

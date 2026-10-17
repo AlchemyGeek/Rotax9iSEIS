@@ -163,7 +163,7 @@ def _classify_ingest(content: bytes, filename: str, workspace_dir: Path) -> dict
     fid = _compute_flight_id(flight_fingerprint(df, info))
     if (workspace_dir / "flights" / fid / "analysis.json").exists():
         return {"classification": "duplicate", "filename": filename, "flight_id": fid}
-    return {"classification": "new", "filename": filename, "flight_id": fid}
+    return {"classification": "new", "filename": filename, "flight_id": fid, "source_format": info.source_format}
 
 
 def _load_workspace_flights(workspace_dir: Path) -> list[FlightAnalysis]:
@@ -178,7 +178,8 @@ def _load_workspace_flights(workspace_dir: Path) -> list[FlightAnalysis]:
     return out
 
 
-def _downsample_series(content: bytes, filename: str, channels: list[str], n_buckets: int = 400) -> dict:
+def _downsample_series(content: bytes, filename: str, channels: list[str], n_buckets: int = 400,
+                       assignments: Optional[dict] = None) -> dict:
     """
     Each channel is downsampled independently, with its own min/max
     envelope per bucket (Spec 07 §11.2) — not all channels sampled at one
@@ -195,7 +196,7 @@ def _downsample_series(content: bytes, filename: str, channels: list[str], n_buc
     a point at the exact cursor x — the frontend does its own
     nearest-point lookup per series instead (§11.2).
     """
-    df, _info = load_log_bytes(content, filename)
+    df, _info = load_log_bytes(content, filename, channel_assignments=assignments)
     t = df["elapsed_s"].to_numpy()
     present = [c for c in channels if c in df.columns]
     if not present:
@@ -338,6 +339,12 @@ def op_list_changed_settings(params: dict, ctx: dict) -> Any:
         {"ref_id": d["ref_id"], "label": d["label"], "current": _setting_value(d, "current"),
          "shipped": _setting_value(d, "shipped"), "entry_id": entries.get(d["ref_id"])}
         for d in ws.setting_decisions(ws.load_selection(workspace_dir).baseline_config)
+    ] + [
+        # Spec 14 v0.14 §5.3: channel assignments are changed settings too.
+        {"ref_id": f"channel_assignment:{raw}", "label": f"Log channels — {_gp_channel_label(raw)}",
+         "current": _channel_name(target), "shipped": "Not assigned",
+         "entry_id": entries.get(f"channel_assignment:{raw}")}
+        for raw, target in ws.load_workspace_settings(workspace_dir).channel_assignments.items()
     ]}
 
 
@@ -347,6 +354,15 @@ def op_reset_setting(params: dict, ctx: dict) -> Any:
     (other settings, pinned references) stays; the entry goes."""
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
+    if str(params["ref_id"]).startswith("channel_assignment:"):
+        # Spec 14 v0.14 §5.3: Reset to shipped clears the assignment; the
+        # affected flights become Needs re-analysis.
+        raw = params["ref_id"].split(":", 1)[1]
+        settings = ws.load_workspace_settings(workspace_dir)
+        settings.channel_assignments.pop(raw, None)
+        ws.save_workspace_settings(workspace_dir, settings)
+        ws.remove_journal_entry(workspace_dir, kind="changed_setting", ref_id=params["ref_id"])
+        return _get_or_build_fleet(workspace_dir).to_dict()
     before = ws.load_selection(workspace_dir).baseline_config or {}
     try:
         after = ws.baseline_config_with_setting_reset(before, params["ref_id"])
@@ -699,6 +715,125 @@ def op_get_trends_panels(params: dict, ctx: dict) -> Any:
     return {"panels": panels}
 
 
+# ── Log channels (Spec 01 v0.23 §6.5, Spec 14 v0.14 §5.3) ────────────────────
+
+_VIA_FORMAT = {"sd_card": "g3x_direct", "garmin_pilot": "garmin_pilot", "axis": "axis", "uploaded": "unknown"}
+_FORMAT_LABEL = {"g3x_direct": "G3X", "garmin_pilot": "Garmin Pilot", "axis": "AXIS"}
+
+
+def _assignments(ctx: dict) -> dict:
+    if not ctx.get("active_workspace_id"):
+        return {}
+    return dict(ws.load_workspace_settings(ctx["workspace_dir"]).channel_assignments)
+
+
+def _analysis_params(ctx: dict) -> dict:
+    return ws.analysis_params(ctx["workspace_dir"]) if ctx.get("active_workspace_id") else {}
+
+
+def _gp_channel_label(raw: str) -> str:
+    return "analog " + raw.rsplit("_", 1)[-1]
+
+
+def _channel_name(target: str) -> str:
+    cdef = CHANNEL_REGISTRY.get(target)
+    if cdef is None:
+        return target
+    return f"{cdef.label} {cdef.unit}".strip() if cdef.unit and cdef.unit not in cdef.label else cdef.label
+
+
+def _log_channel_rows(workspace_dir: Path) -> list[dict]:
+    """One row per raw general-purpose channel any log in the workspace
+    carries: the sources that log it, the observed range, the flights
+    natively logging which registry channels (what may be assigned), and
+    the current assignment."""
+    assignments = ws.load_workspace_settings(workspace_dir).channel_assignments
+    assigned_targets = set(assignments.values())
+    cache_path = workspace_dir / "channel_ranges.json"
+    cache = json.loads(cache_path.read_text()) if cache_path.is_file() else {}
+    rows: dict[str, dict] = {}
+    for fid in ws.list_flight_ids(workspace_dir):
+        fa = ws.load_flight_analysis(workspace_dir, fid)
+        if fa is None:
+            continue
+        gp = [c for c in (fa.available_channels or []) if c.startswith("gp_analog_")]
+        if not gp:
+            continue
+        src = ws.load_sources(workspace_dir, fid)
+        fmt = _VIA_FORMAT.get(src.imports[-1].via, "unknown") if src and src.imports else "unknown"
+        native = {c for c in (fa.available_channels or []) if not c.startswith("gp_analog_")} - assigned_targets
+        skey = (fa.source_keys or [""])[0]
+        ranges = cache.get(skey)
+        if ranges is None and src is not None:
+            found = ws.read_source_bytes(workspace_dir, src)
+            if found is not None:
+                df, _info = load_log_bytes(*found)
+                ranges = {c: [float(df[c].min()), float(df[c].max())] for c in gp if c in df.columns and df[c].notna().any()}
+                cache[skey] = ranges
+        for raw in gp:
+            r = rows.setdefault(raw, {"raw": raw, "label": _gp_channel_label(raw), "sources": set(), "flights": 0,
+                                      "min": None, "max": None, "native": None})
+            r["sources"].add(_FORMAT_LABEL.get(fmt, fmt))
+            r["flights"] += 1
+            lo, hi = (ranges or {}).get(raw, [None, None])
+            if lo is not None:
+                r["min"] = lo if r["min"] is None else min(r["min"], lo)
+                r["max"] = hi if r["max"] is None else max(r["max"], hi)
+            r["native"] = native if r["native"] is None else (r["native"] & native)
+    if cache:
+        cache_path.write_text(json.dumps(cache))
+    out = []
+    for raw in sorted(rows, key=lambda c: int(c.rsplit("_", 1)[-1])):
+        r = rows[raw]
+        native = r.pop("native") or set()
+        target = assignments.get(raw)
+        out.append({
+            **r, "sources": sorted(r["sources"]),
+            "assignment": ({"channel": target, "name": _channel_name(target),
+                            "unit": (CHANNEL_REGISTRY[target].unit if target in CHANNEL_REGISTRY else None)} if target else None),
+            # Registry channels the source doesn't log natively (Spec 14 §5.3).
+            "options": [{"channel": cid, "name": _channel_name(cid), "unit": cdef.unit}
+                        for cid, cdef in CHANNEL_REGISTRY.items()
+                        if cdef.source == "raw" and cdef.chartable and not cid.startswith("gp_analog_")
+                        and cid not in native and (cid == target or cid not in assigned_targets)],
+        })
+    return out
+
+
+def op_get_log_channels(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    return {"channels": _log_channel_rows(ctx["workspace_dir"])}
+
+
+def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
+    """Assign (or clear, target null) a raw general-purpose channel. The
+    target must be a registry channel the source lacks natively. Flights
+    whose logs carry the raw channel become Needs re-analysis (Spec 02 §8);
+    the assignment is a changed setting with its Journal entry."""
+    _require_active(ctx)
+    workspace_dir = ctx["workspace_dir"]
+    raw = str(params.get("raw") or "")
+    target = params.get("target") or None
+    rows = {r["raw"]: r for r in _log_channel_rows(workspace_dir)}
+    if raw not in rows:
+        raise RpcError("BAD_PARAMS", f"no log in this workspace carries {raw}")
+    if target is not None and target not in {o["channel"] for o in rows[raw]["options"]}:
+        raise RpcError("BAD_PARAMS", f"{target} can't be assigned to {raw}: it must be a registry channel the source doesn't log itself")
+    settings = ws.load_workspace_settings(workspace_dir)
+    if target:
+        settings.channel_assignments[raw] = target
+    else:
+        settings.channel_assignments.pop(raw, None)
+    ws.save_workspace_settings(workspace_dir, settings)
+    ws.reconcile_journal(workspace_dir, active_rules=_resolve_rules(ctx), shipped_rules=_default_rules())
+    ref = f"channel_assignment:{raw}"
+    if target:
+        ws.upsert_journal_entry(workspace_dir, kind="changed_setting", ref_id=ref,
+                                what=ws.channel_assignment_title(raw, target, rows[raw]["sources"]),
+                                where={"setting": ref, "tab": "engine"})
+    return {"channels": _log_channel_rows(workspace_dir)}
+
+
 def op_get_flight_series(params: dict, ctx: dict) -> Any:
     """The Flight view's timeline. Checks the workspace's own persisted
     copy first (fast path — every upload-imported flight has one), then
@@ -724,7 +859,8 @@ def op_get_flight_series(params: dict, ctx: dict) -> Any:
             raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
         content, filename = found
-    return _downsample_series(content, filename, _expand_channels(channels))
+    return _downsample_series(content, filename, _expand_channels(channels),
+                              assignments=_assignments(ctx))
 
 
 def op_rebuild_fleet(params: dict, ctx: dict) -> Any:
@@ -764,7 +900,7 @@ def op_import_files(params: dict, ctx: dict) -> Any:
         if classification["classification"] != "new":
             results.append(classification)
             continue
-        fa = analyze_flight(content, filename, engine_cfg, engine_name)
+        fa = analyze_flight(content, filename, engine_cfg, engine_name, params=ws.analysis_params(workspace_dir))
         d = workspace_dir / "flights" / fa.flight_id
         d.mkdir(parents=True, exist_ok=True)
         (d / filename).write_bytes(content)
@@ -775,7 +911,9 @@ def op_import_files(params: dict, ctx: dict) -> Any:
         # than fabricating one.
         imp = ws.ImportRecord(
             source_key=_source_key(content), log_folder_path=ws.UPLOADED_SOURCE,
-            relative_path=filename, filename=filename, imported_at=_now_iso(), via="unknown",
+            relative_path=filename, filename=filename, imported_at=_now_iso(),
+            # Spec 03 v0.22 §5.1: the format, so the Source column can name it.
+            via=ws.via_for_source_format(classification.pop("source_format", None)),
         )
         existing = ws.load_sources(workspace_dir, fa.flight_id)
         if existing:
@@ -860,6 +998,8 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
             "status": status,
             "different_tail_number": src.different_tail_number if src else None,
             "filename": last_import.filename if last_import else (_source_filename(workspace_dir, fid) or ""),
+            # Spec 03 v0.22 §5.1: the Source column names the format.
+            "source_format": _VIA_FORMAT.get(last_import.via, "unknown") if last_import else "unknown",
             "log_folder": last_import.log_folder_path if last_import else "",
         })
     # Spec 03 §5.1 "Unreadable": logs the scan couldn't read or analyse,
@@ -1142,8 +1282,13 @@ def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
     """
     path = _find_excluded_log_path(ctx, params["filename"])
     engine_cfg, engine_name = _current_engine(ctx)
-    fa = analyze_flight(path.read_bytes(), params["filename"], engine_cfg, engine_name)
-    return {"flight_analysis": fa.to_dict(), "source_filename": params["filename"]}
+    content = path.read_bytes()
+    fa = analyze_flight(content, params["filename"], engine_cfg, engine_name, params=_analysis_params(ctx))
+    # Spec 03 v0.22 §5.9: the header names the source format and, for a
+    # resampled log, the share of filled rows.
+    _df, info = load_log_bytes(content, params["filename"])
+    return {"flight_analysis": fa.to_dict(), "source_filename": params["filename"],
+            "source_format": info.source_format, "filled_share": round(info.filled_share, 3)}
 
 
 def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
@@ -1151,7 +1296,8 @@ def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
     if not channels:
         raise RpcError("BAD_PARAMS", "channels is required")
     path = _find_excluded_log_path(ctx, params["filename"])
-    return _downsample_series(path.read_bytes(), params["filename"], _expand_channels(channels))
+    return _downsample_series(path.read_bytes(), params["filename"], _expand_channels(channels),
+                              assignments=_assignments(ctx))
 
 
 # ── Limit filters (Spec 09 §11.5) ───────────────────────────────────────────
@@ -2094,6 +2240,8 @@ class _JournalEffects:
         """Spec 14 v0.13: the setting against shipped — the fleet rebuilt
         with only this setting back at shipped, every flight's insights
         compared, and the Trends change summary compared."""
+        if str(e["ref_id"]).startswith("channel_assignment:"):
+            return self._channel_assignment(e)
         selection = ws.load_selection(self.workspace_dir)
         d = next((d for d in ws.setting_decisions(selection.baseline_config) if d["ref_id"] == e["ref_id"]), None)
         if d is None:
@@ -2121,6 +2269,27 @@ class _JournalEffects:
         effect = ({"text": "; ".join(parts) + " compared with shipped", "zero": False} if parts
                   else {"text": "currently changes nothing compared with shipped", "zero": True})
         return effect, _setting_text(d), []
+
+    def _channel_assignment(self, e):
+        """The flights whose logs carry the raw channel now show it under
+        its assigned name; those analysed before the assignment wait for
+        re-analysis (Spec 14 v0.14 §5.3)."""
+        raw = e["ref_id"].split(":", 1)[1]
+        target = ws.load_workspace_settings(self.workspace_dir).channel_assignments.get(raw)
+        if target is None:
+            return None, None, []
+        carrying = [fa for fa in self.flights if raw in (fa.available_channels or [])]
+        pending = [fa for fa in carrying if (fa.provenance.get("channel_assignments") or {}).get(raw) != target]
+        n = len(carrying)
+        applied = n - len(pending)
+        named = f"names {_gp_channel_label(raw)} {_channel_name(target)}"
+        if applied == 0 and pending:
+            text = f"{named} on {_plural(n, 'flight')} once re-analysed"
+        else:
+            text = (f"{named} on {_plural(applied, 'flight')}"
+                    + (f"; {_plural(len(pending), 'more flight')} waiting for re-analysis" if pending else ""))
+        effect = {"text": text, "zero": n == 0}
+        return effect, f"{_channel_name(target)} (shipped: not assigned)", []
 
     def _reference_pin(self, e):
         pinned = (ws.load_selection(self.workspace_dir).baseline_config or {}).get("pinned_references") or {}
@@ -2264,6 +2433,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "save_workspace_settings": op_save_workspace_settings,
     "list_changed_settings": op_list_changed_settings,
     "export_workspace": op_export_workspace,
+    "get_log_channels": op_get_log_channels,
+    "set_channel_assignment": op_set_channel_assignment,
     "preview_workspace_export": op_preview_workspace_export,
     "inspect_workspace_export": op_inspect_workspace_export,
     "import_workspace": op_import_workspace,
