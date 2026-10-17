@@ -3,7 +3,7 @@
 // the wording is the same everywhere. Not help text (§7.4): always shown.
 import type { FilterTarget } from "../types/contract";
 
-export type Scope = "flight" | "metric" | "limit" | "alert" | "topic" | "reference_settings" | "all_limits";
+export type Scope = "flight" | "metric" | "limit" | "alert" | "topic" | "reference_settings" | "all_limits" | "workspace";
 
 export const SCOPE_CAPTION: Record<Scope, string> = {
   flight: "This flight only",
@@ -18,6 +18,8 @@ export const SCOPE_CAPTION: Record<Scope, string> = {
   // Not in the table (reported): "Copy filters from…" brings in a filter
   // for every limit the other workspace has one for.
   all_limits: "All flights in this workspace — every limit copied",
+  // Spec 14 v0.14 §5.3: Settings → Engine → Log channels.
+  workspace: "All flights in this workspace",
 };
 
 // Shown with the "This flight only" caption on exclude-from-reference.
@@ -31,6 +33,7 @@ export const APPLY_LABEL: Record<Scope, string> = {
   topic: "Apply to all flights",
   reference_settings: "Apply to all flights",
   all_limits: "Apply to all flights",
+  workspace: "Apply to all flights",
 };
 
 // The one place a filter's scope noun is decided: "this limit" for a

@@ -7,6 +7,7 @@ import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
+import { SOURCE_FORMAT_LABEL } from "../lib/sourceFormat";
 import type {
   ExclusionEntry, FlightRowStatus, FlightTableRow, ImportInfo,
   InsightSeverity, ScanOptions, ScanProgress, ScanResult, SenderMissingFlight, WorkspaceManifest,
@@ -905,7 +906,8 @@ export function Flights() {
               </svg>
             </div>
             <div style={{ flexGrow: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop your G3X logs here</div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Drop your engine logs here</div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Garmin G3X (SD card or Garmin Pilot) or Garmin AXIS exports</div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                 or{" "}
                 <a href="#" onClick={(e) => { e.preventDefault(); inputRef.current?.click(); }}>choose files</a>
@@ -1186,6 +1188,12 @@ export function Flights() {
                         </span>
                       </td>
                       <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer" }} title={row.log_folder}>
+                        {row.source_format && SOURCE_FORMAT_LABEL[row.source_format] && (
+                          // Spec 03 v0.22 §5.1: the Source column names the format.
+                          <span data-testid="source-format" style={{ fontFamily: "inherit", fontSize: 10, color: "var(--text-secondary)", marginRight: 6 }}>
+                            {SOURCE_FORMAT_LABEL[row.source_format]}
+                          </span>
+                        )}
                         {row.filename}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>

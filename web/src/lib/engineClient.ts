@@ -15,6 +15,8 @@ import type {
   EngineLimitsResult,
   ExclusionsResult,
   ChangedSetting,
+  LogChannelRow,
+  LogSourceFormat,
   ImportInfo,
   ImportMatchResult,
   WorkspaceExportResult,
@@ -173,7 +175,10 @@ export interface EngineClient {
   // flight_id (ground session / short flight / corrupt log / user).
   listExclusions(enrich?: boolean): Promise<ExclusionsResult>;
   includeExcludedLog(filename: string, reason?: string): Promise<{ filename: string; included: boolean; scan_result: ScanResult | null }>;
-  previewExcludedLog(filename: string): Promise<{ flight_analysis: FlightAnalysis; source_filename: string }>;
+  previewExcludedLog(filename: string): Promise<{ flight_analysis: FlightAnalysis; source_filename: string; source_format?: LogSourceFormat; filled_share?: number }>;
+  // Spec 14 v0.14 §5.3 — Settings → Engine → Log channels.
+  getLogChannels(): Promise<{ channels: LogChannelRow[] }>;
+  setChannelAssignment(raw: string, target: string | null): Promise<{ channels: LogChannelRow[] }>;
   getExcludedLogSeries(filename: string, channels: string[]): Promise<SeriesResult>;
 
   // Spec 02 v0.5 workspace management
@@ -529,7 +534,15 @@ export class LocalServerClient implements EngineClient {
   }
 
   previewExcludedLog(filename: string) {
-    return this.rpc<{ flight_analysis: FlightAnalysis; source_filename: string }>("preview_excluded_log", { filename });
+    return this.rpc<{ flight_analysis: FlightAnalysis; source_filename: string; source_format?: LogSourceFormat; filled_share?: number }>("preview_excluded_log", { filename });
+  }
+
+  getLogChannels() {
+    return this.rpc<{ channels: LogChannelRow[] }>("get_log_channels", {});
+  }
+
+  setChannelAssignment(raw: string, target: string | null) {
+    return this.rpc<{ channels: LogChannelRow[] }>("set_channel_assignment", { raw, target });
   }
 
   getExcludedLogSeries(filename: string, channels: string[]) {

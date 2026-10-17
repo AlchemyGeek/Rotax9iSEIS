@@ -117,6 +117,8 @@ export interface Provenance {
   params_hash: string;
   source_keys: string[];
   rules_hash?: string;
+  // Spec 01 v0.23 §6.5: general-purpose channels exposed under a registry id.
+  channel_assignments?: Record<string, string>;
 }
 
 export interface FlightAnalysis {
@@ -876,6 +878,8 @@ export interface FlightTableRow {
   status: FlightRowStatus;
   // Spec 03 §5.1 "Unreadable": why the log couldn't be read or analysed.
   unreadable_reason?: string;
+  // Spec 03 v0.22 §5.1: which export format the log is.
+  source_format?: LogSourceFormat;
   different_tail_number?: string;
   filename: string;
   log_folder: string;
@@ -1008,6 +1012,23 @@ export interface ExclusionsResult {
   // Spec 02 v0.11 §7.5: an imported workspace's flights whose log hasn't
   // been found here; no actions — each resolves when its log is added.
   sender_missing?: SenderMissingFlight[];
+}
+
+// ── Log sources (Spec 01 v0.23 §6.5) ─────────────────────────────────────────
+
+export type LogSourceFormat = "g3x_direct" | "garmin_pilot" | "axis" | "unknown";
+
+// Spec 14 v0.14 §5.3 — a raw general-purpose channel seen in the workspace's
+// logs, and its assignment to a registry channel (none by default).
+export interface LogChannelRow {
+  raw: string;            // "gp_analog_7"
+  label: string;          // "analog 7"
+  sources: string[];      // ["AXIS"]
+  flights: number;
+  min: number | null;
+  max: number | null;
+  assignment: { channel: string; name: string; unit: string | null } | null;
+  options: { channel: string; name: string; unit: string | null }[];
 }
 
 // ── Workspace export and import (Spec 02 v0.11 §7) ──────────────────────────

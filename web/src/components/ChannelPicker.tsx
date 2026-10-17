@@ -3,10 +3,11 @@ import type { ChannelRegistryEntry, SlotGroupEntry } from "../types/contract";
 
 // Spec 07 §4 group order — matches the fixed table in the spec, not an
 // alphabetical or registry-insertion order.
-const GROUP_ORDER = ["engine", "egt", "fuel", "electrical", "flight", "conditions", "cabin"];
+const GROUP_ORDER = ["engine", "egt", "fuel", "electrical", "flight", "conditions", "cabin", "raw"];
 const GROUP_LABEL: Record<string, string> = {
   engine: "Engine", egt: "EGT", fuel: "Fuel", electrical: "Electrical",
   flight: "Flight", conditions: "Conditions", cabin: "Cabin",
+  raw: "Raw inputs",   // Spec 01 v0.23 §6.5: unassigned general-purpose channels
 };
 
 function groupRank(g: string): number {
@@ -121,11 +122,14 @@ export function ChannelPicker({ registry, slotGroups, maxSlots, activeSlots, ava
     const byGroup = new Map<string, PickerItem[]>();
     for (const item of items) {
       if (!matches(item)) continue;
+      // Raw general-purpose inputs are listed only where this log has them
+      // (and not once assigned), never as sixteen greyed-out rows.
+      if (item.group === "raw" && (!availableChannels || !availableChannels.includes(item.id))) continue;
       if (!byGroup.has(item.group)) byGroup.set(item.group, []);
       byGroup.get(item.group)!.push(item);
     }
     return GROUP_ORDER.map((g) => ({ group: g, items: byGroup.get(g) ?? [] })).filter((g) => g.items.length > 0);
-  }, [items, search]);
+  }, [items, search, availableChannels]);
 
   function renderTag(item: PickerItem) {
     const isActive = activeSlots.includes(item.id);

@@ -17,7 +17,7 @@ import {
 } from "../lib/fixtures";
 import type {
   AppSettings, BaselineConfig, ChartPreset, EngineLimitsResult, FleetAnalysis,
-  ChangedSetting, RuleSet, UnpinPreview, WorkspaceManifest,
+  ChangedSetting, LogChannelRow, RuleSet, UnpinPreview, WorkspaceManifest,
 } from "../types/contract";
 
 const client = getEngineClient();
@@ -67,6 +67,11 @@ const ROW_STYLE: React.CSSProperties = { display: "flex", alignItems: "center", 
 // scope per §10 Q1), Reference & Models (what used to be most of
 // Baselines.tsx's sidebar — Spec 14 §7.2 "what moves where"), and App
 // (this view's pre-Spec-14 content, minus the bits that moved to Engine).
+// Observed range of a raw channel: whole numbers as they are, others to 0.1.
+function fmtRange(v: number) {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
 export function Settings() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -132,6 +137,29 @@ export function Settings() {
 
   // Engine (Spec 14 §5).
   const [engineLimits, setEngineLimits] = useState<EngineLimitsResult>(fixtureEngineLimits);
+  // Spec 14 v0.14 §5.3 — raw general-purpose channels and their assignments.
+  const [logChannels, setLogChannels] = useState<LogChannelRow[] | null>(null);
+  const [assigning, setAssigning] = useState(false);
+
+  async function refreshLogChannels() {
+    try {
+      setLogChannels((await client.getLogChannels()).channels);
+    } catch {
+      setLogChannels(null);
+    }
+  }
+
+  async function assignChannel(raw: string, target: string | null) {
+    setAssigning(true);
+    try {
+      setLogChannels((await client.setChannelAssignment(raw, target)).channels);
+      await refreshChangedSettings();
+    } catch {
+      // server unreachable
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   // Spec 14 §5.1 (v0.3) — n_min is shown here per trigger, read-only; it
   // lives in rules/active.json and is edited on the topic card (§7.3).
@@ -183,6 +211,12 @@ export function Settings() {
           if (!cancelled) setChangedSettings(changed.settings);
         } catch {
           // non-fatal — values just show unmarked
+        }
+        try {
+          const lc = await client.getLogChannels();
+          if (!cancelled) setLogChannels(lc.channels);
+        } catch {
+          // an older server: the panel stays hidden
         }
       } catch {
         if (!cancelled) {
@@ -342,6 +376,7 @@ export function Settings() {
       setFleet(newFleet);
       setDraftBaselineConfig(clone(newFleet.provenance.baseline_config));
       await refreshChangedSettings();
+      if (refId.startsWith("channel_assignment:")) await refreshLogChannels();
     } catch {
       // server unreachable
     } finally {
@@ -380,7 +415,7 @@ export function Settings() {
   // (membership, the event-frequency threshold, a weather band set by hand).
   const INLINE_MARKS = new Set(["outlier_z_threshold", "recent_window", "om_margin_fraction"]);
   const otherChanged = changedSettings.filter(
-    (c) => !INLINE_MARKS.has(c.ref_id) && !c.ref_id.startsWith("outlier_z_threshold_overrides:"),
+    (c) => !INLINE_MARKS.has(c.ref_id) && !c.ref_id.startsWith("outlier_z_threshold_overrides:") && !c.ref_id.startsWith("channel_assignment:"),
   );
 
   function removeOverride(metricId: string) {
@@ -540,6 +575,57 @@ export function Settings() {
                 </table>
               </div>
             </div>
+
+            {logChannels && (
+              <div style={PANEL_STYLE} data-testid="log-channels">
+                <div style={PANEL_TITLE_STYLE}>Log channels<InlineHelp id="engine.log_channels" /></div>
+                <div style={{ marginBottom: 10 }}><ScopeCaption scope="workspace" /></div>
+                {logChannels.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No general-purpose channels in this workspace's logs.</div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "var(--text-tertiary)" }}>
+                        <th style={{ fontWeight: 500, padding: "4px 8px 4px 0" }}>Channel</th>
+                        <th style={{ fontWeight: 500, padding: "4px 8px" }}>Source</th>
+                        <th style={{ fontWeight: 500, padding: "4px 8px" }}>Range seen</th>
+                        <th style={{ fontWeight: 500, padding: "4px 8px" }}>Assignment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logChannels.map((row) => (
+                        <tr key={row.raw} data-testid={`log-channel-${row.raw}`} style={{ borderTop: "1px solid var(--border-subtle)", verticalAlign: "top" }}>
+                          <td style={{ padding: "6px 8px 6px 0", color: "var(--text-primary)" }}>
+                            {row.label} <span className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{row.raw}</span>
+                          </td>
+                          <td style={{ padding: "6px 8px", color: "var(--text-secondary)" }}>
+                            {row.sources.join(", ")} · {row.flights} {row.flights === 1 ? "flight" : "flights"}
+                          </td>
+                          <td className="mono" style={{ padding: "6px 8px", color: "var(--text-secondary)" }}>
+                            {row.min == null || row.max == null ? "—" : `${fmtRange(row.min)} – ${fmtRange(row.max)}`}
+                          </td>
+                          <td style={{ padding: "6px 8px" }}>
+                            <select
+                              aria-label={`Assignment for ${row.label}`}
+                              value={row.assignment?.channel ?? ""}
+                              disabled={assigning || usingFixture}
+                              onChange={(e) => assignChannel(row.raw, e.target.value || null)}
+                              style={{ fontSize: 12 }}
+                            >
+                              <option value="">Not assigned</option>
+                              {row.options.map((o) => (
+                                <option key={o.channel} value={o.channel}>{o.name}{o.unit && !o.name.includes(o.unit) ? ` (${o.unit})` : ""}</option>
+                              ))}
+                            </select>
+                            <div style={{ marginTop: 6 }}>{changedMark(`channel_assignment:${row.raw}`)}</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
           </>
         )}
 

@@ -22,6 +22,8 @@ export const INLINE_HELP = {
     "When a limit is checked — only in some flight phases, or only once it has been exceeded for a set time — so expected moments such as takeoff power are not reported as exceedances.",
   "engine.overrides":
     "None means every limit is the Operator's Manual value shown here; nothing has been changed for this aircraft.",
+  "engine.log_channels":
+    "What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name.",
 
   // Topic card triggers
   "trigger.enabled": "Stops this topic reporting on every flight; past Journal entries stay.",

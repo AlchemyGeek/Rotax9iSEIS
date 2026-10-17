@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { TimelinePanel } from "../components/TimelinePanel";
+import { pickableChannels } from "../lib/channels";
 import { getEngineClient } from "../lib/engineClient";
 import { useTimeline } from "../lib/useTimeline";
 import { ECU_CLASS_LABEL } from "../lib/casEvent";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
-import type { EcuClassification, ExclusionEntry, FlightAnalysis } from "../types/contract";
+import { SOURCE_FORMAT_LABEL } from "../lib/sourceFormat";
+import type { EcuClassification, ExclusionEntry, FlightAnalysis, LogSourceFormat } from "../types/contract";
 
 const client = getEngineClient();
 const CLASS_ORDER: EcuClassification[] = ["GROUND_START", "LANE_CHECK", "GROUND", "IN_FLIGHT", "GROUND_SHUTDOWN"];
@@ -28,6 +30,8 @@ export function LogPreview() {
   const filename = logKey ? decodeURIComponent(logKey) : "";
   const navigate = useNavigate();
   const [fa, setFa] = useState<FlightAnalysis | null>(null);
+  const [sourceFormat, setSourceFormat] = useState<LogSourceFormat | null>(null);
+  const [filledShare, setFilledShare] = useState(0);
   const [entry, setEntry] = useState<ExclusionEntry | null>(null);
   const [folders, setFolders] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -57,6 +61,8 @@ export function LogPreview() {
           .then((w) => !cancelled && setFolders((w.manifest?.log_folders ?? []).map((f) => f.path)))
           .catch(() => {});
         setFa(got.flight_analysis);
+        setSourceFormat(got.source_format ?? null);
+        setFilledShare(got.filled_share ?? 0);
         setEntry(exclusions.entries.find((e) => e.filename === filename) ?? null);
         await tl.setupLive({
           key: filename,
@@ -133,6 +139,13 @@ export function LogPreview() {
                 <span><span style={{ color: "var(--text-tertiary)" }}>Duration:</span> {durationStr}</span>
                 <span><span style={{ color: "var(--text-tertiary)" }}>Aircraft:</span> {header?.aircraft.ident ?? entry?.aircraft_ident ?? "—"}</span>
                 <span><span style={{ color: "var(--text-tertiary)" }}>Engine hours:</span> {header?.engine_hours_start ?? "—"}</span>
+                {sourceFormat && SOURCE_FORMAT_LABEL[sourceFormat] && (
+                  // Spec 03 v0.22 §5.9: the format and, if resampled, the filled share.
+                  <span data-testid="log-format">
+                    <span style={{ color: "var(--text-tertiary)" }}>Format:</span> {SOURCE_FORMAT_LABEL[sourceFormat]}
+                    {filledShare ? ` · resampled to 1 s, ${Math.round(filledShare * 100)}% of rows filled` : ""}
+                  </span>
+                )}
               </div>
               <div style={{ marginTop: 12, display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
                 {!confirming ? (
@@ -171,7 +184,7 @@ export function LogPreview() {
                 <TimelinePanel
                   tl={tl}
                   phases={fa.phases}
-                  availableChannels={fa.available_channels}
+                  availableChannels={pickableChannels(fa.available_channels, fa.provenance.channel_assignments)}
                   startUtc={fa.header.start_utc}
                   hasPhaseWarning={false}
                   emptyText="No timeline available for this log."

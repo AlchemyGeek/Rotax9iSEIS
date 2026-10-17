@@ -68,3 +68,13 @@ export function assignChannelColors(activeIds: string[], prev: Record<string, st
   }
   return next;
 }
+
+// Spec 14 v0.14 §5.3: once a raw general-purpose channel is assigned, it
+// is offered under its registry name only — the raw id leaves the picker.
+export function pickableChannels(
+  available: string[] | null | undefined,
+  assignments: Record<string, string> | undefined,
+): string[] | null | undefined {
+  if (!available || !assignments) return available;
+  return available.filter((id) => !(id in assignments));
+}

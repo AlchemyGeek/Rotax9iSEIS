@@ -31,6 +31,11 @@ const ENTRY_SCOPE: Partial<Record<JournalEntryKind, Scope>> = {
   changed_setting: "reference_settings",
 };
 
+// The Settings tab a changed setting lives on (Log channels are on Engine).
+function settingsTab(e: JournalEntry): string {
+  return (e.where as { tab?: string } | null)?.tab ?? "reference";
+}
+
 // The full §6.1 taxonomy, in table order. acknowledged_insight has no
 // entries yet (Spec 11 silencing is not built); its chip still shows so
 // the taxonomy reads as complete.
@@ -220,7 +225,7 @@ export function Journal() {
     if (fid) navigate(`/flights/${fid}`);
     else if (e.kind === "limit_filter") setActiveTab("filters");
     else if (e.kind === "reference_pin") navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
-    else if (e.kind === "changed_setting") navigate("/settings?tab=reference");
+    else if (e.kind === "changed_setting") navigate(`/settings?tab=${settingsTab(e)}`);
   }
 
   async function act(fn: () => Promise<unknown>) {
@@ -262,7 +267,7 @@ export function Journal() {
     setRemoving(null);
     if (e.kind === "rule_edit") return editRule(e);
     if (e.kind === "reference_pin") return navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
-    if (e.kind === "changed_setting") return navigate("/settings?tab=reference");
+    if (e.kind === "changed_setting") return navigate(`/settings?tab=${settingsTab(e)}`);
     setEditing(e.id);
     if (e.kind === "annotation") setDraft(annotationById.get(e.ref_id)?.note ?? e.what);
     if (e.kind === "exclusion") setDraft(e.reason ?? "");
@@ -281,7 +286,10 @@ export function Journal() {
 
   const canEdit = (k: JournalEntryKind) => k !== "disabled_topic" && k !== "acknowledged_insight";
   const scopeOf = (e: JournalEntry): Scope | undefined =>
-    e.kind === "limit_filter" ? filterScope((e.where as { target?: FilterTarget } | null)?.target) : ENTRY_SCOPE[e.kind];
+    e.kind === "limit_filter" ? filterScope((e.where as { target?: FilterTarget } | null)?.target)
+      // Spec 14 v0.14 §5.3: a log-channel assignment is not a comparison setting.
+      : e.kind === "changed_setting" && e.ref_id.startsWith("channel_assignment:") ? "workspace"
+      : ENTRY_SCOPE[e.kind];
 
   const LINK: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 };
   const BUTTON = (primary: boolean): React.CSSProperties => ({

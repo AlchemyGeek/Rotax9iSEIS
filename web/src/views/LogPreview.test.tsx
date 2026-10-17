@@ -85,6 +85,19 @@ describe("Log preview", () => {
     expect(screen.queryByText(/Edit rules/)).toBeNull();
   });
 
+  it("names the format, and for a resampled AXIS log the filled-row share (Spec 03 v0.22 §5.9)", async () => {
+    previewExcludedLog.mockResolvedValue({ flight_analysis: casFlight, source_filename: FILE, source_format: "axis", filled_share: 0.161 });
+    renderAt(`/logs/${encodeURIComponent(FILE)}`);
+    const fmt = await screen.findByTestId("log-format");
+    expect(fmt.textContent).toBe("Format: AXIS · resampled to 1 s, 16% of rows filled");
+  });
+
+  it("a G3X log says G3X and nothing about filling", async () => {
+    previewExcludedLog.mockResolvedValue({ flight_analysis: casFlight, source_filename: FILE, source_format: "g3x_direct", filled_share: 0 });
+    renderAt(`/logs/${encodeURIComponent(FILE)}`);
+    expect((await screen.findByTestId("log-format")).textContent).toBe("Format: G3X");
+  });
+
   it("Include this log asks for confirmation and a reason, includes, then opens the new flight", async () => {
     includeExcludedLog.mockResolvedValue({ filename: FILE, included: true, scan_result: { new_flight_ids: ["f_new"] } });
     renderAt(`/logs/${encodeURIComponent(FILE)}`);

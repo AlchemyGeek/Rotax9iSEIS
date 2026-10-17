@@ -9,7 +9,7 @@ import { INLINE_HELP } from "./inlineHelp";
 const EXPECTED = [
   "reference.outlier_z_threshold", "reference.recent_window", "reference.pinning",
   "reference.contributing_flights", "reference.stratification",
-  "engine.suppression", "engine.overrides",
+  "engine.suppression", "engine.overrides", "engine.log_channels",
   "trigger.enabled", "trigger.r2_min", "trigger.n_min", "trigger.baseline_deviation",
   "preview.counts",
   "journal.live_effect", "journal.change_notices",

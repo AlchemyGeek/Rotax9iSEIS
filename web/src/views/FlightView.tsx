@@ -6,6 +6,7 @@ import { FilterEditor } from "../components/FilterEditor";
 import { notifyFiltersChanged } from "../lib/filterAttention";
 import { PhaseFilter } from "../components/PhaseFilter";
 import { fixtureFlightById, flightAnalysis as fixtureFlight, insightSet as fixtureInsights, kacvSeries, sourceFilename } from "../lib/fixtures";
+import { pickableChannels } from "../lib/channels";
 import { getEngineClient } from "../lib/engineClient";
 import { useTopicHelp } from "../lib/topicHelp";
 import { useAircraftSummary } from "../lib/aircraftSummary";
@@ -607,7 +608,7 @@ export function FlightView() {
             <TimelinePanel
               tl={tl}
               phases={flightAnalysis.phases}
-              availableChannels={flightAnalysis.available_channels}
+              availableChannels={pickableChannels(flightAnalysis.available_channels, flightAnalysis.provenance.channel_assignments)}
               startUtc={h.start_utc}
               hasPhaseWarning={hasPhaseWarning}
               markers={markers}
