@@ -3,23 +3,17 @@ import { getEngineClient } from "../lib/engineClient";
 import { carriesText, finishImport, matchText, plural } from "../lib/importWorkspace";
 import type { ImportMatchResult, WorkspaceExportSource, WorkspaceExportSummary } from "../types/contract";
 
-// Spec 03 v0.20 §5.8 — Import workspace, a modal flow (behaviour: Spec 02
-// v0.13 §7.4–7.7). Choose → summary (engine check) → name → then either
-// the match result (an unzipped export folder's logs/ is linked
-// automatically) and the ordinary Sync confirmation on Flights, or — no
-// logs/ — an empty workspace. There is no step for linking other folders.
-// An import always creates a new workspace; nothing is created before Name.
+// Spec 03 v0.21 §5.8 — Import workspace, a modal flow (behaviour: Spec 02
+// v0.14 §7.4–7.7). Choose the export file — the zip as exported, or an
+// .eisworkspace — which is sent to the local server as is → summary
+// (engine check) → name → the zip's logs become the new workspace's own
+// and the match result shows, then the ordinary Sync confirmation on
+// Flights; an .eisworkspace without logs gives an empty workspace. An
+// import always creates a new workspace; nothing is created before Name.
 
 const client = getEngineClient();
 
 type Step = "choose" | "name" | "match" | "empty";
-
-async function fileToBase64(f: File): Promise<string> {
-  const bytes = new Uint8Array(await f.arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
-}
 
 const INPUT: React.CSSProperties = { fontSize: 12, padding: "6px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", flexGrow: 1 };
 const BUTTON_BASE: React.CSSProperties = { padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" };
@@ -30,7 +24,7 @@ const PRIMARY = (disabled = false): React.CSSProperties => ({ ...PRIMARY_BASE, .
 
 export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<Step>("choose");
-  const [path, setPath] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [source, setSource] = useState<WorkspaceExportSource | null>(null);
   const [summary, setSummary] = useState<WorkspaceExportSummary | null>(null);
   const [name, setName] = useState("");
@@ -65,7 +59,7 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
     const res = await run(() => client.importWorkspace(source, name.trim() || undefined));
     if (!res) return;
     if (res.logs_linked) {
-      setLinked(summary?.logs_folder ?? "logs/");
+      setLinked(summary?.logs_folder ?? (summary?.logs_in_file ? plural(summary.logs_in_file, "log") + " from " + (fileName ?? "the export") : "logs/"));
       await rematch();
     } else {
       setStep("empty");
@@ -88,33 +82,28 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
         {step === "choose" && (
           <>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Enter the folder you unzipped from an export: its logs are linked automatically. Or choose an <span className="mono">.eisworkspace</span> file — without a logs folder the new workspace starts empty. Nothing you already have changes.
+              Choose the export file you were sent — the <span className="mono">.zip</span> as it is, no need to unzip it. Its logs come with it. (An <span className="mono">.eisworkspace</span> exported without logs gives a workspace that starts empty.) Nothing you already have changes.
             </div>
             <label style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
               Export file
               <input
                 type="file"
-                accept=".eisworkspace"
+                accept=".zip,.eisworkspace"
                 aria-label="Export file"
                 disabled={busy}
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
-                  if (f) await inspect({ content_base64: await fileToBase64(f), filename: f.name });
+                  if (!f) return;
+                  setFileName(f.name);
+                  setSummary(null);
+                  const up = await run(() => client.uploadFile(f));
+                  if (up) await inspect({ upload_id: up.upload_id });
                 }}
               />
             </label>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                aria-label="Export folder or file path"
-                placeholder="/Users/you/Downloads/N117ZS"
-                className="mono"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && path.trim() && !busy && void inspect({ path: path.trim() })}
-                style={INPUT}
-              />
-              <button type="button" style={BUTTON(busy || !path.trim())} disabled={busy || !path.trim()} onClick={() => inspect({ path: path.trim() })}>Open</button>
-            </div>
+            {busy && fileName && !summary && (
+              <div role="status" style={{ fontSize: 12, color: "var(--text-secondary)" }}>Reading {fileName}…</div>
+            )}
             {summary && (
               <div data-testid="import-summary" style={{ background: "var(--bg)", borderRadius: 8, padding: "10px 12px", fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
                 <div style={{ fontWeight: 600 }}>{summary.workspace_name}</div>
@@ -125,9 +114,9 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
                 </div>
                 <div>Carries {carriesText(summary.carries)}.</div>
                 <div>
-                  {summary.logs_folder
-                    ? `Logs included${summary.anonymised ? ", anonymised" : ""} — linked from this folder.`
-                    : "No logs folder here — the workspace will start empty."}
+                  {summary.logs_in_file > 0 || summary.logs_folder
+                    ? `${summary.logs_in_file > 0 ? plural(summary.logs_in_file, "log") : "Logs"} included${summary.anonymised ? ", anonymised" : ""} — imported with the workspace.`
+                    : "No logs in this file — the workspace will start empty."}
                 </div>
                 {summary.engine_check.message && (
                   <div role={summary.engine_check.ok ? "status" : "alert"} style={{ color: summary.engine_check.ok ? "var(--severity-watch)" : "var(--severity-limit)", marginTop: 4 }}>

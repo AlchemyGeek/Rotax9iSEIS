@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.20 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.21 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -30,6 +30,7 @@
 | 0.18 | §5.7: the Settings changelog is removed (Spec 14 v0.13). Changed settings are marked in Settings and listed in Journal as entries; the Engine tab shows the engine version in effect and its *What's new*. |
 | 0.19 | Workspace export and import replace the results bundle (Spec 02 v0.11 §7). §5.7 App tab: *Export workspace…* and *Import workspace…*, anonymise-by-default removed. §5.8 rewritten as the import flow. R2 (read-only bundle preview) and the Flight view's *Export flight bundle* retired. |
 | 0.20 | §5.8 import flow simplified (Spec 02 v0.13): no link-logs step. An unzipped export folder's `logs/` is linked automatically and the match result follows; without one the workspace is created empty and opens on Flights' *Link your logs* empty state. Trends on a workspace with no flights shows an empty state, never the sample data (which is only for when no local server answers). |
+| 0.21 | §5.8: import takes the export zip as is (Spec 02 v0.14) — one *Export file* chooser (`.zip` or `.eisworkspace`); the file is sent to the local server, which unzips it and keeps the logs in the new workspace. No path typing, no unzipping by the user. |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
 ---
@@ -228,9 +229,9 @@ No changelog (Spec 14 v0.13). A setting that changes results and differs from sh
 
 A modal flow, reached from Settings → App and the workspace switcher. Behaviour is Spec 02 §7.4–7.7; the screens:
 
-1. **Choose** an `.eisworkspace` file or an unzipped export folder → **summary**: sender's workspace, engine model and version, flights and date range, what it carries, logs included / anonymised. An engine too old shows the refusal here (Spec 02 §7.7) and the flow stops; a newer one shows its notice.
+1. **Choose** the export file — the zip as received, or an `.eisworkspace` exported without logs (v0.21) → **summary**: sender's workspace, engine model and version, flights and date range, what it carries, logs included / anonymised. An engine too old shows the refusal here (Spec 02 §7.7) and the flow stops; a newer one shows its notice.
 2. **Name** the new workspace.
-3. **Logs** — an export folder's `logs/` is linked automatically; otherwise the workspace is created empty (*Open workspace* → Flights' *Link your logs* empty state). No folder picking in this flow (v0.20).
+3. **Logs** — the zip's logs come with it, kept in the new workspace (v0.21); an `.eisworkspace` without logs gives an empty workspace (*Open workspace* → Flights' *Link your logs* empty state). No folder picking in this flow.
 4. **Match result** (when logs were linked) — *38 of 40 flights found · 2 missing · 12 other logs held out*, each count expandable to its list; *Continue*.
 5. **Sync confirmation** (§5.1) → Flights.
 

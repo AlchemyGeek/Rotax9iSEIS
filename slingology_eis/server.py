@@ -1553,6 +1553,13 @@ def _export_contents(params: dict, ctx: dict):
     """An export chosen in the import flow: a path (a file, or an unzipped
     export folder) or an uploaded .eisworkspace."""
     from . import workspace_export as wx
+    if params.get("upload_id"):
+        # Spec 02 v0.14: the export zip (or .eisworkspace) the browser sent
+        # to /upload, as is.
+        up = ctx.get("uploads", {}).get(str(params["upload_id"]))
+        if up is None:
+            raise RpcError("NOT_FOUND", "That upload is gone; choose the file again.")
+        return wx.read_export(up["path"], label=up["filename"])
     if params.get("path"):
         return wx.read_export(Path(str(params["path"])).expanduser())
     if params.get("content_base64"):
@@ -2277,6 +2284,35 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path]):
             self.end_headers()
 
         def do_POST(self) -> None:  # noqa: N802
+            if self.path.startswith("/upload"):
+                # Spec 02 v0.14: a file chosen in the browser (an export
+                # zip can be hundreds of MB), streamed to a private temp
+                # file; the RPC ops then refer to it by upload_id.
+                from urllib.parse import parse_qs, urlparse
+                filename = (parse_qs(urlparse(self.path).query).get("filename") or ["upload"])[0]
+                length = int(self.headers.get("Content-Length", 0))
+                upload_id = uuid.uuid4().hex
+                folder = _export_dir(ctx) / "uploads" / upload_id
+                folder.mkdir(parents=True, exist_ok=True)
+                target = folder / (Path(filename).name or "upload")
+                remaining = length
+                with open(target, "wb") as out:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        remaining -= len(chunk)
+                ctx.setdefault("uploads", {})[upload_id] = {"path": target, "filename": target.name}
+                payload = _json_serialize.dumps({"ok": True, "result": {"upload_id": upload_id, "filename": target.name,
+                                                                        "size": length - remaining}}).encode("utf-8")
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if self.path != "/rpc":
                 self.send_response(404)
                 self._cors()

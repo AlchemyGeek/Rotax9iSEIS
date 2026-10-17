@@ -102,6 +102,9 @@ export interface EngineClient {
   // sender's own text, which anonymising leaves as written.
   previewWorkspaceExport(): Promise<{ identity_mentions: { where: string; value: string }[] }>;
   downloadUrl(path: string): string;
+  // Spec 02 v0.14: a chosen file (an export zip can be hundreds of MB) sent
+  // to the local server as is.
+  uploadFile(file: File): Promise<{ upload_id: string; filename: string; size: number }>;
   inspectWorkspaceExport(source: WorkspaceExportSource): Promise<WorkspaceExportSummary>;
   importWorkspace(source: WorkspaceExportSource, name?: string): Promise<{ manifest: WorkspaceManifest; logs_linked: boolean }>;
   matchImport(): Promise<ImportMatchResult>;
@@ -296,6 +299,17 @@ export class LocalServerClient implements EngineClient {
 
   downloadUrl(path: string) {
     return `${this.baseUrl}${path}`;
+  }
+
+  async uploadFile(file: File) {
+    const res = await fetch(`${this.baseUrl}/upload?filename=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file,
+    });
+    const envelope = await res.json();
+    if (!envelope.ok) throw new EngineRpcError(envelope.error?.code ?? "UNKNOWN", envelope.error?.message ?? "upload failed");
+    return envelope.result as { upload_id: string; filename: string; size: number };
   }
 
   inspectWorkspaceExport(source: WorkspaceExportSource) {

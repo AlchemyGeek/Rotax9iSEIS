@@ -1040,14 +1040,19 @@ export interface WorkspaceExportSummary {
   };
   logs_included: boolean;
   anonymised: boolean;
-  // Set when an unzipped export folder with logs/ was chosen.
+  // Set when an unzipped export folder with logs/ was chosen (CLI).
   logs_folder: string | null;
+  // Spec 02 v0.14: how many logs the chosen export zip carries; 0 means
+  // the new workspace starts empty.
+  logs_in_file: number;
   engine_check: { status: "same" | "newer" | "older"; ok: boolean; message: string | null };
 }
 
 // An export chosen in the import flow: an uploaded .eisworkspace, or (local
 // server) a path to the file or to the folder an export zip unzips to.
-export type WorkspaceExportSource = { path: string } | { content_base64: string; filename: string };
+// Spec 02 v0.14: in the app, the chosen file is sent to /upload as is and
+// referred to by upload_id.
+export type WorkspaceExportSource = { upload_id: string } | { path: string } | { content_base64: string; filename: string };
 
 export interface ImportMatchResult {
   total: number;

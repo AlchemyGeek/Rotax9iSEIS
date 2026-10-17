@@ -25,6 +25,7 @@ import fnmatch
 import io
 import json
 import re
+import shutil
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -65,6 +66,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("flights/*/analysis.json", "derived", "Flight analysis"),
     ("fleet/analysis.json", "derived", "Fleet analysis: baselines, models, trends"),
     ("flights/*/*", "log", "An uploaded log's own copy"),
+    ("logs/*", "log", "Logs extracted from an imported export zip (Spec 02 v0.14); linked as a log folder"),
     (IMPORT_RECORD, "local", "An imported workspace's sender manifest (§7.5); no role in another export"),
     ("settings_changelog.json", "retired", "Settings changelog, unread since Spec 14 v0.13"),
 ]
@@ -526,42 +528,98 @@ class ExportContents:
     workspace: dict
     documents: dict[str, Any]
     logs_dir: Optional[Path] = None
+    # Spec 02 v0.14: an export zip chosen as is — its logs are extracted
+    # into the new workspace's own logs/ at import.
+    zip_path: Optional[Path] = None
+    log_members: list[str] = field(default_factory=list)
 
 
-def read_export(path: Path) -> ExportContents:
-    """An `.eisworkspace` file, or an unzipped export folder holding one
-    (and `logs/`). A zip is refused: the app never extracts archives."""
+# Bounds on what an export zip may unpack to (Spec 02 v0.14): a real
+# export is one .eisworkspace and its logs; anything else is refused.
+_MAX_LOG_FILES = 20000
+_MAX_UNPACKED_BYTES = 20 * 1024 ** 3
+
+
+def _parse_eisworkspace(data: bytes, label: str) -> tuple[dict, dict]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            names = z.namelist()
+            workspace = json.loads(z.read("workspace.json"))
+            documents = {n: json.loads(z.read(n)) for n in names if n != "workspace.json" and n.endswith(".json")}
+    except (zipfile.BadZipFile, KeyError, ValueError) as e:
+        raise ImportRefused(f"{label} isn't a workspace export ({e}).") from e
+    if workspace.get("format") != FORMAT:
+        raise ImportRefused(f"{label} isn't a workspace export.")
+    if int(workspace.get("format_version", 0)) > FORMAT_VERSION:
+        raise ImportRefused("This export was written by a newer app. Update the app to import it.")
+    return workspace, documents
+
+
+def read_export(path: Path, label: Optional[str] = None) -> ExportContents:
+    """What the user chose to import (Spec 02 v0.14 §7.4 step 1):
+    - the export **zip** (with logs): one `.eisworkspace` and `logs/*.csv`
+      inside it; the logs are extracted at import;
+    - an `.eisworkspace` on its own (exported without logs): an empty
+      workspace;
+    - (CLI) an already-unzipped export folder, whose logs/ is linked.
+    Recognised by content, not by file name."""
     path = Path(path).expanduser()
-    logs_dir = None
+    label = label or path.name
     if path.is_dir():
         found = sorted(path.glob(f"*{EXPORT_SUFFIX}"))
         if not found:
-            raise ImportRefused(f"No {EXPORT_SUFFIX} file in {path}. Choose the folder you unzipped, or the "
-                                f"{EXPORT_SUFFIX} file itself.")
-        if (path / "logs").is_dir():
-            logs_dir = path / "logs"
-        path = found[0]
-    elif path.is_file() and path.suffix.lower() == EXPORT_SUFFIX and (path.parent / "logs").is_dir():
-        # The .eisworkspace inside an unzipped export folder: its logs/ sits
-        # beside it, so it is linked the same as choosing the folder.
-        logs_dir = path.parent / "logs"
-    elif path.suffix.lower() == ".zip":
-        raise ImportRefused("This is the zipped export. Unzip it first (Finder, Files or Explorer), then choose the "
-                            "folder it creates.")
+            raise ImportRefused(f"No {EXPORT_SUFFIX} file in {path}.")
+        workspace, documents = _parse_eisworkspace(found[0].read_bytes(), found[0].name)
+        logs = path / "logs"
+        return ExportContents(workspace, documents, logs_dir=logs if logs.is_dir() else None)
     if not path.is_file():
         raise ImportRefused(f"{path} doesn't exist.")
     try:
         with zipfile.ZipFile(path) as z:
             names = z.namelist()
-            workspace = json.loads(z.read("workspace.json"))
-            documents = {n: json.loads(z.read(n)) for n in names if n != "workspace.json" and n.endswith(".json")}
-    except (zipfile.BadZipFile, KeyError, ValueError) as e:
-        raise ImportRefused(f"{path.name} isn't a workspace export ({e}).") from e
-    if workspace.get("format") != FORMAT:
-        raise ImportRefused(f"{path.name} isn't a workspace export.")
-    if int(workspace.get("format_version", 0)) > FORMAT_VERSION:
-        raise ImportRefused("This export was written by a newer app. Update the app to import it.")
-    return ExportContents(workspace=workspace, documents=documents, logs_dir=logs_dir)
+            if "workspace.json" in names:                       # an .eisworkspace itself
+                logs = path.parent / "logs"
+                workspace, documents = _parse_eisworkspace(path.read_bytes(), label)
+                return ExportContents(workspace, documents,
+                                      logs_dir=logs if path.suffix.lower() == EXPORT_SUFFIX and logs.is_dir() else None)
+            inner = [n for n in names if n.endswith(EXPORT_SUFFIX) and n.count("/") <= 1]
+            if len(inner) != 1:
+                raise ImportRefused(f"{label} isn't a workspace export: it should hold one {EXPORT_SUFFIX} file.")
+            prefix = inner[0].rsplit("/", 1)[0] + "/" if "/" in inner[0] else ""
+            workspace, documents = _parse_eisworkspace(z.read(inner[0]), label)
+            logs = []
+            total = 0
+            for info in z.infolist():
+                n = info.filename
+                if info.is_dir() or not n.startswith(prefix + "logs/") or not n.lower().endswith(".csv"):
+                    continue
+                rel = n[len(prefix + "logs/"):]
+                if not rel or "/" in rel or rel.startswith(".") or "\\" in rel:
+                    continue   # only logs/<file>.csv, nothing nested or hidden
+                total += info.file_size
+                logs.append(n)
+            if len(logs) > _MAX_LOG_FILES or total > _MAX_UNPACKED_BYTES:
+                raise ImportRefused(f"{label} is larger than any workspace export should be; nothing was imported.")
+    except zipfile.BadZipFile as e:
+        raise ImportRefused(f"{label} isn't a workspace export ({e}).") from e
+    return ExportContents(workspace, documents, zip_path=path, log_members=sorted(logs))
+
+
+def _extract_logs(contents: ExportContents, dest: Path) -> int:
+    """The export zip's logs/*.csv into `dest` (the new workspace's own
+    logs/), by base name only — nothing outside `dest` can be written."""
+    dest.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with zipfile.ZipFile(contents.zip_path) as z:
+        for member in contents.log_members:
+            name = Path(member).name
+            target = dest / name
+            if target.resolve().parent != dest.resolve():
+                continue
+            with z.open(member) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+            n += 1
+    return n
 
 
 def engine_check(sender_version: str) -> dict:
@@ -593,6 +651,9 @@ def summarize(contents: ExportContents) -> dict:
         "logs_included": bool(prov.get("logs_included")),
         "anonymised": bool(prov.get("anonymised")),
         "logs_folder": str(contents.logs_dir) if contents.logs_dir else None,
+        # Spec 02 v0.14: how many logs the chosen zip carries (0: the
+        # workspace starts empty).
+        "logs_in_file": len(contents.log_members),
         "engine_check": engine_check(prov.get("engine_version") or "0"),
     }
 
@@ -633,8 +694,13 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
         "admission": contents.workspace.get("admission", []),
     }
     (ws_dir / IMPORT_RECORD).write_text(json.dumps(record, indent=2))
-    if contents.logs_dir is not None:
-        manifest = ws.add_log_folder(ws_dir, str(contents.logs_dir), registry_path)
+    if contents.zip_path is not None and contents.log_members:
+        # Spec 02 v0.14: the logs travel inside the zip; they become this
+        # workspace's own logs/ folder, linked like any other.
+        _extract_logs(contents, ws_dir / "logs")
+        ws.add_log_folder(ws_dir, str(ws_dir / "logs"), registry_path)
+    elif contents.logs_dir is not None:
+        ws.add_log_folder(ws_dir, str(contents.logs_dir), registry_path)
     return ws.load_manifest(ws_dir)
 
 

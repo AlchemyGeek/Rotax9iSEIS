@@ -290,6 +290,7 @@ def change(target: Path, on_progress: Optional[Callable[[dict], None]] = None) -
             if on_progress:
                 on_progress({"phase": "checking", "done": total, "total": total})
             _check_copy(src, dst, files)
+            _rebase_paths(src, dst)
         except Exception as e:
             _undo_copy(dst, existed)
             if isinstance(e, DataLocationError):
@@ -301,6 +302,37 @@ def change(target: Path, on_progress: Optional[Callable[[dict], None]] = None) -
     _write_location(dst)
     return {"action": plan["action"], "path": str(dst),
             "previous_path": str(src) if plan["action"] == "move" else None}
+
+
+def _rebase_paths(src: Path, dst: Path) -> None:
+    """A workspace can hold its own logs (an imported export's logs/,
+    Spec 02 v0.14): its manifest and sources record them by absolute path
+    under the data root. In the copy, those paths point into the new root,
+    so the logs move with the workspace. Paths outside the root (the
+    pilot's own log folders) are left alone."""
+    old, new = str(src), str(dst)
+
+    def rebased(p: str) -> str:
+        return new + p[len(old):] if p == old or p.startswith(old + "/") else p
+
+    for manifest in (dst / "workspaces").glob("*/manifest.json"):
+        m = json.loads(manifest.read_text())
+        changed = False
+        for lf in m.get("log_folders", []):
+            if rebased(lf.get("path", "")) != lf.get("path"):
+                lf["path"] = rebased(lf["path"])
+                changed = True
+        if changed:
+            manifest.write_text(json.dumps(m, indent=2))
+    for sources in (dst / "workspaces").glob("*/flights/*/sources.json"):
+        d = json.loads(sources.read_text())
+        changed = False
+        for imp in d.get("imports", []):
+            if rebased(imp.get("log_folder_path", "")) != imp.get("log_folder_path"):
+                imp["log_folder_path"] = rebased(imp["log_folder_path"])
+                changed = True
+        if changed:
+            sources.write_text(json.dumps(d, indent=2))
 
 
 def _undo_copy(dst: Path, existed: bool) -> None:

@@ -926,7 +926,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_export_workspace)
 
     p = sub.add_parser("import-workspace", parents=[common], help="Import a workspace export as a new workspace (Spec 02 §7)")
-    p.add_argument("path", help="An .eisworkspace file, or the folder an export zip unzips to")
+    p.add_argument("path", help="The export zip (its logs are imported with it), an .eisworkspace file, or an unzipped export folder")
     p.add_argument("--name", help="Name for the new workspace (default: the sender's name + \" (imported)\")")
     # --logs FOLDER (the common option): your own copies of the logs to link.
     p.add_argument("--yes", action="store_true", help="Analyse the matched flights without asking")

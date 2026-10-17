@@ -132,6 +132,15 @@ def test_export_with_logs_is_a_folder_in_a_zip(registry_server, tmp_path):
 
 # ── §7.4–7.5 import and matching ─────────────────────────────────────────────
 
+def _upload(url, data: bytes, filename: str) -> str:
+    """The browser's file upload (Spec 02 v0.14): raw bytes to /upload."""
+    import urllib.request
+    req = urllib.request.Request(f"{url}/upload?filename={filename}", data=data,
+                                 headers={"Content-Type": "application/octet-stream"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())["result"]["upload_id"]
+
+
 def _unzip(data, where: Path) -> Path:
     zipfile.ZipFile(io.BytesIO(data)).extractall(where)
     return where / "Sender"
@@ -142,11 +151,16 @@ def test_round_trip_with_logs_matches_the_sender(registry_server, tmp_path):
     _sender(url, tmp_path)
     before = _snapshot(url)
     _res, data = _export(url, include_logs=True)
-    folder = _unzip(data, tmp_path / "inbox")
-    summary = rpc(url, "inspect_workspace_export", {"path": str(folder)})["result"]
-    assert summary["flight_count"] == 12 and summary["engine_check"] == {"status": "same", "ok": True, "message": None}
-    imported = rpc(url, "import_workspace", {"path": str(folder)})["result"]
+    # Spec 02 v0.14: the zip itself is chosen; the app unzips it.
+    up = _upload(url, data, "Sender.zip")
+    summary = rpc(url, "inspect_workspace_export", {"upload_id": up})["result"]
+    assert summary["flight_count"] == 12 and summary["logs_in_file"] == 12
+    assert summary["engine_check"] == {"status": "same", "ok": True, "message": None}
+    imported = rpc(url, "import_workspace", {"upload_id": up})["result"]
     assert imported["manifest"]["name"] == "Sender (imported)" and imported["logs_linked"] is True
+    ws_dir = _active_dir()
+    assert imported["manifest"]["log_folders"][0]["path"] == str(ws_dir / "logs")
+    assert len(list((ws_dir / "logs").glob("*.csv"))) == 12
     match = rpc(url, "match_import", {})["result"]
     assert (len(match["found"]), len(match["missing"]), len(match["extra"])) == (12, 0, 0)
     rpc(url, "scan_workspace", {})
@@ -243,8 +257,7 @@ def test_anonymised_round_trip_same_results_and_no_identity_in_the_zip(registry_
             blob += b"".join(inner.read(m) for m in inner.namelist())
     for leak in (TAIL, SYSTEM, "KAWO", "log_2026", "47.9", "-122.2", *fids):
         assert leak.encode() not in blob, leak
-    folder = _unzip(data, tmp_path / "inbox")
-    rpc(url, "import_workspace", {"path": str(folder)})
+    rpc(url, "import_workspace", {"upload_id": _upload(url, data, "Sender.zip")})
     rpc(url, "scan_workspace", {})
     rpc(url, "rebuild_fleet", {})
     assert _snapshot(url) == before
@@ -286,11 +299,49 @@ def test_engine_versions_refuse_older_warn_newer(registry_server, tmp_path):
     assert rpc(url, "import_workspace", {"content_base64": older, "filename": "x.eisworkspace"})["ok"]
 
 
-def test_a_zip_is_refused_with_how_to_unzip(tmp_path):
-    p = tmp_path / "Sender.zip"
-    p.write_bytes(b"PK")
-    with pytest.raises(wx.ImportRefused, match="Unzip it first"):
+def test_an_export_zip_unpacks_only_its_logs(registry_server, tmp_path):
+    """Only logs/<name>.csv beside the one .eisworkspace is extracted, into
+    the new workspace's own logs/; nothing can be written outside it."""
+    url = registry_server
+    _sender(url, tmp_path)
+    _res, data = _export(url, include_logs=True)
+    src = zipfile.ZipFile(io.BytesIO(data))
+    evil = io.BytesIO()
+    with zipfile.ZipFile(evil, "w") as z:
+        for n in src.namelist():
+            z.writestr(n, src.read(n))
+        z.writestr("Sender/logs/../../escape.csv", b"x")
+        z.writestr("Sender/logs/nested/deep.csv", b"x")
+        z.writestr("Sender/logs/.hidden.csv", b"x")
+        z.writestr("Sender/other/stray.csv", b"x")
+    rpc(url, "import_workspace", {"upload_id": _upload(url, evil.getvalue(), "Sender.zip")})
+    ws_dir = _active_dir()
+    assert sorted(p.name for p in (ws_dir / "logs").iterdir()) == sorted(
+        f"log_202601{d:02d}_120000_KAWO.csv" for d in range(1, 13))
+    assert not (tmp_path / "escape.csv").exists() and not (ws_dir / "escape.csv").exists()
+
+
+def test_a_zip_without_one_export_is_refused(tmp_path):
+    p = tmp_path / "random.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("a.csv", b"x")
+    with pytest.raises(wx.ImportRefused, match="should hold one .eisworkspace"):
         wx.read_export(p)
+
+
+def test_imported_logs_move_with_the_data_location(registry_server, tmp_path):
+    """The workspace's own logs/ is under the data root; moving the root
+    rebases its path, so the moved workspace still finds its logs."""
+    from slingology_eis import data_location as dl
+    url = registry_server
+    _sender(url, tmp_path)
+    _res, data = _export(url, include_logs=True)
+    rpc(url, "import_workspace", {"upload_id": _upload(url, data, "Sender.zip")})
+    imported_id = _active_dir().name
+    target = tmp_path / "moved-root"
+    dl.change(target)
+    m = json.loads((target / "workspaces" / imported_id / "manifest.json").read_text())
+    assert m["log_folders"][0]["path"] == str(target / "workspaces" / imported_id / "logs")
 
 
 # ── §7.8 CLI, and the retired bundle ─────────────────────────────────────────
@@ -300,8 +351,7 @@ def test_cli_export_and_import(registry_server, tmp_path, capsys):
     out = tmp_path / "out"
     assert main(["export-workspace", "--workspace", "Sender", "--include-logs", "--out", str(out), "--quiet"]) == 0
     assert (out / "Sender.zip").is_file()
-    _unzip((out / "Sender.zip").read_bytes(), tmp_path / "cli-inbox")
-    assert main(["import-workspace", str(tmp_path / "cli-inbox" / "Sender"), "--name", "Via CLI", "--yes", "--quiet"]) == 0
+    assert main(["import-workspace", str(out / "Sender.zip"), "--name", "Via CLI", "--yes", "--quiet"]) == 0
     text = capsys.readouterr().out
     assert "12 of 12 flights found · 0 missing · 0 other logs held out" in text and "Analysed 12 flights." in text
 
