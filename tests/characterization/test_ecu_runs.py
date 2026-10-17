@@ -15,15 +15,15 @@ import pandas as pd
 from slingology_eis.cas import extract_engine_ecu_runs, takeoff_not_detected
 from slingology_eis.phases import detect_phases
 from slingology_eis.limits import load_engine_config
-from slingology_eis.loader import deduplicate_flights, find_duplicate_flights, load_directory
+from slingology_eis.loader import deduplicate_flights, find_duplicate_flights
 
-from ..conftest import GOLDEN_DIR, LOGS_DIR, requires_flight_logs, requires_golden_fixtures
+from ..conftest import GOLDEN_DIR, load_golden_flights, requires_flight_logs, requires_golden_fixtures
 
 
 @requires_flight_logs
 @requires_golden_fixtures
 def test_ecu_runs_match_golden():
-    flights = load_directory(str(LOGS_DIR), verbose=False)
+    flights = load_golden_flights()
     if find_duplicate_flights(flights):
         flights = deduplicate_flights(flights, prefer="most_rows", verbose=False)
 

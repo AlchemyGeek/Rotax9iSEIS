@@ -109,6 +109,20 @@ _c("baro_inhg", "inHg", "Barometric setting", "raw", "Baro Setting", "conditions
 _c("wind_spd_kt", "kt", "Wind speed", "raw", "Wind Speed", "conditions")
 _c("wind_dir_deg", "deg", "Wind direction", "raw", "Wind Dir", "conditions", chartable=False)
 
+# ── AXIS-only raw channels (Spec 01 v0.23 §6.5) ───────────────────────────
+# Carried for viewing; not used by phase detection or admission (Q10).
+_c("on_ground", None, "On the ground (as the AXIS reports it)", "raw", "On Ground", "flight", chartable=False)
+_c("flight_time_h", "h", "Flight time (AXIS)", "raw", "Flight Time", "flight", chartable=False)
+_c("tach_time_h", "h", "Engine tach time (AXIS)", "raw", "Tach Time", "engine", chartable=False)
+# General-purpose analog inputs: what they carry is wired per aircraft, so
+# the unit is unknown and they are never mapped by assumption. Pickable
+# under their raw ids; a channel assignment exposes one under a registry
+# id (e.g. gp_analog_7 → co_ppm).
+GP_ANALOG_MAX = 16
+for _n in range(1, GP_ANALOG_MAX + 1):
+    _c(f"gp_analog_{_n}", None, f"General-purpose analog input {_n} (meaning set by the aircraft's EIS wiring)",
+       "raw", f"Analog {_n}", "raw")
+
 # ── Derived (loader.py) ───────────────────────────────────────────────────
 _c("egt_max_f", "°F", "Maximum cylinder EGT", "derived", "EGT Max", "egt")
 _c("egt_min_f", "°F", "Minimum cylinder EGT", "derived", "EGT Min", "egt")

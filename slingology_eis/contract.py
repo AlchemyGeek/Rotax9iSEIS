@@ -20,6 +20,7 @@ CONTRACT_VERSION = "0.1.0"
 
 DIAGNOSTIC_CATALOG = (
     "INGEST_UNKNOWN_FORMAT",
+    "LOG_RESAMPLED_TO_1HZ",       # Spec 01 v0.23 §6.5: an AXIS frame put on a 1 s grid
     "INGEST_GROUND_SESSION",
     "INGEST_DUPLICATE_OF",
     "INGEST_MULTI_POWER_CYCLE",
@@ -116,6 +117,10 @@ class Provenance:
     source_keys: list[str] = field(default_factory=list)
     schema_version: str = CONTRACT_VERSION
     rules_hash: Optional[str] = None
+    # Spec 01 v0.23 §6.5: the channel assignments applied to this flight's
+    # log ({raw_id: registry_id}) — only when one applied, so a log without
+    # general-purpose channels carries none.
+    channel_assignments: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -127,4 +132,6 @@ class Provenance:
         }
         if self.rules_hash is not None:
             d["rules_hash"] = self.rules_hash
+        if self.channel_assignments:
+            d["channel_assignments"] = dict(self.channel_assignments)
         return d

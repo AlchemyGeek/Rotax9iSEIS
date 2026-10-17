@@ -268,7 +268,20 @@ def analyze_flight(
     params = dict(params or {})
     field_elev_ft = params.get("field_elev_ft")
 
-    df, info = load_log_bytes(log_bytes, filename)
+    # Spec 01 v0.23 §6.5: AXIS frames are resampled to 1 s with holes up to
+    # max_fill_gap_s filled; a channel assignment exposes a raw
+    # general-purpose input under a registry id. Only the assignments that
+    # apply to this log enter the params hash, so a log without such
+    # channels hashes exactly as before.
+    max_fill_gap_s = params.pop("max_fill_gap_s", 2)
+    assignments = params.pop("channel_assignments", None) or {}
+    df, info = load_log_bytes(log_bytes, filename, max_fill_gap_s=max_fill_gap_s,
+                              channel_assignments=assignments)
+    applied = {raw: target for raw, target in assignments.items() if raw in df.columns and target in df.columns}
+    if applied:
+        params["channel_assignments"] = applied
+    if max_fill_gap_s != 2:
+        params["max_fill_gap_s"] = max_fill_gap_s
     df = detect_phases(df, field_elev_ft=field_elev_ft, verbose=False)
 
     fid = _flight_id(flight_fingerprint(df, info))
@@ -333,6 +346,12 @@ def analyze_flight(
             message="Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
             refs={"airborne_rows": airborne_rows},
         ))
+    if info.source_format == "axis":
+        quality.append(Diagnostic(
+            code="LOG_RESAMPLED_TO_1HZ", severity="info", scope="file",
+            message=f"Logged at about 0.83 Hz; put on a 1-second grid — {info.filled_share:.0%} of rows filled.",
+            refs={"source_format": "axis", "filled_share": f"{info.filled_share:.3f}"},
+        ))
     if "CRUISE" not in phases_present:
         quality.append(Diagnostic(
             code="PHASE_NO_CRUISE", severity="info", scope="flight",
@@ -372,6 +391,7 @@ def analyze_flight(
         engine_profile=profile_ref,
         params_hash=params_hash,
         source_keys=[skey],
+        channel_assignments=applied or None,
     )
 
     return FlightAnalysis(

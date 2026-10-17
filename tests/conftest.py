@@ -26,6 +26,15 @@ requires_golden_fixtures = pytest.mark.skipif(
 )
 
 
+def load_golden_flights():
+    """The logs the Stage 0 goldens were captured on: every G3X log in
+    data/logs. Logs of a source added later (Garmin AXIS, Spec 01 v0.23)
+    are left out, so the goldens keep checking that G3X loads unchanged."""
+    from slingology_eis.loader import load_directory
+    return [(df, info) for df, info in load_directory(str(LOGS_DIR), verbose=False)
+            if info.source_format != "axis"]
+
+
 def import_notebook(name: str):
     """Import a notebooks/NN_name.py module by file path.
 

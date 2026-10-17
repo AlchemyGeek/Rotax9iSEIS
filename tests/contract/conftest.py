@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from slingology_eis.limits import load_engine_config
-from slingology_eis.loader import deduplicate_flights, find_duplicate_flights, load_directory
+from slingology_eis.loader import deduplicate_flights, find_duplicate_flights
 from slingology_eis.operations import analyze_flight, update_fleet
 
-from ..conftest import LOGS_DIR
+from ..conftest import LOGS_DIR, load_golden_flights
 
 _CONTRACT_ROOT = Path(__file__).resolve().parent.parent.parent / "contract"
 
@@ -18,11 +18,11 @@ def load_schema(name: str) -> dict:
 
 @pytest.fixture(scope="session")
 def real_flight_analyses():
-    """All real local flights (private data) as FlightAnalysis objects. Empty if unavailable."""
+    """All real local G3X flights (private data) as FlightAnalysis objects. Empty if unavailable."""
     if not LOGS_DIR.is_dir() or not any(LOGS_DIR.glob("*.csv")):
         return []
     cfg = load_engine_config()
-    flights = load_directory(str(LOGS_DIR), verbose=False)
+    flights = load_golden_flights()   # the G3X set the goldens were captured on
     if find_duplicate_flights(flights):
         flights = deduplicate_flights(flights, prefer="most_rows", verbose=False)
     fas = []
