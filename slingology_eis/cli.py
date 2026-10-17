@@ -407,7 +407,15 @@ def cmd_ecu(args) -> int:
         log_paths = [_resolve_log_path(p, logs_dir) for p in args.paths]
     else:
         log_paths = sorted(logs_dir.glob("*.csv"))
-    fas = [analyze_flight(p.read_bytes(), p.name, engine_cfg, engine_name) for p in log_paths]
+    fas = []
+    for p in log_paths:
+        try:
+            fas.append(analyze_flight(p.read_bytes(), p.name, engine_cfg, engine_name))
+        except Exception as e:
+            # One log this app can't read must not stop the rest (Spec 03 §5.1
+            # "Unreadable"); say which, and why.
+            reason = _workspace.unreadable_reason(e, "read" if isinstance(e, ValueError) else "analyse")
+            _log(f"skipped {p.name}: {reason}", args.quiet)
     ea = analyze_ecu(fas)
     d = ea.to_dict()
     if args.json:

@@ -91,11 +91,17 @@ def test_criterion_3_no_in_flight_run_on_any_log():
     if not logs:
         pytest.skip("no local flight logs")
     cfg = load_engine_config("916iS")
-    in_flight = [
-        (p.name, r["start_utc"]) for p in logs
-        for r in analyze_flight(p.read_bytes(), p.name, cfg, "916iS").ecu_runs
-        if r["classification"] == "IN_FLIGHT"
-    ]
+    in_flight, readable = [], 0
+    for p in logs:
+        try:
+            fa = analyze_flight(p.read_bytes(), p.name, cfg, "916iS")
+        except ValueError as e:
+            if "unrecognised header format" in str(e):
+                continue   # a format the loader can't read (shown Unreadable in the app)
+            raise
+        readable += 1
+        in_flight += [(p.name, r["start_utc"]) for r in fa.ecu_runs if r["classification"] == "IN_FLIGHT"]
+    assert readable >= 100
     assert in_flight == []
 
 

@@ -408,9 +408,13 @@ class ScanResult:
     # flights whose stored analysis predates the running engine.
     pending_new_logs: list[dict] = field(default_factory=list)
     pending_reanalysis_flight_ids: list[str] = field(default_factory=list)
+    # Spec 03 §5.1 "Unreadable": logs this scan couldn't read or analyse,
+    # {filename, reason} — recorded in unreadable.json, never silently skipped.
+    unreadable: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
+            "unreadable": self.unreadable,
             "new_flight_ids": self.new_flight_ids,
             "rematched_flight_ids": self.rematched_flight_ids,
             "now_missing_flight_ids": self.now_missing_flight_ids,
@@ -1240,6 +1244,48 @@ def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[byte
     return None
 
 
+# ── Unreadable logs (Spec 02 §5.11.2, Spec 03 §5.1 "Unreadable") ─────────────
+# A log the scan couldn't read or analyse is recorded here, keyed by its
+# source_key, with the reason — never an exclusions.json entry (it isn't a
+# decision about a flight), and never left looking like it is waiting for
+# analysis. An entry recorded by an older engine is retried (a newer engine
+# may read the format); a changed file has a new source_key and is retried.
+
+_UNREADABLE_FILE = "unreadable.json"
+
+
+def load_unreadable(ws_dir: Path) -> dict[str, dict]:
+    p = ws_dir / _UNREADABLE_FILE
+    if not p.is_file():
+        return {}
+    return json.loads(p.read_text()).get("logs", {})
+
+
+def current_unreadable(ws_dir: Path) -> dict[str, dict]:
+    """Entries recorded by the running engine — the ones not to retry."""
+    return {k: v for k, v in load_unreadable(ws_dir).items() if v.get("engine_version") == __version__}
+
+
+def _record_unreadable(ws_dir: Path, skey: str, filename: str, folder_path: str, rel: str, reason: str, detail: str) -> dict:
+    logs = load_unreadable(ws_dir)
+    entry = {"filename": filename, "log_folder": folder_path, "relative_path": rel, "reason": reason,
+             "detail": detail[:500], "engine_version": __version__, "at": _now()}
+    logs[skey] = entry
+    _write_json(ws_dir / _UNREADABLE_FILE, {"version": "1", "logs": logs})
+    return entry
+
+
+def unreadable_reason(exc: Exception, stage: str) -> str:
+    """The pilot-facing reason: a format the app doesn't recognise, or a
+    log it recognised but couldn't analyse."""
+    text = str(exc)
+    if stage == "read" and ("unrecognised header format" in text or "Date (yyyy-mm-dd)" in text):
+        return "Format not recognised — not a Garmin G3X engine log this app can read."
+    if stage == "read":
+        return "Couldn't be read — the file looks damaged or isn't a G3X engine log in a supported format."
+    return "Couldn't be analysed — the log's contents aren't in a form this app supports."
+
+
 def date_from_log_filename(filename: str) -> Optional[str]:
     """G3X names logs log_YYYYMMDD_HHMMSS_<airport>.csv — the only date a
     log that hasn't been analysed yet has (Spec 03 v0.17 §5.1)."""
@@ -1273,6 +1319,7 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
         if fa is not None and fa.provenance.get("engine_version") != __version__ and read_source_bytes(ws_dir, src) is not None:
             stale.append(fid)
     new_logs: dict[str, dict] = {}
+    unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
     for lf in manifest.log_folders:
         folder = Path(lf.path).expanduser()
         if not folder.is_dir():
@@ -1281,9 +1328,18 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
             if _exclusions.is_excluded(abspath.name, exclusions_data):
                 continue
             skey = _source_key(abspath.read_bytes())
+            if skey in unreadable:
+                continue
             if skey not in known and skey not in new_logs:
                 new_logs[skey] = _pending_log(skey, lf.path, _relative_path(abspath, folder), abspath.name)
     return list(new_logs.values()), stale
+
+
+def _unreadable(ws_dir: Path, result: "ScanResult", meta: dict, skey: str, filename: str, e: Exception, stage: str) -> None:
+    folder_path, rel, _fn = meta[skey]
+    reason = unreadable_reason(e, stage)
+    _record_unreadable(ws_dir, skey, filename, folder_path, rel, reason, f"{type(e).__name__}: {e}")
+    result.unreadable.append({"filename": filename, "reason": reason})
 
 
 def _load_import_record(ws_dir: Path) -> Optional[dict]:
@@ -1403,6 +1459,7 @@ def scan_workspace(
         if added:
             exclusions_data = _exclusions.load_exclusions(ws_dir)
 
+    unreadable_now = current_unreadable(ws_dir)
     new_batch: list[tuple[bytes, str, str]] = []  # (content, filename, source_key) for genuinely new flight_ids
     new_batch_meta: dict[str, tuple[str, str, str]] = {}  # source_key -> (folder_path, rel, filename)
 
@@ -1426,6 +1483,8 @@ def scan_workspace(
         # content, not of bytes), so defer to the batch below.
         if _exclusions.is_excluded(filename, exclusions_data):
             continue  # already recorded as not a flight (Spec 02 §5.11) — nothing new to do
+        if skey in unreadable_now and (new_keys is None or skey not in new_keys):
+            continue  # this engine already found it unreadable — shown as Unreadable, not offered again
         if new_keys is not None and skey not in new_keys:
             result.pending_new_logs.append(_pending_log(skey, folder_path, rel, filename))
             continue
@@ -1450,8 +1509,11 @@ def scan_workspace(
             on_progress({"phase": "reading", "current": i + 1, "total": len(new_batch), "filename": filename})
         try:
             df, info = load_log_bytes(content, filename)
-        except Exception:
-            continue  # unreadable — Spec 03 §5.1's "Unreadable" status; nothing to record yet
+        except Exception as e:
+            # Spec 03 §5.1 "Unreadable": recorded with its reason, shown on
+            # Flights — never left looking like it waits for analysis.
+            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "read")
+            continue
         parsed.append((df, info, content, filename, skey))
 
     dup_groups_excluded: set[str] = set()
@@ -1487,7 +1549,11 @@ def scan_workspace(
                     continue
                 # else: the user included it — an ordinary flight from here on.
 
-        df = detect_phases(df, verbose=False)
+        try:
+            df = detect_phases(df, verbose=False)
+        except Exception as e:
+            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "analyse")
+            continue
         category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)
         if category is not None:
             _exclusions.add_auto_exclusion(ws_dir, filename, category, reason)
@@ -1518,7 +1584,12 @@ def scan_workspace(
             result.rematched_flight_ids.append(fid)
             continue
 
-        fa = analyze_flight(content, filename, engine_cfg, manifest.engine_model)
+        try:
+            fa = analyze_flight(content, filename, engine_cfg, manifest.engine_model)
+        except Exception as e:
+            # One log the engine can't analyse must not abort the whole sync.
+            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "analyse")
+            continue
         # fa.flight_id is computed the same way as `fid` above (same
         # fingerprint function); use fa's own value as the source of truth.
         ident = (fa.header or {}).get("aircraft", {}).get("ident")

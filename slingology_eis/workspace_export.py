@@ -68,6 +68,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("flights/*/*", "log", "An uploaded log's own copy"),
     ("logs/*", "log", "Logs extracted from an imported export zip (Spec 02 v0.14); linked as a log folder"),
     (IMPORT_RECORD, "local", "An imported workspace's sender manifest (§7.5); no role in another export"),
+    ("unreadable.json", "derived", "Logs a scan couldn't read or analyse (Spec 03 §5.1 Unreadable); recomputed by scanning"),
     ("settings_changelog.json", "retired", "Settings changelog, unread since Spec 14 v0.13"),
 ]
 

@@ -292,6 +292,16 @@ export function Flights() {
     }
   }
 
+  // Spec 03 §5.1 "Unreadable": say which logs couldn't be read and why —
+  // never leave them looking like they wait for analysis.
+  function unreadableLines(result: ScanResult): string[] {
+    const u = result.unreadable ?? [];
+    if (!u.length) return [];
+    const reasons = Array.from(new Set(u.map((x) => x.reason)));
+    const names = u.slice(0, 3).map((x) => x.filename).join(", ") + (u.length > 3 ? `, +${u.length - 3} more` : "");
+    return [`${plural(u.length, "log")} couldn't be used: ${reasons.join(" ")} (${names})`];
+  }
+
   function bookkeepingLines(result: ScanResult): string[] {
     const parts: string[] = [];
     if (result.recovered_flight_ids.length) parts.push(`${result.recovered_flight_ids.length} recovered`);
@@ -351,6 +361,7 @@ export function Flights() {
       const lines = [
         result.new_flight_ids.length ? `${plural(result.new_flight_ids.length, "new flight")} analyzed` : "",
         result.reanalyzed_flight_ids.length ? `${result.reanalyzed_flight_ids.length} re-analyzed` : "",
+        ...unreadableLines(result),
         ...bookkeepingLines(result),
       ].filter(Boolean);
       setBanner({ kind: "summary", lines: lines.length ? lines : ["Nothing needed analysis."] });
@@ -625,6 +636,29 @@ export function Flights() {
   // its date comes from the file name, Insights and In reference read "—",
   // and clicking it offers "Analyze this flight" instead of opening an
   // empty Flight view.
+  // Spec 03 §5.1 "Unreadable": the log, its status and why — no "Analyze"
+  // offer, since analysing it again would fail the same way.
+  function unreadableRow(row: FlightTableRow) {
+    const dash = <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>—</span>;
+    return (
+      <tr key={rowKey(row)} data-testid="unreadable-row" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <td />
+        <td className="mono">{row.date || "—"} &middot; —</td>
+        <td>{dash}</td>
+        <td>{dash}</td>
+        <td>{dash}</td>
+        <td>
+          <span style={{ color: STATUS_COLOR[row.status], fontWeight: 600, fontSize: 12 }}>{STATUS_LABEL[row.status]}</span>
+          {row.unreadable_reason && (
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2, maxWidth: 320 }}>{row.unreadable_reason}</div>
+          )}
+        </td>
+        <td className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }} title={row.log_folder}>{row.filename}</td>
+        <td />
+      </tr>
+    );
+  }
+
   function pendingRow(row: FlightTableRow) {
     const key = rowKey(row);
     const offered = offerKey === key;
@@ -1095,7 +1129,7 @@ export function Flights() {
                 </thead>
                 <tbody>
                   {groupRows.map((row) => {
-                    if (row.flight_id === null) return pendingRow(row);
+                    if (row.flight_id === null) return row.status === "unreadable" ? unreadableRow(row) : pendingRow(row);
                     const fid = row.flight_id;
                     return (
                     <tr key={fid} style={{ borderBottom: "1px solid var(--border-subtle)" }}>

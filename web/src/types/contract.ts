@@ -874,6 +874,8 @@ export interface FlightTableRow {
   in_baselines: boolean | null;
   excluded_reason?: string;
   status: FlightRowStatus;
+  // Spec 03 §5.1 "Unreadable": why the log couldn't be read or analysed.
+  unreadable_reason?: string;
   different_tail_number?: string;
   filename: string;
   log_folder: string;
@@ -909,6 +911,8 @@ export interface ScanResult {
   // Spec 03 v0.17 §5.1 — waiting for the pilot's go-ahead after a scan that
   // deferred (or restricted) analysis.
   pending_new_logs?: { source_key: string; log_folder: string; relative_path: string; filename: string; date: string | null }[];
+  // Spec 03 §5.1 "Unreadable": logs this scan couldn't read or analyse.
+  unreadable?: { filename: string; reason: string }[];
   pending_reanalysis_flight_ids?: string[];
 }
 

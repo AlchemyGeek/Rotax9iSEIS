@@ -862,6 +862,19 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
             "filename": last_import.filename if last_import else (_source_filename(workspace_dir, fid) or ""),
             "log_folder": last_import.log_folder_path if last_import else "",
         })
+    # Spec 03 §5.1 "Unreadable": logs the scan couldn't read or analyse,
+    # with the reason — not "Needs analysis", which they'd never leave.
+    if ctx.get("active_workspace_id"):
+        for skey, u in ws.current_unreadable(workspace_dir).items():
+            if not (Path(u.get("log_folder", "")).expanduser() / u.get("relative_path", "")).is_file():
+                continue   # the file is gone; nothing to show
+            rows.append({
+                "flight_id": None, "source_key": skey, "date": ws.date_from_log_filename(u["filename"]) or "",
+                "airport": "—", "duration_min": None, "engine_hours": None, "insight_count": None,
+                "worst_severity": None, "in_baselines": None, "excluded_reason": None, "status": "unreadable",
+                "unreadable_reason": u.get("reason"), "different_tail_number": None,
+                "filename": u["filename"], "log_folder": u.get("log_folder", ""),
+            })
     for p in pending_logs:
         # No results yet: what the file name and folder say, nothing more.
         rows.append({
