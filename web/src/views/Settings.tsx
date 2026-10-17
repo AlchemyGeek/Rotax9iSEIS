@@ -416,6 +416,18 @@ export function Settings() {
     [draftBaselineConfig.band_kind_by_metric],
   );
 
+  // The sample settings are only for when no server answers; don't flash
+  // them before the real ones.
+  if (loading) {
+    return (
+      <NavShell>
+        <div style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</span>
+        </div>
+      </NavShell>
+    );
+  }
+
   return (
     <NavShell>
       <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>

@@ -34,6 +34,9 @@ export function Trends() {
   // state, never the sample data (that is only for when no server answers).
   const [emptyWorkspace, setEmptyWorkspace] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Nothing is drawn until the first answer: the sample data is only for
+  // when no server answers, and must not flash before a real page.
+  const [loaded, setLoaded] = useState(false);
   const [pinBusy, setPinBusy] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState<string | null>(null);
   // Spec 12 §8.4/§8.3 (Session F) — per-panel "Show detail strips",
@@ -95,6 +98,7 @@ export function Trends() {
       setUsingFixture(true);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }
 
@@ -211,6 +215,16 @@ export function Trends() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tier1.map((p) => p.panel).join(",")]);
+
+  if (!loaded) {
+    return (
+      <NavShell>
+        <div style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</span>
+        </div>
+      </NavShell>
+    );
+  }
 
   return (
     <NavShell

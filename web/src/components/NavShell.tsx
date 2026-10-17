@@ -44,6 +44,9 @@ function WorkspaceSwitcher() {
   const [newTail, setNewTail] = useState("");
   // Spec 03 v0.19 §5.8: Import workspace… from the switcher too.
   const [importing, setImporting] = useState(false);
+  // Until the server answers, show no workspace at all — not the sample
+  // registry's name, nor "+ New workspace" for someone who has some.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +63,8 @@ function WorkspaceSwitcher() {
           setActiveId(fixtureAppSettings.last_active_workspace_id);
           setUsingFixture(true);
         }
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     }
     load();
@@ -98,6 +103,10 @@ function WorkspaceSwitcher() {
     } catch {
       setBusy(false);
     }
+  }
+
+  if (!loaded) {
+    return <div data-testid="workspace-switcher-loading" style={{ minWidth: 120, height: 28 }} />;
   }
 
   if (!active) {

@@ -14,6 +14,14 @@ import type { FleetAnalysis, FleetMetric, TrendsPanel } from "../types/contract"
 // ENGINE ECU on 2 of 8 flights, a GROUND run in TAXI and an IN_FLIGHT one.
 
 const options: EChartsOption[] = [];
+// Offline, deterministically: every call fails as it does with no local
+// server — never whatever server happens to be listening on this machine.
+vi.mock("../lib/engineClient", async () => {
+  const actual = await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient");
+  const offline = new Proxy({}, { get: () => async () => { throw new TypeError("Failed to fetch"); } });
+  return { ...actual, getEngineClient: () => offline };
+});
+
 vi.mock("../components/EChartBase", () => ({
   EChartBase: (props: { option: EChartsOption }) => {
     options.push(props.option);

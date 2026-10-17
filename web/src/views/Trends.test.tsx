@@ -11,6 +11,14 @@ import { panelLabel } from "../lib/trendsUnits";
 // fixture (regenerated this session, see report) the same way a
 // disconnected browser would; the chart canvas itself still needs
 // stubbing out for jsdom.
+// Offline, deterministically: every call fails as it does with no local
+// server — never whatever server happens to be listening on this machine.
+vi.mock("../lib/engineClient", async () => {
+  const actual = await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient");
+  const offline = new Proxy({}, { get: () => async () => { throw new TypeError("Failed to fetch"); } });
+  return { ...actual, getEngineClient: () => offline };
+});
+
 vi.mock("../components/EChartBase", () => ({
   EChartBase: () => <div data-testid="chart-stub" />,
 }));

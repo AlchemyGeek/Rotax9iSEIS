@@ -11,6 +11,14 @@ import { ChartSessionProvider } from "../lib/chartSession";
   unobserve() {}
   disconnect() {}
 };
+// Offline, deterministically: every call fails as it does with no local
+// server — never whatever server happens to be listening on this machine.
+vi.mock("../lib/engineClient", async () => {
+  const actual = await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient");
+  const offline = new Proxy({}, { get: () => async () => { throw new TypeError("Failed to fetch"); } });
+  return { ...actual, getEngineClient: () => offline };
+});
+
 vi.mock("../components/ChannelTimeline", () => ({ ChannelTimeline: () => null }));
 
 // Spec 03 §5.2 / Spec 10 §4.1 (deferred from Phase B): the mirrored
@@ -39,7 +47,13 @@ vi.mock("../lib/fixtures", async () => {
   };
   limitTopic.insights.push(injectedInsight);
   oilTopic.limit_refs = [{ limit_id: "oil_temp_max", insight_id: injectedInsight.id }];
-  return { ...actual, insightSet };
+  // Offline, the page looks the flight up by id; that lookup must return the
+  // same injected insight set.
+  const fixtureFlightById = (id: string) => {
+    const known = actual.fixtureFlightById(id);
+    return known ? { ...known, insightSet } : known;
+  };
+  return { ...actual, insightSet, fixtureFlightById };
 });
 
 import { FlightView } from "./FlightView";

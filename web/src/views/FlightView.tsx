@@ -56,6 +56,8 @@ export function FlightView() {
   const [filename, setFilename] = useState(sourceFilename(fixtureFlight.source_keys[0]));
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(false);
+  // First load only: the sample flight must not flash before the real one.
+  const [loaded, setLoaded] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   // Spec 14 §7.1 — reference contribution and open change markers.
   const [referenceState, setReferenceState] = useState<ReferenceState | null>(null);
@@ -149,7 +151,10 @@ export function FlightView() {
           tl.setupFixture(flightId, known ? known.series : kacvSeries, carried);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setLoaded(true);
+        }
       }
     }
     load();
@@ -450,6 +455,16 @@ export function FlightView() {
       <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{text}</span>
     </div>
   );
+
+  if (!loaded) {
+    return (
+      <NavShell>
+        <div style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading…</span>
+        </div>
+      </NavShell>
+    );
+  }
 
   return (
     <NavShell
