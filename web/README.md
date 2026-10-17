@@ -1,32 +1,56 @@
-# React + TypeScript + Vite
+# SlingologyEIS web UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The browser front end of SlingologyEIS: React 19 + TypeScript, Vite, React Router, ECharts.
+It talks to the local server (`slingology-eis serve`, `POST /rpc`) through one client,
+`src/lib/engineClient.ts`, and renders a sample workspace from `src/fixtures/` whenever no
+server is reachable. The engine itself is Python (`../slingology_eis/`); this app holds no
+analysis logic, only presentation and the decision workflows the specs describe.
 
-Currently, two official plugins are available:
+Design and behaviour are owned by the specs in `../docs/specs/`: 03 (information
+architecture), 05 (bootstrap), 07 (flight chart), 09 (filters), 12 (Trends), 14 (Settings,
+Journal, rule editing on the card). Change the spec first.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Build and run
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm ci
+npx vite build             # → dist/, served by `slingology-eis serve`
+npm run dev                # Vite dev server with HMR, proxied to nothing — start
+                           # `slingology-eis serve` separately; the client calls 127.0.0.1:8420
+npx vitest run             # unit/component tests (jsdom)
+npx tsc -b --noEmit        # type check
+npm run lint               # oxlint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+`npm run build` is `tsc -b && vite build`; it fails today on one test-file type error
+(`src/components/EventsTable.test.tsx`), and `npx vitest run` exits non-zero on a jsdom
+`scrollIntoView` error although every test passes. Both are tracked in `../BACKLOG.md` (P5).
+
+## Layout
+
+```
+src/
+├── App.tsx            # Routes: /flights, /flights/:id, /logs/:file, /trends, /journal, /settings
+│                      # (old /baselines, /annotations, /ecu, /skipped/* redirect)
+├── views/             # One file per screen: Flights, FlightView, LogPreview, Trends, Journal, Settings
+├── components/        # Chart (ChannelTimeline, PhaseMinimap, EventStrip…), cards (InsightCard,
+│                      # EventsTable, FlightFacts), dialogs (ExcludeDialog, PinDialogs, RuleEditorPanel,
+│                      # FilterEditor), NavShell, ErrorBoundary, InlineHelp, ScopeCaption
+├── lib/               # engineClient (RPC), fixtures fallback, phases, scope wording, inline help
+│                      # registry, topic roster rule, flight facts allow-list, trends tiers/units
+├── types/contract.ts  # TypeScript mirror of the engine contract (keep in step with ../contract/schema/)
+├── fixtures/          # Sample workspace: synthetic or scrubbed, no tail/GPS/airport/real time
+└── theme/             # Colour tokens (dark theme), mirrored for ECharts canvases
+scripts/gen_cas_fixture.py   # Regenerates the synthetic CAS/Events fixture flights
+```
+
+## Conventions
+
+- Every decision control states its scope before use (`lib/scope.ts`, `ScopeCaption`): *This
+  flight only* or *All flights in this workspace*, repeated on the Apply button.
+- User-facing text says **reference**, never "baseline"; internal identifiers keep their names.
+- Help sentences live in one registry (`lib/inlineHelp.ts`); a test checks every id is used
+  exactly where the spec lists it.
+- Readiness, suppression reasons and event classes come from the engine; the UI never infers
+  one from raw numbers.
+- Tested on macOS Chrome, macOS Safari and iPad Safari only.
