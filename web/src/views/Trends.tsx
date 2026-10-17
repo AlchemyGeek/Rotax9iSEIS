@@ -30,6 +30,9 @@ export function Trends() {
   const [panels, setPanels] = useState<TrendsPanel[]>(fixturePanels);
   const [engineId, setEngineId] = useState(fixtureFlight.provenance.engine_profile.id);
   const [usingFixture, setUsingFixture] = useState(true);
+  // A reachable server with a workspace that has no flights yet: an empty
+  // state, never the sample data (that is only for when no server answers).
+  const [emptyWorkspace, setEmptyWorkspace] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pinBusy, setPinBusy] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState<string | null>(null);
@@ -58,7 +61,14 @@ export function Trends() {
       // it has to run after that write lands, not race it.
       const liveFleet = rebuild ? await client.rebuildFleet() : await client.getFleet();
       const liveTrends = await client.getTrendsPanels();
-      if (liveFleet.flight_ids.length === 0) throw new Error("empty workspace");
+      if (liveFleet.flight_ids.length === 0) {
+        setFleet(liveFleet);
+        setPanels([]);
+        setUsingFixture(false);
+        setEmptyWorkspace(true);
+        return;
+      }
+      setEmptyWorkspace(false);
       setFleet(liveFleet);
       setPanels(liveTrends.panels);
       setUsingFixture(false);
@@ -207,8 +217,13 @@ export function Trends() {
       right={
         <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {usingFixture && "sample data — "}
-          {fleet.flight_ids.length} flights &middot; {engineId} &middot;{" "}
-          {fleet.provenance.baseline_config.membership.replace(/_/g, "-")} reference
+          {fleet.flight_ids.length} flights
+          {!emptyWorkspace && (
+            <>
+              {" "}&middot; {engineId} &middot;{" "}
+              {(fleet.provenance?.baseline_config?.membership ?? "leave_one_out").replace(/_/g, "-")} reference
+            </>
+          )}
           {loading && " · loading…"}
         </span>
       }
@@ -220,6 +235,13 @@ export function Trends() {
           What has changed recently, compared against your own history.
         </div>
 
+        {emptyWorkspace ? (
+          <div data-testid="trends-empty" style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px", fontSize: 13, color: "var(--text-secondary)" }}>
+            No flights in this workspace yet, so there is nothing to trend.{" "}
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/flights"); }}>Add logs on Flights →</a>
+          </div>
+        ) : (
+          <>
         <ChangeSummaryList fleet={fleet} panels={panels} onOpenPanel={openPanel} onOpenFlights={openFlights} />
         <PastChanges events={fleet.shift_history} onOpenPanel={openPanel} onDelete={deleteEvent} busyId={deleteBusy} />
 
@@ -233,6 +255,8 @@ export function Trends() {
             onOpenFlight={(id) => navigate(`/flights/${id}`)}
           />
         </div>
+          </>
+        )}
       </div>
     </NavShell>
   );
