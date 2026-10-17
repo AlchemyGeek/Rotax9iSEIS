@@ -1,7 +1,7 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.21 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.22 — source format shown on Flights and Log preview (Spec 01 v0.23); v0.21 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
 **Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
@@ -30,6 +30,7 @@
 | 0.18 | §5.7: the Settings changelog is removed (Spec 14 v0.13). Changed settings are marked in Settings and listed in Journal as entries; the Engine tab shows the engine version in effect and its *What's new*. |
 | 0.19 | Workspace export and import replace the results bundle (Spec 02 v0.11 §7). §5.7 App tab: *Export workspace…* and *Import workspace…*, anonymise-by-default removed. §5.8 rewritten as the import flow. R2 (read-only bundle preview) and the Flight view's *Export flight bundle* retired. |
 | 0.20 | §5.8 import flow simplified (Spec 02 v0.13): no link-logs step. An unzipped export folder's `logs/` is linked automatically and the match result follows; without one the workspace is created empty and opens on Flights' *Link your logs* empty state. Trends on a workspace with no flights shows an empty state, never the sample data (which is only for when no local server answers). |
+| 0.22 | **Garmin AXIS log source** (Spec 01 v0.23, 2026-10-17). §5.1: the Source column names the format (*G3X*, *Garmin Pilot*, *AXIS*) and the drop zone no longer says "G3X logs"; §5.9: Log preview's header shows the source format and, for a resampled log, the share of filled rows. Nothing else in the UI distinguishes sources. |
 | 0.21 | §5.8: import takes the export zip as is (Spec 02 v0.14) — one *Export file* chooser (`.zip` or `.eisworkspace`); the file is sent to the local server, which unzips it and keeps the logs in the new workspace. No path typing, no unzipping by the user. |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
@@ -98,7 +99,7 @@ A **global stale banner** appears under the nav bar, not per-view, whenever any 
 Replaces the old standalone Import destination and the never-built "just a list" gap between Import and Flight view. Grounded directly in Spec 02 v0.5's data model — this view is mostly a straightforward rendering of what §5–§6 of that spec already defines, not new design.
 
 - **Header:** active workspace's name, its log folders (each marked reachable/unreachable per Spec 02 §5.5), a **Rescan** action, and a one-line summary — "48 flights · 45 in reference · 2 missing · 1 other aircraft."
-- **Adding logs (v0.17).** While the workspace has **no log folders**, the page is the onboarding surface: a large drop zone / file picker ("Drop your G3X logs here", or pick a folder) with **Add folder** — D3's non-technical first run, unchanged. Once at least one folder exists the panel disappears; the header gains **Add logs…** (drop files, or pick a folder — files are the Safari fallback, since it can't retain folder permissions) beside **Sync**, and dropping anywhere on the page still works. Import progress and the post-import summary (duplicates skipped, not-a-flight skipped) appear as a transient banner above the table, dismissable, never a permanent panel. The model stays Spec 02's: the app references logs where the pilot keeps them; a drop is a way to point at files, not to hand them over.
+- **Adding logs (v0.17).** While the workspace has **no log folders**, the page is the onboarding surface: a large drop zone / file picker ("Drop your Garmin EIS logs here", or pick a folder — G3X, Garmin Pilot export, or AXIS; v0.22) with **Add folder** — D3's non-technical first run, unchanged. Once at least one folder exists the panel disappears; the header gains **Add logs…** (drop files, or pick a folder — files are the Safari fallback, since it can't retain folder permissions) beside **Sync**, and dropping anywhere on the page still works. Import progress and the post-import summary (duplicates skipped, not-a-flight skipped) appear as a transient banner above the table, dismissable, never a permanent panel. The model stays Spec 02's: the app references logs where the pilot keeps them; a drop is a way to point at files, not to hand them over.
 - **Table, one row per flight** (duplicate exports from Spec 01's `flight_id` matching collapse into one row):
 
   | Column | Content |
@@ -108,7 +109,7 @@ Replaces the old standalone Import destination and the never-built "just a list"
   | Insights | count, colored by worst severity (§5.2's severity tokens) |
   | In reference | ✓, or "excluded — <reason>" (Spec 02 §6.3's `excluded` list — Tier 2 of Spec 02 §5.11; toggle lives here, and since v0.13 also on the insight card, Spec 14 §7.1). User-facing word is "reference"; "baseline" stays internal. |
   | Status | see below |
-  | Source | filename + folder, on hover/expand |
+  | Source | filename + folder, on hover/expand; the source format (*G3X* / *Garmin Pilot* / *AXIS*) inline (v0.22) |
 
   Clicking a row opens Flight view (§5.2).
 - **Status values**, matching Spec 02 §5.5/§5.6 exactly rather than inventing UI-only states: Analyzed · Needs analysis (discovered, not yet analysed — v0.17) · Needs re-analysis (rules/overrides/engine version changed since last computed — Spec 02 §8's `stale` flag) · Missing log (Spec 02 §5.5 — results kept, charts unavailable) · Folder unreachable ("Locate folder") · Different aircraft (Spec 02 §5.6 — informational only, never excludes) · Unreadable (parse failure).
@@ -241,7 +242,7 @@ Afterwards, the Skipped panel (§5.1) carries two more reasons: *In the sender's
 
 **Question answered:** "What is in this log the app didn't treat as a flight, and should it be included?"
 
-Reached from a Flights row whose status is *Ground session*, *Too short*, *Other aircraft* or any other loader skip reason (Spec 02 §5.11). Read-only. Shows: a header (file name, folder, why it was skipped, duration, aircraft ident, engine hours if present); the timeline chart with channel picker, phase tint and minimap exactly as in §5.2 (shared components); the log's CAS alerts and ENGINE ECU runs **by class** (`GROUND_START` / `LANE_CHECK` / `GROUND` / `IN_FLIGHT` / `GROUND_SHUTDOWN`, sub-threshold blips counted) as a plain list — not an Events table, since nothing here is analysed; and one action, **Include this log**, with the Spec 02 §5.11 confirmation and reason. No insights, no reference state, no topic cards, no filters, no notes. Including the log sends the pilot to its Flight view once analysed. Route `/logs/<file name>` (v0.17 — no fingerprint reaches the web; the file name is unique within a workspace's folders); Flight view no longer carries a preview mode.
+Reached from a Flights row whose status is *Ground session*, *Too short*, *Other aircraft* or any other loader skip reason (Spec 02 §5.11). Read-only. Shows: a header (file name, folder, why it was skipped, duration, aircraft ident, engine hours if present, the source format and — when the loader resampled the log (Spec 01 §6.5) — "1 in 6 rows interpolated" from its filled-row share; v0.22); the timeline chart with channel picker, phase tint and minimap exactly as in §5.2 (shared components); the log's CAS alerts and ENGINE ECU runs **by class** (`GROUND_START` / `LANE_CHECK` / `GROUND` / `IN_FLIGHT` / `GROUND_SHUTDOWN`, sub-threshold blips counted) as a plain list — not an Events table, since nothing here is analysed; and one action, **Include this log**, with the Spec 02 §5.11 confirmation and reason. No insights, no reference state, no topic cards, no filters, no notes. Including the log sends the pilot to its Flight view once analysed. Route `/logs/<file name>` (v0.17 — no fingerprint reaches the web; the file name is unique within a workspace's folders); Flight view no longer carries a preview mode.
 
 ## 6. Cross-cutting concerns
 
