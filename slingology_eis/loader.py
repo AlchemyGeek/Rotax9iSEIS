@@ -171,6 +171,30 @@ AXIS_COLUMN_MAP = {
 _AXIS_GP_ANALOG = re.compile(r"^engine1GeneralPurposeAnalog(\d+)$")
 AXIS_NUMERIC_COLS = ["flight_time_h", "tach_time_h"]
 # Never resampled-in by interpolation: text, booleans and annunciations.
+# AXIS CAS wording that differs from the G3X's (Spec 01 v0.24 §6.5), so a
+# CAS event, filter or Journal entry has one name per alert. Unknown tokens
+# pass through. `TER N/A` holds a "/" — the separator AXIS joins alerts with
+# — so it is matched before the string is split and gets a slash-free name
+# (the G3X logs no terrain alerts to borrow one from).
+AXIS_CAS_ALIASES = {
+    "EFIS ON BACKUP": "EFIS ON BKUP",
+    "NAV ON BACKUP": "NAV ON BKUP",
+    "TER N/A": "TER NA",
+}
+_AXIS_CAS_SLASHED = sorted((k for k in AXIS_CAS_ALIASES if "/" in k), key=len, reverse=True)
+
+
+def _normalise_axis_cas(value):
+    """An AXIS CAS string in G3X form: aliases applied, tokens joined with
+    " / " (AXIS joins them with a bare "/")."""
+    if not isinstance(value, str) or not value.strip():
+        return value
+    for raw in _AXIS_CAS_SLASHED:
+        value = value.replace(raw, AXIS_CAS_ALIASES[raw])
+    tokens = [t.strip() for t in value.split("/") if t.strip()]
+    return " / ".join(AXIS_CAS_ALIASES.get(t, t) for t in tokens)
+
+
 _CARRY_FORWARD_COLS = {"date", "time", "utc_offset", "cas_alert", "ap_state", "nav_source", "on_ground"}
 
 EGT_COLS   = ["egt1_f", "egt2_f", "egt3_f", "egt4_f"]
@@ -233,14 +257,19 @@ def _detect_source_format(header_row: str, meta: Optional[dict] = None, third_ro
                    starts directly with 'Date (yyyy-mm-dd)'
     garmin_pilot — exported/shared via the Garmin Pilot app; header row
                    is prefixed with '#', e.g. '#Date (yyyy-mm-dd)'
-    unknown      — neither pattern matched (flag for manual inspection
+    axis         — a Garmin AXIS export: Product="AXIS", a '#' units row,
+                   then camelCase column names including localDate/localTime
+    unknown      — no pattern matched (flag for manual inspection
                    rather than silently guessing)
     """
     stripped = header_row.lstrip("\ufeff")  # tolerate a UTF-8 BOM from Excel re-saves
     # Garmin AXIS (Spec 01 §6.5): Product="AXIS" in the metadata, a
     # '#'-prefixed units row, then camelCase column names.
     product = ((meta or {}).get("Product") or (meta or {}).get("product") or "").strip()
-    if product.upper() == "AXIS" and stripped.startswith("#") and third_row.lstrip().startswith("localDate"):
+    # The column set varies between AXIS logs (v0.24), so the column row is
+    # recognised by the names it holds, never by their position.
+    columns = {c.strip().lstrip("#") for c in third_row.split(",")}
+    if product.upper() == "AXIS" and stripped.startswith("#") and {"localDate", "localTime"} <= columns:
         return "axis"
     if stripped.startswith("#Date"):
         return "garmin_pilot"
@@ -425,6 +454,9 @@ def _load_axis(text: str, filename: str, info: AirframeInfo, max_fill_gap_s: flo
             df[col] = pd.to_numeric(df[col], errors="coerce")
     if "on_ground" in df.columns:
         df["on_ground"] = df["on_ground"].astype(str).str.strip().str.lower().map({"true": True, "false": False})
+
+    if "cas_alert" in df.columns:
+        df["cas_alert"] = df["cas_alert"].map(_normalise_axis_cas)
 
     df, filled_share = _resample_1hz(df, max_fill_gap_s)
     df = df.copy()   # one block, not dozens of per-column inserts

@@ -114,3 +114,42 @@ def test_analyze_flight_reports_the_resampling():
     g = analyze_flight(_flying_log_bytes(), "g.csv", load_engine_config("916iS"), "916iS")
     assert "LOG_RESAMPLED_TO_1HZ" not in [q["code"] for q in g.quality]
     assert "channel_assignments" not in g.provenance
+
+
+def test_cas_aliases_and_separator_normalised_to_g3x_wording():
+    """Spec 01 v0.24 §6.5: one name per alert across sources; unknown tokens
+    pass through; `TER N/A` (which holds the separator) stays one alert."""
+    cas = {0: "EFIS ON BACKUP/NAV ON BACKUP/ENGINE ECU", 1: "TER N/A/TRAFFIC FAIL", 2: "SOME NEW ALERT"}
+    df, _ = load_log_bytes(_axis([0, 1, 2], cas=lambda s: cas[s]), "a.csv")
+    assert list(df["cas_alert"]) == ["EFIS ON BKUP / NAV ON BKUP / ENGINE ECU", "TER NA / TRAFFIC FAIL", "SOME NEW ALERT"]
+    from slingology_eis.cas import _split_cas
+    assert _split_cas(df["cas_alert"].iloc[1]) == ["TER NA", "TRAFFIC FAIL"]
+
+
+def test_column_set_is_mapped_by_name_not_position():
+    """Spec 01 v0.24: the AXIS writes only the channels that carried data, so
+    columns come and go — unknown ones are tolerated, order doesn't matter."""
+    base = _axis([0, 1, 2]).decode().splitlines()
+    meta, units, header, rows = base[0], base[1].lstrip("#").split(","), base[2].split(","), [r.split(",") for r in base[3:]]
+    order = list(reversed(range(len(header))))
+    shuffled = "\n".join([
+        meta,
+        "#" + ",".join([units[i] for i in order] + ["degrees"]),
+        ",".join([header[i] for i in order] + ["flightDirectorPitchCommand"]),
+        *[",".join([r[i] for i in order] + ["1.5"]) for r in rows],
+    ]) + "\n"
+    a, _ = load_log_bytes(_axis([0, 1, 2]), "a.csv")
+    b, info = load_log_bytes(shuffled.encode(), "b.csv")
+    assert info.source_format == "axis"
+    for cid in ("rpm", "ias_kt", "oil_temp_f", "fuel_qty_l_gal", "cas_alert", "gp_analog_7"):
+        pd.testing.assert_series_equal(a[cid], b[cid], check_names=False, obj=cid)
+
+
+def test_a_log_opening_with_the_engine_running_raises_nothing():
+    """AXIS never logs the engine start (Spec 01 v0.24): no diagnostic beyond
+    the resampling note, and no GROUND_START run."""
+    fa = analyze_flight(_axis(list(range(0, 600))), "a.csv", load_engine_config("916iS"), "916iS")
+    codes = [q["code"] for q in fa.quality]
+    assert "LOG_RESAMPLED_TO_1HZ" in codes
+    assert not [c for c in codes if any(w in c for w in ("START", "POWER", "CYCLE", "CORRUPT"))], codes
+    assert not [r for r in fa.ecu_runs if r["classification"] == "GROUND_START"]

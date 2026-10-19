@@ -7,13 +7,15 @@ import pytest
 from slingology_eis import exclusions
 from slingology_eis.limits import load_engine_config, resolve_min_flight_duration_min
 from slingology_eis.loader import load_log_bytes
-from slingology_eis.operations import analyze_flight
+from slingology_eis.operations import analyze_ecu, analyze_flight
 from slingology_eis.phases import detect_phases
 
 from tests.conftest import LOGS_DIR, requires_flight_logs
 
 AXIS = sorted(LOGS_DIR.glob("e5d43072-*.csv")) if LOGS_DIR.is_dir() else []
 requires_axis_log = pytest.mark.skipif(not AXIS, reason="the 2026-10-14 AXIS log isn't in data/logs")
+AXIS2 = sorted(LOGS_DIR.glob("d87f9dcb-*.csv")) if LOGS_DIR.is_dir() else []
+requires_axis_log_2 = pytest.mark.skipif(not AXIS2, reason="the 2026-10-18 AXIS log isn't in data/logs")
 
 
 @requires_axis_log
@@ -62,3 +64,46 @@ def test_no_g3x_frame_is_resampled():
         g3x += 1
         assert info.source_format in ("g3x_direct", "garmin_pilot") and "_filled" not in df.columns, p.name
     assert g3x >= 115
+
+
+@requires_axis_log_2
+def test_criterion_12_second_axis_log():
+    """Spec 01 v0.24 §12 criterion 12: the 117-column log loads with the same
+    mapping, its lane check and shutdown classify, and the log opening with
+    the engine running raises nothing. Airborne time is the engine's own
+    measure (≈ 121 min, matching the AXIS's onGroundState) — the spec's
+    "≈ 107" is reported to its author."""
+    raw = AXIS2[0].read_bytes()
+    df, info = load_log_bytes(raw, AXIS2[0].name)
+    assert info.source_format == "axis" and info.engine_hours == 122.2
+    assert df["tach_time_h"].dropna().iloc[-1] == pytest.approx(124.4)
+    assert df["ias_kt"].max() == pytest.approx(135, abs=0.5) and df["rpm"].max() == 5820
+    phased = detect_phases(df.copy(), verbose=False)
+    assert exclusions.classify_for_auto_exclusion(phased, resolve_min_flight_duration_min()) == (None, None)
+
+    fa = analyze_flight(raw, AXIS2[0].name, load_engine_config("916iS"), "916iS")
+    assert [q["code"] for q in fa.quality] == ["LOG_RESAMPLED_TO_1HZ"]
+    assert fa.metrics["airborne_min"]["value"] == pytest.approx(121, abs=2)
+    ecu = analyze_ecu([fa]).to_dict()
+    assert ecu["counts"] == {"GROUND_START": 0, "LANE_CHECK": 2, "GROUND": 0, "IN_FLIGHT": 0, "GROUND_SHUTDOWN": 1}
+    lane = [r for r in ecu["runs"] if r["classification"] == "LANE_CHECK"]
+    assert [r["start_utc"][11:] for r in lane] == ["19:57:28", "19:57:39"] and all(r["lane_check_pair"] for r in lane)
+    shutdown, = [r for r in ecu["runs"] if r["classification"] == "GROUND_SHUTDOWN"]
+    assert shutdown["start_utc"][11:] == "22:07:09"
+
+    tokens = {t.strip() for v in df["cas_alert"].dropna() for t in str(v).split(" / ")}
+    assert {"EFIS ON BKUP", "NAV ON BKUP", "ENGINE ECU"} <= tokens
+    assert not {"EFIS ON BACKUP", "NAV ON BACKUP", "A", "TER N"} & tokens
+
+
+@requires_axis_log
+@requires_axis_log_2
+def test_both_axis_logs_share_one_mapping():
+    """102 and 117 columns: the extra 15 (autopilot/flight-director fields
+    and terrain/traffic alerts) map to no registry channel, so both logs
+    expose the same registry channels."""
+    a, _ = load_log_bytes(AXIS[0].read_bytes(), AXIS[0].name)
+    b, _ = load_log_bytes(AXIS2[0].read_bytes(), AXIS2[0].name)
+    from slingology_eis.channels import CHANNEL_REGISTRY
+    registry_cols = lambda df: set(df.columns) & set(CHANNEL_REGISTRY)
+    assert registry_cols(a) == registry_cols(b)
