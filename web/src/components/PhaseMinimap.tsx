@@ -109,7 +109,7 @@ export function PhaseMinimap({ phases, fullEnd, windowStart, windowEnd, onNaviga
           left: `${left}%`,
           width: `${width}%`,
           height: 14,
-          border: "1px solid var(--accent)",
+          border: "1px solid var(--brand-tint)",
           borderRadius: 3,
           pointerEvents: "none",
         }}

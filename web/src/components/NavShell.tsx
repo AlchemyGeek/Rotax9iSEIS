@@ -15,13 +15,23 @@ const client = getEngineClient();
 // values here is simpler than a round trip just to populate a picker.
 const ENGINE_MODELS = ["912iS", "915iS", "916iS"];
 
+// Spec 15 §6: the docs site, confirmed permanent. One constant — there is
+// no redirect layer to absorb a move.
+export const DOCS_URL = "https://alchemygeek.github.io/Rotax9iSEIS/";
+
+const ICON_BUTTON: React.CSSProperties = {
+  width: 32, height: 32, borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)",
+  color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "center",
+};
+
 const NAV_LINK_STYLE = ({ isActive }: { isActive: boolean }) => ({
   padding: "6px 14px",
   borderRadius: 8,
   fontSize: 13,
   fontWeight: isActive ? 600 : 500,
-  color: isActive ? "var(--accent)" : "var(--text-secondary)",
-  background: isActive ? "var(--accent-15)" : "transparent",
+  color: isActive ? "var(--brand-tint)" : "var(--text-secondary)",
+  background: isActive ? "var(--brand-fill)" : "transparent",
+  textDecoration: "none",
 });
 
 // Active workspace's name, a dropdown to the others, and "+ New workspace"
@@ -159,7 +169,7 @@ function WorkspaceSwitcher() {
               <button
                 onClick={handleCreate}
                 disabled={busy || !newName.trim()}
-                style={{ padding: "6px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
+                style={{ padding: "6px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
               >
                 {busy ? "Creating…" : "Create"}
               </button>
@@ -203,7 +213,7 @@ function WorkspaceSwitcher() {
               padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
             }}
           >
-            <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+            <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "var(--ok)" }}>
               {active.name}
               <div className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)", fontWeight: 400 }}>
                 {active.flight_count} flights &middot; {active.log_folder_count} log folder{active.log_folder_count === 1 ? "" : "s"} &middot; active
@@ -230,7 +240,7 @@ function WorkspaceSwitcher() {
                 <>
                   <div
                     onClick={() => setShowCreate(true)}
-                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--accent)", cursor: usingFixture ? "default" : "pointer" }}
+                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--link)", cursor: usingFixture ? "default" : "pointer" }}
                     title={usingFixture ? "no local server reachable" : undefined}
                   >
                     + New workspace
@@ -269,7 +279,7 @@ function WorkspaceSwitcher() {
                   <button
                     onClick={handleCreate}
                     disabled={busy || !newName.trim()}
-                    style={{ padding: "6px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
+                    style={{ padding: "6px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
                   >
                     {busy ? "Creating…" : "Create"}
                   </button>
@@ -342,18 +352,30 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {right}
+          {/* Spec 15 §6: leaves the app, so a plain link in a new tab, in the
+              muted icon color — never the brand's "active" color. */}
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Documentation (opens in a new tab)"
+            aria-label="Documentation (opens in a new tab)"
+            style={{ ...ICON_BUTTON, textDecoration: "none" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 4h6a4 4 0 014 4v13a3 3 0 00-3-3H2z" />
+              <path d="M22 4h-6a4 4 0 00-4 4v13a3 3 0 013-3h7z" />
+            </svg>
+          </a>
           <NavLink
             to="/settings"
+            title="Settings"
+            aria-label="Settings"
             style={({ isActive }) => ({
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: isActive ? "var(--accent-15)" : "var(--panel)",
-              border: "1px solid var(--border)",
-              color: isActive ? "var(--accent)" : "var(--text-secondary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              ...ICON_BUTTON,
+              background: isActive ? "var(--brand-fill)" : "var(--panel)",
+              color: isActive ? "var(--brand-tint)" : "var(--text-secondary)",
+              textDecoration: "none",
             })}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

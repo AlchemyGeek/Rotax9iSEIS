@@ -316,7 +316,7 @@ export function Trends() {
               </span>
             )}
             {panel.filtered && (
-              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--accent)" }}>
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--ok)" }}>
                 {panel.cas_id && panel.filter_max_event_s != null ? `events ≤ ${panel.filter_max_event_s} s filtered` : "filtered"}
               </span>
             )}

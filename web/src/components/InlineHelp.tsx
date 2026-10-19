@@ -74,7 +74,7 @@ export function InlineHelp({ id }: { id: InlineHelpId }) {
         }}
         style={{
           background: "none", border: "none", padding: 0, fontSize: 11, lineHeight: 1,
-          color: open ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer", fontWeight: 400,
+          color: open ? "var(--brand-tint)" : "var(--text-tertiary)", cursor: "pointer", fontWeight: 400,
         }}
       >
         ⓘ

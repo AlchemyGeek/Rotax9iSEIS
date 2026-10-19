@@ -31,7 +31,7 @@ function progressText(p: DataLocationProgress | null) {
 }
 
 const BUTTON: React.CSSProperties = { fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" };
-const PRIMARY: React.CSSProperties = { ...BUTTON, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 };
+const PRIMARY: React.CSSProperties = { ...BUTTON, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 };
 
 // The path field, what choosing it would do, and the confirm button.
 // `target` set from outside (Use default location) skips the field.
@@ -158,7 +158,7 @@ export function DataLocationPanel({ panelStyle, titleStyle }: { panelStyle: Reac
         {loc.workspace_count !== null && ` · ${plural(loc.workspace_count, "workspace")}`}
       </div>
       {outcome && (
-        <div role="status" style={{ fontSize: 12, color: "var(--text-primary)", marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(79,195,176,0.08)", border: "1px solid rgba(79,195,176,0.3)" }}>
+        <div role="status" style={{ fontSize: 12, color: "var(--text-primary)", marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "var(--tint-neutral)", border: "1px solid var(--border)" }}>
           {outcome}
         </div>
       )}

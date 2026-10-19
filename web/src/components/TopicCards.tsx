@@ -69,7 +69,7 @@ function RosterLine({ card, ...props }: TopicCardsProps & { card: TopicCardModel
         {props.canEditRules(id) && (
           <>
             {" · "}
-            <button type="button" onClick={() => props.onEditRules(id, { enable: true })} style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 12, cursor: "pointer" }}>
+            <button type="button" onClick={() => props.onEditRules(id, { enable: true })} style={{ background: "none", border: "none", padding: 0, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, fontSize: 12, cursor: "pointer" }}>
               Enable
             </button>
           </>

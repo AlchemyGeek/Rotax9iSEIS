@@ -30,9 +30,9 @@ const inputStyle: React.CSSProperties = {
 const buttonStyle = (primary: boolean, enabled = true): React.CSSProperties => ({
   padding: "5px 11px",
   borderRadius: 6,
-  background: primary ? "var(--accent)" : "transparent",
+  background: primary ? "var(--brand)" : "transparent",
   border: primary ? "none" : "1px solid var(--border)",
-  color: primary ? "var(--bg)" : "var(--text-secondary)",
+  color: primary ? "var(--on-brand)" : "var(--text-secondary)",
   fontSize: 11,
   fontWeight: primary ? 600 : 400,
   cursor: enabled ? "pointer" : "default",
@@ -304,7 +304,7 @@ export function FilterEditor({
               <button
                 type="button"
                 onClick={() => setPhases((prev) => [...new Set([...prev, ...eventPhases.filter((p) => (FILTER_PHASES as readonly string[]).includes(p))])])}
-                style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 11, cursor: "pointer" }}
+                style={{ background: "none", border: "none", padding: 0, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, fontSize: 11, cursor: "pointer" }}
               >
                 Exclude this event's phases ({eventPhases.join(" → ")})
               </button>
@@ -321,9 +321,9 @@ export function FilterEditor({
                   onClick={() => setPhases((prev) => (on ? prev.filter((x) => x !== p) : [...prev, p]))}
                   style={{
                     padding: "3px 9px", borderRadius: 12, fontSize: 11, cursor: "pointer",
-                    border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                    background: on ? "var(--accent-15)" : "transparent",
-                    color: on ? "var(--accent)" : "var(--text-secondary)",
+                    border: on ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
+                    background: on ? "var(--brand-fill)" : "transparent",
+                    color: on ? "var(--brand-tint)" : "var(--text-secondary)",
                   }}
                 >
                   {p}

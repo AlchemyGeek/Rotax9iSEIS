@@ -78,7 +78,7 @@ export function EngineGate({ children }: { children: ReactNode }) {
               About 30 MB, once — after this it opens in about a second. Everything runs in this browser; your logs never leave your computer.
             </div>
             <div style={{ height: 6, borderRadius: 3, background: "var(--panel-control)", overflow: "hidden" }}>
-              <div style={{ width: `${Math.round((100 * done) / total)}%`, height: "100%", background: "var(--accent)", transition: "width .3s" }} />
+              <div style={{ width: `${Math.round((100 * done) / total)}%`, height: "100%", background: "var(--brand-tint)", transition: "width .3s" }} />
             </div>
             <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 6 }}>
               {status?.phase === "loading" ? status.step : "starting"}

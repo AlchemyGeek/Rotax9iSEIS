@@ -33,7 +33,7 @@ function noteRef(row: EventRow): AnnotationRef {
 
 const TH: React.CSSProperties = { textAlign: "left", padding: "6px 10px", fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, whiteSpace: "nowrap" };
 const TD: React.CSSProperties = { padding: "7px 10px", fontSize: 12, whiteSpace: "nowrap", verticalAlign: "top" };
-const ACTION: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" };
+const ACTION: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" };
 
 export interface EventsTableProps {
   rows: EventRow[];
@@ -145,7 +145,7 @@ function Row({ row, muted, expanded, onToggle, ...props }: EventsTableProps & { 
         style={{
           borderBottom: expanded || filterOpen || noteOpen ? "none" : "1px solid var(--border)",
           cursor: "pointer",
-          background: active ? "rgba(79,195,176,0.10)" : undefined,
+          background: active ? "var(--brand-fill)" : undefined,
           color: muted ? "var(--text-tertiary)" : "var(--text-secondary)",
         }}
       >

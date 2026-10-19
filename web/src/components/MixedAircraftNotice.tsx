@@ -59,7 +59,7 @@ export function MixedAircraftNotice({ usingFixture }: { usingFixture: boolean })
               <button
                 onClick={() => ungroup(group)}
                 disabled={saving}
-                style={{ fontSize: 11, border: "none", background: "transparent", color: "var(--accent)", cursor: "pointer", padding: 0 }}
+                style={{ fontSize: 11, border: "none", background: "transparent", color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, cursor: "pointer", padding: 0 }}
               >
                 ungroup
               </button>
@@ -96,7 +96,7 @@ export function MixedAircraftNotice({ usingFixture }: { usingFixture: boolean })
             <button
               onClick={confirmGroup}
               disabled={selected.size < 2 || saving}
-              style={{ fontSize: 11, border: "1px solid var(--border)", background: "var(--accent)", color: "white", borderRadius: 6, padding: "3px 8px", cursor: "pointer", marginRight: 6 }}
+              style={{ fontSize: 11, border: "1px solid var(--border)", background: "var(--brand)", color: "var(--on-brand)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", marginRight: 6 }}
             >
               Confirm same aircraft
             </button>

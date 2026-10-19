@@ -60,7 +60,7 @@ export function TimelinePanel({
             <button
               type="button"
               onClick={tl.resetZoom}
-              style={{ fontSize: 11, background: "none", border: "none", color: "var(--accent)", cursor: "pointer", marginLeft: 6 }}
+              style={{ fontSize: 11, background: "none", border: "none", color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, cursor: "pointer", marginLeft: 6 }}
             >
               Full flight
             </button>
@@ -115,7 +115,7 @@ export function TimelinePanel({
                 type="button"
                 onClick={tl.confirmSaveAsPreset}
                 disabled={!tl.savePresetDraft.trim()}
-                style={{ padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: tl.savePresetDraft.trim() ? "pointer" : "default" }}
+                style={{ padding: "4px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 11, fontWeight: 600, cursor: tl.savePresetDraft.trim() ? "pointer" : "default" }}
               >
                 Save
               </button>

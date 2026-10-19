@@ -20,7 +20,7 @@ export function NoteToggle({ note, expanded, onToggle }: { note?: string; expand
     <span
       onClick={onToggle}
       title={note ? (expanded ? "hide note" : "view note") : "add a note"}
-      style={{ display: "flex", alignItems: "center", color: note ? "var(--accent)" : "var(--text-tertiary)", cursor: "pointer", flexShrink: 0 }}
+      style={{ display: "flex", alignItems: "center", color: note ? "var(--ok)" : "var(--text-tertiary)", cursor: "pointer", flexShrink: 0 }}
     >
       <NoteIcon filled={Boolean(note)} />
     </span>
@@ -87,7 +87,7 @@ export function NoteSection({
             style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text-primary)", fontSize: 12, fontFamily: "inherit", resize: "vertical" }}
           />
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <button onClick={save} disabled={!draft.trim()} style={{ padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: draft.trim() ? "pointer" : "default" }}>
+            <button onClick={save} disabled={!draft.trim()} style={{ padding: "4px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 11, fontWeight: 600, cursor: draft.trim() ? "pointer" : "default" }}>
               Save
             </button>
             <button onClick={cancel} style={{ padding: "4px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 11, cursor: "pointer" }}>

@@ -34,7 +34,7 @@ export function PhaseFilter({ selected, onChange }: Props) {
         style={{
           display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 6,
           background: allSelected ? "transparent" : "var(--panel-control)",
-          border: `1px solid ${allSelected ? "var(--border)" : "var(--accent)"}`,
+          border: `1px solid ${allSelected ? "var(--border)" : "var(--brand-tint)"}`,
           color: allSelected ? "var(--text-secondary)" : "var(--text-primary)",
           fontSize: 11, cursor: "pointer",
         }}
@@ -57,7 +57,7 @@ export function PhaseFilter({ selected, onChange }: Props) {
               disabled={allSelected}
               style={{
                 width: "100%", textAlign: "left", padding: "5px 8px", borderRadius: 6, marginBottom: 4,
-                background: "transparent", border: "none", color: allSelected ? "var(--text-tertiary)" : "var(--accent)",
+                background: "transparent", border: "none", color: allSelected ? "var(--text-tertiary)" : "var(--brand-tint)",
                 fontSize: 11, fontWeight: 600, cursor: allSelected ? "default" : "pointer",
               }}
             >

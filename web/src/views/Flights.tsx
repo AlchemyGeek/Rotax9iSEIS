@@ -41,7 +41,7 @@ const STATUS_LABEL: Record<FlightRowStatus, string> = {
 
 const STATUS_COLOR: Record<FlightRowStatus, string> = {
   analyzed: "var(--text-secondary)",
-  needs_analysis: "var(--accent)",
+  needs_analysis: "var(--ok)",
   needs_reanalysis: "var(--severity-watch)",
   missing: "var(--severity-warning)",
   folder_unreachable: "var(--severity-warning)",
@@ -765,7 +765,7 @@ export function Flights() {
                 setOfferKey(null);
                 void runAnalysis({ source_keys: row.source_key ? [row.source_key] : [], flight_ids: [] }, upload ? [upload] : []);
               }}
-              style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
             >
               Analyze this flight
             </button>
@@ -791,7 +791,7 @@ export function Flights() {
         className="mono"
         style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 260 }}
       />
-      <button type="button" onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer" }}>
+      <button type="button" onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, cursor: "pointer" }}>
         Add
       </button>
       <button type="button" onClick={() => { setAddingFolder(false); setFolderPath(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
@@ -809,7 +809,7 @@ export function Flights() {
         onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
         onDrop={(e) => { if (hasFolders) onDrop(e); }}
         data-testid="flights-page"
-        style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16, outline: dragOver && hasFolders ? "2px dashed var(--accent)" : "none", outlineOffset: -6 }}
+        style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16, outline: dragOver && hasFolders ? "2px dashed var(--brand-tint)" : "none", outlineOffset: -6 }}
       >
         <input ref={inputRef} type="file" multiple accept=".csv" style={{ display: "none" }} onChange={onPick} data-testid="file-input" />
         {pageFolders && (
@@ -890,7 +890,7 @@ export function Flights() {
                 type="button"
                 onClick={() => void runAnalysis({}, pendingUploads)}
                 title={`${plural(queue.newLogs, "log")} not analyzed yet, ${plural(queue.stale, "flight")} needing re-analysis`}
-                style={{ ...BUTTON, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}
+                style={{ ...BUTTON, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 }}
               >
                 Analyze {queueCount}
               </button>
@@ -1007,12 +1007,12 @@ export function Flights() {
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
             style={{
-              border: `2px dashed ${dragOver ? "var(--accent)" : "#2e6f64"}`, borderRadius: 16, background: "rgba(79,195,176,0.05)",
+              border: `2px dashed ${dragOver ? "var(--brand-tint)" : "var(--border)"}`, borderRadius: 16, background: "var(--tint-neutral)",
               padding: 22, display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap",
             }}
           >
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--accent-15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--tint-neutral)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3v13m0 0l-5-5m5 5l5-5" />
                 <path d="M4 18v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
               </svg>
@@ -1038,7 +1038,7 @@ export function Flights() {
             role={banner.kind === "prompt" ? "dialog" : "status"}
             aria-label={banner.kind === "prompt" ? "Analyze now?" : undefined}
             data-testid="flights-banner"
-            style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: banner.kind === "prompt" ? "1px solid var(--accent)" : "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+            style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: banner.kind === "prompt" ? "1px solid var(--brand-tint)" : "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
           >
             {banner.kind === "progress" && (
               <span>
@@ -1052,7 +1052,7 @@ export function Flights() {
                   {promptText(banner.newLogs, banner.stale)}
                 </span>
                 <span style={{ flexGrow: 1 }} />
-                <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}>
+                <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 }}>
                   Analyze now
                 </button>
                 <button type="button" onClick={() => answerPrompt(false)} style={{ ...BUTTON, padding: "5px 12px", background: "transparent" }}>
@@ -1149,8 +1149,8 @@ export function Flights() {
                   fontSize: 11,
                   cursor: "pointer",
                   border: "1px solid var(--border)",
-                  background: groupBy === g ? "var(--accent-15)" : "transparent",
-                  color: groupBy === g ? "var(--accent)" : "var(--text-tertiary)",
+                  background: groupBy === g ? "var(--brand-fill)" : "transparent",
+                  color: groupBy === g ? "var(--brand-tint)" : "var(--text-tertiary)",
                 }}
               >
                 group by {g}

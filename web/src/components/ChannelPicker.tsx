@@ -230,7 +230,7 @@ export function ChannelPicker({ registry, slotGroups, maxSlots, activeSlots, ava
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
                         padding: "6px 8px", borderRadius: 6, cursor: disabled ? "default" : "pointer",
-                        background: isActive ? "rgba(79,195,176,0.12)" : "transparent",
+                        background: isActive ? "var(--brand-fill)" : "transparent",
                         opacity: disabled ? 0.45 : 1,
                       }}
                     >
@@ -242,7 +242,7 @@ export function ChannelPicker({ registry, slotGroups, maxSlots, activeSlots, ava
                           {unavailable ? "Not recorded in this log" : replacesLabel ? `replaces ${replacesLabel}` : item.description}
                         </div>
                       </div>
-                      {isActive && <span style={{ fontSize: 11, color: "var(--accent)", flexShrink: 0 }}>✓</span>}
+                      {isActive && <span style={{ fontSize: 11, color: "var(--ok)", flexShrink: 0 }}>✓</span>}
                     </div>
                   );
                 })}

@@ -304,7 +304,7 @@ export function Journal() {
   const LINK: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 };
   const BUTTON = (primary: boolean): React.CSSProperties => ({
     padding: "5px 11px", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: primary ? 600 : 400,
-    background: primary ? "var(--accent)" : "transparent", color: primary ? "var(--bg)" : "var(--text-secondary)",
+    background: primary ? "var(--brand)" : "transparent", color: primary ? "var(--on-brand)" : "var(--text-secondary)",
     border: primary ? "none" : "1px solid var(--border)",
   });
 
@@ -319,14 +319,14 @@ export function Journal() {
         id={`journal-entry-${e.id}`}
         data-testid={`journal-entry-${e.id}`}
         data-focused={focusEntry === e.id || undefined}
-        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--accent)" : "none" }}
+        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--brand-tint)" : "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-secondary)", background: "var(--panel-control)", padding: "3px 8px", borderRadius: 10, flexShrink: 0 }}>
               {KIND_LABELS[e.kind]}
             </span>
-            <a href="#" onClick={(ev) => { ev.preventDefault(); openWhere(e); }} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            <a href="#" onClick={(ev) => { ev.preventDefault(); openWhere(e); }} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", textDecoration: "none" }}>
               {live ? live.note.slice(0, 80) : e.what}
             </a>
           </div>
@@ -352,11 +352,11 @@ export function Journal() {
               {n.text ? ` — ${n.text}` : ""}
             </span>
             {!usingFixture && (n.kind === "no_effect" ? (
-              <button type="button" style={{ ...LINK, color: "var(--accent)" }} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>
+              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>
                 Keep it
               </button>
             ) : (
-              <button type="button" style={{ ...LINK, color: "var(--accent)" }} onClick={() => setActiveTab("filters")}>
+              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => setActiveTab("filters")}>
                 Review in Limit filters →
               </button>
             ))}
@@ -420,9 +420,9 @@ export function Journal() {
 
   const chip = (active: boolean, enabled = true): React.CSSProperties => ({
     padding: "4px 10px", borderRadius: 20, fontSize: 11, cursor: enabled ? "pointer" : "default",
-    border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-    background: active ? "var(--accent-15)" : "transparent",
-    color: active ? "var(--accent)" : enabled ? "var(--text-secondary)" : "var(--text-tertiary)",
+    border: active ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
+    background: active ? "var(--brand-fill)" : "transparent",
+    color: active ? "var(--brand-tint)" : enabled ? "var(--text-secondary)" : "var(--text-tertiary)",
     opacity: enabled ? 1 : 0.5,
   });
   const tab = (active: boolean): React.CSSProperties => ({

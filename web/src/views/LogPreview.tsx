@@ -149,7 +149,7 @@ export function LogPreview() {
               </div>
               <div style={{ marginTop: 12, display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
                 {!confirming ? (
-                  <button type="button" onClick={() => setConfirming(true)} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                  <button type="button" onClick={() => setConfirming(true)} style={{ padding: "7px 14px", borderRadius: 8, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
                     Include this log
                   </button>
                 ) : (
@@ -166,7 +166,7 @@ export function LogPreview() {
                       style={{ width: "100%", boxSizing: "border-box", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12, resize: "vertical" }}
                     />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button type="button" onClick={() => void include()} disabled={including} style={{ padding: "6px 12px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, fontSize: 12, cursor: including ? "default" : "pointer" }}>
+                      <button type="button" onClick={() => void include()} disabled={including} style={{ padding: "6px 12px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, fontSize: 12, cursor: including ? "default" : "pointer" }}>
                         {including ? "Including…" : "Include"}
                       </button>
                       <button type="button" onClick={() => setConfirming(false)} style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}>

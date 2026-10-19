@@ -33,7 +33,7 @@ export function diffKind(before: Insight[], after: Insight[]): DiffKind {
 }
 
 export const DIFF_COLOR: Record<DiffKind, string> = {
-  added: "var(--accent)",
+  added: "var(--ok)",
   removed: "var(--text-tertiary)",
   changed: "var(--severity-watch)",
   same: "var(--text-tertiary)",

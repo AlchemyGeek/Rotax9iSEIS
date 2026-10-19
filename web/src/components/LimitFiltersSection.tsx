@@ -15,7 +15,7 @@ const STATUS_STYLE: Record<FilterStatus, { label: string; color: string }> = {
   review_due: { label: "REVIEW DUE", color: "var(--severity-watch)" },
   quiet: { label: "QUIET", color: "var(--severity-info-text)" },
   collecting: { label: "COLLECTING", color: "var(--severity-info-text)" },
-  stable: { label: "STABLE", color: "var(--accent)" },
+  stable: { label: "STABLE", color: "var(--ok)" },
 };
 
 function StatusBadge({ status }: { status: FilterStatus }) {
@@ -166,7 +166,7 @@ function CopyFilters({ onCopied }: { onCopied: () => void }) {
             ))}
           </select>
           <ScopeCaption scope="all_limits" />
-          <span onClick={copy} style={{ color: "var(--accent)", cursor: "pointer" }}>{APPLY_LABEL.all_limits}</span>
+          <span onClick={copy} style={{ color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, cursor: "pointer" }}>{APPLY_LABEL.all_limits}</span>
         </>
       )}
       <span onClick={() => { setSources(null); setResult(null); }} style={{ color: "var(--text-tertiary)", cursor: "pointer" }}>
@@ -244,7 +244,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
         <span className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {entries.length} filter{entries.length === 1 ? "" : "s"}
         </span>
-        <span onClick={() => setExplain((v) => !v)} style={{ fontSize: 12, color: "var(--accent)", cursor: "pointer" }}>
+        <span onClick={() => setExplain((v) => !v)} style={{ fontSize: 12, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, cursor: "pointer" }}>
           How filters differ from your reference {explain ? "▾" : "▸"}
         </span>
         <CopyFilters onCopied={() => void refresh()} />

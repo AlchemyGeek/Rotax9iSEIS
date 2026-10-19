@@ -184,6 +184,7 @@ export function InsightCard({
         borderRadius: 10,
         padding: "13px 14px",
         cursor: clickable ? "pointer" : "default",
+        textDecoration: "none",   // the whole card is the link; only "View evidence →" reads as one
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -196,7 +197,7 @@ export function InsightCard({
       <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>{insight.message.text}</div>
       {(jumpable || filterAction || secondaryAction || editAction) && (
         <div style={{ display: "flex", gap: 14, fontSize: 11, marginTop: 6 }}>
-          {jumpable && <span>View evidence →</span>}
+          {jumpable && <span className="link">View evidence →</span>}
           {secondaryAction && (
             <span
               onClick={(e) => {

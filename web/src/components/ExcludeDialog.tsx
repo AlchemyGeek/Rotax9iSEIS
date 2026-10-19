@@ -31,7 +31,7 @@ const CANCEL_BUTTON: React.CSSProperties = {
 };
 const CONFIRM_BUTTON: React.CSSProperties = {
   fontSize: 12, padding: "6px 14px", borderRadius: 999, border: "none",
-  background: "var(--accent)", color: "#0f1214", fontWeight: 600, cursor: "pointer",
+  background: "var(--brand)", color: "var(--on-brand)", fontWeight: 600, cursor: "pointer",
 };
 
 export function ExcludeConfirmDialog({
