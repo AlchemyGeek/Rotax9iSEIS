@@ -16,6 +16,7 @@ import type {
   ExclusionsResult,
   ChangedSetting,
   HostCapabilities,
+  StorageUsage,
   LogChannelRow,
   LogSourceFormat,
   ImportInfo,
@@ -181,6 +182,8 @@ export interface EngineClient {
   getLogChannels(): Promise<{ channels: LogChannelRow[] }>;
   // Spec 04 v0.4 §9.5 — what this host can do. No view uses it yet.
   getCapabilities(): Promise<HostCapabilities>;
+  // Spec 14 v0.16 §5.2.1 — space the data root takes, walked by the host.
+  getStorageUsage(): Promise<StorageUsage>;
   setChannelAssignment(raw: string, target: string | null): Promise<{ channels: LogChannelRow[] }>;
   getExcludedLogSeries(filename: string, channels: string[]): Promise<SeriesResult>;
 
@@ -275,7 +278,7 @@ export class LocalServerClient implements EngineClient {
     this.baseUrl = baseUrl;
   }
 
-  private async rpc<T>(op: string, params: unknown): Promise<T> {
+  protected async rpc<T>(op: string, params: unknown): Promise<T> {
     const request_id = `r-${nextRequestId++}`;
     const res = await fetch(`${this.baseUrl}/rpc`, {
       method: "POST",
@@ -540,6 +543,10 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ flight_analysis: FlightAnalysis; source_filename: string; source_format?: LogSourceFormat; filled_share?: number }>("preview_excluded_log", { filename });
   }
 
+  getStorageUsage() {
+    return this.rpc<StorageUsage>("get_storage_usage", {});
+  }
+
   getCapabilities() {
     return this.rpc<HostCapabilities>("get_capabilities", {});
   }
@@ -706,7 +713,84 @@ export class LocalServerClient implements EngineClient {
 // genuine exception — the page's own origin is Vite's port (5173/5174),
 // never the Python server's, so dev mode needs the fixed cross-origin
 // target `slingology-eis serve`'s own default binds to.
+// ── Which host this page runs on (Spec 04 v0.7 §9.5) ──────────────────────
+// The page fetches runtime.json before anything else: {"host":"server"} →
+// LocalServerClient on the page's origin (Vite dev keeps its fixed
+// target); {"host":"browser", …} → the engine in a Web Worker. Missing or
+// unreadable: the installation is incomplete — said so, never guessed.
+
+export type Runtime =
+  | { host: "server" }
+  | { host: "browser"; pyodide: string; engine_wheel: string }
+  | { host: "incomplete"; message: string };
+
+let runtimePromise: Promise<{ runtime: Runtime; client: EngineClient }> | null = null;
+let resolvedClient: EngineClient | null = null;
+
+async function loadRuntime(): Promise<Runtime> {
+  try {
+    const res = await fetch(new URL("runtime.json", document.baseURI), { cache: "no-store" });
+    if (!res.ok) return { host: "incomplete", message: `runtime.json: HTTP ${res.status}` };
+    const r = await res.json();
+    if (r.host === "server") return { host: "server" };
+    if (r.host === "browser" && r.pyodide && r.engine_wheel) return r;
+    return { host: "incomplete", message: "runtime.json names no host this page knows" };
+  } catch (e) {
+    return { host: "incomplete", message: `runtime.json couldn't be read (${e instanceof Error ? e.message : String(e)})` };
+  }
+}
+
+class IncompleteClient {
+  readonly message: string;
+  constructor(message: string) {
+    this.message = message;
+  }
+}
+
+/** The chosen host and its client, once runtime.json has been read. */
+export function getRuntime(): Promise<{ runtime: Runtime; client: EngineClient }> {
+  if (!runtimePromise) {
+    runtimePromise = loadRuntime().then(async (runtime) => {
+      let client: EngineClient;
+      if (runtime.host === "browser") {
+        const { BrowserWorkerClient } = await import("./browserClient");
+        client = new BrowserWorkerClient(runtime);
+      } else if (runtime.host === "server") {
+        client = new LocalServerClient(import.meta.env.DEV ? "http://127.0.0.1:8420" : window.location.origin);
+      } else {
+        client = new IncompleteClient(runtime.message) as unknown as EngineClient;
+      }
+      resolvedClient = client;
+      return { runtime, client };
+    });
+  }
+  return runtimePromise;
+}
+
+const incomplete = (message: string) => new EngineRpcError(
+  "INSTALLATION_INCOMPLETE", `This installation is incomplete: ${message}. Rebuild or reinstall the app.`);
+
+// One client for every view: calls made before runtime.json has been read
+// wait for it, then go to the chosen client. Synchronous members
+// (downloadUrl) are only used after a call has already resolved.
+const facade = new Proxy({} as EngineClient, {
+  get(_t, prop: string) {
+    if (resolvedClient) {
+      if (resolvedClient instanceof IncompleteClient) {
+        const message = resolvedClient.message;
+        return () => Promise.reject(incomplete(message));
+      }
+      const v = (resolvedClient as unknown as Record<string, unknown>)[prop];
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(resolvedClient) : v;
+    }
+    return (...args: unknown[]) => getRuntime().then(({ client }) => {
+      if (client instanceof IncompleteClient) throw incomplete(client.message);
+      const fn = (client as unknown as Record<string, (...a: unknown[]) => unknown>)[prop];
+      return typeof fn === "function" ? fn.apply(client, args) : fn;
+    });
+  },
+});
+
 export function getEngineClient(): EngineClient {
-  const baseUrl = import.meta.env.DEV ? "http://127.0.0.1:8420" : window.location.origin;
-  return new LocalServerClient(baseUrl);
+  return facade;
 }

@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { DataLocationPanel } from "../components/DataLocation";
+import { StoragePanel } from "../components/StoragePanel";
+import { useCapabilities } from "../lib/capabilities";
 import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
@@ -73,6 +75,7 @@ function fmtRange(v: number) {
 }
 
 export function Settings() {
+  const caps = useCapabilities();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab: TabId = (TAB_IDS as readonly string[]).includes(params.get("tab") ?? "") ? (params.get("tab") as TabId) : "app";
@@ -507,6 +510,13 @@ export function Settings() {
                 <div style={ROW_STYLE}>
                   <span style={{ color: "var(--text-secondary)" }}>OM reference</span>
                   <span style={{ color: "var(--text-primary)", textAlign: "right" }}>{engineLimits.engine.om_reference}</span>
+                </div>
+              )}
+              {caps && (
+                // Spec 04 §9.8: the About line names the host.
+                <div style={ROW_STYLE} data-testid="engine-host">
+                  <span style={{ color: "var(--text-secondary)" }}>Runs</span>
+                  <span style={{ color: "var(--text-primary)" }}>{caps.host === "browser" ? "in this browser" : "on the local server"}</span>
                 </div>
               )}
               {engineLimits.engine_version && (
@@ -953,7 +963,12 @@ export function Settings() {
             {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
 
             {/* Spec 14 v0.12 §5.2 — local server only; renders nothing otherwise. */}
-            <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            {caps && !caps.features.data_location && caps.features.persistent_storage_status ? (
+              // Spec 14 v0.16 §5.2.1: the browser host shows Storage instead.
+              <StoragePanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            ) : (
+              <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            )}
 
             <div style={PANEL_STYLE}>
               <div style={{ ...PANEL_TITLE_STYLE, marginBottom: 4 }}>Chart presets</div>

@@ -25,6 +25,40 @@ npm run lint               # oxlint
 `npm run build` is `tsc -b && vite build`. `npx vitest run` exits non-zero on a jsdom
 `scrollIntoView` error although every test passes; tracked in `../BACKLOG.md` (P5).
 
+## Two hosts, one build (Spec 04 v0.7 §9.5)
+
+The page reads `runtime.json` first and talks to whichever host it names:
+
+| Mode | `runtime.json` | Where the engine runs | How to run it |
+|---|---|---|---|
+| Local server | `{"host": "server"}`, served by `slingology-eis serve` itself | The Python process on your machine | `npm run build`, then `slingology-eis serve` |
+| In the browser | `{"host": "browser", "pyodide": …, "engine_wheel": …}`, written by `npm run build:browser` | A Web Worker running Pyodide, data in the browser's OPFS | `npm run build:browser`, then serve `dist/` as plain files, e.g. `python -m http.server -d dist 8000` |
+
+For development:
+
+```bash
+npm run dev            # local-server mode: the app talks to `slingology-eis serve` on 127.0.0.1:8420
+npm run dev:browser    # browser mode: builds the engine wheel into public/engine/, then Vite with EIS_HOST=browser
+```
+
+- **Engine wheel:** `npm run engine` (or `python ../scripts/build_engine_wheel.py`) builds it from `../slingology_eis`. It is a build artefact (`public/engine/`, `dist/engine/`), not committed.
+- **Pinned Pyodide version:** read from `../PYODIDE_VERSION`. In this step Pyodide is loaded from the jsDelivr CDN; self-hosting is step 5.
+- **A missing or unreadable `runtime.json`** shows "This installation is incomplete" rather than guessing a host.
+
+**Browser host, in brief:**
+- `src/worker/engine.worker.ts` loads Pyodide, numpy, pandas and the wheel, and mounts OPFS at `/data`.
+- It runs `slingology_eis.browser_host`, and syncs the filesystem after every operation, before answering.
+- `src/lib/browserClient.ts` (`BrowserWorkerClient`) is `LocalServerClient`'s twin over `postMessage`.
+- `src/lib/pageFolders.ts` lists folders and supplies log bytes when the engine asks:
+  - Chrome: `showDirectoryPicker`, with handles kept in IndexedDB;
+  - Safari: `<input webkitdirectory>` or a dropped folder.
+- The UI gates on `get_capabilities` (`src/lib/capabilities.ts`), never on which host it is.
+
+**Checks:**
+- `.venv/bin/python spike/browser-host/run_parity.py` syncs the test logs in headless Chrome and compares the export and every analysis with server mode, with memory and timings.
+- `run_walkthrough.py` drives the UI end to end.
+- The conformance tests also run under Pyodide in Node (`tests/unit/test_server.py`, call path `pyodide_node`; needs `npm ci` here for the `pyodide` package).
+
 ## Layout
 
 ```
