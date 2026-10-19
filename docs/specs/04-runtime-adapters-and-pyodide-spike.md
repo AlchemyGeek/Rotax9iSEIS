@@ -1,7 +1,7 @@
 # Spec 04 — Runtime Adapters & Pyodide Feasibility Spike
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.4 — Part B **normative**: one host, three transports; decisions D1–D7 (§9.0) and the plan (§10). Part A complete, decision **GO** (v0.3)
+**Status:** v0.5 — §9.1 aligned with step 1 as built (two progress streams, uploads registry); v0.4 — Part B **normative**: one host, three transports; decisions D1–D7 (§9.0) and the plan (§10). Part A complete, decision **GO** (v0.3)
 **Suggested repo path:** `docs/specs/04-runtime-adapters-and-pyodide-spike.md`
 **Builds on:** Spec 01 — Engine Contract v0.23 (D2, P3, §5, §7, §7.1, §8.7, Q8); Spec 02 — Results Bundle & Workspace v0.17 (§5.8, §5.9, §7); Spec 03 v0.23 and Spec 14 v0.15 for the mode-specific UI
 **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture)
@@ -15,6 +15,7 @@
 | 0.2 | Test matrix narrowed to the maintainer's actual environments: macOS Chrome, macOS Safari, iPad (§4.2). Added a support policy for untested platforms, Safari storage note (§2.8), and a way for contributors to submit their own results. |
 | 0.3 | Part A run against the **real** engine (not the synthetic proxy): a harness (`spike/`) ran `load_log` → `detect_phases` → `build_flight_metrics` on the KACV log inside Pyodide, on macOS Chrome, macOS Safari, and iPad Safari, diffed against a native golden. Result: **GO**, exact parity on all three, comfortably inside every target threshold. Appendix A/B filled in (§13). S5–S7 and stress/batch (W3/W4) remain untested; noted as follow-ups, not blockers. |
 | 0.4 | **Part B made normative** (2026-10-17). Written against 1.0.0, where the host has 90 operations and a 2,500-line workspace layer, so the September sketch (analysis in Python, workspace re-implemented in TypeScript over IndexedDB) is withdrawn. Decisions D1–D7 (§9.0): the **whole host runs in the browser** under Pyodide against an **OPFS**-backed filesystem; one transport-neutral host module behind HTTP, the worker and the CLI; logs enter the browser by page-side enumeration with Python classifying; a static `runtime.json` plus `get_capabilities` select the mode; progress is a host callback; packaging pins and self-hosts Pyodide and ships the engine as a CI-built wheel that also carries the built UI (resolves Spec 01 Q8, BACKLOG P3). Local-server mode stays fully supported — two hosts of one engine, neither a fallback. Desktop browsers first; the iPad's persistence probe is deferred. §9 rewritten, §10 is the six-step plan, §11–§12 updated. Part A and the appendices unchanged. |
+| 0.5 | **Step 1 implemented** (2026-10-19, branch `pyodide`): `slingology_eis/host.py` holds the operations, `dispatch`, `reply`, the context and one error table; `server.py` is HTTP only; `get_capabilities` live. Two details corrected to match what was built: progress has **two streams** (scan, data move), so the callback is `emit_progress(stream, update)`; files the page supplies (import, log upload) enter through an **uploads registry** the transport fills and the host reads by id — the inbound twin of `deliver_file`. The dispatcher refuses requests during a data move only; a scan blocks just the data-location change (as before). §10 step 1 marked done. |
 
 ---
 
@@ -241,11 +242,12 @@ Part A answered "can the engine run in a browser?" (yes). Part B answers "how do
 | The host asks the transport for | Disk (server, CLI) | Browser (worker) |
 |---|---|---|
 | Where the data root is | Spec 02 §5.8.1 resolution | The OPFS mount, fixed |
-| `emit_progress(update)` | Store in `ctx` for `get_*_progress` polling | Post a `progress` message tagged with the `request_id` |
+| `emit_progress(stream, update)` — streams: `scan`, `data_location` | Store the latest update per stream for `get_*_progress` polling | Post a `progress` message tagged with the `request_id` and stream |
 | `deliver_file(path, filename)` | Register a one-shot `/download/<token>` URL | Transfer the bytes to the page, which saves them |
+| Inbound files (`ctx["uploads"]`, looked up by id) | `/upload` writes the file and registers it | The page transfers bytes; the worker writes them to a scratch path and registers them |
 | A `LogSource` for a folder | Walk the disk (§9.3) | Listing and bytes supplied by the page (§9.3) |
 
-The dispatcher, not the transport, enforces the rules every mode shares: an operation that needs an active workspace, operations allowed while the data location is missing, the busy check during a scan. The contract suite calls `dispatch` directly (§9.6), so a transport cannot change behaviour without the suite noticing.
+The dispatcher, not the transport, enforces the rules every mode shares: an operation that needs an active workspace, operations allowed while the data location is missing, the busy check during a data move (a running scan blocks only a change of data location). The host keeps its own busy flags; the progress store is for clients. The contract suite calls `dispatch` directly (§9.6), so a transport cannot change behaviour without the suite noticing.
 
 ### 9.2 Browser transport
 
@@ -337,7 +339,7 @@ Work happens on branch `pyodide`, off `main` at 1.0.0, merged back when step 4 p
 
 | Step | What | Done when |
 |---|---|---|
-| 1 | **Extract the host.** The operations, their table and the dispatcher move out of `server.py` into a transport-neutral host module; `server.py` keeps only HTTP. The host receives `emit_progress` and `deliver_file` from its transport. `get_capabilities` added. The contract suite runs against `dispatch()` in-process (§9.6 mode 1) and over HTTP (mode 2). | No behaviour change; suite green both ways; `server.py` contains no operation bodies. |
+| 1 ✅ | **Extract the host.** The operations, their table and the dispatcher move out of `server.py` into a transport-neutral host module; `server.py` keeps only HTTP. The host receives `emit_progress` and `deliver_file` from its transport. `get_capabilities` added. The contract suite runs against `dispatch()` in-process (§9.6 mode 1) and over HTTP (mode 2). | Done 2026-10-19 (`57fb871`): `host.py`; 99 ops tests × 2 call paths; 792 passed. |
 | 2 | **Log sources.** `LogSource` with a disk implementation wrapping today's walk; the scan accepts an external listing plus byte provider; export returns a file to the host, which decides between `/download/` and bytes. Still server-only. | Suite green; a test drives a scan with a supplied listing and in-memory bytes and gets the same workspace as the disk walk. |
 | 3 | **Persistence probe** (§9.4) on macOS Chrome and Safari. Half a day. Decides whether D2 stands or IDBFS is needed. | Written results in Appendix D. |
 | 4 | **Browser host.** Worker entry module, `worker.ts`, `BrowserWorkerClient`, OPFS data root, `runtime.json`, capability gating in the UI (Flights folder picker and reconnect state, Settings → App Storage panel, export download, loading state, navigate-away warning). Node conformance run (§9.6 mode 3). | A workspace of the full test-log set created, synced, browsed, exported and re-imported in Chrome and Safari; documents byte-identical to the server's; memory within §7; suite green three ways. |
