@@ -1473,7 +1473,8 @@
 </figure>
 <h2 id="workspaces">Workspaces<a class="headerlink" href="#workspaces" title="Permanent link">&para;</a></h2>
 <p>A workspace is where the app keeps everything it derives from your logs — each flight's analysis, your <a href="../your-reference/">reference</a>, the <a href="../your-decisions/">decisions</a> you have made, your <a href="../the-journal/">Journal</a>. It is tied to one engine model, chosen when you create it, because the Operators Manual limits differ between the 912iS, 915iS and 916iS.</p>
-<p>A workspace is defined by <strong>one or more log folders</strong>. Subfolders are included. Add the folder where you already keep your logs and the app reads whatever is there; add logs to that folder and the next <strong>Sync</strong> picks them up. If a folder is on a disk that is unplugged, the app says so and offers <em>Locate folder</em> when it is back; a single log that has gone missing keeps its results until you choose to remove it.</p>
+<p>A workspace is defined by <strong>one or more log folders</strong>. Subfolders are included. Add the folder where you already keep your logs (<strong>Choose folder…</strong>, or drop files onto the page) and the app reads whatever is there; add logs to that folder and the next <strong>Sync</strong> picks them up. A single log that has gone missing keeps its results until you choose to remove it.</p>
+<p>Because the app runs in your browser, it reads your folders only with the browser's permission. Chrome keeps that permission between visits and occasionally asks you to confirm it (<strong>Allow access</strong> on the folder row). Safari forgets it when you leave, so the row shows <strong>Not connected — reconnect</strong> on your next visit; everything already analysed is still there, and you reconnect only to sync new logs or open a flight's charts. When the app runs as a program on your own computer instead, folders are typed as paths and stay connected; if one is on a disk that is unplugged, the app says so and offers <em>Locate folder</em> when it is back.</p>
 <p>You can have as many workspaces as you like, and switch between them from the name in the top bar. Two reasons to have more than one:</p>
 <ul>
 <li><strong>Another aircraft.</strong> Everything the app learns about "usual" is learned from one engine and never applied to another, so a second aircraft needs its own workspace. If logs from two tail numbers end up in one workspace the app notices and says so on every page where it matters.</li>
@@ -1493,16 +1494,21 @@
 <tbody>
 <tr>
 <td>Your logs</td>
-<td>Wherever you keep them. Never copied or modified.</td>
+<td>Wherever you keep them. Never copied or modified. (Logs that arrived inside an imported workspace are the one exception: the app keeps its own copy of those, with that workspace.)</td>
 </tr>
 <tr>
 <td>Workspaces and their results</td>
-<td>A data folder on your computer (<code>~/SlingologyEIS</code> by default, shown and changeable under <em>Settings → App → Data location</em>). Derived from your logs; safe to delete and rebuild.</td>
+<td>In your browser's private storage for the site — on this device, in this browser. <em>Settings → App → Storage</em> shows the space used and whether the browser has agreed to keep it; <strong>Delete all data</strong> there empties it. It survives restarts and app updates, but not clearing the site's data, so keep a <a href="../sharing-a-workspace/">workspace export</a> as your backup. Derived from your logs; safe to delete and rebuild.</td>
+</tr>
+<tr>
+<td>…when you run the app on your own computer</td>
+<td>A data folder (<code>~/SlingologyEIS</code> by default, shown and changeable under <em>Settings → App → Data location</em>). Back it up like any other folder.</td>
 </tr>
 </tbody>
 </table>
+<p>A workspace belongs to the browser it was made in. To use it in another browser or on another computer, export it there and import it here — the export carries every decision you made, and the logs if you ask.</p>
 <hr />
-<p><em>Walkthrough: <a href="../../walkthroughs/first-workspace/">Install and your first workspace</a>.</em></p>
+<p><em>Walkthrough: <a href="../../walkthroughs/first-workspace/">Open the app and your first workspace</a>.</em></p>
 
 
 

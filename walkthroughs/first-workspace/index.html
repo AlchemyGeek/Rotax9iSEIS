@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#install-and-your-first-workspace" class="md-skip">
+        <a href="#open-the-app-and-your-first-workspace" class="md-skip">
           Skip to content
         </a>
       
@@ -1003,10 +1003,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-install-and-start" class="md-nav__link">
+  <a href="#1-open-the-app" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Install and start
+        1. Open the app
       
     </span>
   </a>
@@ -1062,6 +1062,28 @@
     <span class="md-ellipsis">
       
         6. What to expect from the first flights
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-keep-a-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Keep a copy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-app-on-your-own-computer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the app on your own computer
       
     </span>
   </a>
@@ -1366,10 +1388,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-install-and-start" class="md-nav__link">
+  <a href="#1-open-the-app" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Install and start
+        1. Open the app
       
     </span>
   </a>
@@ -1431,6 +1453,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#7-keep-a-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Keep a copy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-app-on-your-own-computer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the app on your own computer
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1448,20 +1492,14 @@
 
 
 
-<h1 id="install-and-your-first-workspace">Install and your first workspace<a class="headerlink" href="#install-and-your-first-workspace" title="Permanent link">&para;</a></h1>
-<p><em>About fifteen minutes, most of it the app working. You need a Mac, Windows or Linux computer with Python 3.10 or later, Node.js 20 or later (used once, to build the app), and a folder of engine logs from your Garmin G3X, Garmin Pilot or AXIS.</em></p>
-<h2 id="1-install-and-start">1. Install and start<a class="headerlink" href="#1-install-and-start" title="Permanent link">&para;</a></h2>
-<p>Open a terminal and run:</p>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/AlchemyGeek/Rotax9iSEIS.git
-<span class="nb">cd</span><span class="w"> </span>Rotax9iSEIS
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
-<span class="nb">cd</span><span class="w"> </span>web<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>ci<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>..
-slingology-eis<span class="w"> </span>serve
-</code></pre></div>
-<p>The last line prints an address — <code>http://127.0.0.1:8420/</code> — open it in your browser (tested on macOS Chrome and Safari, and iPad Safari). Leave the terminal window open while you use the app; <code>Ctrl-C</code> there stops it.</p>
+<h1 id="open-the-app-and-your-first-workspace">Open the app and your first workspace<a class="headerlink" href="#open-the-app-and-your-first-workspace" title="Permanent link">&para;</a></h1>
+<p><em>About fifteen minutes, most of it the app working. You need a computer with a current browser — the app is tested on macOS Chrome and Safari — and a folder of engine logs from your Garmin G3X, Garmin Pilot or AXIS. Nothing to install.</em></p>
+<h2 id="1-open-the-app">1. Open the app<a class="headerlink" href="#1-open-the-app" title="Permanent link">&para;</a></h2>
+<p>Open <strong><a href="APP_URL">SlingologyEIS</a></strong> in your browser. The first time, the page sets up the analysis engine — about 30 MB, downloaded once and kept by your browser — and shows its progress. Later visits take a few seconds.</p>
+<p>Everything the app does from here on happens inside your browser, on your computer. Your logs are read from your own folders and never uploaded; the results are kept by your browser, on this device. There is no account and no server holding your data.</p>
 <div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Nothing listens on your network. The app runs on your computer and is reachable only from it. A packaged build that removes the Node step is on the project's list.</p>
+<p class="admonition-title">Prefer to run it yourself?</p>
+<p>The same app can run as a small program on your own computer instead, with the workspace kept in an ordinary folder. See <a href="#running-the-app-on-your-own-computer">Running the app on your own computer</a> at the end of this page. Everything else in this guide is the same either way.</p>
 </div>
 <h2 id="2-create-a-workspace">2. Create a workspace<a class="headerlink" href="#2-create-a-workspace" title="Permanent link">&para;</a></h2>
 <p>The app asks for a workspace <strong>name</strong> and the <strong>engine model</strong>, with an optional tail number. Name it after the aircraft. Choose the engine carefully — it decides which Operators Manual limits apply and cannot be changed later (you would make a new workspace).</p>
@@ -1470,15 +1508,24 @@ slingology-eis<span class="w"> </span>serve
 <figcaption>Your new workspace, before any logs.</figcaption>
 </figure>
 <h2 id="3-point-it-at-your-logs">3. Point it at your logs<a class="headerlink" href="#3-point-it-at-your-logs" title="Permanent link">&para;</a></h2>
-<p>Click <strong>Add folder</strong> and type the path to the folder where you keep your logs — subfolders are included. Or drop files onto the page. The app only <em>reads</em> this folder; it never copies, moves or renames anything in it. You can add more folders later, and if you move logs around, <strong>Sync</strong> finds them again.</p>
+<p>Click <strong>Choose folder…</strong> and pick the folder where you keep your logs — subfolders are included. Or drop files onto the page. The app only <em>reads</em> this folder; it never copies, moves or renames anything in it. You can add more folders later, and if you move logs around, <strong>Sync</strong> finds them again.</p>
+<p>How the browser remembers the folder differs:</p>
+<ul>
+<li><strong>Chrome</strong> keeps the folder from one visit to the next. Now and then it asks you to confirm — the folder row shows <strong>Allow access</strong>; one click and you are back.</li>
+<li><strong>Safari</strong> does not keep folder access between visits. Your flights and analyses are all still there; the folder row says <strong>Not connected — reconnect</strong>, and you pick the folder again only when you want to sync new logs or open a flight's charts. The app says this once, on the row, the first time.</li>
+</ul>
 <p>The app lists everything it found with <em>Needs analysis</em> beside each log, and an <strong>Analyze N</strong> button appears.</p>
 <h2 id="4-analyze">4. Analyze<a class="headerlink" href="#4-analyze" title="Permanent link">&para;</a></h2>
-<p>Click <strong>Analyze</strong>. The app reads each log, decides whether it is a flight, works out the phases of flight, checks the Operators Manual limits and builds your reference. A season of logs takes a minute or two; the page shows progress per log.</p>
+<p>Click <strong>Analyze</strong>. The app reads each log, decides whether it is a flight, works out the phases of flight, checks the Operators Manual limits and builds your reference. A season of logs takes a minute or two; the page shows progress per log. Leave the tab open until it finishes — the browser warns you if you try to close it mid-way.</p>
 <p>When it finishes, a notice sums up what happened — <em>58 new flights analyzed · 59 skipped — not a flight</em> — and the list fills in.</p>
 <figure class="screenshot">
 <p><img alt="The Flights page after the first analysis" class="screenshot" src="../../img/flights-overview.png" /></p>
 <figcaption>Every flight with its date, duration, engine hours, insights and source file.</figcaption>
 </figure>
+<div class="admonition warning">
+<p class="admonition-title">This workspace lives in your browser</p>
+<p>Clearing the site's data would remove it. Before you go further, see <a href="#7-keep-a-copy">step 7, Keep a copy</a> — an export takes a few seconds.</p>
+</div>
 <h2 id="5-look-at-what-was-skipped">5. Look at what was skipped<a class="headerlink" href="#5-look-at-what-was-skipped" title="Permanent link">&para;</a></h2>
 <p>Click <strong>Skipped</strong>. Logs that did not become flights are listed with the reason: a ground run, a flight under ten minutes, a log with a gap in it. This is normal — every engine start writes a log, and most of a year's logs are not flights. If one looks wrong, open it to check and click <strong>Include</strong>.</p>
 <figure class="screenshot">
@@ -1487,7 +1534,18 @@ slingology-eis<span class="w"> </span>serve
 </figure>
 <h2 id="6-what-to-expect-from-the-first-flights">6. What to expect from the first flights<a class="headerlink" href="#6-what-to-expect-from-the-first-flights" title="Permanent link">&para;</a></h2>
 <p>Your reference needs about ten flights before it can say what is <em>usual</em> for your engine. Until then, cards show their numbers with <em>still building</em> instead of a comparison, and the Trends page says <em>building reference</em>. The Operators Manual checks work from the first flight.</p>
+<h2 id="7-keep-a-copy">7. Keep a copy<a class="headerlink" href="#7-keep-a-copy" title="Permanent link">&para;</a></h2>
+<p>Your workspace lives in your browser's storage for this site. That survives closing the tab, restarting the browser and app updates — but it is gone if you clear the site's data, and a browser short of disk space — or Safari, after a long time without a visit — may clear it on its own. <em>Settings → App → Storage</em> shows how much space the app uses and whether the browser has agreed to keep it. <strong>Export workspace…</strong> on the same page writes a single file that restores everything; make one once your first analysis is done, and again after you have made decisions you would not want to redo. The <a href="../export-import/">export and import</a> walkthrough has the details.</p>
 <p><strong>Next:</strong> <a href="../first-flight/">Reading your first flight</a>. To understand what just happened, <a href="../../concepts/logs-flights-workspaces/">Logs, flights and workspaces</a>.</p>
+<hr />
+<h2 id="running-the-app-on-your-own-computer">Running the app on your own computer<a class="headerlink" href="#running-the-app-on-your-own-computer" title="Permanent link">&para;</a></h2>
+<p>The app can also run as a small program on your Mac, Windows or Linux computer, with the workspace kept in an ordinary folder (<code>~/SlingologyEIS</code>) rather than in the browser. Pilots choose this when they want the data in a folder they can back up like any other, when several browsers on one machine should share one workspace, or when they add log folders by typing a path. The screens, the analysis and the results are identical.</p>
+<p>You need Python 3.10 or later. Download the latest <code>slingology_eis…whl</code> file from the project's <a href="https://github.com/AlchemyGeek/Rotax9iSEIS/releases">releases page</a>, then in a terminal:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>slingology_eis-&lt;version&gt;-py3-none-any.whl
+slingology-eis<span class="w"> </span>serve
+</code></pre></div>
+<p>The last line prints an address — <code>http://127.0.0.1:8420/</code> — open it in your browser. Leave the terminal window open while you use the app; <code>Ctrl-C</code> there stops it. Nothing listens on your network; the app is reachable only from this computer.</p>
+<p>The differences you will notice: log folders are added by typing their path (or dropping files) and stay connected without any browser permissions; <em>Settings → App</em> shows <strong>Data location</strong> instead of <em>Storage</em>; and the workspace is in that folder, so the browser's site data does not matter. A workspace export from one way of running the app imports into the other.</p>
 
 
 
