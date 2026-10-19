@@ -1,6 +1,16 @@
+---
+hide:
+  - toc
+---
+
+<div class="brand-lockup" markdown>
+![SLINGOLOGY EIS](img/slingology-eis-logo.png)
+<div markdown>
 # SlingologyEIS
 
 **Engine health analytics for Rotax iS aircraft engines — built for how a FADEC engine actually works.**
+</div>
+</div>
 
 SlingologyEIS reads the engine logs your Garmin avionics already record on every flight and answers two questions about each one:
 

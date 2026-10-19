@@ -1,4 +1,4 @@
-site_name: SlingologyEIS
+site_name: SLINGOLOGY EIS
 site_description: Engine health analytics for Rotax iS aircraft engines — what it tells you and why
 site_url: https://alchemygeek.github.io/Rotax9iSEIS/
 repo_url: https://github.com/AlchemyGeek/Rotax9iSEIS
@@ -10,6 +10,8 @@ edit_uri: ""
 theme:
   name: material
   language: en
+  logo: img/eis-icon.png
+  favicon: img/favicon-32.png
   features:
     - navigation.sections
     - navigation.top
@@ -21,15 +23,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
