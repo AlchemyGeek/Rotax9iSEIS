@@ -1,7 +1,7 @@
 # SlingologyEIS — Backlog
 
-Last updated: October 19, 2026 (the 1.1.0 merge of `pyodide` into `main`)
-Toolkit version: 1.1.0 · Research paper: Edition 0.3
+Last updated: October 19, 2026 (the 1.0.1 merge of `pyodide` into `main`)
+Toolkit version: 1.0.1 · Research paper: Edition 0.3
 
 Open work, organised by the spec or area that owns it. Everything completed is in
 [CHANGELOG.md](CHANGELOG.md); this file no longer carries struck-through history.
@@ -15,7 +15,7 @@ program is decided when the current screen reviews finish (see §2).
 
 ### P1. Browser mode — offline and polish (Spec 04 step 6)
 **Type:** code · **Owner:** Spec 04 §9.5, Q10
-Shipped in 1.1.0: the app runs in the browser from a static site with a self-hosted runtime.
+Shipped in 1.0.1: the app runs in the browser from a static site with a self-hosted runtime.
 Left from the plan: the service worker that precaches the runtime and wheel so a visited site
 opens and analyses with no network (closes Spec 04 S5); wire the persistent-storage request and
 the eviction notice fully; a support checklist (which browsers, what storage means); Pyodide interpreter snapshots to cut the warm
@@ -48,7 +48,7 @@ test setup or guard the call.
 
 ### P6. Documentation site — next steps
 **Type:** docs · **Owner:** Spec 13
-The first edition shipped in 1.1.0 (concept pages, walkthroughs, reference; MkDocs Material on
+The first edition shipped in 1.0.1 (concept pages, walkthroughs, reference; MkDocs Material on
 GitHub Pages). Open: retake the screenshot batch after each UI change; the generated "what's new"
 page the Settings → Engine tab points at; a browser-mode walkthrough (Choose folder, Storage,
 reconnect on Safari); searchable/askable via an AI assistant, as Spec 13 first imagined.
@@ -299,7 +299,7 @@ and its 1-second grid; 58 flights from 120 logs.
 
 ### H3. Community announcement
 **Type:** docs
-The Discord post draft in the project space, updated for 1.1.0: the hosted site needs no
+The Discord post draft in the project space, updated for 1.0.1: the hosted site needs no
 install, the documentation site, and the `pip install` path for the server mode.
 
 ---

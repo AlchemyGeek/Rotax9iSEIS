@@ -15,7 +15,7 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
-## 1.1.0 — October 19, 2026
+## 1.0.1 — October 19, 2026
 
 **The in-browser release.** The merge of the `pyodide` branch into `main`. SlingologyEIS now
 runs in two ways over one engine: as before, a local server on your own computer
@@ -27,7 +27,7 @@ Slingology visual identity, and a second Garmin AXIS log's findings.
 
 **Existing workspaces:** the version jump from 1.0.0 marks every stored flight for re-analysis
 on the next Sync. Say yes once. The only analysis change since 1.0.0 is the AXIS CAS alias
-normalisation (1.0.1 below); G3X logs are unaffected.
+normalisation (below); G3X logs are unaffected.
 
 ### Running in the browser (Spec 04 Part B)
 

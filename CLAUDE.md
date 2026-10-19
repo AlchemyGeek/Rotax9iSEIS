@@ -16,7 +16,7 @@
 ## Branches
 
 - `main` — releasable. Bug fixes are committed here directly.
-- `webui` (merged at 1.0.0) and `pyodide` (merged at 1.1.0) — kept for history, no new work.
+- `webui` (merged at 1.0.0) and `pyodide` (merged at 1.0.1) — kept for history, no new work.
   Feature work of that size goes on a branch off `main`, merged back as a release; `main` is
   merged into it along the way to pick up fixes, and a bug found on the branch is fixed on
   `main` first.
