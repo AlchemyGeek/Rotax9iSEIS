@@ -1,0 +1,97 @@
+{
+  "at": "2026-10-19T18:51:50.537835+00:00",
+  "logs": 30,
+  "steps": [
+    {
+      "step": "first visit shows the engine-loading state",
+      "ok": true
+    },
+    {
+      "step": "engine ready (cold)",
+      "ok": true,
+      "seconds": 3.9
+    },
+    {
+      "step": "workspace created; Flights offers Choose folder\u2026",
+      "ok": true
+    },
+    {
+      "step": "folder chosen (input path)",
+      "ok": true
+    },
+    {
+      "step": "Sync analysed the logs with a live progress line",
+      "ok": true,
+      "button": "Analyze 30",
+      "progress_samples": [
+        "Analyzing 1/30",
+        "Analyzing 15/30",
+        "Analyzing 16/30",
+        "Analyzing 18/30",
+        "Analyzing 2/30",
+        "Analyzing 28/30"
+      ],
+      "seconds": 18.5,
+      "flight_rows": 13
+    },
+    {
+      "step": "a flight opens and its chart renders",
+      "ok": true,
+      "canvases_or_svgs": 6
+    },
+    {
+      "step": "a rule edited on a card",
+      "ok": true
+    },
+    {
+      "step": "Journal lists the rule edit",
+      "ok": true
+    },
+    {
+      "step": "Trends renders",
+      "ok": true
+    },
+    {
+      "step": "Settings \u2192 App shows Storage",
+      "ok": true,
+      "text": [
+        "Space used: 754 KBper workspace",
+        "The browser may clear this data if space runs low \u2014 export a copy to be safe."
+      ]
+    },
+    {
+      "step": "export downloads",
+      "ok": true,
+      "file": "Walkthrough.zip",
+      "bytes": 5257371
+    },
+    {
+      "step": "About line names the host",
+      "ok": true
+    },
+    {
+      "step": "after reload everything is still there",
+      "ok": true,
+      "flight_rows": 13
+    },
+    {
+      "step": "engine ready (warm, after restart)",
+      "ok": true,
+      "seconds": 2.9
+    },
+    {
+      "step": "after restart: flights there; the session folder says Not connected \u2014 reconnect",
+      "ok": true,
+      "flight_rows": 13
+    },
+    {
+      "step": "delete asks, naming the workspace count",
+      "ok": true
+    },
+    {
+      "step": "delete all data \u2192 the first-run state",
+      "ok": true
+    }
+  ],
+  "page_errors": []
+}
