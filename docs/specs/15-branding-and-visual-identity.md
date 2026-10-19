@@ -1,6 +1,6 @@
 # Spec 15 — Branding & Visual Identity
 
-**Status:** v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
+**Status:** v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
 **Depends on:** Spec 13 (Documentation System — §11 Q1 hosting), Spec 03 (§4 nav, §5.2 phase palette, §5.7 Settings/gear icon placement)
 **Scope:** SlingologyEIS's place in the Slingology app family — shared identity elements, this app's color, and how both the web UI and the docs website apply them.
 
@@ -61,6 +61,8 @@ This replaces today's placeholder teal (`accent: "#4fc3b0"` in `theme/colors.ts`
 
 **`chartRpm`** — the RPM series on the flight chart — shared the placeholder teal by coincidence, not meaning. It keeps `#4fc3b0` as its own token, independent of the brand, so the RPM line looks as it always has and never reads as the brand.
 
+**Top bar (v0.5).** The app's top bar opens with the family mark (the icon alone, cropped from the delivered logo) and the §1 lockup — **SLINGOLOGY** bold, **EIS** smaller underneath — in place of the plain *SlingologyEIS* text. The mark keeps its own artwork colors; it is identity, not one of the accent roles above.
+
 ## 5. Instructions for Code
 
 - Add the brand color as its own named token group in `theme/colors.ts` (`brand.accent`, `brand.tint`, `brand.fill15`) and in `index.css`, separate from the `severity` and `phase` token groups — not folded into either.
@@ -98,3 +100,4 @@ None (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), t
 | 0.2 | §2: phase-legend check done — `#3D5A73` confirmed distinct from `TAKEOFF_ROLL` indigo, no longer an open item. Added §6: Docs button next to Settings in the top bar, muted icon color (not brand accent, per §3/§4's reservation rule), opens in a new tab, links to the GitHub Pages docs site. |
 | 0.3 | Renumbered 07 → 15 after checking the real repo: 07–14 are already in use (01–05, 07–10, 12–14; 06 and 11 are reserved, not free). Added the `chartRpm` token finding (§4/§5 — a second, previously-missed use of the placeholder teal, this one a chart series rather than a UI accent). Added the existing `web/public/favicon.svg` replacement note (§5 — it's a generic framework default, not ours). Added the Spec 13 §11 Q1 cross-reference (§7) — the real docs URL resolves that spec's open hosting question. |
 | 0.4 | From the implementation review (2026-10-19). §2: measured distances — the nearest chromatic color was `TAXI`, not `TAKEOFF_ROLL`, so `TAXI` becomes `#84CC16` (Spec 03 v0.26); a light tint `#7FA3C2` of the same hue for lines and text, since `#3D5A73` is 2.4–2.6:1 on the dark theme; primary buttons take light text. §3: greys are separated by role; the rule is enforced by a ΔE test. §4: roles widened to selected tabs/chips/segmented controls and "live" states; *zoom controls* dropped (none exist); every other former teal use classified (link, OK, chart highlight/data, neutral); `chartRpm` keeps `#4fc3b0`. §6: URL confirmed. §8: nothing outstanding. |
+| 0.5 | §4: the family mark and §1 lockup open the app's top bar, replacing the plain *SlingologyEIS* text (2026-10-19). |

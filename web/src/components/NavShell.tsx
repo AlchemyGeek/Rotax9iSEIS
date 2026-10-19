@@ -320,7 +320,15 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.2 }}>SlingologyEIS</span>
+          {/* Spec 15 §1: the family mark and lockup — SLINGOLOGY carries the
+              weight, the app name sits smaller underneath. */}
+          <span data-testid="brand-lockup" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <img src="eis-mark.png" alt="" width={30} height={30} style={{ display: "block" }} />
+            <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+              <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: 1.2 }}>SLINGOLOGY</span>
+              <span style={{ fontWeight: 600, fontSize: 10, letterSpacing: 2.4, color: "var(--text-secondary)", marginTop: 3 }}>EIS</span>
+            </span>
+          </span>
           <WorkspaceSwitcher />
           <nav style={{ display: "flex", gap: 4 }}>
             <NavLink to="/flights" end style={NAV_LINK_STYLE}>
