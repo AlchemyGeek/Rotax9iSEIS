@@ -212,6 +212,9 @@ export function Flights() {
 
   const refresh = useCallback(async () => {
     try {
+      // All four at once: in the browser host the engine answers one at a
+      // time, and a gap between them lets other requests in ahead (step 6).
+      const importInfoReply = client.getImportInfo().catch(() => ({ imported: false }) as ImportInfo);
       const [active, statusList, exclusionsResult] = await Promise.all([
         client.getActiveWorkspace(), client.listFlightsWithStatus(), client.listExclusions(),
       ]);
@@ -221,11 +224,7 @@ export function Flights() {
       setUsingFixture(false);
       setExclusions(exclusionsResult.entries);
       setSenderMissing(exclusionsResult.sender_missing ?? []);
-      try {
-        setImportInfo(await client.getImportInfo());
-      } catch {
-        setImportInfo({ imported: false });   // an older server, or not imported
-      }
+      setImportInfo(await importInfoReply);     // { imported: false } from an older server, or not imported
     } catch {
       setRows(fixtureFlights.rows);
       setManifest(fixtureManifest);

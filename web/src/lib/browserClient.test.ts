@@ -70,6 +70,44 @@ describe("BrowserWorkerClient", () => {
     await expect(b).rejects.toMatchObject({ code: "NO_ACTIVE_WORKSPACE" });
   });
 
+  it("shares an identical read already waiting in the queue, but never across a write", async () => {
+    const client = make();
+    const w = workers[0];
+    ready(w);
+    const first = client.listWorkspaces();                     // runs now
+    const a = client.getActiveWorkspace();                     // waiting
+    const b = client.getActiveWorkspace();                     // same read, waiting: shared
+    expect(b).toBe(a);
+    await tick();
+    w.reply({ type: "reply", request_id: w.requests()[0].request_id, reply: { ok: true, result: [] } });
+    await first; await tick();
+    expect(w.requests().map((r) => r.op)).toEqual(["list_workspaces", "get_active_workspace"]);
+    const write = client.switchWorkspace("w2");                // a write queued behind it
+    const c = client.getActiveWorkspace();                     // after the write: its own request
+    expect(c).not.toBe(a);
+    for (const op of ["get_active_workspace", "switch_workspace", "get_active_workspace"]) {
+      await tick();
+      const req = w.requests().filter((r) => r.op === op).at(-1)!;
+      w.reply({ type: "reply", request_id: req.request_id, reply: { ok: true, result: { op } } });
+    }
+    await Promise.all([a, b, write, c]);
+    expect(w.requests().map((r) => r.op)).toEqual(["list_workspaces", "get_active_workspace", "switch_workspace", "get_active_workspace"]);
+  });
+
+  it("whenIdle resolves once nothing is queued or running", async () => {
+    const client = make();
+    const w = workers[0];
+    ready(w);
+    let idle = false;
+    const pending = client.listWorkspaces();
+    void client.whenIdle().then(() => { idle = true; });
+    await tick();
+    expect(idle).toBe(false);
+    w.reply({ type: "reply", request_id: w.requests()[0].request_id, reply: { ok: true, result: [] } });
+    await pending; await tick();
+    expect(idle).toBe(true);
+  });
+
   it("answers scan progress from the worker's progress messages, as the views poll it", async () => {
     const client = make();
     const w = workers[0];

@@ -49,6 +49,13 @@ export interface FolderPicking {
   deleteAllData(): Promise<void>;
 }
 
+// Reads with no side effects: an identical one already waiting in the queue
+// answers both callers.
+const SHAREABLE_READS = new Set([
+  "get_active_workspace", "list_workspaces", "filter_health", "get_fleet", "list_flights_with_status",
+  "list_exclusions", "get_import_info", "get_aircraft_summary", "get_capabilities", "get_app_settings",
+]);
+
 export class BrowserWorkerClient extends LocalServerClient implements FolderPicking {
   readonly folders = new PageFolders();
   private worker!: Worker;
@@ -58,6 +65,9 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
   private queue: Promise<unknown> = Promise.resolve();
   private seq = 1;
   private busy = 0;
+  private waitingOrRunning = 0;
+  private idleWaiters: (() => void)[] = [];
+  private queuedReads = new Map<string, Promise<unknown>>();
   private scanProgress: ScanProgress = { active: false };
   private downloads = new Map<string, string>();
   private uploads = new Map<string, Pending>();
@@ -189,11 +199,43 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     }
   }
 
+  /** Resolves once no request is queued or running — for work that should
+   * wait behind the page's own requests (the nav badges, step 6). */
+  whenIdle(): Promise<void> {
+    if (this.waitingOrRunning === 0) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  private settle() {
+    if (--this.waitingOrRunning > 0) return;
+    const waiters = this.idleWaiters.splice(0);
+    for (const fn of waiters) fn();
+  }
+
   /** One request at a time (§9.2: the worker is single-threaded), queued
-   * until the engine is ready. */
+   * until the engine is ready. A read already waiting in the queue with the
+   * same parameters is shared rather than run twice (step 6: Flights asked
+   * for the active workspace and the filter health twice per visit). */
   protected rpc<T>(op: string, params: unknown): Promise<T> {
+    if (SHAREABLE_READS.has(op)) {
+      const key = `${op} ${JSON.stringify(params ?? null)}`;
+      const queued = this.queuedReads.get(key);
+      if (queued) return queued as Promise<T>;
+      const p = this.rpcQueued<T>(op, params, () => this.queuedReads.delete(key));
+      this.queuedReads.set(key, p);
+      return p;
+    }
+    // Anything else may write: a read queued after it must see its effect,
+    // so it can't join one queued before it.
+    this.queuedReads.clear();
+    return this.rpcQueued<T>(op, params);
+  }
+
+  private rpcQueued<T>(op: string, params: unknown, onStart?: () => void): Promise<T> {
+    this.waitingOrRunning++;
     const run = async () => {
       await this.ready;
+      onStart?.();          // from here on a new identical read is a new request
       const request_id = `b-${this.seq++}`;
       this.busy++;
       if (op === "scan_workspace") {
@@ -213,6 +255,7 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     };
     const next = this.queue.then(run, run);
     this.queue = next.catch(() => undefined);
+    void next.then(() => this.settle(), () => this.settle());
     return next;
   }
 
