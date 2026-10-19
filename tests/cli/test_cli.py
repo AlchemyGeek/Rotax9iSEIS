@@ -223,6 +223,28 @@ def test_dash_dash_workspace_resolves_registered_name(isolated_packaged_home, sy
     assert (ws_dir_by_name / "fleet" / "analysis.json").exists()
 
 
+# ── A configured data location wins (Spec 02 §5.8.1, Spec 04 D8) ──────────
+
+def test_a_configured_but_empty_data_location_is_a_usage_error_not_data(tmp_path, monkeypatch, capsys, synthetic_logs_dir):
+    from slingology_eis.cli import _REPO_ROOT
+    root = tmp_path / "configured-root"
+    monkeypatch.setenv(data_location.ENV_VAR, str(root))
+    repo_data = _REPO_ROOT / "data"
+    before = sorted((p.name, p.stat().st_mtime_ns) for p in repo_data.iterdir()) if repo_data.is_dir() else None
+
+    rc = main(["fleet", "--logs", str(synthetic_logs_dir), "--quiet"])
+    err = capsys.readouterr().err
+    assert rc == 2 and str(root) in err and "workspace create" in err
+    assert not root.exists()                                   # nothing written there either
+    assert (sorted((p.name, p.stat().st_mtime_ns) for p in repo_data.iterdir()) if repo_data.is_dir() else None) == before
+
+    # With a workspace there, the same command uses it.
+    assert main(["workspace", "create", "Here", "--engine", "916iS", "--json", "--quiet"]) == 0
+    created = json.loads(capsys.readouterr().out)
+    assert main(["fleet", "--logs", str(synthetic_logs_dir), "--quiet"]) == 0
+    assert (root / "workspaces" / created["id"] / "fleet" / "analysis.json").is_file()
+
+
 @pytest.mark.parametrize("before", [True, False], ids=["before-subcommand", "after-subcommand"])
 def test_common_options_work_before_or_after_the_subcommand(isolated_packaged_home, synthetic_logs_dir, capsys, before):
     """`slingology-eis --workspace X import …` must import into X. argparse

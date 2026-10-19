@@ -90,14 +90,30 @@ def resolve_workspace_dir(cli_arg: Optional[str]) -> Path:
     `resolve_workspace_ref`'s own behavior, so this only adds the lookup,
     it doesn't change what happens when the lookup finds nothing — a
     developer-checkout invocation that predates the registry keeps
-    working unmodified. Precedence when no value is given at all
-    (packaged install, else a git checkout, else a usage error) is
-    unchanged.
+    working unmodified. With no value given: a configured data location
+    (environment or location file) wins — its active workspace, or a usage
+    error if it has none (Spec 04 D8); with nothing configured, the
+    packaged install, else a git checkout, else a usage error, as before.
     """
     if cli_arg:
         registry_path = _workspace.resolve_registry_path()
         workspaces_root = _workspace.resolve_workspaces_root()
         return _workspace.resolve_workspace_ref(cli_arg, registry_path, workspaces_root)
+    loc = _data_location.resolve()
+    if loc.source in ("environment", "chosen"):
+        # Spec 02 §5.8.1, Spec 04 D8: a configured data location wins in
+        # every context — its active workspace, and never the checkout's
+        # data/ behind its back when it has none yet.
+        registry_path = loc.root / "registry.json"
+        registry = _workspace.load_registry(registry_path)
+        if registry.workspaces:
+            last = _workspace.load_app_settings(registry_path).last_active_workspace_id
+            match = next((w for w in registry.workspaces if w.id == last), registry.workspaces[0])
+            return loc.root / "workspaces" / match.id
+        raise CliUsageError(
+            f"No workspace in the data location {loc.root} yet. Create one with "
+            "`slingology-eis workspace create NAME --engine MODEL`, or pass --workspace."
+        )
     if (_PACKAGED_HOME / "workspace").is_dir():
         return _PACKAGED_HOME / "workspace"
     if _is_git_checkout(_REPO_ROOT):
