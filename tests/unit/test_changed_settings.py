@@ -6,7 +6,7 @@ import json
 
 from slingology_eis import workspace as ws
 
-from .test_server import _import_oil_temp_flight, isolated_packaged_home, registry_server, rpc  # noqa: F401
+from .test_server import _import_oil_temp_flight, _node_host, isolated_packaged_home, registry_server, rpc  # noqa: F401
 
 SHIPPED = {"membership": "leave_one_out", "band_kind_by_metric": {}, "outlier_z_threshold": 2.0,
            "recent_window_hours": 10, "recent_window_min_flights": 5, "recent_window_max_flights": 15,

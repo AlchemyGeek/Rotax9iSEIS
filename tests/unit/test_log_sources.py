@@ -235,3 +235,70 @@ def test_a_dropped_log_can_come_through_the_uploads_registry(isolated_packaged_h
     assert again["results"][0]["classification"] == "duplicate"     # the same log, by either path
     gone = host.reply({"op": "ingest_log", "params": {"upload_id": "nope"}}, ctx)
     assert gone["error"]["code"] == "NOT_FOUND"
+
+
+# ── Resumable reads (Spec 04 D11) ──────────────────────────────────────────
+
+def test_a_scan_pauses_for_each_file_and_resumes_with_an_async_supplier(isolated_packaged_home):  # noqa: F811
+    """The browser's shape: the listing and every log's bytes arrive later
+    (here: after an event-loop turn). The scan pauses at each file request,
+    resumes with the bytes, one outstanding at a time, in listing order, and
+    gives the same flights as a supplier that answers at once."""
+    import asyncio
+
+    logs = {f"log_202601{d:02d}_120000_TEST.csv": _flight(d) for d in (3, 1, 2)}
+    events: list[str] = []
+    stats = {"outstanding": 0, "peak": 0}
+
+    async def list_folder():
+        events.append("list")
+        await asyncio.sleep(0)                  # the page answers later
+        return [{"relative_path": n, "size": len(b), "last_modified": 0} for n, b in logs.items()]
+
+    async def read(rel):
+        stats["outstanding"] += 1
+        stats["peak"] = max(stats["peak"], stats["outstanding"])
+        events.append(f"request {rel}")
+        await asyncio.sleep(0)                  # paused until the bytes come back
+        events.append(f"bytes {rel}")
+        return logs[rel]
+
+    def release(rel):
+        stats["outstanding"] -= 1
+        events.append(f"release {rel}")
+
+    source = SuppliedLogSource(None, read, release, list_provider=list_folder)
+    ctx = _ctx(SuppliedSources({"f1": source}))
+
+    async def run():
+        await host.dispatch_async("create_workspace", {"name": "A", "engine_model": "916iS"}, ctx)
+        await host.dispatch_async("register_log_folder", {"name": "Logs", "folder_id": "f1"}, ctx)
+        return await host.dispatch_async("scan_workspace", {}, ctx)
+
+    result = asyncio.run(run())
+    assert len(result["new_flight_ids"]) == 3 and stats == {"outstanding": 0, "peak": 1}
+    names = sorted(logs)                                         # listing order
+    assert events == ["list"] + [e for n in names for e in (f"request {n}", f"bytes {n}", f"release {n}")]
+
+    # The same logs from a supplier that answers at once: the same flights.
+    sync_ctx = _ctx(SuppliedSources({"f1": SuppliedLogSource(
+        [{"relative_path": n, "size": len(b), "last_modified": 0} for n, b in logs.items()], lambda rel: logs[rel])}))
+    host.dispatch("create_workspace", {"name": "B", "engine_model": "916iS"}, sync_ctx)
+    host.dispatch("register_log_folder", {"name": "Logs", "folder_id": "f1"}, sync_ctx)
+    assert sorted(host.dispatch("scan_workspace", {}, sync_ctx)["new_flight_ids"]) == sorted(result["new_flight_ids"])
+
+
+def test_an_async_source_cannot_be_driven_inline(isolated_packaged_home):  # noqa: F811
+    """run_now refuses, rather than blocking, when a source would wait."""
+    import asyncio
+
+    async def read(rel):
+        await asyncio.sleep(0)
+        return b""
+
+    listing = [{"relative_path": "log_20260101_120000_TEST.csv", "size": 1, "last_modified": 0}]
+    ctx = _ctx(SuppliedSources({"f1": SuppliedLogSource(listing, read)}))
+    host.dispatch("create_workspace", {"name": "C", "engine_model": "916iS"}, ctx)
+    host.dispatch("register_log_folder", {"name": "Logs", "folder_id": "f1"}, ctx)
+    reply = host.reply({"op": "scan_workspace", "params": {}}, ctx)
+    assert not reply["ok"] and "WouldWait" in reply["error"]["message"]

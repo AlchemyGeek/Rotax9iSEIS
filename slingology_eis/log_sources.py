@@ -17,10 +17,20 @@ The host never constructs a source itself: it asks the factory its
 transport installed (`ctx["log_sources"]`) for the source of a
 `LogFolder`. `DiskSources` serves folders by path; `SuppliedSources`
 serves folders registered by `folder_id`.
+
+**Resumable reads (Spec 04 D11).** A browser worker can't block waiting
+for the page, so everything that lists or reads raw logs is written as a
+coroutine that *awaits* `alist()` / `aread()`. A disk source answers at
+once, so `run_now()` drives the coroutine to the end in one step — the
+server and the CLI see an ordinary synchronous call. A page-backed source
+returns something that really waits (a JS promise in the worker); the
+same coroutine is then awaited on the worker's event loop, pausing at each
+file request and resuming with the bytes.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+import inspect
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterator, Optional
@@ -59,13 +69,22 @@ def listing_order(entry: LogEntry) -> tuple:
 
 class LogSource:
     """One folder's logs. `list()` returns None when the folder can't be
-    listed right now (unreachable)."""
+    listed right now (unreachable).
+
+    The host awaits `alist()` / `aread()`; a source that answers at once
+    implements only `list()` / `read()`, which these default to."""
 
     def list(self) -> Optional[list[LogEntry]]:
         raise NotImplementedError
 
     def read(self, relative_path: str) -> bytes:
         raise NotImplementedError
+
+    async def alist(self) -> Optional[list[LogEntry]]:
+        return self.list()
+
+    async def aread(self, relative_path: str) -> bytes:
+        return self.read(relative_path)
 
     def release(self, relative_path: str) -> None:
         """The host is done with this log's bytes."""
@@ -92,22 +111,50 @@ class DiskLogSource(LogSource):
         return p.read_bytes()
 
 
+def _missing(value) -> bool:
+    """None, or a JS null/undefined as Pyodide passes it in (JsNull)."""
+    return value is None or type(value).__name__ in ("JsNull", "JsUndefined")
+
+
+def _as_listing(listing) -> Optional[list[LogEntry]]:
+    if _missing(listing):
+        return None
+    entries = (e if isinstance(e, LogEntry) else LogEntry.from_dict(e) for e in listing)
+    return [e for e in sorted(entries, key=listing_order) if is_log_name(e.relative_path)]
+
+
+def _as_bytes(relative_path: str, data) -> bytes:
+    if _missing(data):
+        raise LogUnavailable(f"{relative_path} wasn't supplied")
+    if hasattr(data, "to_bytes"):          # a JS ArrayBuffer / Uint8Array in Pyodide
+        data = data.to_bytes()
+    return bytes(data)
+
+
 class SuppliedLogSource(LogSource):
     """A folder whose listing and bytes the caller supplies. `read_bytes`
     is called once per log the host needs, in listing order, and `release`
-    (if given) once the host is done with it."""
+    (if given) once the host is done with it.
 
-    def __init__(self, listing: Optional[list], read_bytes: Callable[[str], bytes],
-                 release: Optional[Callable[[str], None]] = None):
-        self._listing = None if listing is None else sorted(
-            (e if isinstance(e, LogEntry) else LogEntry.from_dict(e) for e in listing), key=listing_order)
+    Either may be asynchronous: `read_bytes` may return an awaitable (a
+    coroutine, or a JS promise in the worker), and instead of a `listing`
+    the caller may pass `list_provider`, a callable returning the listing
+    or an awaitable of it. The host then awaits them (Spec 04 D11)."""
+
+    def __init__(self, listing: Optional[list], read_bytes: Callable,
+                 release: Optional[Callable[[str], None]] = None, list_provider: Optional[Callable] = None):
+        self._listing = _as_listing(listing)
+        self._list_provider = list_provider
         self._read = read_bytes
         self._release = release
 
     def list(self) -> Optional[list[LogEntry]]:
-        if self._listing is None:
-            return None
-        return [e for e in self._listing if is_log_name(e.relative_path)]
+        if self._list_provider is not None:
+            got = self._list_provider()
+            if inspect.isawaitable(got):
+                raise RuntimeError("this source lists asynchronously; await alist()")
+            return _as_listing(got)
+        return self._listing
 
     def read(self, relative_path: str) -> bytes:
         try:
@@ -116,9 +163,28 @@ class SuppliedLogSource(LogSource):
             raise
         except Exception as e:  # a page that can't supply the file
             raise LogUnavailable(f"{relative_path}: {e}") from e
-        if data is None:
-            raise LogUnavailable(f"{relative_path} wasn't supplied")
-        return bytes(data)
+        if inspect.isawaitable(data):
+            raise RuntimeError("this source reads asynchronously; await aread()")
+        return _as_bytes(relative_path, data)
+
+    async def alist(self) -> Optional[list[LogEntry]]:
+        if self._list_provider is None:
+            return self._listing
+        got = self._list_provider()
+        if inspect.isawaitable(got):
+            got = await got
+        return _as_listing(None if _missing(got) else list(got.to_py() if hasattr(got, "to_py") else got))
+
+    async def aread(self, relative_path: str) -> bytes:
+        try:
+            data = self._read(relative_path)
+            if inspect.isawaitable(data):
+                data = await data
+        except LogUnavailable:
+            raise
+        except Exception as e:  # a page that can't supply the file
+            raise LogUnavailable(f"{relative_path}: {e}") from e
+        return _as_bytes(relative_path, data)
 
     def release(self, relative_path: str) -> None:
         if self._release is not None:
@@ -135,6 +201,34 @@ def reading(source: LogSource, relative_path: str) -> Iterator[bytes]:
         source.release(relative_path)
 
 
+@asynccontextmanager
+async def areading(source: LogSource, relative_path: str):
+    """`reading`, awaiting the source (Spec 04 D11): the operation pauses
+    here until the bytes arrive."""
+    data = await source.aread(relative_path)
+    try:
+        yield data
+    finally:
+        source.release(relative_path)
+
+
+class WouldWait(RuntimeError):
+    """A coroutine driven by run_now() tried to wait on a source that
+    doesn't answer at once."""
+
+
+def run_now(coro):
+    """Drive a coroutine that never really waits — every source it awaits
+    answers at once, as disk sources do — to its result, synchronously.
+    This is how the server and the CLI run the resumable operations."""
+    try:
+        coro.send(None)
+    except StopIteration as done:
+        return done.value
+    coro.close()
+    raise WouldWait("a log source had to wait; run this operation from an event loop")
+
+
 @dataclass(frozen=True)
 class LogRef:
     """A log found in a folder: where it is, and a way to read it."""
@@ -147,6 +241,10 @@ class LogRef:
 
     def read_bytes(self) -> bytes:
         with reading(self.source, self.entry.relative_path) as data:
+            return data
+
+    async def aread_bytes(self) -> bytes:
+        async with areading(self.source, self.entry.relative_path) as data:
             return data
 
 

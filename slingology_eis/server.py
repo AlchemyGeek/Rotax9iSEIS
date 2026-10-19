@@ -137,6 +137,19 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path], quiet: bool):
             self._send_json(_host.reply(envelope, ctx))
 
         def do_GET(self) -> None:  # noqa: N802
+            if self.path.split("?")[0] == "/runtime.json":
+                # Spec 04 §9.5: the page asks first which host it runs on.
+                # This server answers for itself, whatever a static build
+                # left in web/dist.
+                payload = b'{"host": "server"}\n'
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if self.path.startswith("/download/"):
                 # A workspace export (Spec 02 §7.2), served once.
                 token = self.path[len("/download/"):].split("?")[0]

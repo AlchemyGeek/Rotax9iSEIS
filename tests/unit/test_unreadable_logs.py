@@ -4,9 +4,11 @@ analyse is shown as Unreadable with its reason — never left as "Needs
 analysis" for ever, never offered again by Sync, and one such log never
 stops the others being analysed.
 """
+import pytest
+
 from slingology_eis import workspace as ws
 
-from .test_server import _flying_log_bytes, isolated_packaged_home, registry_server, rpc  # noqa: F401
+from .test_server import InProcess, _flying_log_bytes, _node_host, isolated_packaged_home, registry_server, rpc  # noqa: F401
 
 
 def _workspace_with(url, tmp_path, files: dict) -> None:
@@ -45,6 +47,8 @@ def test_an_unrecognised_file_is_unreadable_with_its_reason(registry_server, tmp
 
 
 def test_a_log_that_fails_analysis_doesnt_stop_the_others(registry_server, tmp_path, monkeypatch):
+    if not isinstance(registry_server, (str, InProcess)):
+        pytest.skip("monkeypatches the host's Python module, which runs in another process on this call path")
     url = registry_server
     _workspace_with(url, tmp_path, {
         "log_20260101_120000_KAWO.csv": _flying_log_bytes(date="2026-01-01"),
@@ -66,6 +70,8 @@ def test_a_log_that_fails_analysis_doesnt_stop_the_others(registry_server, tmp_p
 
 
 def test_a_newer_engine_retries_it(registry_server, tmp_path, monkeypatch):
+    if not isinstance(registry_server, (str, InProcess)):
+        pytest.skip("monkeypatches the host's Python module, which runs in another process on this call path")
     url = registry_server
     _workspace_with(url, tmp_path, {"weird.csv": b"not a log at all"})
     rpc(url, "scan_workspace", {})

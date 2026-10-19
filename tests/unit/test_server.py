@@ -68,13 +68,105 @@ class InProcess:
         return upload_id
 
 
-CALL_PATHS = ["in_process", "http"]
+_REPO = Path(__file__).resolve().parents[2]
+_NODE_HOST = _REPO / "web" / "scripts" / "node-host.mjs"
 
 
-def _serve(request, workspace_dir):
-    """A handle for one test: an InProcess transport, or a server's URL."""
+def _node_available() -> bool:
+    import shutil as _sh
+    return bool(_sh.which("node")) and (_REPO / "web" / "node_modules" / "pyodide" / "pyodide.mjs").is_file()
+
+
+class NodeHost:
+    """The third call path (Spec 04 v0.7 §9.6 mode 3): the browser host's
+    Python entry (slingology_eis.browser_host) under Pyodide in Node.js,
+    with the engine wheel the browser loads and the test's folders mounted
+    at the same paths. One process per test session; each test starts it
+    afresh on its own data root. Bytes in a request go through the uploads
+    registry, as in the browser — never base64."""
+
+    def __init__(self, basetemp: Path):
+        import subprocess
+        import sys as _sys
+        self.basetemp = basetemp
+        wheel_dir = basetemp / "node-wheel"
+        subprocess.run([_sys.executable, str(_REPO / "scripts" / "build_engine_wheel.py"), "--out", str(wheel_dir)],
+                       check=True, capture_output=True)
+        wheel = next(wheel_dir.glob("*.whl"))
+        self.proc = subprocess.Popen(["node", str(_NODE_HOST), "--wheel", str(wheel), "--mount", str(basetemp)],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        self._read()   # ready
+
+    def _send(self, msg: dict):
+        self.proc.stdin.write(json.dumps(msg) + "\n")
+        self.proc.stdin.flush()
+        return self._read()
+
+    def _read(self):
+        reply = json.loads(self.proc.stdout.readline())
+        if not reply["ok"]:
+            raise RuntimeError(reply["error"])
+        return reply["result"]
+
+    def start(self, data_root: Path, workspace_arg=None):
+        tmp = self.basetemp / "node-tmp"
+        tmp.mkdir(exist_ok=True)
+        self._send({"cmd": "start", "env": {"TMPDIR": str(tmp)},
+                    "config": {"data_root": str(data_root), "workspace_arg": workspace_arg, "host": "server", "sources": "disk"}})
+        return self
+
+    def _bytes_to_upload(self, item: dict) -> dict:
+        if not isinstance(item, dict) or "content_base64" not in item:
+            return item
+        item = dict(item)
+        data = base64.b64decode(item.pop("content_base64"))
+        upload_id = self.upload(data, item.get("filename") or "upload")
+        return {**item, "upload_id": upload_id}
+
+    def call(self, op, params, request_id):
+        params = self._bytes_to_upload(json.loads(json.dumps(params)))
+        if isinstance(params.get("files"), list):
+            params["files"] = [self._bytes_to_upload(f) for f in params["files"]]
+        return self._send({"cmd": "request", "envelope_json": json.dumps({"op": op, "request_id": request_id, "params": params})})
+
+    def download(self, url_path):
+        return Path(self._send({"cmd": "download", "token": url_path})).read_bytes()
+
+    def upload(self, data, filename):
+        upload_id = uuid.uuid4().hex
+        target = self.basetemp / "node-uploads" / upload_id / Path(filename).name
+        target.parent.mkdir(parents=True)
+        target.write_bytes(data)
+        self._send({"cmd": "upload", "upload_id": upload_id, "path": str(target), "filename": target.name})
+        return upload_id
+
+    def close(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=30)
+
+
+@pytest.fixture(scope="session")
+def _node_host(tmp_path_factory):
+    if not _node_available():
+        pytest.skip("Pyodide-in-Node needs `node` and web/node_modules/pyodide (cd web && npm ci)")
+    host_ = NodeHost(tmp_path_factory.getbasetemp().resolve())
+    yield host_
+    host_.close()
+
+
+CALL_PATHS = ["in_process", "http", "pyodide_node"]
+
+
+def _serve(request, workspace_dir, data_root=None):
+    """A handle for one test: an InProcess transport, a server's URL, or the
+    Pyodide-in-Node host."""
     if request.param == "in_process":
         yield InProcess(workspace_dir)
+        return
+    if request.param == "pyodide_node":
+        node = request.getfixturevalue("_node_host")
+        root = Path(data_root) if data_root else Path(workspace_dir) / "node-home"
+        yield node.start(root.resolve(), workspace_dir and str(Path(workspace_dir).resolve()))
         return
     httpd = build_server(logs_dir=None, workspace_dir=workspace_dir, port=0, quiet=True)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -109,12 +201,12 @@ def registry_server(request, isolated_packaged_home):
     """A host started with no --workspace and no workspaces ever created —
     the registry-aware startup path, not the legacy one the plain `server`
     fixture above exercises."""
-    yield from _serve(request, None)
+    yield from _serve(request, None, data_root=isolated_packaged_home)
 
 
 def rpc(handle, op, params, request_id="r-1"):
     """One operation, by whichever path the fixture chose."""
-    if isinstance(handle, InProcess):
+    if isinstance(handle, (InProcess, NodeHost)):
         return handle.call(op, params, request_id)
     body = json.dumps({"op": op, "request_id": request_id, "params": params}).encode()
     req = urllib.request.Request(f"{handle}/rpc", data=body, headers={"Content-Type": "application/json"})
@@ -2114,3 +2206,30 @@ def test_scan_progress_goes_through_the_transports_emit_progress(isolated_packag
     assert updates[0][1] == {"active": True, "phase": "starting"} and updates[-1][1] == {"active": False}
     assert any(u.get("active") and u.get("phase") != "starting" for _, u in updates)   # per-log updates
     assert "scan_progress" not in ctx and not ctx["running"]
+
+
+def test_get_storage_usage_walks_the_data_root(registry_server):
+    empty = rpc(registry_server, "get_storage_usage", {})["result"]
+    assert empty["workspace_count"] == 0 and empty["workspaces"] == []
+    rpc(registry_server, "create_workspace", {"name": "One", "engine_model": "916iS"})
+    rpc(registry_server, "import_files", {"files": [{"content_base64": base64.b64encode(_flying_log_bytes()).decode(),
+                                                      "filename": "log_20260101_120000_TEST.csv"}]})
+    got = rpc(registry_server, "get_storage_usage", {})["result"]
+    one, = got["workspaces"]
+    assert one["name"] == "One" and one["bytes"] > len(_flying_log_bytes())     # the log copy plus its analysis
+    assert got["total_bytes"] == one["bytes"] + got["other_bytes"] and got["other_bytes"] > 0   # registry, settings
+
+
+def test_the_server_answers_runtime_json_for_itself(tmp_path):
+    """Spec 04 §9.5: the page fetches runtime.json first; a server says it
+    is the server, whatever a static build left beside the UI."""
+    httpd = build_server(logs_dir=None, workspace_dir=str(tmp_path), port=0, quiet=True)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_port}/runtime.json", timeout=10) as r:
+            assert json.loads(r.read()) == {"host": "server"}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)

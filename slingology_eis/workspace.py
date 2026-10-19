@@ -48,7 +48,7 @@ from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from .filters import target_label
 from .limits import RETIRED_ENGINES, load_engine_config, resolve_min_flight_duration_min
-from .log_sources import DISK, LogEntry, LogRef, LogSource, LogUnavailable, reading
+from .log_sources import DISK, LogEntry, LogRef, LogSource, LogUnavailable, areading, reading, run_now
 from .loader import (
     find_duplicate_flights,
     flight_fingerprint,
@@ -1221,7 +1221,7 @@ def save_workspace_settings(ws_dir: Path, settings: WorkspaceSettings) -> None:
 
 # ── Scanning (§5.1, §5.4, §5.5, §5.6, §5.7) ─────────────────────────────────
 
-def find_log_file_by_name(manifest: WorkspaceManifest, filename: str, sources: Callable = DISK) -> Optional[LogRef]:
+async def find_log_file_by_name_async(manifest: WorkspaceManifest, filename: str, sources: Callable = DISK) -> Optional[LogRef]:
     """
     Best-effort: search every reachable log_folders entry for a file
     with this exact name. exclusions.json only ever records a filename
@@ -1235,13 +1235,19 @@ def find_log_file_by_name(manifest: WorkspaceManifest, filename: str, sources: C
     target = filename.lower()
     for lf in manifest.log_folders:
         source = sources(lf)
-        for entry in source.list() or []:
+        for entry in (await source.alist()) or []:
             if entry.name.lower() == target:
                 return LogRef(source, entry)
     return None
 
 
-def read_source_bytes(ws_dir: Path, src: "FlightSources", sources: Callable = DISK) -> Optional[tuple[bytes, str]]:
+def find_log_file_by_name(*args, **kwargs):
+    """`find_log_file_by_name_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(find_log_file_by_name_async(*args, **kwargs))
+
+
+async def read_source_bytes_async(ws_dir: Path, src: "FlightSources", sources: Callable = DISK) -> Optional[tuple[bytes, str]]:
     """Best-effort re-read of a known flight's own source bytes — the
     workspace's own persisted copy for an uploaded flight, or the
     log_folders path for a scanned one. Shared by scan_workspace's
@@ -1265,11 +1271,17 @@ def read_source_bytes(ws_dir: Path, src: "FlightSources", sources: Callable = DI
             except (FileNotFoundError, OSError, ValueError):
                 manifest = WorkspaceManifest(id="", name="", engine_model="")
         try:
-            with reading(sources(_folder_by_path(manifest, imp.log_folder_path)), imp.relative_path) as data:
+            async with areading(sources(_folder_by_path(manifest, imp.log_folder_path)), imp.relative_path) as data:
                 return data, imp.filename
         except LogUnavailable:
             continue
     return None
+
+
+def read_source_bytes(*args, **kwargs):
+    """`read_source_bytes_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(read_source_bytes_async(*args, **kwargs))
 
 
 # ── Unreadable logs (Spec 02 §5.11.2, Spec 03 §5.1 "Unreadable") ─────────────
@@ -1327,7 +1339,7 @@ def _pending_log(skey: str, folder_path: str, rel: str, filename: str) -> dict:
             "filename": filename, "date": date_from_log_filename(filename)}
 
 
-def pending_work(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], list[str]]:
+async def pending_work_async(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], list[str]]:
     """Read-only (Spec 03 v0.17 §5.1): logs in the workspace's folders not
     yet analysed (no known fingerprint, not recorded as a non-flight), and
     flights whose stored analysis predates the running engine and whose
@@ -1345,17 +1357,17 @@ def pending_work(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], li
         if src.missing:
             continue
         fa = load_flight_analysis(ws_dir, fid)
-        if fa is not None and analysis_is_stale(fa, assignments) and read_source_bytes(ws_dir, src, sources) is not None:
+        if fa is not None and analysis_is_stale(fa, assignments) and (await read_source_bytes_async(ws_dir, src, sources)) is not None:
             stale.append(fid)
     new_logs: dict[str, dict] = {}
     unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
     for lf in manifest.log_folders:
         source = sources(lf)
-        for entry in source.list() or []:
+        for entry in (await source.alist()) or []:
             if _exclusions.is_excluded(entry.name, exclusions_data):
                 continue
             try:
-                with reading(source, entry.relative_path) as data:
+                async with areading(source, entry.relative_path) as data:
                     skey = _source_key(data)
             except LogUnavailable:
                 continue
@@ -1364,6 +1376,12 @@ def pending_work(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], li
             if skey not in known and skey not in new_logs:
                 new_logs[skey] = _pending_log(skey, lf.path, entry.relative_path, entry.name)
     return list(new_logs.values()), stale
+
+
+def pending_work(*args, **kwargs):
+    """`pending_work_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(pending_work_async(*args, **kwargs))
 
 
 def _unreadable(ws_dir: Path, result: "ScanResult", meta: dict, skey: str, filename: str, e: Exception, stage: str) -> None:
@@ -1490,14 +1508,20 @@ def _analyse(c: dict, content: bytes, filename: str, engine_cfg, engine_model, p
         c["fa"], c["analyse_error"] = None, e
 
 
-def _analyse_candidate(ws_dir, c: dict, sources, manifest, engine_cfg, params_now) -> None:
+async def _analyse_candidate_async(ws_dir, c: dict, sources, manifest, engine_cfg, params_now) -> None:
     folder_path, rel, filename = c["meta"]
     source = sources(_folder_by_path(manifest, folder_path))
     try:
-        with reading(source, rel) as content:
+        async with areading(source, rel) as content:
             _analyse(c, content, filename, engine_cfg, manifest.engine_model, params_now)
     except LogUnavailable as e:
         c["fa"], c["analyse_error"] = None, e
+
+
+def _analyse_candidate(*args, **kwargs):
+    """`_analyse_candidate_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(_analyse_candidate_async(*args, **kwargs))
 
 
 def _uploaded_reanalysis(ws_dir, src, best, engine_cfg, engine_model, params_now, on_progress) -> Optional[FlightAnalysis]:
@@ -1526,7 +1550,7 @@ def _folder_by_path(manifest: "WorkspaceManifest", folder_path: str) -> "LogFold
     return next((lf for lf in manifest.log_folders if lf.path == folder_path), None) or LogFolder(path=folder_path)
 
 
-def scan_workspace(
+async def scan_workspace_async(
     ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True,
     on_progress: Optional[Callable[[dict], None]] = None,
     new_keys: Optional[set] = None, reanalyze_ids: Optional[set] = None,
@@ -1636,7 +1660,7 @@ def scan_workspace(
     listings: list[tuple["LogFolder", LogSource, list[LogEntry]]] = []
     for lf in manifest.log_folders:
         source = sources(lf)
-        entries = source.list()
+        entries = (await source.alist())
         if entries is None:
             lf.reachable = False
             unreachable_folder_paths.add(lf.path)
@@ -1662,7 +1686,7 @@ def scan_workspace(
 
             progress("reading")
             try:
-                with reading(source, rel) as content:
+                async with areading(source, rel) as content:
                     _take_turn(ws_dir, content, lf.path, rel, filename, progress, found_by_key, known,
                                all_sources, stale_selected, fresh_by_fid, admission, unreadable_now, new_keys,
                                sender_fids, planned_fids, candidates, result, engine_cfg, manifest.engine_model,
@@ -1764,7 +1788,7 @@ def scan_workspace(
             # Not analysed on its turn (it looked as if it would stay
             # excluded, or another file seemed to be this flight). Rare:
             # read it once more.
-            _analyse_candidate(ws_dir, c, sources, manifest, engine_cfg, params_now)
+            await _analyse_candidate_async(ws_dir, c, sources, manifest, engine_cfg, params_now)
         if c.get("analyse_error") is not None:
             # One log the engine can't analyse must not abort the whole sync.
             _unreadable(ws_dir, result, meta, skey, filename, c["analyse_error"], "analyse")
@@ -1846,7 +1870,13 @@ def scan_workspace(
     return result
 
 
-def reclassify_existing_flights(ws_dir: Path) -> list[dict]:
+def scan_workspace(*args, **kwargs):
+    """`scan_workspace_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(scan_workspace_async(*args, **kwargs))
+
+
+async def reclassify_existing_flights_async(ws_dir: Path, sources: Callable = DISK) -> list[dict]:
     """
     One-time migration helper, not run automatically by scan_workspace():
     re-applies classify_for_auto_exclusion() to every flight already in
@@ -1878,7 +1908,7 @@ def reclassify_existing_flights(ws_dir: Path) -> list[dict]:
         src = load_sources(ws_dir, fid)
         if src is None:
             continue
-        found = read_source_bytes(ws_dir, src)
+        found = (await read_source_bytes_async(ws_dir, src, sources))
         if found is None:
             continue  # source unreachable right now — leave it alone, not a false positive
         content, filename = found
@@ -1905,6 +1935,12 @@ def reclassify_existing_flights(ws_dir: Path) -> list[dict]:
         save_manifest(ws_dir, manifest)
 
     return reclassified
+
+
+def reclassify_existing_flights(*args, **kwargs):
+    """`reclassify_existing_flights_async` driven to the end at once — for disk sources
+    (the server, the CLI); see log_sources.run_now."""
+    return run_now(reclassify_existing_flights_async(*args, **kwargs))
 
 
 def engine_version_diagnostic(manifest: WorkspaceManifest) -> Optional[dict]:

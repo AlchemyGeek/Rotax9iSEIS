@@ -28,6 +28,7 @@ All analysis logic stays in operations.py.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import uuid
 from datetime import datetime, timezone
@@ -50,7 +51,7 @@ from .fleet import DA_BANDS, OAT_BANDS
 from .limits import _resolve_engine_name, limit_catalog, load_engine_config, resolve_min_flight_duration_min
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
-from .log_sources import LogRef, LogUnavailable
+from .log_sources import LogRef, LogUnavailable, run_now
 from .operations import (
     NO_CARD_TOPICS,
     EcuAnalysis,
@@ -789,7 +790,7 @@ def _channel_name(target: str) -> str:
     return f"{cdef.label} {cdef.unit}".strip() if cdef.unit and cdef.unit not in cdef.label else cdef.label
 
 
-def _log_channel_rows(workspace_dir: Path, sources) -> list[dict]:
+async def _log_channel_rows(workspace_dir: Path, sources) -> list[dict]:
     """One row per raw general-purpose channel any log in the workspace
     carries: the sources that log it, the observed range, the flights
     natively logging which registry channels (what may be assigned), and
@@ -812,7 +813,7 @@ def _log_channel_rows(workspace_dir: Path, sources) -> list[dict]:
         skey = (fa.source_keys or [""])[0]
         ranges = cache.get(skey)
         if ranges is None and src is not None:
-            found = ws.read_source_bytes(workspace_dir, src, sources)
+            found = await ws.read_source_bytes_async(workspace_dir, src, sources)
             if found is not None:
                 df, _info = load_log_bytes(*found)
                 ranges = {c: [float(df[c].min()), float(df[c].max())] for c in gp if c in df.columns and df[c].notna().any()}
@@ -847,12 +848,12 @@ def _log_channel_rows(workspace_dir: Path, sources) -> list[dict]:
     return out
 
 
-def op_get_log_channels(params: dict, ctx: dict) -> Any:
+async def op_get_log_channels(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
-    return {"channels": _log_channel_rows(ctx["workspace_dir"], _sources(ctx))}
+    return {"channels": await _log_channel_rows(ctx["workspace_dir"], _sources(ctx))}
 
 
-def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
+async def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
     """Assign (or clear, target null) a raw general-purpose channel. The
     target must be a registry channel the source lacks natively. Flights
     whose logs carry the raw channel become Needs re-analysis (Spec 02 §8);
@@ -861,7 +862,7 @@ def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     raw = str(params.get("raw") or "")
     target = params.get("target") or None
-    rows = {r["raw"]: r for r in _log_channel_rows(workspace_dir, _sources(ctx))}
+    rows = {r["raw"]: r for r in (await _log_channel_rows(workspace_dir, _sources(ctx)))}
     if raw not in rows:
         raise RpcError("BAD_PARAMS", f"no log in this workspace carries {raw}")
     if target is not None and target not in {o["channel"] for o in rows[raw]["options"]}:
@@ -878,10 +879,10 @@ def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
         ws.upsert_journal_entry(workspace_dir, kind="changed_setting", ref_id=ref,
                                 what=ws.channel_assignment_title(raw, target, rows[raw]["sources"]),
                                 where={"setting": ref, "tab": "engine"})
-    return {"channels": _log_channel_rows(workspace_dir, _sources(ctx))}
+    return {"channels": (await _log_channel_rows(workspace_dir, _sources(ctx)))}
 
 
-def op_get_flight_series(params: dict, ctx: dict) -> Any:
+async def op_get_flight_series(params: dict, ctx: dict) -> Any:
     """The Flight view's timeline. Checks the workspace's own persisted
     copy first (fast path — every upload-imported flight has one), then
     falls back to re-reading from wherever ws.read_source_bytes can
@@ -901,7 +902,7 @@ def op_get_flight_series(params: dict, ctx: dict) -> Any:
         content, filename = source_files[0].read_bytes(), source_files[0].name
     else:
         src = ws.load_sources(workspace_dir, flight_id)
-        found = ws.read_source_bytes(workspace_dir, src, _sources(ctx)) if src else None
+        found = (await ws.read_source_bytes_async(workspace_dir, src, _sources(ctx))) if src else None
         if found is None:
             raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
@@ -986,7 +987,7 @@ def op_import_files(params: dict, ctx: dict) -> Any:
     return {"results": results, "flight_count": len(by_id), "fleet_key": fleet.fleet_key}
 
 
-def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
+async def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
     """
     The Spec 03 §5.1 Flights-table row shape — a host-side join of
     FlightAnalysis + FlightSources (Spec 02 §6.2) + FleetSelection (§6.3)
@@ -1006,7 +1007,7 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
 
     # Spec 03 v0.17 §5.1: work waiting for the pilot's go-ahead — logs found
     # in the folders but not analysed, and flights analysed by an older engine.
-    pending_logs, stale_ids = ws.pending_work(workspace_dir, _sources(ctx)) if ctx.get("active_workspace_id") else ([], [])
+    pending_logs, stale_ids = (await ws.pending_work_async(workspace_dir, _sources(ctx))) if ctx.get("active_workspace_id") else ([], [])
     stale = set(stale_ids)
 
     rows = []
@@ -1208,7 +1209,7 @@ def op_delete_shift_event(params: dict, ctx: dict) -> Any:
     return {"shift_history": ws.delete_shift_event(ctx["workspace_dir"], params["event_id"])}
 
 
-def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"], sources) -> dict:
+async def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"], sources) -> dict:
     """
     Best-effort extra context for one exclusions.json entry, for display
     (date/duration/airborne minutes/aircraft) — none of this is stored
@@ -1220,11 +1221,11 @@ def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifes
     """
     if manifest is None:
         return entry
-    log = ws.find_log_file_by_name(manifest, entry["filename"], sources)
+    log = await ws.find_log_file_by_name_async(manifest, entry["filename"], sources)
     if log is None:
         return entry
     try:
-        df, info = load_log_bytes(log.read_bytes(), entry["filename"])
+        df, info = load_log_bytes(await log.aread_bytes(), entry["filename"])
         df = detect_phases(df, verbose=False)
         start, end = df["datetime"].iloc[0], df["datetime"].iloc[-1]
         airborne_s = sum(
@@ -1242,7 +1243,7 @@ def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifes
         return entry
 
 
-def op_list_exclusions(params: dict, ctx: dict) -> Any:
+async def op_list_exclusions(params: dict, ctx: dict) -> Any:
     """
     The Flights tab's "Skipped" list (Spec 02 §5.11.5, Spec 03 §5.1)
     — every ground_session/short_flight/
@@ -1269,7 +1270,7 @@ def op_list_exclusions(params: dict, ctx: dict) -> Any:
                 manifest = ws.load_manifest(workspace_dir)
             except (FileNotFoundError, OSError):
                 manifest = None
-        entries = [_enrich_exclusion_entry(e, manifest, _sources(ctx)) for e in entries]
+        entries = [await _enrich_exclusion_entry(e, manifest, _sources(ctx)) for e in entries]
 
     # Spec 02 v0.11 §7.5: an imported workspace's flights whose log
     # hasn't been found — no actions; they resolve when the log is added.
@@ -1278,7 +1279,7 @@ def op_list_exclusions(params: dict, ctx: dict) -> Any:
     return {"entries": entries, "summary": _exclusions.exclusion_summary(exclusions), "sender_missing": sender_missing}
 
 
-def op_include_excluded_log(params: dict, ctx: dict) -> Any:
+async def op_include_excluded_log(params: dict, ctx: dict) -> Any:
     """
     Bring an auto/user-excluded log back — the exclusions.json
     counterpart to op_include_flight (which un-excludes an already-
@@ -1298,25 +1299,25 @@ def op_include_excluded_log(params: dict, ctx: dict) -> Any:
         _exclusions.set_user_override(workspace_dir, filename, True, params.get("reason", ""))
     except ValueError as e:
         raise RpcError("NOT_FOUND", str(e))
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx))
+    scan_result = await ws.scan_workspace_async(workspace_dir, ctx["registry_path"], sources=_sources(ctx))
     if scan_result.new_flight_ids:
         ws.rebuild_fleet(workspace_dir)
     return {"filename": filename, "included": True, "scan_result": scan_result.to_dict()}
 
 
-def _find_excluded_log(ctx: dict, filename: str) -> "LogRef":
+async def _find_excluded_log(ctx: dict, filename: str) -> "LogRef":
     _require_active(ctx)
     try:
         manifest = ws.load_manifest(ctx["workspace_dir"])
     except (FileNotFoundError, OSError):
         raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
-    log = ws.find_log_file_by_name(manifest, filename, _sources(ctx))
+    log = await ws.find_log_file_by_name_async(manifest, filename, _sources(ctx))
     if log is None:
         raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
     return log
 
 
-def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
+async def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
     """
     Read-only preview of a skipped log's own data (Spec 02 §5.11.5)
     — runs analyze_flight() on it exactly like a real flight
@@ -1327,10 +1328,10 @@ def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
     Include it — without first having to bring it into the workspace to
     look.
     """
-    log = _find_excluded_log(ctx, params["filename"])
+    log = await _find_excluded_log(ctx, params["filename"])
     engine_cfg, engine_name = _current_engine(ctx)
     try:
-        content = log.read_bytes()
+        content = await log.aread_bytes()
     except LogUnavailable:
         raise RpcError("NOT_FOUND", f"{params['filename']} can't be read right now")
     fa = analyze_flight(content, params["filename"], engine_cfg, engine_name, params=_analysis_params(ctx))
@@ -1341,13 +1342,13 @@ def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
             "source_format": info.source_format, "filled_share": round(info.filled_share, 3)}
 
 
-def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
+async def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
     channels = params.get("channels")
     if not channels:
         raise RpcError("BAD_PARAMS", "channels is required")
-    log = _find_excluded_log(ctx, params["filename"])
+    log = await _find_excluded_log(ctx, params["filename"])
     try:
-        content = log.read_bytes()
+        content = await log.aread_bytes()
     except LogUnavailable:
         raise RpcError("NOT_FOUND", f"{params['filename']} can't be read right now")
     return _downsample_series(content, params["filename"], _expand_channels(channels),
@@ -1607,7 +1608,7 @@ def op_remove_missing_flight(params: dict, ctx: dict) -> Any:
     return {"removed": ws.remove_missing_flight(ctx["workspace_dir"], params["flight_id"])}
 
 
-def op_remove_flight(params: dict, ctx: dict) -> Any:
+async def op_remove_flight(params: dict, ctx: dict) -> Any:
     """
     General remove (any status, not just Missing) — followed by the same
     scan_workspace a manual Rescan runs, so the workspace's flights/
@@ -1619,20 +1620,20 @@ def op_remove_flight(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     removed = ws.remove_flight(workspace_dir, params["flight_id"])
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed else None
+    scan_result = await ws.scan_workspace_async(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed else None
     if removed:
         ws.rebuild_fleet(workspace_dir)
     return {"removed": removed, "scan_result": scan_result.to_dict() if scan_result else None}
 
 
-def op_remove_flights(params: dict, ctx: dict) -> Any:
+async def op_remove_flights(params: dict, ctx: dict) -> Any:
     """Multi-select form of op_remove_flight — removes every requested
     flight first, then runs exactly one scan_workspace and one fleet
     rebuild for the whole batch rather than one pair per flight."""
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     removed_ids = ws.remove_flights(workspace_dir, params["flight_ids"])
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed_ids else None
+    scan_result = await ws.scan_workspace_async(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed_ids else None
     if removed_ids:
         ws.rebuild_fleet(workspace_dir)
     return {"removed_flight_ids": removed_ids, "scan_result": scan_result.to_dict() if scan_result else None}
@@ -1660,6 +1661,15 @@ def _activate_workspace(ctx: dict, workspace_id: str) -> None:
     ws.save_registry(ctx["registry_path"], registry)
 
 
+def _record_backend(ctx: dict, manifest: "ws.WorkspaceManifest") -> "ws.WorkspaceManifest":
+    """Spec 02 §6.1, Spec 04 §9.4: a workspace created in the browser host
+    says it lives on OPFS — the same files, the value only says where."""
+    if ctx.get("host") == "browser" and manifest.storage_backend != "opfs":
+        manifest.storage_backend = "opfs"
+        ws.save_manifest(ctx["workspaces_root"] / manifest.id, manifest)
+    return manifest
+
+
 def op_create_workspace(params: dict, ctx: dict) -> Any:
     try:
         manifest = ws.create_workspace(
@@ -1669,6 +1679,7 @@ def op_create_workspace(params: dict, ctx: dict) -> Any:
         )
     except ValueError as e:
         raise RpcError("BAD_PARAMS", str(e))
+    manifest = _record_backend(ctx, manifest)
     _activate_workspace(ctx, manifest.id)
     return manifest.to_dict()
 
@@ -1734,7 +1745,7 @@ def _export_dir(ctx: dict) -> Path:
     return d
 
 
-def op_export_workspace(params: dict, ctx: dict) -> Any:
+async def op_export_workspace(params: dict, ctx: dict) -> Any:
     """§7.2: the whole active workspace. The file is written to a private
     temporary folder and handed to the transport's deliver_file (HTTP: a
     one-shot /download/<token>, so the browser saves it like any download)."""
@@ -1742,7 +1753,7 @@ def op_export_workspace(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     out = _export_dir(ctx) / uuid.uuid4().hex
     try:
-        result = wx.export_workspace(ctx["workspace_dir"], out, include_logs=bool(params.get("include_logs", True)),
+        result = await wx.export_workspace_async(ctx["workspace_dir"], out, include_logs=bool(params.get("include_logs", True)),
                                      anonymise=bool(params.get("anonymise", False)), sources=_sources(ctx))
     except wx.ExportError as e:
         raise RpcError("EXPORT_FAILED", str(e))
@@ -1801,16 +1812,17 @@ def op_import_workspace(params: dict, ctx: dict) -> Any:
         raise RpcError("IMPORT_REFUSED", str(e))
     except ValueError as e:
         raise RpcError("BAD_PARAMS", str(e))
+    manifest = _record_backend(ctx, manifest)
     _activate_workspace(ctx, manifest.id)
     return {"manifest": manifest.to_dict(), "logs_linked": bool(manifest.log_folders)}
 
 
-def op_match_import(params: dict, ctx: dict) -> Any:
+async def op_match_import(params: dict, ctx: dict) -> Any:
     """§7.4 step 4: the folders against the sender's manifest, without analysing."""
     from . import workspace_export as wx
     _require_active(ctx)
     try:
-        return wx.match_import(ctx["workspace_dir"], _sources(ctx))
+        return await wx.match_import_async(ctx["workspace_dir"], _sources(ctx))
     except ValueError as e:
         raise RpcError("NOT_IMPORTED", str(e))
 
@@ -1853,6 +1865,25 @@ def op_add_log_folder(params: dict, ctx: dict) -> Any:
     return manifest.to_dict()
 
 
+def _tree_size(p: Path) -> int:
+    if p.is_file():
+        return p.stat().st_size
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file()) if p.is_dir() else 0
+
+
+def op_get_storage_usage(params: dict, ctx: dict) -> Any:
+    """Spec 14 §5.2.1, Spec 04 v0.7 §9.4: the space the data root takes,
+    measured by walking it (the browser's estimate() isn't trusted), in
+    total and per workspace."""
+    root = ctx["registry_path"].parent
+    registry = ws.load_registry(ctx["registry_path"])
+    workspaces = [{"id": e.id, "name": e.name, "bytes": _tree_size(ctx["workspaces_root"] / e.id)}
+                  for e in registry.workspaces]
+    total = _tree_size(root)
+    return {"total_bytes": total, "workspaces": workspaces,
+            "other_bytes": total - sum(w["bytes"] for w in workspaces), "workspace_count": len(workspaces)}
+
+
 def op_register_log_folder(params: dict, ctx: dict) -> Any:
     """Link a folder the host can't see by path (Spec 02 §6.1, Spec 04
     §9.3): a display name and the stable `folder_id` the transport keys
@@ -1866,7 +1897,7 @@ def op_register_log_folder(params: dict, ctx: dict) -> Any:
     return ws.add_log_folder(ctx["workspace_dir"], name, ctx["registry_path"], folder_id=folder_id).to_dict()
 
 
-def op_scan_workspace(params: dict, ctx: dict) -> Any:
+async def op_scan_workspace(params: dict, ctx: dict) -> Any:
     """Finds new/missing/moved files AND re-analyzes any already-known
     flight whose stored analysis predates the running engine — one
     action covers both jobs (Spec 03 §5.1's Rescan), so the fleet only
@@ -1897,7 +1928,7 @@ def op_scan_workspace(params: dict, ctx: dict) -> Any:
 
     _emit(ctx, "scan", {"active": True, "phase": "starting"})
     try:
-        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress, sources=_sources(ctx),
+        result = await ws.scan_workspace_async(workspace_dir, ctx["registry_path"], on_progress=on_progress, sources=_sources(ctx),
                                    new_keys=new_keys, reanalyze_ids=reanalyze_ids)
     finally:
         _emit(ctx, "scan", {"active": False})
@@ -1910,7 +1941,7 @@ def op_get_scan_progress(params: dict, ctx: dict) -> Any:
     return ctx.get("scan_progress", {"active": False})
 
 
-def op_reclassify_flights(params: dict, ctx: dict) -> Any:
+async def op_reclassify_flights(params: dict, ctx: dict) -> Any:
     """
     One-time migration action for a workspace scanned before
     scan_workspace() gained ground-session/short-flight/corrupt-log
@@ -1920,7 +1951,7 @@ def op_reclassify_flights(params: dict, ctx: dict) -> Any:
     """
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
-    reclassified = ws.reclassify_existing_flights(workspace_dir)
+    reclassified = await ws.reclassify_existing_flights_async(workspace_dir, _sources(ctx))
     if reclassified:
         ws.rebuild_fleet(workspace_dir)
     return {"reclassified": reclassified}
@@ -2428,6 +2459,8 @@ def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
                "persistent_storage_status": False, "download_url": True, "folder_watching": False},
+    "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
+                "persistent_storage_status": True, "download_url": False, "folder_watching": False},
 }
 
 
@@ -2445,6 +2478,7 @@ def op_get_capabilities(params: dict, ctx: dict) -> Any:
 _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_capabilities": op_get_capabilities,
     "register_log_folder": op_register_log_folder,
+    "get_storage_usage": op_get_storage_usage,
     "get_data_location": op_get_data_location,
     "assess_data_location": op_assess_data_location,
     "change_data_location": op_change_data_location,
@@ -2613,24 +2647,73 @@ def _no_delivery(path: Path, filename: str) -> Any:
     raise RpcError("UNSUPPORTED_IN_HOST", "this host can't deliver files")
 
 
-def dispatch(op: str, params: dict, ctx: dict) -> Any:
-    """Run one operation, enforcing the rules every transport shares.
-    Returns the result or raises RpcError; anything else an operation
-    raises comes back as INTERNAL_ERROR."""
+# Spec 04 §9.5: operations that exist only in some hosts. Elsewhere they
+# answer UNSUPPORTED_IN_HOST, and the UI never reaches them without the
+# matching capability.
+_HOST_ONLY: dict[str, set] = {
+    op: {"server"} for op in ("get_data_location", "assess_data_location", "change_data_location",
+                              "get_data_location_progress", "retry_data_location", "add_log_folder")
+}
+
+
+def _check(op: str, ctx: dict) -> None:
+    """The rules every transport shares, before an operation runs."""
     if op not in _OPS:
         raise RpcError("UNKNOWN_OP", f"unknown operation: {op}")
+    allowed = _HOST_ONLY.get(op)
+    if allowed is not None and ctx.get("host", "server") not in allowed:
+        raise RpcError("UNSUPPORTED_IN_HOST", f"{op} isn't available in this host")
     if op not in _LOCATION_OPS:
         if ctx.get("data_location_missing"):
             raise RpcError("DATA_LOCATION_MISSING",
                            f"The data location {ctx['data_location_missing']} can't be reached.")
         if _is_running(ctx, "data_location"):
             raise RpcError("BUSY", "Your data is being moved; try again when it has finished.")
+
+
+def dispatch(op: str, params: dict, ctx: dict) -> Any:
+    """Run one operation, enforcing the rules every transport shares.
+    Returns the result or raises RpcError; anything else an operation
+    raises comes back as INTERNAL_ERROR."""
+    _check(op, ctx)
     try:
-        return _OPS[op](params, ctx)
+        result = _OPS[op](params, ctx)
+        if inspect.iscoroutine(result):
+            # A resumable operation (Spec 04 D11): with disk sources it
+            # never waits, so it runs to the end here.
+            result = run_now(result)
+        return result
     except RpcError:
         raise
     except Exception as e:  # noqa: BLE001 — an envelope always answers
         raise RpcError("INTERNAL_ERROR", f"{type(e).__name__}: {e}") from e
+
+
+async def dispatch_async(op: str, params: dict, ctx: dict) -> Any:
+    """`dispatch` for a transport with an event loop (the browser worker):
+    a resumable operation is awaited, pausing at each file request."""
+    _check(op, ctx)
+    try:
+        result = _OPS[op](params, ctx)
+        if inspect.iscoroutine(result):
+            result = await result
+        return result
+    except RpcError:
+        raise
+    except Exception as e:  # noqa: BLE001 — an envelope always answers
+        raise RpcError("INTERNAL_ERROR", f"{type(e).__name__}: {e}") from e
+
+
+async def reply_async(envelope: dict, ctx: dict) -> dict:
+    """`reply` for a transport with an event loop."""
+    request_id = envelope.get("request_id") if isinstance(envelope, dict) else None
+    try:
+        if not isinstance(envelope, dict) or "op" not in envelope:
+            raise RpcError("INTERNAL_ERROR", "KeyError: 'op'")
+        result = await dispatch_async(envelope["op"], envelope.get("params", {}), ctx)
+        return {"request_id": request_id, "ok": True, "result": result}
+    except RpcError as e:
+        return {"request_id": request_id, "ok": False, "error": {"code": e.code, "message": e.message}}
 
 
 def reply(envelope: dict, ctx: dict) -> dict:
