@@ -13,6 +13,7 @@ site's; scripts/build_site.py uses it).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -26,7 +27,11 @@ ROOT = Path(__file__).resolve().parent.parent
 def build(out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run([sys.executable, "-m", "pip", "wheel", str(ROOT), "--no-deps", "--no-build-isolation",
+        # Build with this interpreter's setuptools when it has one (the
+        # dev venv, CI); otherwise let pip fetch it — `npm run …` may
+        # reach a bare system python3.
+        isolation = [] if importlib.util.find_spec("setuptools") is None else ["--no-build-isolation"]
+        subprocess.run([sys.executable, "-m", "pip", "wheel", str(ROOT), "--no-deps", *isolation,
                         "--quiet", "--wheel-dir", tmp], check=True)
         built = next(Path(tmp).glob("slingology_eis-*.whl"))
         for old in out_dir.glob("slingology_eis-*.whl"):
