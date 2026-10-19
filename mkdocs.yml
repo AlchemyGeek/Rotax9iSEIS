@@ -1,0 +1,94 @@
+site_name: SlingologyEIS
+site_description: Engine health analytics for Rotax iS aircraft engines — what it tells you and why
+site_url: https://alchemygeek.github.io/Rotax9iSEIS/
+repo_url: https://github.com/AlchemyGeek/Rotax9iSEIS
+repo_name: AlchemyGeek/Rotax9iSEIS
+docs_dir: docs
+site_dir: site
+edit_uri: ""
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: [docs]
+      check_paths: true
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+# Specs are kept in docs/specs for developers but are not part of the site nav.
+exclude_docs: |
+  specs/
+  ROTAX 91XiS Engine Data Analytics.md
+
+nav:
+  - Home: index.md
+  - Understanding your engine's data:
+      - What EIS tells you: concepts/what-eis-tells-you.md
+      - Why a FADEC Rotax is different: concepts/why-fadec-is-different.md
+      - Logs, flights and workspaces: concepts/logs-flights-workspaces.md
+      - Phases of flight: concepts/phases-of-flight.md
+  - What EIS watches:
+      - Operators Manual limits and events: concepts/limits-and-events.md
+      - Your reference: concepts/your-reference.md
+      - Topics and insights: concepts/topics-and-insights.md
+      - The topics: concepts/the-topics.md
+      - Cylinder balance: concepts/cylinder-balance.md
+  - Deciding what matters:
+      - Your decisions: concepts/your-decisions.md
+      - "Trends: is my engine changing?": concepts/trends.md
+      - The Journal: concepts/the-journal.md
+  - Working with others:
+      - Sharing a workspace: concepts/sharing-a-workspace.md
+  - Walkthroughs:
+      - Install and your first workspace: walkthroughs/first-workspace.md
+      - Reading your first flight: walkthroughs/first-flight.md
+      - From an insight to a decision: walkthroughs/insight-to-decision.md
+      - Export and import: walkthroughs/export-import.md
+  - Reference:
+      - Operators Manual limits by engine: reference/om-limits.md
+      - Settings and their defaults: reference/settings.md
+      - Glossary: reference/glossary.md
+      - Further reading: reference/further-reading.md
