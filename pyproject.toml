@@ -27,6 +27,11 @@ notebooks = [
     "jupyter>=1.0",
     "matplotlib>=3.7",
 ]
+# Spec 04 step 3–4: the persistence probe and the browser-host runs drive
+# an installed Chrome through Playwright (no browser download).
+browser = [
+    "playwright>=1.45",
+]
 
 [project.scripts]
 slingology-eis = "slingology_eis.cli:main"

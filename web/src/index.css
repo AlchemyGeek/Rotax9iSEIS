@@ -1,6 +1,5 @@
 /* Design tokens — sourced from design/wireframes/*.dc.html (Spec 05 §4).
-   The dark/teal/IBM-Plex look is a placeholder pending real branding
-   (Spec 05 §3): tokens, not literals, so restyling later is a swap here. */
+   Brand color and its reservation: Spec 15. */
 :root {
   --bg: #0f1214;
   --panel: #171b1e;
@@ -12,12 +11,22 @@
   --text-secondary: #c9d0d6;
   --text-tertiary: #aeb7bf;
 
-  --accent: #4fc3b0;
-  --accent-hover: #6dd4c3;
-  --accent-15: rgba(79, 195, 176, 0.15);
-  --accent-10: rgba(79, 195, 176, 0.1);
-  --accent-06: rgba(79, 195, 176, 0.06);
+  /* Brand (Spec 15 §2, §4): the one accent, reserved for "active / primary"
+     roles only. #3D5A73 is a fill under light text; the tint is the same hue
+     for lines, outlines and text on dark. Never a phase or severity color
+     (theme/brand.test.ts). */
+  --brand: #3d5a73;
+  --brand-hover: #4a6b88;
+  --brand-tint: #7fa3c2;
+  --brand-fill: rgba(127, 163, 194, 0.15);
+  --on-brand: #e8eaed;
+
+  /* Non-brand roles that used to borrow the placeholder teal (Spec 15 §4). */
+  --link: #e8eaed;
+  --link-underline: rgba(232, 234, 237, 0.4);
+  --ok: #4fc3b0;
   --success: #3ddc97;
+  --tint-neutral: rgba(232, 234, 237, 0.05);
 
   --severity-limit: #e5484d;
   --severity-warning: #f5a524;
@@ -25,7 +34,8 @@
   --severity-info: #64748b;
   --severity-info-text: #93a0ad;
 
-  --chart-rpm: #4fc3b0;
+  --chart-rpm: #4fc3b0; /* its own color, not the brand's (Spec 15 §4) */
+  --chart-data: #4fc3b0;
   --chart-ias: #8b7fe8;
   --chart-oil-temp: #e5484d;
   --chart-egt-spread: #eab308;
@@ -64,13 +74,19 @@ body {
   font-family: var(--font-mono);
 }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
+/* Links and inline text actions (Spec 15 §4): neutral, underlined —
+   never the brand color. */
+a,
+.link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--link-underline);
+  text-underline-offset: 2px;
 }
 
-a:hover {
-  color: var(--accent-hover);
+a:hover,
+.link:hover {
+  text-decoration-color: currentColor;
 }
 
 button {

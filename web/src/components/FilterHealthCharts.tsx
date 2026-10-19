@@ -40,7 +40,7 @@ function chartOption({
       const fill = s.band ? bandColor(s.band) : colors.textTertiary;
       return s.breaches > 0 ? { color: fill, borderColor: colors.severityLimit, borderWidth: 2 } : { color: fill };
     }
-    return { color: s.breaches > 0 ? colors.severityLimit : showReference && s.in_reference ? colors.textTertiary : colors.accent };
+    return { color: s.breaches > 0 ? colors.severityLimit : showReference && s.in_reference ? colors.textTertiary : colors.chartData };
   };
   return {
     animation: false,
@@ -215,7 +215,7 @@ export function FilterHealthCharts({
               </span>
             )}
             <span>
-              <Dot color={colors.accent} />
+              <Dot color={colors.chartData} />
               {showReference ? "other flights" : "flights"}
             </span>
             <span>

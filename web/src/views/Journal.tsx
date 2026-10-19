@@ -7,6 +7,7 @@ import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { notifyFiltersChanged } from "../lib/filterAttention";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import { EngineRpcError, getEngineClient, type FlightSummary } from "../lib/engineClient";
+import { useCapabilities } from "../lib/capabilities";
 import type { Annotation, FilterTarget, JournalEntry, JournalEntryKind } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
 import { ScopeCaption } from "../components/ScopeCaption";
@@ -117,10 +118,19 @@ export function Journal() {
   // The server answered but couldn't read the Journal — say so, rather
   // than showing an empty sample page as if there were no decisions.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // No workspace yet (a first run): an empty Journal, not an error.
+  const [noWorkspace, setNoWorkspace] = useState(false);
+  const caps = useCapabilities();
 
   async function load() {
     const [j, a, f] = await Promise.all([
-      client.getJournal(),
+      client.getJournal().catch((err) => {
+        if (err instanceof EngineRpcError && err.code === "NO_ACTIVE_WORKSPACE") {
+          setNoWorkspace(true);
+          return { entries: [] as JournalEntry[] };
+        }
+        throw err;
+      }),
       client.listAnnotations(),
       client.listFlights().catch(() => [] as FlightSummary[]),
     ]);
@@ -294,7 +304,7 @@ export function Journal() {
   const LINK: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 };
   const BUTTON = (primary: boolean): React.CSSProperties => ({
     padding: "5px 11px", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: primary ? 600 : 400,
-    background: primary ? "var(--accent)" : "transparent", color: primary ? "var(--bg)" : "var(--text-secondary)",
+    background: primary ? "var(--brand)" : "transparent", color: primary ? "var(--on-brand)" : "var(--text-secondary)",
     border: primary ? "none" : "1px solid var(--border)",
   });
 
@@ -309,14 +319,14 @@ export function Journal() {
         id={`journal-entry-${e.id}`}
         data-testid={`journal-entry-${e.id}`}
         data-focused={focusEntry === e.id || undefined}
-        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--accent)" : "none" }}
+        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--brand-tint)" : "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-secondary)", background: "var(--panel-control)", padding: "3px 8px", borderRadius: 10, flexShrink: 0 }}>
               {KIND_LABELS[e.kind]}
             </span>
-            <a href="#" onClick={(ev) => { ev.preventDefault(); openWhere(e); }} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            <a href="#" onClick={(ev) => { ev.preventDefault(); openWhere(e); }} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", textDecoration: "none" }}>
               {live ? live.note.slice(0, 80) : e.what}
             </a>
           </div>
@@ -342,11 +352,11 @@ export function Journal() {
               {n.text ? ` — ${n.text}` : ""}
             </span>
             {!usingFixture && (n.kind === "no_effect" ? (
-              <button type="button" style={{ ...LINK, color: "var(--accent)" }} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>
+              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>
                 Keep it
               </button>
             ) : (
-              <button type="button" style={{ ...LINK, color: "var(--accent)" }} onClick={() => setActiveTab("filters")}>
+              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => setActiveTab("filters")}>
                 Review in Limit filters →
               </button>
             ))}
@@ -410,9 +420,9 @@ export function Journal() {
 
   const chip = (active: boolean, enabled = true): React.CSSProperties => ({
     padding: "4px 10px", borderRadius: 20, fontSize: 11, cursor: enabled ? "pointer" : "default",
-    border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
-    background: active ? "var(--accent-15)" : "transparent",
-    color: active ? "var(--accent)" : enabled ? "var(--text-secondary)" : "var(--text-tertiary)",
+    border: active ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
+    background: active ? "var(--brand-fill)" : "transparent",
+    color: active ? "var(--brand-tint)" : enabled ? "var(--text-secondary)" : "var(--text-tertiary)",
     opacity: enabled ? 1 : 0.5,
   });
   const tab = (active: boolean): React.CSSProperties => ({
@@ -447,13 +457,21 @@ export function Journal() {
 
         {activeTab === "journal" && loadError && (
           <div role="alert" style={{ fontSize: 13, color: "var(--severity-warning)", lineHeight: 1.5 }}>
-            Couldn't load the Journal — your decisions are still saved. If the local server was started
-            before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.
+            Couldn't load the Journal — your decisions are still saved.
+            {caps?.host !== "browser" && (
+              <> If the local server was started before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.</>
+            )}
             <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{loadError}</div>
           </div>
         )}
 
-        {activeTab === "journal" && !loadError && (
+        {activeTab === "journal" && !loadError && noWorkspace && (
+          <div data-testid="journal-no-workspace" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            No workspace yet. Create one from the workspace menu at the top; the decisions you make about its flights are listed here.
+          </div>
+        )}
+
+        {activeTab === "journal" && !loadError && !noWorkspace && (
           <>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               <button type="button" onClick={() => setKindFilter("all")} style={chip(kindFilter === "all")}>All ({entries.length})</button>

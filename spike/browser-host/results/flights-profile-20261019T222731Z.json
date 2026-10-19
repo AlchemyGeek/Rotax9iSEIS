@@ -1,0 +1,341 @@
+{
+  "at": "2026-10-19T22:27:31.091604+00:00",
+  "summary": {
+    "flights": 58,
+    "runs": 6,
+    "open_ms_median": 352.4,
+    "open_ms_max": 522.2
+  },
+  "runs": [
+    {
+      "open_ms": 362.6,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 36.1,
+          "start_ms": 6.7
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 36.1,
+          "start_ms": 6.8
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 65.1,
+          "start_ms": 6.7
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 168.4,
+          "start_ms": 6.8
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 200.5,
+          "start_ms": 6.8
+        },
+        {
+          "op": "filter_health",
+          "ms": 50,
+          "start_ms": 207.3
+        },
+        {
+          "op": "filter_health",
+          "ms": 50,
+          "start_ms": 207.3
+        },
+        {
+          "op": "get_fleet",
+          "ms": 112.5,
+          "start_ms": 207.3
+        },
+        {
+          "op": "get_import_info",
+          "ms": 142.6,
+          "start_ms": 207.4
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 45.7,
+          "start_ms": 352.7
+        }
+      ]
+    },
+    {
+      "open_ms": 350.2,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 34.4,
+          "start_ms": 5.9
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 34.4,
+          "start_ms": 5.9
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 64.2,
+          "start_ms": 5.9
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 164.4,
+          "start_ms": 5.9
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 194.5,
+          "start_ms": 5.9
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.5,
+          "start_ms": 200.4
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.5,
+          "start_ms": 200.4
+        },
+        {
+          "op": "get_fleet",
+          "ms": 108.1,
+          "start_ms": 200.4
+        },
+        {
+          "op": "get_import_info",
+          "ms": 137,
+          "start_ms": 200.4
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 44.5,
+          "start_ms": 339.7
+        }
+      ]
+    },
+    {
+      "open_ms": 357.3,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 34.4,
+          "start_ms": 11.2
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 34.2,
+          "start_ms": 11.4
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 63.1,
+          "start_ms": 11.3
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 163.4,
+          "start_ms": 11.4
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 194.4,
+          "start_ms": 11.4
+        },
+        {
+          "op": "filter_health",
+          "ms": 49.4,
+          "start_ms": 205.8
+        },
+        {
+          "op": "filter_health",
+          "ms": 49.4,
+          "start_ms": 205.8
+        },
+        {
+          "op": "get_fleet",
+          "ms": 109.7,
+          "start_ms": 205.8
+        },
+        {
+          "op": "get_import_info",
+          "ms": 139.5,
+          "start_ms": 205.8
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 44.1,
+          "start_ms": 347.5
+        }
+      ]
+    },
+    {
+      "open_ms": 350.3,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 36.5,
+          "start_ms": 10.9
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 36.3,
+          "start_ms": 11.1
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 64.8,
+          "start_ms": 10.9
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 164.6,
+          "start_ms": 11.1
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 195.6,
+          "start_ms": 11.1
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.2,
+          "start_ms": 206.7
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.2,
+          "start_ms": 206.7
+        },
+        {
+          "op": "get_fleet",
+          "ms": 108.1,
+          "start_ms": 206.7
+        },
+        {
+          "op": "get_import_info",
+          "ms": 137.2,
+          "start_ms": 206.8
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 55.5,
+          "start_ms": 351.6
+        }
+      ]
+    },
+    {
+      "open_ms": 352.4,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 34.1,
+          "start_ms": 11.7
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 34.1,
+          "start_ms": 11.7
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 63.1,
+          "start_ms": 11.7
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 161.4,
+          "start_ms": 11.7
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 192.4,
+          "start_ms": 11.7
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.4,
+          "start_ms": 204.1
+        },
+        {
+          "op": "filter_health",
+          "ms": 48.4,
+          "start_ms": 204.1
+        },
+        {
+          "op": "get_fleet",
+          "ms": 110.1,
+          "start_ms": 204.1
+        },
+        {
+          "op": "get_import_info",
+          "ms": 141.1,
+          "start_ms": 204.1
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 44.2,
+          "start_ms": 347.4
+        }
+      ]
+    },
+    {
+      "open_ms": 522.2,
+      "ops": [
+        {
+          "op": "get_active_workspace",
+          "ms": 34.6,
+          "start_ms": 11.0
+        },
+        {
+          "op": "get_active_workspace",
+          "ms": 34.5,
+          "start_ms": 11.1
+        },
+        {
+          "op": "list_workspaces",
+          "ms": 63.8,
+          "start_ms": 11.0
+        },
+        {
+          "op": "list_flights_with_status",
+          "ms": 163.8,
+          "start_ms": 11.1
+        },
+        {
+          "op": "list_exclusions",
+          "ms": 352.5,
+          "start_ms": 11.1
+        },
+        {
+          "op": "filter_health",
+          "ms": 49.1,
+          "start_ms": 363.6
+        },
+        {
+          "op": "filter_health",
+          "ms": 49.1,
+          "start_ms": 363.6
+        },
+        {
+          "op": "get_fleet",
+          "ms": 109.9,
+          "start_ms": 363.6
+        },
+        {
+          "op": "get_import_info",
+          "ms": 139.3,
+          "start_ms": 363.6
+        },
+        {
+          "op": "get_aircraft_summary",
+          "ms": 44.9,
+          "start_ms": 505.2
+        }
+      ]
+    }
+  ]
+}

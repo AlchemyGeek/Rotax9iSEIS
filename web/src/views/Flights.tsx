@@ -6,6 +6,9 @@ import { SeverityBadge } from "../components/SeverityBadge";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
+import { useCapabilities } from "../lib/capabilities";
+import { canKeepFolders, droppedFolders, type FolderState } from "../lib/pageFolders";
+import type { FolderPicking } from "../lib/browserClient";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import { SOURCE_FORMAT_LABEL } from "../lib/sourceFormat";
 import type {
@@ -16,6 +19,7 @@ import { useFilterAttention } from "../lib/filterAttention";
 import { DROP_PROMPT_THRESHOLD, plural, promptText } from "../lib/flightsSync";
 
 const client = getEngineClient();
+const RECONNECT_NOTE_KEY = "slingology-eis-reconnect-note-dismissed";
 
 const LEGACY_MANIFEST: WorkspaceManifest = {
   id: "legacy", name: "Workspace", engine_model: "", log_folders: [],
@@ -37,7 +41,7 @@ const STATUS_LABEL: Record<FlightRowStatus, string> = {
 
 const STATUS_COLOR: Record<FlightRowStatus, string> = {
   analyzed: "var(--text-secondary)",
-  needs_analysis: "var(--accent)",
+  needs_analysis: "var(--ok)",
   needs_reanalysis: "var(--severity-watch)",
   missing: "var(--severity-warning)",
   folder_unreachable: "var(--severity-warning)",
@@ -59,7 +63,7 @@ function scanProgressText(p: ScanProgress | null): string {
   if (!p || !p.active || !p.phase) return "Syncing…";
   const label = SCAN_PHASE_LABEL[p.phase];
   if (p.current == null || p.total == null) return `${label}…`;
-  return `${label} ${p.current}/${p.total}`;
+  return `${label} ${p.current}/${p.total}${p.analysed ? ` · ${p.analysed} analysed` : ""}`;
 }
 
 type GroupBy = "date" | "folder";
@@ -185,9 +189,32 @@ export function Flights() {
   const [includingFilename, setIncludingFilename] = useState<string | null>(null);
   const [includeError, setIncludeError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Spec 03 v0.24 §5.1 / Spec 04 §9.3: where the host can't open a folder
+  // by path (the browser), Choose folder… instead of a typed path, and a
+  // folder row says when the page can't supply it.
+  const caps = useCapabilities();
+  const byPath = caps ? caps.features.add_folder_by_path : true;
+  const pageFolders = caps?.features.choose_folder ? (client as unknown as FolderPicking) : null;
+  const dirInputRef = useRef<HTMLInputElement>(null);
+  const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const [folderStates, setFolderStates] = useState<Record<string, FolderState>>({});
+  const [folderError, setFolderError] = useState<string | null>(null);
+  // Spec 03 v0.25 §5.1 (D14): where the browser can't keep folder access
+  // (Safari), the first Not connected row carries a note, dismissed once
+  // per browser — remembered outside OPFS.
+  const [reconnectNoteDismissed, setReconnectNoteDismissed] = useState(() => {
+    try { return localStorage.getItem(RECONNECT_NOTE_KEY) != null; } catch { return false; }
+  });
+  function dismissReconnectNote() {
+    try { localStorage.setItem(RECONNECT_NOTE_KEY, new Date().toISOString()); } catch { /* private mode */ }
+    setReconnectNoteDismissed(true);
+  }
 
   const refresh = useCallback(async () => {
     try {
+      // All four at once: in the browser host the engine answers one at a
+      // time, and a gap between them lets other requests in ahead (step 6).
+      const importInfoReply = client.getImportInfo().catch(() => ({ imported: false }) as ImportInfo);
       const [active, statusList, exclusionsResult] = await Promise.all([
         client.getActiveWorkspace(), client.listFlightsWithStatus(), client.listExclusions(),
       ]);
@@ -197,11 +224,7 @@ export function Flights() {
       setUsingFixture(false);
       setExclusions(exclusionsResult.entries);
       setSenderMissing(exclusionsResult.sender_missing ?? []);
-      try {
-        setImportInfo(await client.getImportInfo());
-      } catch {
-        setImportInfo({ imported: false });   // an older server, or not imported
-      }
+      setImportInfo(await importInfoReply);     // { imported: false } from an older server, or not imported
     } catch {
       setRows(fixtureFlights.rows);
       setManifest(fixtureManifest);
@@ -219,6 +242,12 @@ export function Flights() {
       cancelled = true;
     };
   }, [refresh]);
+
+  // Which of this workspace's folders the page can supply right now.
+  useEffect(() => {
+    void refreshFolderStates(manifest.log_folders);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manifest, pageFolders]);
 
   // One file at a time (not one batched RPC call for the whole drop) so
   // the banner can show real per-file progress.
@@ -269,7 +298,19 @@ export function Flights() {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    receiveFiles(Array.from(e.dataTransfer.files));
+    const files = Array.from(e.dataTransfer.files);
+    if (pageFolders && isRegistryActive) {
+      // Spec 04 §9.3: a dropped folder becomes a folder of this workspace
+      // (Safari's way to add one; Chrome's too); loose files import as before.
+      const dt = e.dataTransfer;
+      void droppedFolders(dt).then(async (folders) => {
+        if (!folders.length) { receiveFiles(files); return; }
+        for (const f of folders) await pageFolders.addFolderFiles(f);
+        await refresh();
+      });
+      return;
+    }
+    receiveFiles(files);
   };
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     receiveFiles(Array.from(e.target.files ?? []));
@@ -440,6 +481,46 @@ export function Flights() {
     } finally {
       setIncludingFilename(null);
     }
+  }
+
+  async function refreshFolderStates(folders: { folder_id?: string }[]) {
+    if (!pageFolders) return;
+    const next: Record<string, FolderState> = {};
+    for (const f of folders) if (f.folder_id) next[f.folder_id] = await pageFolders.folderState(f.folder_id);
+    setFolderStates(next);
+  }
+
+  function startAddFolder() {
+    if (byPath || !pageFolders) { setAddingFolder(true); return; }
+    setFolderError(null);
+    if (canKeepFolders()) {
+      pageFolders.chooseFolder().then(() => refresh(), (e) => { if (e?.name !== "AbortError") setFolderError(String(e?.message ?? e)); });
+    } else {
+      setReconnecting(null);
+      dirInputRef.current?.click();
+    }
+  }
+
+  async function reconnect(folderId: string) {
+    if (!pageFolders) return;
+    setFolderError(null);
+    if (canKeepFolders()) {
+      try { await pageFolders.reconnectFolder(folderId); } catch (e) { if ((e as Error)?.name !== "AbortError") setFolderError(String((e as Error)?.message ?? e)); }
+      await refresh();
+    } else {
+      setReconnecting(folderId);
+      dirInputRef.current?.click();
+    }
+  }
+
+  async function onPickFolder(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length || !pageFolders) return;
+    if (reconnecting) await pageFolders.reconnectFolder(reconnecting, files);
+    else await pageFolders.addFolderFiles(files);
+    setReconnecting(null);
+    await refresh();
   }
 
   async function handleAddFolder() {
@@ -683,7 +764,7 @@ export function Flights() {
                 setOfferKey(null);
                 void runAnalysis({ source_keys: row.source_key ? [row.source_key] : [], flight_ids: [] }, upload ? [upload] : []);
               }}
-              style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+              style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
             >
               Analyze this flight
             </button>
@@ -709,7 +790,7 @@ export function Flights() {
         className="mono"
         style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", width: 260 }}
       />
-      <button type="button" onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600, cursor: "pointer" }}>
+      <button type="button" onClick={handleAddFolder} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600, cursor: "pointer" }}>
         Add
       </button>
       <button type="button" onClick={() => { setAddingFolder(false); setFolderPath(""); }} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
@@ -727,9 +808,14 @@ export function Flights() {
         onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
         onDrop={(e) => { if (hasFolders) onDrop(e); }}
         data-testid="flights-page"
-        style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16, outline: dragOver && hasFolders ? "2px dashed var(--accent)" : "none", outlineOffset: -6 }}
+        style={{ flexGrow: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 16, outline: dragOver && hasFolders ? "2px dashed var(--brand-tint)" : "none", outlineOffset: -6 }}
       >
         <input ref={inputRef} type="file" multiple accept=".csv" style={{ display: "none" }} onChange={onPick} data-testid="file-input" />
+        {pageFolders && (
+          <input ref={dirInputRef} type="file" multiple style={{ display: "none" }} onChange={onPickFolder} data-testid="folder-input"
+            {...{ webkitdirectory: "" }} />
+        )}
+        {folderError && <div role="alert" style={{ fontSize: 12, color: "var(--severity-warning)" }}>{folderError}</div>}
         {filterAttention > 0 && (
           // Spec 09 §10.4: one line when a limit filter needs attention.
           <div
@@ -746,26 +832,51 @@ export function Flights() {
               {manifest.name} {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
             </h1>
             <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
-              {manifest.log_folders.map((f) => (
-                <span
-                  key={f.path}
-                  className="mono"
-                  title={f.reachable ? `last scanned ${f.last_scanned_at ?? "—"}` : "unreachable — Locate folder"}
-                  style={{
-                    fontSize: 11,
-                    padding: "5px 10px",
-                    borderRadius: 6,
-                    background: f.reachable ? "var(--panel-control)" : "rgba(245,165,36,0.1)",
-                    color: f.reachable ? "var(--text-secondary)" : "var(--severity-warning)",
-                    border: f.reachable ? "none" : "1px solid rgba(245,165,36,0.3)",
-                  }}
-                >
-                  {f.path}
-                  {!f.reachable && " — unreachable"}
-                </span>
-              ))}
+              {manifest.log_folders.map((f) => {
+                const pageState = f.folder_id ? folderStates[f.folder_id] : undefined;
+                const offline = pageState ? pageState !== "connected" : !f.reachable;
+                return (
+                  <span
+                    key={f.folder_id ?? f.path}
+                    className="mono"
+                    data-testid="folder-row"
+                    title={!offline ? `last scanned ${f.last_scanned_at ?? "—"}` : pageState ? undefined : "unreachable — Locate folder"}
+                    style={{
+                      fontSize: 11,
+                      padding: "5px 10px",
+                      borderRadius: 6,
+                      background: !offline ? "var(--panel-control)" : "rgba(245,165,36,0.1)",
+                      color: !offline ? "var(--text-secondary)" : "var(--severity-warning)",
+                      border: !offline ? "none" : "1px solid rgba(245,165,36,0.3)",
+                      display: "inline-flex", gap: 8, alignItems: "center",
+                    }}
+                  >
+                    {f.path}
+                    {!pageState && !f.reachable && " — unreachable"}
+                    {pageState === "needs_permission" && (
+                      <button type="button" onClick={() => void reconnect(f.folder_id!)} style={{ fontSize: 11, padding: "1px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text-primary)", cursor: "pointer" }}>
+                        Allow access
+                      </button>
+                    )}
+                    {pageState === "not_connected" && (
+                      <button type="button" onClick={() => void reconnect(f.folder_id!)} style={{ fontSize: 11, padding: "1px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text-primary)", cursor: "pointer" }}>
+                        Not connected — reconnect
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
               {hasFolders && addingFolder && folderForm}
             </div>
+            {pageFolders && !canKeepFolders() && !reconnectNoteDismissed
+              && Object.values(folderStates).includes("not_connected") && (
+              <div role="note" data-testid="reconnect-note" style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6, display: "flex", gap: 8, alignItems: "baseline", maxWidth: 640 }}>
+                <span>Safari doesn't keep folder access between visits. Your analyses are already here; reconnect to sync new logs or open charts.</span>
+                <button type="button" onClick={dismissReconnectNote} style={{ fontSize: 11, background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: 0 }}>
+                  Dismiss
+                </button>
+              </div>
+            )}
             <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
               {summary.total} flights &middot; {summary.inBaselines} in reference
               {summary.missing > 0 && ` · ${summary.missing} missing`}
@@ -778,7 +889,7 @@ export function Flights() {
                 type="button"
                 onClick={() => void runAnalysis({}, pendingUploads)}
                 title={`${plural(queue.newLogs, "log")} not analyzed yet, ${plural(queue.stale, "flight")} needing re-analysis`}
-                style={{ ...BUTTON, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}
+                style={{ ...BUTTON, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 }}
               >
                 Analyze {queueCount}
               </button>
@@ -793,8 +904,8 @@ export function Flights() {
                     <button type="button" role="menuitem" onClick={() => { setAddLogsOpen(false); inputRef.current?.click(); }} style={{ ...BUTTON, textAlign: "left" }}>
                       Choose log files…
                     </button>
-                    <button type="button" role="menuitem" onClick={() => { setAddLogsOpen(false); setAddingFolder(true); }} style={{ ...BUTTON, textAlign: "left" }}>
-                      Add a folder…
+                    <button type="button" role="menuitem" onClick={() => { setAddLogsOpen(false); startAddFolder(); }} style={{ ...BUTTON, textAlign: "left" }}>
+                      {byPath ? "Add a folder…" : "Choose folder…"}
                     </button>
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.4 }}>
                       Or drop log files anywhere on this page.
@@ -895,12 +1006,12 @@ export function Flights() {
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
             style={{
-              border: `2px dashed ${dragOver ? "var(--accent)" : "#2e6f64"}`, borderRadius: 16, background: "rgba(79,195,176,0.05)",
+              border: `2px dashed ${dragOver ? "var(--brand-tint)" : "var(--border)"}`, borderRadius: 16, background: "var(--tint-neutral)",
               padding: 22, display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap",
             }}
           >
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--accent-15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--tint-neutral)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3v13m0 0l-5-5m5 5l5-5" />
                 <path d="M4 18v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
               </svg>
@@ -915,7 +1026,7 @@ export function Flights() {
               </div>
             </div>
             {isRegistryActive && (addingFolder ? folderForm : (
-              <button type="button" onClick={() => setAddingFolder(true)} style={{ ...BUTTON, fontWeight: 600 }}>Add folder</button>
+              <button type="button" onClick={startAddFolder} style={{ ...BUTTON, fontWeight: 600 }}>{byPath ? "Add folder" : "Choose folder…"}</button>
             ))}
           </div>
         )}
@@ -926,7 +1037,7 @@ export function Flights() {
             role={banner.kind === "prompt" ? "dialog" : "status"}
             aria-label={banner.kind === "prompt" ? "Analyze now?" : undefined}
             data-testid="flights-banner"
-            style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: banner.kind === "prompt" ? "1px solid var(--accent)" : "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+            style={{ padding: "10px 14px", borderRadius: 8, background: "var(--panel)", border: banner.kind === "prompt" ? "1px solid var(--brand-tint)" : "1px solid var(--border)", fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
           >
             {banner.kind === "progress" && (
               <span>
@@ -940,7 +1051,7 @@ export function Flights() {
                   {promptText(banner.newLogs, banner.stale)}
                 </span>
                 <span style={{ flexGrow: 1 }} />
-                <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 }}>
+                <button type="button" onClick={() => answerPrompt(true)} style={{ ...BUTTON, padding: "5px 12px", background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 }}>
                   Analyze now
                 </button>
                 <button type="button" onClick={() => answerPrompt(false)} style={{ ...BUTTON, padding: "5px 12px", background: "transparent" }}>
@@ -1037,8 +1148,8 @@ export function Flights() {
                   fontSize: 11,
                   cursor: "pointer",
                   border: "1px solid var(--border)",
-                  background: groupBy === g ? "var(--accent-15)" : "transparent",
-                  color: groupBy === g ? "var(--accent)" : "var(--text-tertiary)",
+                  background: groupBy === g ? "var(--brand-fill)" : "transparent",
+                  color: groupBy === g ? "var(--brand-tint)" : "var(--text-tertiary)",
                 }}
               >
                 group by {g}

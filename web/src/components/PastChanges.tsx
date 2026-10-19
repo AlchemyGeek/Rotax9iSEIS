@@ -67,7 +67,7 @@ export function PastChanges({ events, onOpenPanel, onDelete, busyId }: Props) {
                     <button
                       onClick={() => { setConfirming(null); onDelete(ev.id); }}
                       disabled={busyId === ev.id}
-                      style={{ fontSize: 11, color: "var(--bg)", background: "var(--accent)", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontWeight: 600 }}
+                      style={{ fontSize: 11, color: "var(--on-brand)", background: "var(--brand)", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontWeight: 600 }}
                     >
                       {APPLY_LABEL.metric}
                     </button>

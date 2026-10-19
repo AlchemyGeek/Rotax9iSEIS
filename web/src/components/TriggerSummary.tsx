@@ -31,7 +31,7 @@ export function TriggerSummary({ topic, rule, onEditRules }: {
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); onEditRules(); }}
-            style={{ background: "none", border: "none", padding: 0, color: "var(--accent)", fontSize: 11, cursor: "pointer" }}
+            style={{ background: "none", border: "none", padding: 0, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2, fontSize: 11, cursor: "pointer" }}
           >
             Edit rules…
           </button>

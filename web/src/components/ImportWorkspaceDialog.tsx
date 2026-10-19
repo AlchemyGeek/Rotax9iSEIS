@@ -17,7 +17,7 @@ type Step = "choose" | "name" | "match" | "empty";
 
 const INPUT: React.CSSProperties = { fontSize: 12, padding: "6px 8px", borderRadius: 6, background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text-primary)", flexGrow: 1 };
 const BUTTON_BASE: React.CSSProperties = { padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" };
-const PRIMARY_BASE: React.CSSProperties = { ...BUTTON_BASE, background: "var(--accent)", border: "none", color: "var(--bg)", fontWeight: 600 };
+const PRIMARY_BASE: React.CSSProperties = { ...BUTTON_BASE, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontWeight: 600 };
 // A disabled button has to look it, or a click that does nothing reads as a fault.
 const BUTTON = (disabled = false): React.CSSProperties => ({ ...BUTTON_BASE, ...(disabled ? { opacity: 0.45, cursor: "default" } : {}) });
 const PRIMARY = (disabled = false): React.CSSProperties => ({ ...PRIMARY_BASE, ...(disabled ? { opacity: 0.45, cursor: "default" } : {}) });
@@ -137,7 +137,7 @@ export function ImportWorkspaceDialog({ onClose }: { onClose: () => void }) {
 
         {step === "match" && linked && (
           <div data-testid="linked-folders" className="mono" style={{ fontSize: 11, color: "var(--text-primary)" }}>
-            <span style={{ color: "var(--accent)" }}>✓</span> Linked {linked}
+            <span style={{ color: "var(--ok)" }}>✓</span> Linked {linked}
           </div>
         )}
 

@@ -39,7 +39,7 @@ function withUnit(v: number, unit: string): string {
   return unit === "%" || unit.startsWith("°") ? `${v}${unit}` : `${v} ${unit}`;
 }
 
-const RECENT_WINDOW_FILL = "rgba(79,195,176,0.07)";
+const RECENT_WINDOW_FILL = colors.chartRecentFill;
 const REFERENCE_FILL = "rgba(174,183,191,0.10)";
 // Spec 12 §5.7.1 item 1 (v0.9, Session G — R10.4): one "not used" fill
 // for every eligible flight outside the pinned reference, on either
@@ -158,7 +158,7 @@ export function TrendsPanelStrip({
           markAreas.push({
             silent: true,
             itemStyle: pinned
-              ? { color: REFERENCE_FILL, borderColor: colors.accent, borderWidth: 1.5, borderType: "solid" }
+              ? { color: REFERENCE_FILL, borderColor: colors.chartData, borderWidth: 1.5, borderType: "solid" }
               : { color: REFERENCE_FILL },
             data: [[
               { xAxis: ref.hours_from, yAxis: ref.mean - ref.std },
@@ -171,7 +171,7 @@ export function TrendsPanelStrip({
         if (ref.mean != null) {
           markLines.push({
             silent: true, symbol: "none",
-            lineStyle: { color: colors.accent, type: "dashed", opacity: 0.7 },
+            lineStyle: { color: colors.chartData, type: "dashed", opacity: 0.7 },
             label: { show: false },
             data: [[{ coord: [ref.hours_from, ref.mean] }, { coord: [recent.hours_to, ref.mean] }]],
           });
@@ -205,10 +205,10 @@ export function TrendsPanelStrip({
           const when = ref.label ?? (ref.set_at ? formatPinDate(ref.set_at) : "pinned");
           markLines.push({
             silent: true, symbol: "none",
-            lineStyle: { color: colors.accent, type: "solid", width: 1.5 },
+            lineStyle: { color: colors.chartData, type: "solid", width: 1.5 },
             label: {
               formatter: `reference pinned · ${ref.n} flight${ref.n === 1 ? "" : "s"} (${hours} h) · ${when}`,
-              position: "insideStartTop", color: colors.accent, fontFamily: fontSans, fontSize: 10,
+              position: "insideStartTop", color: colors.chartData, fontFamily: fontSans, fontSize: 10,
             },
             data: [{ xAxis: ref.hours_to }],
           });
@@ -295,7 +295,7 @@ export function TrendsPanelStrip({
               data: metric.points.filter((p) => p.band === name).map((p) => [p.x, p.value, p.flight_id, p.date]),
               itemStyle: {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                color: (p: any) => (p.data[2] === highlightFlight ? colors.accent : outlierIds.has(p.data[2]) ? colors.severityLimit : c),
+                color: (p: any) => (p.data[2] === highlightFlight ? colors.chartHighlight : outlierIds.has(p.data[2]) ? colors.severityLimit : c),
               },
             },
           ];
@@ -307,7 +307,7 @@ export function TrendsPanelStrip({
             data: points,
             itemStyle: {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              color: (p: any) => (p.data[2] === highlightFlight ? colors.accent : outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textSecondary),
+              color: (p: any) => (p.data[2] === highlightFlight ? colors.chartHighlight : outlierIds.has(p.data[2]) ? colors.severityLimit : colors.textSecondary),
             },
           },
         ];
@@ -410,7 +410,7 @@ export function TrendsPanelStrip({
         <div style={{ display: "flex", gap: 14, padding: "4px 2px 0", flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>&#9679; flight</span>
           <span style={{ fontSize: 10, color: "var(--severity-limit)" }}>&#9679; outlier</span>
-          <span style={{ fontSize: 10, color: "var(--accent)" }}>▦ {pinned ? "reference pinned (±1σ)" : "reference (±1σ)"}</span>
+          <span style={{ fontSize: 10, color: "var(--chart-data)" }}>▦ {pinned ? "reference pinned (±1σ)" : "reference (±1σ)"}</span>
           <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>▦ recent window</span>
           {/* §5.7.1 item 1 (v0.6): the legend/caption names every
               region actually on screen, not just the two rolling ones. */}

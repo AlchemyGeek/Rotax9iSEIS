@@ -39,9 +39,13 @@ from .operations import (
     update_fleet,
 )
 from .rules import validate_rules, what_if_rules
+from .resources import resource
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGED_HOME = Path.home() / "SlingologyEIS"
+# Spec 04 §9.3: the CLI's log folders are on this machine's disk, added
+# by path — the same log-source factory the HTTP server installs.
+from .log_sources import DISK as _DISK_SOURCES  # noqa: E402
 
 
 class CliUsageError(Exception):
@@ -87,14 +91,30 @@ def resolve_workspace_dir(cli_arg: Optional[str]) -> Path:
     `resolve_workspace_ref`'s own behavior, so this only adds the lookup,
     it doesn't change what happens when the lookup finds nothing — a
     developer-checkout invocation that predates the registry keeps
-    working unmodified. Precedence when no value is given at all
-    (packaged install, else a git checkout, else a usage error) is
-    unchanged.
+    working unmodified. With no value given: a configured data location
+    (environment or location file) wins — its active workspace, or a usage
+    error if it has none (Spec 04 D8); with nothing configured, the
+    packaged install, else a git checkout, else a usage error, as before.
     """
     if cli_arg:
         registry_path = _workspace.resolve_registry_path()
         workspaces_root = _workspace.resolve_workspaces_root()
         return _workspace.resolve_workspace_ref(cli_arg, registry_path, workspaces_root)
+    loc = _data_location.resolve()
+    if loc.source in ("environment", "chosen"):
+        # Spec 02 §5.8.1, Spec 04 D8: a configured data location wins in
+        # every context — its active workspace, and never the checkout's
+        # data/ behind its back when it has none yet.
+        registry_path = loc.root / "registry.json"
+        registry = _workspace.load_registry(registry_path)
+        if registry.workspaces:
+            last = _workspace.load_app_settings(registry_path).last_active_workspace_id
+            match = next((w for w in registry.workspaces if w.id == last), registry.workspaces[0])
+            return loc.root / "workspaces" / match.id
+        raise CliUsageError(
+            f"No workspace in the data location {loc.root} yet. Create one with "
+            "`slingology-eis workspace create NAME --engine MODEL`, or pass --workspace."
+        )
     if (_PACKAGED_HOME / "workspace").is_dir():
         return _PACKAGED_HOME / "workspace"
     if _is_git_checkout(_REPO_ROOT):
@@ -334,7 +354,7 @@ def _load_or_build_fleet(logs_dir: Path, workspace_dir: Path, engine_cfg: dict, 
 # ── subcommands ───────────────────────────────────────────────────────────
 
 def cmd_engines(args) -> int:
-    engines_dir = _REPO_ROOT / "engines"
+    engines_dir = resource("engines")
     results = []
     for p in sorted(engines_dir.glob("*.json")):
         cfg = json.loads(p.read_text())
@@ -355,7 +375,7 @@ def cmd_engines(args) -> int:
 def cmd_explain(args) -> int:
     engine_name = _resolve_engine_name(args.engine)
     engine_cfg = load_engine_config(engine_name)
-    rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    rules = json.loads(resource("insight_rules.json").read_text())
     topic_ids = [args.topic_id] if args.topic_id else None
     results, diagnostics = get_topic_help(topic_ids, engine_name, engine_cfg, rules)
 
@@ -456,7 +476,7 @@ def cmd_report(args) -> int:
         raise CliOperationError(f"Log not found: {log_path}")
     fa = analyze_flight(log_path.read_bytes(), log_path.name, engine_cfg, engine_name)
     fleet = _load_or_build_fleet(logs_dir, workspace_dir, engine_cfg, engine_name, args.quiet)
-    rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    rules = json.loads(resource("insight_rules.json").read_text())
     # Spec 09: the same limit filters the web UI saved for this workspace.
     filters_file = workspace_dir / "filters.json"
     filters = json.loads(filters_file.read_text()).get("filters", []) if filters_file.exists() else []
@@ -640,7 +660,7 @@ def cmd_rules_try(args) -> int:
     fa = analyze_flight(log_path.read_bytes(), log_path.name, engine_cfg, engine_name)
     fleet = _load_or_build_fleet(logs_dir, workspace_dir, engine_cfg, engine_name, args.quiet)
 
-    old_rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    old_rules = json.loads(resource("insight_rules.json").read_text())
     new_rules = json.loads(Path(args.file).read_text())
     diff = what_if_rules(fa, fleet, old_rules, new_rules)
     if args.json:
@@ -680,7 +700,7 @@ def cmd_export_workspace(args) -> int:
     ws_dir = _registered_workspace_dir(args.workspace)
     try:
         result = _wx.export_workspace(ws_dir, Path(args.out or "."), include_logs=args.include_logs,
-                                      anonymise=args.anonymise)
+                                      anonymise=args.anonymise, sources=_DISK_SOURCES)
     except _wx.ExportError as e:
         raise CliOperationError(str(e))
     if args.json:
@@ -737,7 +757,7 @@ def cmd_import_workspace(args) -> int:
         print("No logs linked. Link them later with --logs, or from the app: Add logs…")
         return 0
 
-    match = _wx.match_import(ws_dir)
+    match = _wx.match_import(ws_dir, _DISK_SOURCES)
     print(f"{len(match['found'])} of {match['total']} flights found · {len(match['missing'])} missing"
           f" · {len(match['extra'])} other logs held out")
     for m in match["missing"]:
@@ -747,7 +767,7 @@ def cmd_import_workspace(args) -> int:
         if answer not in ("y", "yes"):
             print("Not analysed. Sync from the app, or run this import's workspace through `import`, later.")
             return 0
-    result = _workspace.scan_workspace(ws_dir, registry_path)
+    result = _workspace.scan_workspace(ws_dir, registry_path, sources=_DISK_SOURCES)
     if result.new_flight_ids or result.reanalyzed_flight_ids:
         _workspace.rebuild_fleet(ws_dir)
     print(f"Analysed {len(result.new_flight_ids)} flights.")

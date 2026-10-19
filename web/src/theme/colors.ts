@@ -16,14 +16,21 @@ export const colors = {
   textSecondary: "#c9d0d6",
   textTertiary: "#aeb7bf",
 
-  accent: "#4fc3b0",
-  accentHover: "#6dd4c3",
+  // Spec 15: the brand, reserved for "active / primary" roles; the tint
+  // is the same hue for lines and text on dark (the fill is 2.4:1 there).
+  brand: "#3d5a73",
+  brandTint: "#7fa3c2",
+  ok: "#4fc3b0",
 
   severityLimit: "#e5484d",
   severityWarning: "#f5a524",
   severityWatch: "#fde047", // Spec 03 v0.3 §5.2 — was #eab308, too close to warning's #f5a524
   severityInfo: "#64748b",
 
+  // Chart data colors — never the brand (Spec 15 §3–§4).
+  chartHighlight: "#ffffff",
+  chartData: "#4fc3b0",
+  chartRecentFill: "rgba(79,195,176,0.07)",
   chartRpm: "#4fc3b0",
   chartIas: "#8b7fe8",
   chartOilTemp: "#e5484d",

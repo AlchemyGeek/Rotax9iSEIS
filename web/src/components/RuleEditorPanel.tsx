@@ -34,7 +34,7 @@ function numberInput(value: number, onChange: (v: number) => void, opts?: { step
 
 const ROW: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 12, color: "var(--text-secondary)" };
 const BUTTON: React.CSSProperties = { padding: "6px 12px", borderRadius: 6, fontSize: 12, cursor: "pointer" };
-const RESET_LINK: React.CSSProperties = { marginLeft: 8, fontSize: 10, color: "var(--accent)", cursor: "pointer", textDecoration: "underline dotted" };
+const RESET_LINK: React.CSSProperties = { marginLeft: 8, fontSize: 10, color: "var(--link)", cursor: "pointer", textDecoration: "underline dotted" };
 
 // Spec 14 v0.9 §7.3 — the rule editor panel: a side sheet over the Flight
 // view, opened from a topic card's *Edit rules…* or an insight card's
@@ -289,7 +289,7 @@ export function RuleEditorPanel({
             type="button"
             onClick={handleApply}
             disabled={!dirty || applying}
-            style={{ ...BUTTON, background: dirty ? "var(--accent)" : "var(--panel-control)", border: "none", color: dirty ? "var(--bg)" : "var(--text-tertiary)", fontWeight: 600, cursor: dirty && !applying ? "pointer" : "default" }}
+            style={{ ...BUTTON, background: dirty ? "var(--brand)" : "var(--panel-control)", border: "none", color: dirty ? "var(--on-brand)" : "var(--text-tertiary)", fontWeight: 600, cursor: dirty && !applying ? "pointer" : "default" }}
           >
             {applying ? "Applying…" : APPLY_LABEL.topic}
           </button>

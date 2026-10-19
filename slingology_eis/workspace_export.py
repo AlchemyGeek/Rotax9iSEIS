@@ -30,12 +30,14 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Callable, Any, Optional
 
 from . import __version__
 from . import exclusions as _exclusions
 from . import workspace as ws
+from .log_sources import DISK, LogUnavailable, areading, reading, run_now
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes, source_key as _source_key
+from .resources import resource
 
 FORMAT = "eisworkspace"
 FORMAT_VERSION = 1
@@ -301,21 +303,31 @@ class ExportResult:
                 "documents": self.documents, "notes": self.notes}
 
 
-def _flight_log(ws_dir: Path, src: ws.FlightSources, wanted_key: Optional[str]) -> Optional[tuple[bytes, ws.ImportRecord]]:
+async def _flight_log_async(ws_dir: Path, src: ws.FlightSources, wanted_key: Optional[str], manifest: ws.WorkspaceManifest,
+                sources: Callable = DISK) -> Optional[tuple[bytes, ws.ImportRecord]]:
     """The bytes of the source the flight was analysed from (else any
     readable source), and its import record."""
     imports = sorted(src.imports, key=lambda i: i.source_key != wanted_key)
     for imp in imports:
         if imp.log_folder_path == ws.UPLOADED_SOURCE:
             p = ws_dir / "flights" / src.flight_id / imp.filename
-        else:
-            p = Path(imp.log_folder_path).expanduser() / imp.relative_path
-        if p.is_file():
-            return p.read_bytes(), imp
+            if p.is_file():
+                return p.read_bytes(), imp
+            continue
+        try:
+            async with areading(sources(ws._folder_by_path(manifest, imp.log_folder_path)), imp.relative_path) as data:
+                return data, imp
+        except LogUnavailable:
+            continue
     return None
 
 
-def _admission_by_key(ws_dir: Path) -> tuple[list[dict], int]:
+def _flight_log(*args, **kwargs):
+    """`_flight_log_async` driven to the end at once (disk sources)."""
+    return run_now(_flight_log_async(*args, **kwargs))
+
+
+async def _admission_by_key_async(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], int]:
     """exclusions.json re-keyed from file name to source_key (§7.5): each
     entry's file is found in the workspace's folders and hashed. Entries
     whose file can't be found are dropped (count returned)."""
@@ -324,10 +336,13 @@ def _admission_by_key(ws_dir: Path) -> tuple[list[dict], int]:
         return [], 0
     by_name: dict[str, list[str]] = {}
     for lf in ws.load_manifest(ws_dir).log_folders:
-        folder = Path(lf.path).expanduser()
-        if folder.is_dir():
-            for p in ws._find_csv_files(folder):
-                by_name.setdefault(p.name, []).append(_source_key(p.read_bytes()))
+        source = sources(lf)
+        for entry in (await source.alist()) or []:
+            try:
+                async with areading(source, entry.relative_path) as data:
+                    by_name.setdefault(entry.name, []).append(_source_key(data))
+            except LogUnavailable:
+                continue
     out, dropped = [], 0
     for e in entries:
         keys = by_name.get(e["filename"])
@@ -339,6 +354,11 @@ def _admission_by_key(ws_dir: Path) -> tuple[list[dict], int]:
     return out, dropped
 
 
+def _admission_by_key(*args, **kwargs):
+    """`_admission_by_key_async` driven to the end at once (disk sources)."""
+    return run_now(_admission_by_key_async(*args, **kwargs))
+
+
 def _summary(docs: dict[str, Any]) -> dict:
     filters = (docs.get("filters.json") or {}).get("filters", [])
     sel = docs.get("fleet/selection.json") or {}
@@ -346,7 +366,7 @@ def _summary(docs: dict[str, Any]) -> dict:
     active = docs.get("rules/active.json")
     rule_edits = disabled = 0
     if active is not None:
-        shipped = json.loads((Path(__file__).resolve().parent.parent / "insight_rules.json").read_text())
+        shipped = json.loads(resource("insight_rules.json").read_text())
         for _tid, kind in ws.rule_decisions(ws.strip_rule_comments(active), shipped):
             rule_edits += kind == "rule_edit"
             disabled += kind == "disabled_topic"
@@ -363,7 +383,8 @@ def _summary(docs: dict[str, Any]) -> dict:
     }
 
 
-def export_workspace(ws_dir: Path, out_dir: Path, include_logs: bool = True, anonymise: bool = False) -> ExportResult:
+async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool = True, anonymise: bool = False,
+                     sources: Callable = DISK) -> ExportResult:
     """Spec 02 §7.2–7.3: the whole workspace as an export in `out_dir`."""
     if anonymise and not include_logs:
         raise ExportError("Anonymise logs needs Include logs (§7.6): without logs there is nothing to anonymise.")
@@ -379,7 +400,7 @@ def export_workspace(ws_dir: Path, out_dir: Path, include_logs: bool = True, ano
         fa = ws.load_flight_analysis(ws_dir, fid)
         if src is None or fa is None:
             continue
-        log = _flight_log(ws_dir, src, (fa.source_keys or [None])[0]) if include_logs else None
+        log = (await _flight_log_async(ws_dir, src, (fa.source_keys or [None])[0], manifest, sources)) if include_logs else None
         flights.append((fid, src, fa, log))
     if include_logs:
         unreadable = [fid for fid, _s, _f, log in flights if log is None]
@@ -399,7 +420,7 @@ def export_workspace(ws_dir: Path, out_dir: Path, include_logs: bool = True, ano
             docs[d["path"]] = _read_json(ws_dir / d["path"])
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
-    admission, dropped = _admission_by_key(ws_dir)
+    admission, dropped = await _admission_by_key_async(ws_dir, sources)
     if dropped:
         notes.append(f"{dropped} log admission entries left out: their files aren't in the workspace's folders.")
 
@@ -490,6 +511,11 @@ def export_workspace(ws_dir: Path, out_dir: Path, include_logs: bool = True, ano
                         anonymised=anonymise, documents=documents, notes=notes)
 
 
+def export_workspace(*args, **kwargs):
+    """`export_workspace_async` driven to the end at once (disk sources)."""
+    return run_now(export_workspace_async(*args, **kwargs))
+
+
 def _insight_ids(ws_dir: Path, docs: dict[str, Any], fid_map: dict[str, str]) -> dict[str, str]:
     """Old → new ids of the insights that annotations refer to. Insight
     ids hash the flight_id (operations.py): a limit insight's from
@@ -509,7 +535,7 @@ def _insight_ids(ws_dir: Path, docs: dict[str, Any], fid_map: dict[str, str]) ->
     engine_cfg = load_engine_config(ws.load_manifest(ws_dir).engine_model)
     limit_ids = [lim["id"] for lim in limit_catalog(engine_cfg)]
     fleet = ws.load_fleet_analysis(ws_dir)
-    shipped = json.loads((Path(__file__).resolve().parent.parent / "insight_rules.json").read_text())
+    shipped = json.loads(resource("insight_rules.json").read_text())
     rules = ws.load_workspace_rules(ws_dir, shipped)
     filters = ws.load_filters(ws_dir)["filters"]
     out: dict[str, str] = {}
@@ -722,7 +748,7 @@ def load_import_record(ws_dir: Path) -> Optional[dict]:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
-def match_import(ws_dir: Path) -> dict:
+async def match_import_async(ws_dir: Path, sources: Callable = DISK) -> dict:
     """§7.4 step 4, without analysing: the workspace's folders against
     the sender's manifest, by flight_id (a file whose bytes are a known
     source matches by source_key; any other is parsed for its flight_id).
@@ -735,23 +761,24 @@ def match_import(ws_dir: Path) -> dict:
     found: dict[str, dict] = {}
     extra: list[dict] = []
     for lf in ws.load_manifest(ws_dir).log_folders:
-        folder = Path(lf.path).expanduser()
-        if not folder.is_dir():
-            continue
-        for p in ws._find_csv_files(folder):
-            data = p.read_bytes()
-            key = _source_key(data)
-            fid = fid_by_key.get(key)
-            if fid is None:
-                try:
-                    df, info = load_log_bytes(data, p.name)
-                    fid = _compute_flight_id(flight_fingerprint(df, info))
-                except Exception:
-                    fid = None
+        source = sources(lf)
+        for entry in (await source.alist()) or []:
+            try:
+                async with areading(source, entry.relative_path) as data:
+                    key = _source_key(data)
+                    fid = fid_by_key.get(key)
+                    if fid is None:
+                        try:
+                            df, info = load_log_bytes(data, entry.name)
+                            fid = _compute_flight_id(flight_fingerprint(df, info))
+                        except Exception:
+                            fid = None
+            except LogUnavailable:
+                continue
             if fid in by_fid:
-                found.setdefault(fid, {"flight_id": fid, "filename": p.name, "date": by_fid[fid].get("date")})
+                found.setdefault(fid, {"flight_id": fid, "filename": entry.name, "date": by_fid[fid].get("date")})
             else:
-                extra.append({"filename": p.name, "date": ws.date_from_log_filename(p.name)})
+                extra.append({"filename": entry.name, "date": ws.date_from_log_filename(entry.name)})
     # Flights already in the workspace (a later Sync) count as found.
     for fid in ws.list_flight_ids(ws_dir):
         if fid in by_fid and fid not in found:
@@ -759,6 +786,11 @@ def match_import(ws_dir: Path) -> dict:
     missing = [_missing_row(f) for fid, f in by_fid.items() if fid not in found]
     return {"total": len(by_fid), "found": sorted(found.values(), key=lambda r: r["date"] or ""),
             "missing": missing, "extra": sorted(extra, key=lambda r: r["filename"])}
+
+
+def match_import(*args, **kwargs):
+    """`match_import_async` driven to the end at once (disk sources)."""
+    return run_now(match_import_async(*args, **kwargs))
 
 
 def _missing_row(f: dict) -> dict:

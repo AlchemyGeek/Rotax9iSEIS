@@ -20,7 +20,7 @@ const PHASE_COLORS: Record<string, string> = {
   PRE_START: "#4B5563",
   ENGINE_START: "#7C6F57",
   WARMUP: "#8B7E6A",
-  TAXI: "#5B7290",
+  TAXI: "#84CC16",
   TAKEOFF_ROLL: "#6366F1",
   CLIMB: "#22C55E",
   CRUISE: "#0EA5E9",

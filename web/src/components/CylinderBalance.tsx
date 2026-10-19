@@ -243,7 +243,7 @@ export function CylinderBalance({ fleet, engineId, focusCyl, onFocus, highlightF
               markLine: {
                 silent: true,
                 symbol: "none",
-                lineStyle: { color: colors.accent, type: "dashed" as const, width: 1 },
+                lineStyle: { color: colors.chartHighlight, type: "dashed" as const, width: 1 },
                 label: { show: false },
                 data: [{ xAxis: highlightX }],
               },

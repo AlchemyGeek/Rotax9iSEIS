@@ -17,7 +17,7 @@ from slingology_eis import workspace_export as wx
 from slingology_eis.cli import main
 from slingology_eis.loader import flight_fingerprint, flight_id, load_log_bytes
 
-from .test_server import _FLYING_PREAMBLE_LEN, _flying_log_bytes, isolated_packaged_home, registry_server, rpc  # noqa: F401
+from .test_server import InProcess, NodeHost, _node_host, _FLYING_PREAMBLE_LEN, _flying_log_bytes, isolated_packaged_home, registry_server, rpc  # noqa: F401
 
 TAIL, SYSTEM = "N999XX", "60002D19C364F"
 META = (f'#airframe_info,log_version="1.00",product="GDU 460",aircraft_ident="{TAIL}",system_id="{SYSTEM}",'
@@ -78,6 +78,8 @@ def _snapshot(url):
 def _export(url, include_logs, anonymise=False):
     res = rpc(url, "export_workspace", {"include_logs": include_logs, "anonymise": anonymise})
     assert res["ok"], res
+    if isinstance(url, (InProcess, NodeHost)):
+        return res["result"], url.download(res["result"]["download_url"])
     with urllib_open(url + res["result"]["download_url"]) as r:
         return res["result"], r.read()
 
@@ -134,6 +136,8 @@ def test_export_with_logs_is_a_folder_in_a_zip(registry_server, tmp_path):
 
 def _upload(url, data: bytes, filename: str) -> str:
     """The browser's file upload (Spec 02 v0.14): raw bytes to /upload."""
+    if isinstance(url, (InProcess, NodeHost)):
+        return url.upload(data, filename)
     import urllib.request
     req = urllib.request.Request(f"{url}/upload?filename={filename}", data=data,
                                  headers={"Content-Type": "application/octet-stream"})

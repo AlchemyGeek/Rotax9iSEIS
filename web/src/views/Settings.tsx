@@ -3,10 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { DataLocationPanel } from "../components/DataLocation";
+import { StoragePanel } from "../components/StoragePanel";
+import { useCapabilities } from "../lib/capabilities";
 import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
-import { getEngineClient } from "../lib/engineClient";
+import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import { ScopeCaption } from "../components/ScopeCaption";
 import { APPLY_LABEL } from "../lib/scope";
 import {
@@ -73,6 +75,7 @@ function fmtRange(v: number) {
 }
 
 export function Settings() {
+  const caps = useCapabilities();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab: TabId = (TAB_IDS as readonly string[]).includes(params.get("tab") ?? "") ? (params.get("tab") as TabId) : "app";
@@ -188,7 +191,13 @@ export function Settings() {
       try {
         const [app, active, chartPresets, liveFleet, limits, workspaceRules] = await Promise.all([
           client.getAppSettings(), client.getActiveWorkspace(), client.getChartPresets(),
-          client.getFleet(), client.getEngineLimits(), client.getWorkspaceRules(),
+          client.getFleet(), client.getEngineLimits(),
+          // No workspace yet (a first run): no rules to list — not a
+          // reason to show the sample settings instead.
+          client.getWorkspaceRules().catch((err) => {
+            if (err instanceof EngineRpcError && err.code === "NO_ACTIVE_WORKSPACE") return { rules: null, card_topic_ids: [] as string[] };
+            throw err;
+          }),
         ]);
         if (cancelled) return;
         setAppSettings(app);
@@ -478,9 +487,9 @@ export function Settings() {
                 onClick={() => setTab(id)}
                 style={{
                   padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  border: tab === id ? "1px solid var(--accent)" : "1px solid var(--border)",
-                  background: tab === id ? "var(--accent-15)" : "transparent",
-                  color: tab === id ? "var(--accent)" : "var(--text-secondary)",
+                  border: tab === id ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
+                  background: tab === id ? "var(--brand-fill)" : "transparent",
+                  color: tab === id ? "var(--brand-tint)" : "var(--text-secondary)",
                 }}
               >
                 {TAB_LABELS[id]}
@@ -509,6 +518,13 @@ export function Settings() {
                   <span style={{ color: "var(--text-primary)", textAlign: "right" }}>{engineLimits.engine.om_reference}</span>
                 </div>
               )}
+              {caps && (
+                // Spec 04 §9.8: the About line names the host.
+                <div style={ROW_STYLE} data-testid="engine-host">
+                  <span style={{ color: "var(--text-secondary)" }}>Runs</span>
+                  <span style={{ color: "var(--text-primary)" }}>{caps.host === "browser" ? "in this browser" : "on the local server"}</span>
+                </div>
+              )}
               {engineLimits.engine_version && (
                 // Spec 14 v0.13 §5: the engine version in effect. Its What's
                 // new (Spec 13's generated page) isn't in the app yet.
@@ -521,7 +537,7 @@ export function Settings() {
                 <span style={{ color: "var(--text-secondary)" }}>Source status</span>
                 <span
                   className="mono"
-                  style={{ color: engineLimits.engine.source_status === "VERIFIED" ? "var(--accent)" : "var(--severity-warning)" }}
+                  style={{ color: engineLimits.engine.source_status === "VERIFIED" ? "var(--ok)" : "var(--severity-warning)" }}
                   title={engineLimits.engine.source_status === "VERIFIED" ? "Values sourced directly from the Operators Manual" : "Not yet verified against the Operators Manual — do not rely on these limits for operational decisions"}
                 >
                   {engineLimits.engine.source_status}
@@ -752,7 +768,7 @@ export function Settings() {
                 onClick={saveReference}
                 disabled={savingReference || !referenceDirty || usingFixture}
                 title={usingFixture ? "not connected to a live workspace" : undefined}
-                style={{ padding: "7px 14px", borderRadius: 8, background: referenceDirty ? "var(--accent)" : "var(--panel)", border: "1px solid var(--border)", color: referenceDirty ? "var(--bg)" : "var(--text-tertiary)", fontSize: 12, fontWeight: 600, cursor: referenceDirty && !usingFixture ? "pointer" : "default" }}
+                style={{ padding: "7px 14px", borderRadius: 8, background: referenceDirty ? "var(--brand)" : "var(--panel)", border: "1px solid var(--border)", color: referenceDirty ? "var(--on-brand)" : "var(--text-tertiary)", fontSize: 12, fontWeight: 600, cursor: referenceDirty && !usingFixture ? "pointer" : "default" }}
               >
                 {savingReference ? "Saving…" : APPLY_LABEL.reference_settings}
               </button>
@@ -863,12 +879,12 @@ export function Settings() {
         {tab === "app" && (
           <>
             {!nudgeDismissed && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(79,195,176,0.08)", border: "1px solid rgba(79,195,176,0.3)", borderRadius: 10, padding: "11px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--tint-neutral)", border: "1px solid var(--border)", borderRadius: 10, padding: "11px 14px" }}>
                 <span style={{ fontSize: 12, color: "var(--text-primary)", flexGrow: 1 }}>
                   Browser storage can be evicted, especially in Safari. Allow persistent storage for this site, and export the workspace now and then as a backup.
                 </span>
                 <button
-                  style={{ padding: "5px 12px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                  style={{ padding: "5px 12px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}
                   onClick={() => setNudgeDismissed(true)}
                 >
                   Allow
@@ -933,7 +949,7 @@ export function Settings() {
                     type="button"
                     onClick={handleExport}
                     disabled={exporting || usingFixture || manifest.id === "legacy"}
-                    style={{ padding: "6px 14px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                    style={{ padding: "6px 14px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                   >
                     {exporting ? "Exporting…" : "Export workspace…"}
                   </button>
@@ -953,7 +969,12 @@ export function Settings() {
             {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
 
             {/* Spec 14 v0.12 §5.2 — local server only; renders nothing otherwise. */}
-            <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            {caps && !caps.features.data_location && caps.features.persistent_storage_status ? (
+              // Spec 14 v0.16 §5.2.1: the browser host shows Storage instead.
+              <StoragePanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            ) : (
+              <DataLocationPanel panelStyle={PANEL_STYLE} titleStyle={PANEL_TITLE_STYLE} />
+            )}
 
             <div style={PANEL_STYLE}>
               <div style={{ ...PANEL_TITLE_STYLE, marginBottom: 4 }}>Chart presets</div>
@@ -1001,7 +1022,7 @@ export function Settings() {
                         <button
                           onClick={() => confirmRename(p)}
                           disabled={!presetDraft.trim()}
-                          style={{ padding: "3px 10px", borderRadius: 6, background: "var(--accent)", border: "none", color: "var(--bg)", fontSize: 11, fontWeight: 600, cursor: presetDraft.trim() ? "pointer" : "default" }}
+                          style={{ padding: "3px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 11, fontWeight: 600, cursor: presetDraft.trim() ? "pointer" : "default" }}
                         >
                           Save
                         </button>

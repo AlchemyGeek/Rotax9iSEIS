@@ -9,3 +9,9 @@ __pycache__/
 .DS_Store
 *.egg-info/
 .idea/
+
+# Build output (pip wheel / setup.py)
+/build/
+/dist/
+/_site/
+/docs/app/

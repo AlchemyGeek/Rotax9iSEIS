@@ -148,7 +148,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     return {
       animation: false,
       grid: { left: 32, right: 24, top: 16, bottom: 40 },
-      axisPointer: { type: "line", lineStyle: { color: colors.textTertiary } },
+      axisPointer: { type: "line", lineStyle: { color: colors.brandTint } },
       tooltip: {
         trigger: "axis",
         backgroundColor: colors.panelControl,
@@ -246,9 +246,9 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
               symbolSize: m.active ? 15 : 10,
               itemStyle: {
                 // Neutral, never a severity colour — the glyph is the
-                // source distinction; the active row's marker is accented.
-                color: m.active ? colors.accent : m.muted ? colors.textTertiary : colors.textPrimary,
-                borderColor: m.active ? "#fff" : "transparent",
+                // source distinction; the active row's marker is highlighted.
+                color: m.active ? colors.chartHighlight : m.muted ? colors.textTertiary : colors.textPrimary,
+                borderColor: m.active ? colors.bg : "transparent",
                 borderWidth: m.active ? 2 : 0,
                 opacity: m.muted ? 0.6 : 1,
               },

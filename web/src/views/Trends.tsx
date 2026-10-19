@@ -117,7 +117,7 @@ export function Trends() {
   function openPanel(panel: string, _flightIds: string[]) {
     setExpanded((prev) => new Set(prev).add(panel));
     // Give the panel a tick to mount/expand before scrolling to it.
-    setTimeout(() => panelRefs.current[panel]?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    setTimeout(() => panelRefs.current[panel]?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 50);
   }
 
   // Deep links (Spec 12 §9.4): ?panel=X[&flight=Y] opens a panel directly;
@@ -316,7 +316,7 @@ export function Trends() {
               </span>
             )}
             {panel.filtered && (
-              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--accent)" }}>
+              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: "var(--ok)" }}>
                 {panel.cas_id && panel.filter_max_event_s != null ? `events ≤ ${panel.filter_max_event_s} s filtered` : "filtered"}
               </span>
             )}

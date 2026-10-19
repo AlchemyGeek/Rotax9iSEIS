@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Persistence probe</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #fff; --fg: #1a1a1a; --muted: #666; --pass: #137333; --fail: #b3261e; --line: #ddd; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #16181b; --fg: #e8e8e8; --muted: #9aa0a6; --pass: #81c995; --fail: #f28b82; --line: #333; } }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, system-ui, sans-serif; margin: 0 auto; max-width: 860px; padding: 20px 16px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: var(--muted); }
+  #step { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  td, th { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  .pass { color: var(--pass); font-weight: 600; } .fail { color: var(--fail); font-weight: 600; }
+  code, pre { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+  button, a.button { font: inherit; padding: 6px 12px; margin: 4px 6px 4px 0; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+</style>
+</head>
+<body>
+<h1>Persistence probe</h1>
+<div class="muted">Spec 04 v0.6 §9.4 — OPFS, Pyodide on OPFS, reload, browser restart, <code>persist()</code>. Generated data only.</div>
+<div class="muted" id="env"></div>
+
+<div id="step">Starting…</div>
+<div>
+  <button id="restarted" hidden>I restarted the browser — check now</button>
+  <a id="download" class="button" hidden download>Download results (JSON)</a>
+  <button id="reset">Reset the probe</button>
+</div>
+<table id="results"><thead><tr><th>Check</th><th>Result</th><th>Figures</th></tr></thead><tbody></tbody></table>
+<details><summary class="muted">Raw results</summary><pre id="raw"></pre></details>
+
+<script>
+// One run is three visits: the first (all write checks), the page's own
+// reload, and a visit after the browser has been quit and reopened. The
+// page tells them apart with localStorage (survives both) and
+// sessionStorage (survives a reload, not a restart).
+const KEY = "eis-persistence-probe";            // run state and results
+const MARKER = "eis-persistence-probe-marker";  // §9.4: "a registry was created here"
+const SESSION = "eis-persistence-probe-session";
+const params = new URLSearchParams(location.search);
+const AUTO = params.get("auto") === "1";       // the Playwright runner
+const FORCE_IDBFS = params.get("idbfs") === "1";
+const SIZE_MB = Number(params.get("mb") || 50);
+
+const worker = new Worker("probe-worker.js");
+let seq = 0;
+const pending = new Map();
+worker.onmessage = (ev) => { const p = pending.get(ev.data.id); pending.delete(ev.data.id); ev.data.ok ? p.resolve(ev.data.result) : p.reject(new Error(ev.data.error)); };
+const call = (op, ...args) => new Promise((resolve, reject) => { const id = ++seq; pending.set(id, { resolve, reject }); worker.postMessage({ id, op, args }); });
+
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; } };
+const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
+const $ = (id) => document.getElementById(id);
+
+function env() {
+  const ua = navigator.userAgent;
+  const uaData = navigator.userAgentData ? { brands: navigator.userAgentData.brands, platform: navigator.userAgentData.platform } : null;
+  return { user_agent: ua, ua_data: uaData, platform: navigator.platform, cores: navigator.hardwareConcurrency,
+           secure_context: isSecureContext, url: location.origin };
+}
+
+async function guarded(name, fn) {
+  const t0 = performance.now();
+  try { return await fn(); }
+  catch (e) { return { pass: false, error: String(e.message || e), ms: Math.round(performance.now() - t0) }; }
+}
+
+async function markerState() {
+  // §9.4: the marker lives outside OPFS; on each start, do they agree?
+  const marker = localStorage.getItem(MARKER);
+  const registry = await call("registryPresent").catch(() => false);
+  const state = marker && registry ? "both" : marker ? "marker_only (data gone)" : registry ? "registry_only" : "neither (first run)";
+  return { marker: !!marker, registry, state, pass: (!!marker) === registry };
+}
+
+async function firstVisit(s) {
+  s.env = env();
+  sessionStorage.setItem(SESSION, s.run_id);
+  const r = s.results;
+  show("1/3 — writing: OPFS, 50 MB round trip, Pyodide on OPFS…");
+  r.marker_at_start = await markerState();
+  r.estimate_at_start = await call("estimate");
+  r.opfs_in_worker = await guarded("opfs", () => call("checkOpfs"));
+  r.persist = await guarded("persist", async () => {
+    const before = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+    const granted = navigator.storage.persist ? await navigator.storage.persist() : null;
+    const after = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+    return { pass: true, persisted_before: before, persist_result: granted, persisted_after: after };
+  });
+  render(s);
+  r.round_trip = await guarded("roundtrip", () => call("checkRoundTrip", SIZE_MB));
+  render(s);
+  r.pyodide_on_opfs = await guarded("pyodide", () => call("checkPyodideWrite"));
+  if (r.pyodide_on_opfs.pass) {
+    s.expected = r.pyodide_on_opfs.hashes;
+    localStorage.setItem(MARKER, JSON.stringify({ at: new Date().toISOString(), run_id: s.run_id }));
+  }
+  r.marker_after_write = await markerState();
+  const opfsFailed = !(r.opfs_in_worker.pass && r.round_trip.pass && r.pyodide_on_opfs.pass);
+  if (opfsFailed || FORCE_IDBFS) {
+    r.idbfs_fallback = await guarded("idbfs", () => call("checkIdbfsWrite"));
+    r.idbfs_fallback.reason = opfsFailed ? "OPFS check failed" : "forced (?idbfs=1)";
+    if (r.idbfs_fallback.pass) s.expected_idbfs = r.idbfs_fallback.hashes;
+  }
+  s.stage = "awaiting_reload";
+  save(s);
+  render(s);
+  show("1/3 done — reloading the page by itself…");
+  setTimeout(() => location.reload(), 800);
+}
+
+async function reloadVisit(s) {
+  show("2/3 — after reload: are the documents still there?");
+  s.results.estimate_after_reload = await call("estimate");
+  s.results.after_reload = await guarded("reload", () => call("checkDocuments", s.expected || {}));
+  s.results.marker_after_reload = await markerState();
+  if (s.expected_idbfs) s.results.idbfs_after_reload = await guarded("idbfs-reload", () => call("checkIdbfsDocuments", s.expected_idbfs));
+  s.stage = "awaiting_restart";
+  save(s);
+  render(s);
+  show("2/3 done. <b>Now quit the browser completely</b> (⌘Q), reopen it, and open this same address again.");
+}
+
+async function restartVisit(s, how) {
+  show("3/3 — after the browser restart…");
+  s.results.estimate_after_restart = await call("estimate");
+  s.results.after_restart = await guarded("restart", () => call("checkDocuments", s.expected || {}));
+  s.results.after_restart.detected_by = how;
+  s.results.marker_after_restart = await markerState();
+  if (s.expected_idbfs) s.results.idbfs_after_restart = await guarded("idbfs-restart", () => call("checkIdbfsDocuments", s.expected_idbfs));
+  s.results.persisted_at_end = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+  s.results.estimate_at_end = await call("estimate");
+  s.stage = "done";
+  s.finished_at = new Date().toISOString();
+  save(s);
+  render(s);
+  show("Done. Download the results below.");
+}
+
+function show(html) { $("step").innerHTML = html; }
+
+const ROWS = [
+  ["opfs_in_worker", "1. OPFS in a worker (sync access handle)", (r) => `${r.ms} ms`],
+  ["round_trip", "2. 50 MB round trip", (r) => `write ${r.write_ms} ms (${r.write_mb_s} MB/s), read ${r.read_ms} ms (${r.read_mb_s} MB/s), checksum ${r.checksum_match ? "match" : "MISMATCH"}; usage ${mb(r.estimate_before)} → ${mb(r.estimate_after_write)} → ${mb(r.estimate_after_remove)}`],
+  ["pyodide_on_opfs", "3. Pyodide on OPFS", (r) => `Pyodide ${r.pyodide_version}: load ${r.load_ms} ms, mount ${r.mount_ms} ms, write ${r.python_write_ms} ms, flush ${r.flush_ms} ms; visible to JS before flush: ${r.visible_to_js_before_flush}, after: ${r.visible_to_js_after_flush}`],
+  ["after_reload", "4. Survives reload", (r) => docs(r)],
+  ["after_restart", "5. Survives browser restart", (r) => docs(r) + (r.detected_by ? ` (${r.detected_by})` : "")],
+  ["persist", "6. persist()", (r) => `result ${r.persist_result}; persisted before ${r.persisted_before}, after ${r.persisted_after}`],
+  ["marker_after_restart", "7. Eviction marker agrees", (r) => r.state],
+  ["idbfs_fallback", "8. IDBFS fallback write", (r) => `${r.reason || ""}; mount ${r.mount_ms} ms, flush ${r.flush_ms} ms`],
+  ["idbfs_after_restart", "8. IDBFS after restart", (r) => docs(r)],
+];
+const mb = (e) => (e && e.usage != null ? `${(e.usage / 1048576).toFixed(1)} MB` : "?");
+const docs = (r) => Object.entries(r.documents || {}).map(([k, v]) => `${k}: ${v.identical ? "identical" : "NOT identical"}`).join("; ");
+
+function render(s) {
+  const tb = document.querySelector("#results tbody");
+  tb.innerHTML = "";
+  for (const [key, label, fmt] of ROWS) {
+    const r = s.results[key];
+    if (!r) continue;
+    const cls = r.pass ? "pass" : "fail";
+    const fig = r.error ? `error: ${r.error}` : (() => { try { return fmt(r); } catch { return ""; } })();
+    tb.insertAdjacentHTML("beforeend", `<tr><td>${label}</td><td class="${cls}">${r.pass ? "pass" : "fail"}</td><td>${fig}</td></tr>`);
+  }
+  $("raw").textContent = JSON.stringify(s, null, 2);
+  const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
+  const a = $("download");
+  a.href = URL.createObjectURL(blob);
+  a.download = `persistence-${(s.env && s.env.user_agent.includes("Safari") && !s.env.user_agent.includes("Chrome")) ? "safari" : "chromium"}-${s.run_id}.json`;
+  a.hidden = s.stage !== "done";
+  window.__probe = s;      // read by the Playwright runner
+}
+
+$("reset").onclick = async () => {
+  await call("reset");
+  localStorage.removeItem(KEY); localStorage.removeItem(MARKER); sessionStorage.removeItem(SESSION);
+  location.href = location.pathname + location.search;
+};
+$("restarted").onclick = () => { $("restarted").hidden = true; restartVisit(load(), "button"); };
+
+(async () => {
+  $("env").textContent = navigator.userAgent;
+  let s = load();
+  if (!s || s.stage === "done" && params.get("new") === "1") {
+    s = { run_id: Math.random().toString(36).slice(2, 10), started_at: new Date().toISOString(), stage: "first", results: {} };
+    save(s);
+  }
+  render(s);
+  if (s.stage === "first") return firstVisit(s);
+  if (s.stage === "awaiting_reload") return reloadVisit(s);
+  if (s.stage === "awaiting_restart") {
+    // A new browser session has no sessionStorage; a reload keeps it.
+    if (!sessionStorage.getItem(SESSION)) return restartVisit(s, "new browser session");
+    show("2/3 done. <b>Now quit the browser completely</b> (⌘Q), reopen it, and open this same address again. If the browser restored this tab, use the button.");
+    $("restarted").hidden = false;
+    return;
+  }
+  show("Done. Download the results below, or Reset the probe to run it again.");
+})();
+</script>
+</body>
+</html>

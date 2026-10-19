@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getEngineClient } from "./engineClient";
+import { afterPageRequests } from "./pageRequests";
 
 const client = getEngineClient();
 
@@ -23,7 +24,8 @@ export function useFilterAttention(): number {
         .filterHealth()
         .then((r) => !cancelled && setCount(r.attention_count))
         .catch(() => !cancelled && setCount(0));
-    load();
+    // After the page's own requests (step 6): a badge is never what the page waits for.
+    void afterPageRequests().then(() => { if (!cancelled) void load(); });
     window.addEventListener(FILTERS_CHANGED_EVENT, load);
     return () => {
       cancelled = true;

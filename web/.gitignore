@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Built by scripts/build_engine_wheel.py (Spec 04 step 4) — not committed
+/public/engine/
+/public/runtime.json
+/public/pyodide/

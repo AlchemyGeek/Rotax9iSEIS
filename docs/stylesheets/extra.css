@@ -1,0 +1,57 @@
+/* SlingologyEIS docs — small adjustments on top of Material */
+
+/* Brand accent (Spec 15): #3D5A73, the one accent on the site */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #3D5A73;
+  --md-primary-fg-color--light: #5c7a93;
+  --md-primary-fg-color--dark: #2e4557;
+  --md-accent-fg-color: #3D5A73;
+  --md-accent-fg-color--transparent: rgba(61, 90, 115, 0.1);
+}
+[data-md-color-scheme="slate"] {
+  --md-accent-fg-color: #8fb0c9;        /* lighter on dark ground so links stay readable */
+  --md-typeset-a-color: #8fb0c9;
+}
+[data-md-color-scheme="default"] { --md-typeset-a-color: #3D5A73; }
+
+.md-header__button.md-logo img { height: 2.1rem; width: 2.1rem; background: none; padding: 0; }
+.md-header__title { font-weight: 700; letter-spacing: 0.02em; }
+
+.md-typeset .brand-lockup { display: flex; align-items: center; gap: 1.25rem; margin: 0 0 1.5rem; }
+.md-typeset .brand-lockup img { width: 160px; height: auto; margin: 0; }
+
+
+.md-typeset img.screenshot,
+.md-typeset figure.screenshot img {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.md-typeset figure.screenshot figcaption {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.4rem;
+}
+
+/* The "In brief" block at the top of every concept page */
+.md-typeset .in-brief {
+  border-left: 4px solid #3D5A73;
+  padding: 0.6rem 1rem;
+  margin: 1rem 0 1.5rem;
+  background: var(--md-code-bg-color);
+  border-radius: 0 6px 6px 0;
+}
+.md-typeset .in-brief p:last-child { margin-bottom: 0; }
+
+/* Concept diagrams: let them theme with the page */
+.md-typeset figure.diagram { display: block; width: 100%; margin: 1.5rem 0; }
+.md-typeset figure.diagram svg { width: 100%; max-width: 820px; height: auto; display: block; margin: 0 auto; }
+.md-typeset figure.diagram figcaption {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset table:not([class]) { font-size: 0.78rem; }

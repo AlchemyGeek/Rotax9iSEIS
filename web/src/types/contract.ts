@@ -736,6 +736,8 @@ export interface LogFolder {
   path: string;
   reachable: boolean;
   last_scanned_at?: string;
+  // Spec 02 §6.1: a folder the page holds (browser host), keyed by this.
+  folder_id?: string;
 }
 
 export interface WorkspaceManifest {
@@ -974,6 +976,7 @@ export interface ScanProgress {
   current?: number;
   total?: number;
   filename?: string;
+  analysed?: number;   // of those, how many needed (re-)analysis so far (Spec 04 D9)
 }
 
 // Spec 02 §6.8 — a file that never became a
@@ -1012,6 +1015,32 @@ export interface ExclusionsResult {
   // Spec 02 v0.11 §7.5: an imported workspace's flights whose log hasn't
   // been found here; no actions — each resolves when its log is added.
   sender_missing?: SenderMissingFlight[];
+}
+
+// ── Host capabilities (Spec 04 v0.4 §9.5) ───────────────────────────────────
+
+// What the host the UI talks to can do. The UI gates on `features`, never
+// on `host`.
+export interface HostCapabilities {
+  host: "server" | "browser";
+  engine_version: string;
+  host_version: string;
+  features: {
+    data_location: boolean;
+    add_folder_by_path: boolean;
+    choose_folder: boolean;
+    persistent_storage_status: boolean;
+    download_url: boolean;
+    folder_watching: boolean;
+  };
+}
+
+// Spec 14 v0.16 §5.2.1 — the data root's size, measured by the host.
+export interface StorageUsage {
+  total_bytes: number;
+  other_bytes: number;
+  workspace_count: number;
+  workspaces: { id: string; name: string; bytes: number }[];
 }
 
 // ── Log sources (Spec 01 v0.23 §6.5) ─────────────────────────────────────────

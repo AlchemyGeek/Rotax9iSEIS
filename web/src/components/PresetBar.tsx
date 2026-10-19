@@ -24,7 +24,7 @@ export function PresetBar({ presets, chartState, activePresetId, insightLabel, p
         <span style={{ color: "var(--text-secondary)" }}>
           Showing: <strong style={{ color: "var(--text-primary)" }}>{insightLabel ?? "evidence"}</strong>
         </span>
-        <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }} style={{ color: "var(--accent)" }}>
+        <a href="#" onClick={(e) => { e.preventDefault(); onBack(); }}>
           ← Back to {previousLabel ?? "previous view"}
         </a>
       </div>
@@ -42,9 +42,9 @@ export function PresetBar({ presets, chartState, activePresetId, insightLabel, p
             onClick={() => onSelectPreset(p.id)}
             style={{
               flexShrink: 0, padding: "5px 11px", borderRadius: 14, fontSize: 11, fontWeight: 600, cursor: "pointer",
-              background: p.id === activePresetId ? "rgba(79,195,176,0.15)" : "transparent",
-              border: p.id === activePresetId ? "1px solid var(--accent)" : "1px solid var(--border)",
-              color: p.id === activePresetId ? "var(--accent)" : "var(--text-secondary)",
+              background: p.id === activePresetId ? "var(--brand-fill)" : "transparent",
+              border: p.id === activePresetId ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
+              color: p.id === activePresetId ? "var(--brand-tint)" : "var(--text-secondary)",
             }}
           >
             {p.label}
@@ -54,8 +54,8 @@ export function PresetBar({ presets, chartState, activePresetId, insightLabel, p
       {chartState === "modified" && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11 }}>
           <span style={{ color: "var(--text-tertiary)" }}>{activeLabel ?? "Custom"} (modified)</span>
-          <a href="#" onClick={(e) => { e.preventDefault(); onRevert(); }} style={{ color: "var(--accent)" }}>Revert</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); onSaveAsPreset(); }} style={{ color: "var(--accent)" }}>Save as preset…</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); onRevert(); }}>Revert</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); onSaveAsPreset(); }}>Save as preset…</a>
         </div>
       )}
     </div>

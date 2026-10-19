@@ -1,9 +1,9 @@
 # Spec 02 — Results Bundle & Workspace
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.16 — unreadable logs recorded and shown (§5.11.2); v0.15 — channel assignments for general-purpose analog inputs (§6.6) and the AXIS fingerprint (§5.7), for Spec 01 v0.23; v0.14 — import takes the export zip as is: the app unzips it and keeps its logs in the new workspace (§7.3–7.4); v0.13 — v0.12 — §7 **workspace export and import** implemented (`workspace_export.py`, server ops, CLI `export-workspace` / `import-workspace`, Settings → App, the workspace switcher, Flights); v0.11 rewrote §7; v0.10: v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built; §5.8.1 (choosing the data location) implemented (`data_location.py`, server ops, CLI `data-location`)
+**Status:** v0.19 — metadata fast path for the pending-work check (§5.7, Spec 04 D12); v0.18 — OPFS confirmed on macOS Chrome and Safari (Spec 04 Appendix D); storage usage measured by the host, not `estimate()`; v0.17 — browser realization is the **filesystem on OPFS** (§5.9), for Spec 04 v0.4; v0.16 — unreadable logs recorded and shown (§5.11.2); v0.15 — channel assignments for general-purpose analog inputs (§6.6) and the AXIS fingerprint (§5.7), for Spec 01 v0.23; v0.14 — import takes the export zip as is: the app unzips it and keeps its logs in the new workspace (§7.3–7.4); v0.13 — v0.12 — §7 **workspace export and import** implemented (`workspace_export.py`, server ops, CLI `export-workspace` / `import-workspace`, Settings → App, the workspace switcher, Flights); v0.11 rewrote §7; v0.10: v0.7 implemented for the filesystem realization (local server + CLI: `workspace.py`, `exclusions.py`); the IndexedDB realization (§5.9) is not yet built; §5.8.1 (choosing the data location) implemented (`data_location.py`, server ops, CLI `data-location`)
 **Suggested repo path:** `docs/specs/02-results-bundle-and-workspace.md`
-**Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (decision: **GO**)
+**Builds on:** Spec 01 — Engine Contract v0.5 (incl. phase detection, used by §5.11's admission rules); Spec 04 — Runtime Adapters & Pyodide Spike v0.4 (Part B normative; D1, D2)
 **Precedes:** Spec 03 (UI Information Architecture)
 **Baseline reviewed:** repo `main` at commit `ed0ca33` (2026-07-07); the spike results (Spec 04, Appendix A); `workspaces-and-log-browser.md` design notes (2026-09-23); v0.7 checked against branch `webui` at commit `fee6577` (2026-10-01)
 **Supersedes:** `docs/specs/08-flight-exclusions.md` (Workspace Flight Exclusions) and the never-committed companion spec "Ground Session Detection" — both folded into §5.11 and §6.8
@@ -27,7 +27,9 @@
 | 0.16 | **Unreadable logs, as built** (2026-10-17; reported: a log the app couldn't analyse stayed "Needs analysis" with no message). §5.11.2 already said a file that fails to load is shown as Unreadable (Spec 03 §5.1) with no `exclusions.json` entry; the scan instead skipped it silently, and a log that loaded but failed analysis aborted the whole Sync. Now a log that can't be read **or analysed** is recorded in the workspace's `unreadable.json`, keyed by `source_key`, with a pilot-facing reason (*Format not recognised — not a Garmin G3X engine log this app can read*, or *Couldn't be analysed …*) and the technical detail. It is shown as Unreadable with that reason, is not offered by Sync again, and never stops other logs being analysed (the CLI's `ecu` likewise skips it with a note). It is retried when the engine version changes or the file changes (a new `source_key`). `unreadable.json` is derived (recreated by scanning) and not carried by an export (§7.1). |
 | 0.15 | **Garmin AXIS log source** (Spec 01 v0.23, 2026-10-17). §5.7: the fingerprint's second element is the source identity (G3X `system_id`, AXIS product name). §5.11.2: the corrupt-log gap rule runs on the loader's 1-second-normalised frame, so AXIS's routine 2 s holes never count as gaps. §6.6: `WorkspaceSettings.channel_assignments` — the pilot's mapping of raw general-purpose analog channels to registry channels, per workspace, never assumed. §7.1: assignments travel with a workspace export. |
 | 0.14 | **Import the zip as is** (owner decision, 2026-10-17). Asking the recipient to unzip, then pointing the app at the folder, didn't work in a browser: a file picked there arrives without its location, so its `logs/` couldn't be found. Now the recipient chooses the export **zip** itself; the app unzips it and imports the workspace documents **and the logs**. The logs are written to the new workspace's own `logs/` folder (inside the data root, so they move with it, §5.8.1, and go with the workspace when it is deleted) and linked like any log folder, so matching (§7.5) is unchanged. Only `logs/<name>.csv` beside the one `.eisworkspace` is extracted; nothing can be written outside that folder. An `.eisworkspace` exported without logs still gives an empty workspace. This withdraws §7.3's "the app never extracts archives and never writes log files" for imports; a workspace still references, and never copies, logs the pilot adds from their own folders. Export is unchanged. |
-
+| 0.17 | **Browser realization: the same filesystem, on OPFS** (Spec 04 v0.4 D1/D2, 2026-10-17). The whole host runs in the browser, so the browser no longer has its own IndexedDB document store: §5.9 is now Spec 02 §5.8's layout written to the Origin Private File System by the same Python code. The per-store IndexedDB design of v0.4–v0.16 is withdrawn; only the Chrome folder-handle store (§6.1's `folder_id`) remains in IndexedDB, as plumbing. §5.10's identical-JSON claim becomes a statement of fact. `storage_backend` is `"filesystem" | "opfs"`. §9: durable storage is requested on first workspace creation (decided), eviction is detected and told, and a Storage panel replaces the data-location panel in the browser (Spec 14 §5.2). §11 step 3 and Q3 updated. No change to any document shape. |
+| 0.18 | **Probe results** (Spec 04 v0.7, 2026-10-19): the OPFS realization passed every persistence check on macOS Chrome and Safari — documents byte-identical after reload and browser restart. `persist()` returned false on both, so §9's "may be cleared" state is normal and the export remains the backup. `navigator.storage.estimate()` proved unreliable (stale after deletes, wrong after restart): Q3 reversed — the host measures the data root (`get_storage_usage`). |
+| 0.19 | **Metadata fast path** (Spec 04 v0.8 D12, 2026-10-19). `sources.json` records each log's relative path, size and modified time beside its fingerprint. The pending-work check (what Flights shows as new or stale) treats a listed file whose path, size and modified time all match a known log as that log without reading it; a file that differs in any of the three is read and fingerprinted as before. **Sync** still fingerprints every log it analyses, so matching by content (§5.7) is unchanged where results depend on it. Added because the browser host otherwise re-read every log on each visit to Flights. |
 ---
 
 ## 1. Purpose
@@ -154,6 +156,8 @@ The design instead makes mixing engine types **impossible by construction** rath
 
 ### 5.7 Other matching rules, unchanged
 
+**Fast path (v0.19):** a listed file whose relative path, size and modified time match a known source is treated as that source by the pending-work check without being read; anything else is fingerprinted. Sync always fingerprints what it analyses.
+
 - **Fingerprint, not path.** Each log is matched by content hash (Spec 01 §6.1's `source_key`, reused as the fingerprint here), not by filename or location. A rename or move inside a known folder is re-matched automatically on rescan — no re-import, no lost annotations.
 - **Same log in two folders**, or nested folders producing the same file twice: de-duplicated by fingerprint, one flight either way.
 - **Fingerprint identity across sources (v0.15).** The flight fingerprint is (aircraft ident, source identity, start minute); source identity is the G3X `system_id` or, for AXIS files, the product name (Spec 01 §6.1, §6.5). An AXIS log copied into two folders is one flight; a G3X and an AXIS log never share a fingerprint.
@@ -201,33 +205,31 @@ A location file whose `data_root` doesn't exist or can't be read (an unplugged d
 - After a switch, the workspace that opens is the new root's `last_active_workspace_id` (§6.6). After a move that's the one that was open.
 - The data location is install-level, not an analysis setting. It is not recorded in any workspace's Settings changelog (Spec 14 §5).
 - `slingology-eis data-location` (no argument) prints the data root in use and which of the three steps chose it.
-- **Browser realization:** not applicable. The browser's data lives in IndexedDB (§5.9), and the setting isn't shown there.
+- **Browser realization:** not applicable. The data root is the site's private storage (§5.9), fixed; Settings → App shows a **Storage** panel in its place (Spec 14 §5.2).
 
-### 5.9 Browser realization
+### 5.9 Browser realization (v0.17: the filesystem, on OPFS)
 
-Two things instead of v0.3's one IndexedDB database: a small **registry** database (§6.7) listing workspaces, and **one IndexedDB database per workspace** — so a pilot can delete, export, or lose (eviction) one workspace without touching any other. Per-workspace store shape is otherwise unchanged from v0.3:
+Spec 04 v0.4 D1 runs the **whole host** in the browser under Pyodide, so the browser has no document store of its own. The data root is a directory in the **Origin Private File System**, mounted into the worker's filesystem at a fixed path, and the Python host writes exactly §5.8's layout there:
 
 ```
-IndexedDB database: "slingology-eis-registry"
-└── store "workspaces"    → keyed by workspace id, value = WorkspaceRegistryEntry
-
-IndexedDB database: "slingology-eis-workspace-<id>"   (one per workspace)
-├── store "manifest"      → one record
-├── store "flights"       → keyed by flight_id, value = { analysis, sources }
-├── store "fleet"         → one record { selection, analysis }
-├── store "rules"         → one record { active, engine_overrides }
-├── store "annotations"   → one record (small; keyed internally by flight_id)
-├── store "exclusions"    → one record, the §6.8 document
-└── store "settings"      → one record (workspace-level only, §6.6)
+<OPFS root>/
+├── registry.json
+├── settings.json              (app-level, §6.6)
+└── workspaces/<id>/…          (§5.3, unchanged)
 ```
 
-Folder access in the browser is realized via the File System Access API (Chrome — a permission grant persisted per folder, asked once) or, on Safari, by the pilot re-picking folders each session (§5.4's folder-reference model is otherwise identical; only how the browser retains permission differs).
+Nothing in `workspace.py` knows which realization it is on. The v0.4–v0.16 design — a registry database plus one IndexedDB database per workspace with per-document stores — is withdrawn; it would have been a second implementation of every rule in this spec.
 
-Raw log bytes are still **never** written to IndexedDB, in either database — unchanged from v0.3.
+What is browser-specific:
+
+- **Folder access.** Chrome: the File System Access API, with the `FileSystemDirectoryHandle` persisted in a small IndexedDB store keyed by the manifest's `folder_id` (§6.1) — the one piece of structured-clone plumbing that stays in IndexedDB; the permission is re-confirmed with a click when the browser asks. Safari: the pilot re-picks a folder each session; until then the folder shows as *not connected*. Dropped files work in both. Listing and reading happen on the page; classification, admission and analysis in the host (Spec 04 §9.3).
+- **Persistence.** The data root survives reload, tab close, browser restart and app updates. The app requests durable storage when the first workspace is created (§9). What can remove it is the user clearing the site's data, or Safari's inactivity eviction; the export (§7) is the backup, importable in either realization.
+- **No raw logs in storage**, unchanged: the file being processed is written to a scratch path for the duration of one operation and deleted.
+- **Per-workspace deletion and export** fall out of the directory layout, as on disk.
 
 ### 5.10 Why the schema is identical everywhere
 
-Both realizations store the **same typed objects** from Spec 01 (§8), for any given active workspace. A local-server response to `GET /workspaces/<id>/flights/<flight_id>` and a browser `db.flights.get(flight_id)` (against that workspace's own IndexedDB database) return byte-identical JSON. This is still what lets the CLI and the UI agree (D5), and what makes exporting a bundle from either host trivial.
+Both realizations store the **same typed objects** from Spec 01 (§8), for any given active workspace. Since v0.17 this is by construction: the same Python code writes the same files to a disk folder or to OPFS, so `workspaces/<id>/flights/<flight_id>/analysis.json` is byte-identical on both. This is still what lets the CLI and the UI agree (D5), and what makes exporting a bundle from either host trivial.
 
 ### 5.11 Log admission and flight exclusions (new in v0.7)
 
@@ -303,7 +305,7 @@ interface WorkspaceManifest {
   updated_at: string;
   engine_version_seen: string[]; // every engine version that has written into this workspace
   flight_count: number;
-  storage_backend: "filesystem" | "indexeddb";
+  storage_backend: "filesystem" | "opfs";   // v0.17: both are the same files; the value only says where
 }
 ```
 
@@ -534,8 +536,8 @@ interface StoredFlightAnalysis {
 Per finding 8 and Spec 04 §2.8:
 
 - **Typical size:** one `FlightAnalysis` is small — the spike's real pipeline output was under 5 KB of JSON for the metrics and phases alone (Spec 04's uploaded results contained the full structure at under 3 KB serialized in the worker). Even a few hundred flights of derived results should stay in the low tens of megabytes, nowhere near typical browser storage quotas (which run to hundreds of MB or more, though never guaranteed — see Q3).
-- **The browser can evict IndexedDB data**, especially in Safari after a period of disuse. The workspace is therefore always a rebuildable cache from the host's perspective: on open, the UI checks whether the workspace is empty or partial and offers "re-import your logs" or "restore from a bundle" rather than treating an empty store as a first-run state indistinguishable from data loss.
-- **Recommendation, not yet decided:** prompt for `navigator.storage.persist()` (where available) on first meaningful use, and periodically remind the pilot to export a backup bundle. Both are UI behavior for Spec 03; this spec just ensures the underlying data is small and self-contained enough for that to work.
+- **The browser can evict site storage** (OPFS included), especially in Safari after a period of disuse. The workspace is therefore always a rebuildable cache from the host's perspective: on open, the UI checks whether the workspace is empty or partial and offers "re-import your logs" or "restore from a bundle" rather than treating an empty store as a first-run state indistinguishable from data loss.
+- **Decided (v0.17):** the app requests durable storage (`navigator.storage.persist()`) when the first workspace is created; Settings → App's Storage panel shows space used (measured by the host) and whether persistence was granted, with *Export all workspaces…* (Spec 14 §5.2). If the app opens to an empty data root where it had recorded a registry before (a marker outside OPFS), it says the data is no longer on this device and offers import or re-adding folders — never a silent first run.
 
 ## 10. What this spec does not cover
 
@@ -547,9 +549,9 @@ This spec has no engine code to migrate — it's purely a host-side addition, bu
 
 1. Implement the local-filesystem realization (§5.8) first, since the CLI already has the closest precedent (`data/reports/`) and it's testable without a browser.
 2. Implement workspace export and import (§7) against the filesystem realization; acceptance: round-trip a real workspace with logs (with and without anonymisation) and get identical insights, Journal and Trends.
-3. Implement the IndexedDB realization behind the same interface used by the browser adapter (Spec 04 §9.1), and confirm identical JSON shapes between the two.
+3. ~~Implement the IndexedDB realization~~ **(v0.17)** Run the unchanged filesystem realization on OPFS inside the browser host (Spec 04 §9.2–§9.4, plan §10); confirm the documents are byte-identical by exporting from each realization and diffing.
 
-Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection); steps 2 and 3 are not. §5.11's admission behavior is covered by `tests/unit/test_exclusions.py`, `test_loader.py`, `test_workspace.py` (including reclassify), `test_server.py` (Skipped list, preview) and `tests/cli/test_cli.py` (`flights` / `exclude` / `include`) — run against the project's logs, including the run-up case in §5.11.2.
+Status as of v0.17: steps 1 and 2 are done; step 3 is Spec 04 §10. §5.11's admission behavior is covered by `tests/unit/test_exclusions.py`, `test_loader.py`, `test_workspace.py` (including reclassify), `test_server.py` (Skipped list, preview) and `tests/cli/test_cli.py` (`flights` / `exclude` / `include`) — run against the project's logs, including the run-up case in §5.11.2.
 
 ## 12. Open questions
 
@@ -557,7 +559,7 @@ Status as of v0.7: step 1 is done (registry, scan, admission, baseline selection
 |---|---|---|
 | Q1 | Should `series/` caching (§5, §10) be in scope for v1, or deferred until Spec 03 defines what the flight-view chart actually needs? | Defer; re-parsing on demand (Spec 01 `get_series`) is cheap per the spike numbers. |
 | Q2 | ~~`.eisbundle.json` vs `.eisbundle.zip`~~ | **Closed (v0.11):** the results bundle is retired; workspace export is always a zip (§7.3). |
-| Q3 | Should the workspace track its own storage usage and warn before hitting a browser quota, or rely on `navigator.storage.estimate()` at UI level? | UI-level (Spec 03), this spec just needs the data to stay small, which §9 argues it does. |
+| Q3 | ~~Should the workspace track its own storage usage?~~ | **Resolved (v0.18, reversing v0.17):** the host measures it — `get_storage_usage` walks the data root; the browser's `estimate()` is not trusted (Spec 04 Appendix D). |
 | Q4 | Does `engine_overrides.json` need a real design now, or can it stay a placeholder until a pilot actually asks for it? | Placeholder; no evidence yet that default engine profiles are wrong for any tested aircraft. |
 | Q5 | ~~Read-only, don't-merge viewer mode for bundles?~~ | **Closed (v0.11):** import always creates a new workspace and never merges (§7.4); read-only preview is retired with the bundle. |
 | Q6 | Should the packaged installer's default (`~/SlingologyEIS/`) be a fixed, hardcoded name, or configurable at install time (e.g. macOS `~/Library/Application Support/SlingologyEIS/` vs. a plain home-directory folder a non-technical user can actually find in Finder)? | **Resolved (v0.10):** the default stays a plain, visible home-directory folder, `~/SlingologyEIS/` — discoverability by a non-technical pilot matters more than platform convention — and the pilot can move it anywhere afterwards (§5.8.1). Only the small location file uses the platform's configuration folder. |

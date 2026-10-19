@@ -597,7 +597,7 @@ export function FlightView() {
               {flatInsights.length > 0 && filteredFlatInsights.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   No insights in the selected phase{phaseFilter && phaseFilter.length === 1 ? "" : "s"}.{" "}
-                  <a href="#" onClick={(e) => { e.preventDefault(); handlePhaseFilterChange(null); }} style={{ color: "var(--accent)" }}>Show all phases</a>
+                  <a href="#" onClick={(e) => { e.preventDefault(); handlePhaseFilterChange(null); }}>Show all phases</a>
                 </div>
               )}
             </div>

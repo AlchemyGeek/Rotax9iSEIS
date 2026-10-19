@@ -24,7 +24,7 @@ function tickDetail(e: EventTick): string {
     .join("<br/>");
 }
 
-const RECENT_WINDOW_FILL = "rgba(79,195,176,0.07)";
+const RECENT_WINDOW_FILL = colors.chartRecentFill;
 const REFERENCE_FILL = "rgba(174,183,191,0.10)";
 
 interface Props {
@@ -75,10 +75,10 @@ export function EventStrip({ events, frequency, highlightFlight, onOpenFlight, v
           data,
           symbol: "rect",
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          symbolSize: (val: any) => [3, val[4] ? 16 : 7],
+          symbolSize: (val: any) => [val[2] === highlightFlight ? 5 : 3, val[4] ? 16 : 7],   // white alone is close to the grey ticks
           itemStyle: {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            color: (p: any) => (p.data[2] === highlightFlight ? colors.accent : p.data[4] ? colors.textSecondary : colors.borderSubtle),
+            color: (p: any) => (p.data[2] === highlightFlight ? colors.chartHighlight : p.data[4] ? colors.textSecondary : colors.borderSubtle),
           },
         },
         // Each shaded region is its own silent, dataless series — a

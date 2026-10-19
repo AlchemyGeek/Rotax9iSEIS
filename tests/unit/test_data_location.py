@@ -11,7 +11,8 @@ import pytest
 from slingology_eis import data_location as dl
 from slingology_eis import workspace as ws
 from slingology_eis.cli import main
-from slingology_eis.server import RpcError, build_server, op_change_data_location
+from slingology_eis.host import RpcError, op_change_data_location
+from slingology_eis.server import build_server
 
 from .test_server import rpc
 
@@ -226,7 +227,7 @@ def test_server_missing_location_blocks_everything_else_until_reachable(home, tm
 
 def test_change_is_refused_during_a_sync(home):
     with pytest.raises(RpcError) as e:
-        op_change_data_location({"path": "/tmp/x"}, {"scan_progress": {"active": True}})
+        op_change_data_location({"path": "/tmp/x"}, {"running": {"scan"}})   # the host's own busy state
     assert e.value.code == "BUSY"
 
 

@@ -1,6 +1,6 @@
 # Spec 13 — Documentation System
 
-**Status:** Draft v0.1, 2026-10-06. Design only; no code written.
+**Status:** Draft v0.2, 2026-10-19 — §11 Q1 (hosting) resolved by Spec 15 §7. v0.1, 2026-10-06: design only; no code written.
 **Audience:** two readers — the *pilot* (non-technical, wants to get a result quickly) and the *researcher* (wants to understand and challenge how the analytics work). A third, the *contributor*, is served by the existing specs and is only linked, not written for here.
 **Depends on:** Spec 02 (results bundle — for the demo workspace), Spec 10 (topic register — drives generated reference pages), Spec 12 (Trends — the UI the pictorial tier documents). Should be written against the UI as it stands after Session B.
 
@@ -151,7 +151,7 @@ Nothing bespoke; make the corpus easy to ingest.
 
 ## 11. Open questions
 
-1. **Hosting:** docs at `<app host>/docs/` or a separate `docs.` subdomain? Same-host keeps "Learn more" links trivial.
+1. ~~**Hosting:** docs at `<app host>/docs/` or a separate `docs.` subdomain? Same-host keeps "Learn more" links trivial.~~ **Resolved (v0.2):** neither — the docs are on GitHub Pages at `https://alchemygeek.github.io/Rotax9iSEIS/`, confirmed permanent; see Spec 15 §6–§7.
 2. **Anonymisation depth for the demo logs:** strip airport/route hints too, or keep them so the tutorial can say "KACV"?
 3. **Paper location:** `docs/paper/` in this repo (one source, versioned with the code) or kept separate as now? This spec assumes in-repo.
 4. **Register field or sidecar:** put `docs.summary` into the Spec 10 register (keeps topic and its text together) or in a parallel `docs/help/topics.yml` (keeps prose out of Python)? This spec assumes in-register, with a test that fails on a missing summary.
