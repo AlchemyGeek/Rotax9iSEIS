@@ -323,7 +323,10 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
           {/* Spec 15 §1: the family mark and lockup — SLINGOLOGY carries the
               weight, the app name sits smaller underneath. */}
           <span data-testid="brand-lockup" style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <img src="eis-mark.png" alt="" width={30} height={30} style={{ display: "block" }} />
+            {/* A light ring lifts the mark's slate circle off the dark bar; the
+                artwork itself is the family's, unchanged (§1). */}
+            <img src="eis-mark.png" alt="" width={34} height={34}
+              style={{ display: "block", borderRadius: "50%", background: "var(--text-secondary)", padding: 1.5 }} />
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
               <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: 1.2 }}>SLINGOLOGY</span>
               <span style={{ fontWeight: 600, fontSize: 10, letterSpacing: 2.4, color: "var(--text-secondary)", marginTop: 3 }}>EIS</span>
