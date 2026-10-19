@@ -8,7 +8,7 @@ process) converts its wire format to and from `dispatch(op, params, ctx)`
 and supplies, through ctx, what the host cannot know on its own:
 
 - `emit_progress(stream, update)` — progress of a long operation;
-  `stream` is "scan" or "location". The HTTP transport stores it where
+  `stream` is "scan" or "data_location". The HTTP transport stores it where
   get_scan_progress / get_data_location_progress read it.
 - `deliver_file(path, filename)` — hand a file the host wrote (a workspace
   export) to the user; returns what the operation reports back (HTTP: a
@@ -50,6 +50,7 @@ from .fleet import DA_BANDS, OAT_BANDS
 from .limits import _resolve_engine_name, limit_catalog, load_engine_config, resolve_min_flight_duration_min
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes
 from .loader import source_key as _source_key
+from .log_sources import LogRef, LogUnavailable
 from .operations import (
     NO_CARD_TOPICS,
     EcuAnalysis,
@@ -101,8 +102,16 @@ ERROR_CODES = {
 }
 
 
-def _log_content(params: dict) -> tuple[bytes, str]:
-    """A log passed to an operation: its bytes and file name."""
+def _log_content(params: dict, ctx: dict) -> tuple[bytes, str]:
+    """A log passed to an operation: its bytes and file name — either in the
+    request (`content`, which an HTTP client sends base64-encoded) or a file
+    the transport received outside the envelope (`upload_id`, Spec 04
+    v0.5 §9.1's uploads registry)."""
+    if params.get("upload_id"):
+        up = ctx.get("uploads", {}).get(str(params["upload_id"]))
+        if up is None:
+            raise RpcError("NOT_FOUND", "That upload is gone; choose the file again.")
+        return Path(up["path"]).read_bytes(), str(params.get("filename") or up["filename"])
     if not isinstance(params.get("content"), (bytes, bytearray)) or "filename" not in params:
         raise RpcError("BAD_PARAMS", "expected content and filename")
     return bytes(params["content"]), params["filename"]
@@ -161,6 +170,12 @@ def _current_engine(ctx: dict) -> tuple[dict, str]:
         return load_engine_config(manifest.engine_model), manifest.engine_model
     engine_name = _resolve_engine_name(None)
     return load_engine_config(engine_name), engine_name
+
+
+def _sources(ctx: dict):
+    """The log-source factory the transport installed (Spec 04 §9.3): the
+    host never lists or opens a log folder itself."""
+    return ctx["log_sources"]
 
 
 def _require_active(ctx: dict) -> None:
@@ -594,12 +609,12 @@ def op_get_channel_registry(params: dict, ctx: dict) -> Any:
 
 
 def op_ingest_log(params: dict, ctx: dict) -> Any:
-    content, filename = _log_content(params)
+    content, filename = _log_content(params, ctx)
     return _classify_ingest(content, filename, ctx["workspace_dir"])
 
 
 def op_analyze_flight(params: dict, ctx: dict) -> Any:
-    content, filename = _log_content(params)
+    content, filename = _log_content(params, ctx)
     engine_name = _resolve_engine_name(params.get("engine"))
     engine_cfg = load_engine_config(engine_name)
     fa = analyze_flight(content, filename, engine_cfg, engine_name)
@@ -618,7 +633,7 @@ def _expand_channels(channels: list[str]) -> list[str]:
 
 
 def op_get_series(params: dict, ctx: dict) -> Any:
-    content, filename = _log_content(params)
+    content, filename = _log_content(params, ctx)
     channels = params.get("channels")
     if not channels:
         raise RpcError("BAD_PARAMS", "channels is required")
@@ -774,7 +789,7 @@ def _channel_name(target: str) -> str:
     return f"{cdef.label} {cdef.unit}".strip() if cdef.unit and cdef.unit not in cdef.label else cdef.label
 
 
-def _log_channel_rows(workspace_dir: Path) -> list[dict]:
+def _log_channel_rows(workspace_dir: Path, sources) -> list[dict]:
     """One row per raw general-purpose channel any log in the workspace
     carries: the sources that log it, the observed range, the flights
     natively logging which registry channels (what may be assigned), and
@@ -797,7 +812,7 @@ def _log_channel_rows(workspace_dir: Path) -> list[dict]:
         skey = (fa.source_keys or [""])[0]
         ranges = cache.get(skey)
         if ranges is None and src is not None:
-            found = ws.read_source_bytes(workspace_dir, src)
+            found = ws.read_source_bytes(workspace_dir, src, sources)
             if found is not None:
                 df, _info = load_log_bytes(*found)
                 ranges = {c: [float(df[c].min()), float(df[c].max())] for c in gp if c in df.columns and df[c].notna().any()}
@@ -834,7 +849,7 @@ def _log_channel_rows(workspace_dir: Path) -> list[dict]:
 
 def op_get_log_channels(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
-    return {"channels": _log_channel_rows(ctx["workspace_dir"])}
+    return {"channels": _log_channel_rows(ctx["workspace_dir"], _sources(ctx))}
 
 
 def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
@@ -846,7 +861,7 @@ def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     raw = str(params.get("raw") or "")
     target = params.get("target") or None
-    rows = {r["raw"]: r for r in _log_channel_rows(workspace_dir)}
+    rows = {r["raw"]: r for r in _log_channel_rows(workspace_dir, _sources(ctx))}
     if raw not in rows:
         raise RpcError("BAD_PARAMS", f"no log in this workspace carries {raw}")
     if target is not None and target not in {o["channel"] for o in rows[raw]["options"]}:
@@ -863,7 +878,7 @@ def op_set_channel_assignment(params: dict, ctx: dict) -> Any:
         ws.upsert_journal_entry(workspace_dir, kind="changed_setting", ref_id=ref,
                                 what=ws.channel_assignment_title(raw, target, rows[raw]["sources"]),
                                 where={"setting": ref, "tab": "engine"})
-    return {"channels": _log_channel_rows(workspace_dir)}
+    return {"channels": _log_channel_rows(workspace_dir, _sources(ctx))}
 
 
 def op_get_flight_series(params: dict, ctx: dict) -> Any:
@@ -886,7 +901,7 @@ def op_get_flight_series(params: dict, ctx: dict) -> Any:
         content, filename = source_files[0].read_bytes(), source_files[0].name
     else:
         src = ws.load_sources(workspace_dir, flight_id)
-        found = ws.read_source_bytes(workspace_dir, src) if src else None
+        found = ws.read_source_bytes(workspace_dir, src, _sources(ctx)) if src else None
         if found is None:
             raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
@@ -927,7 +942,7 @@ def op_import_files(params: dict, ctx: dict) -> Any:
     results = []
     new_fas = []
     for item in params["files"]:
-        content, filename = _log_content(item)
+        content, filename = _log_content(item, ctx)
         classification = _classify_ingest(content, filename, workspace_dir)
         if classification["classification"] != "new":
             results.append(classification)
@@ -991,7 +1006,7 @@ def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
 
     # Spec 03 v0.17 §5.1: work waiting for the pilot's go-ahead — logs found
     # in the folders but not analysed, and flights analysed by an older engine.
-    pending_logs, stale_ids = ws.pending_work(workspace_dir) if ctx.get("active_workspace_id") else ([], [])
+    pending_logs, stale_ids = ws.pending_work(workspace_dir, _sources(ctx)) if ctx.get("active_workspace_id") else ([], [])
     stale = set(stale_ids)
 
     rows = []
@@ -1193,7 +1208,7 @@ def op_delete_shift_event(params: dict, ctx: dict) -> Any:
     return {"shift_history": ws.delete_shift_event(ctx["workspace_dir"], params["event_id"])}
 
 
-def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"]) -> dict:
+def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifest"], sources) -> dict:
     """
     Best-effort extra context for one exclusions.json entry, for display
     (date/duration/airborne minutes/aircraft) — none of this is stored
@@ -1205,11 +1220,11 @@ def _enrich_exclusion_entry(entry: dict, manifest: Optional["ws.WorkspaceManifes
     """
     if manifest is None:
         return entry
-    path = ws.find_log_file_by_name(manifest, entry["filename"])
-    if path is None:
+    log = ws.find_log_file_by_name(manifest, entry["filename"], sources)
+    if log is None:
         return entry
     try:
-        df, info = load_log_bytes(path.read_bytes(), entry["filename"])
+        df, info = load_log_bytes(log.read_bytes(), entry["filename"])
         df = detect_phases(df, verbose=False)
         start, end = df["datetime"].iloc[0], df["datetime"].iloc[-1]
         airborne_s = sum(
@@ -1254,7 +1269,7 @@ def op_list_exclusions(params: dict, ctx: dict) -> Any:
                 manifest = ws.load_manifest(workspace_dir)
             except (FileNotFoundError, OSError):
                 manifest = None
-        entries = [_enrich_exclusion_entry(e, manifest) for e in entries]
+        entries = [_enrich_exclusion_entry(e, manifest, _sources(ctx)) for e in entries]
 
     # Spec 02 v0.11 §7.5: an imported workspace's flights whose log
     # hasn't been found — no actions; they resolve when the log is added.
@@ -1283,22 +1298,22 @@ def op_include_excluded_log(params: dict, ctx: dict) -> Any:
         _exclusions.set_user_override(workspace_dir, filename, True, params.get("reason", ""))
     except ValueError as e:
         raise RpcError("NOT_FOUND", str(e))
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"])
+    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx))
     if scan_result.new_flight_ids:
         ws.rebuild_fleet(workspace_dir)
     return {"filename": filename, "included": True, "scan_result": scan_result.to_dict()}
 
 
-def _find_excluded_log_path(ctx: dict, filename: str) -> Path:
+def _find_excluded_log(ctx: dict, filename: str) -> "LogRef":
     _require_active(ctx)
     try:
         manifest = ws.load_manifest(ctx["workspace_dir"])
     except (FileNotFoundError, OSError):
         raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
-    path = ws.find_log_file_by_name(manifest, filename)
-    if path is None:
+    log = ws.find_log_file_by_name(manifest, filename, _sources(ctx))
+    if log is None:
         raise RpcError("NOT_FOUND", f"{filename} not found in any watched folder")
-    return path
+    return log
 
 
 def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
@@ -1312,9 +1327,12 @@ def op_preview_excluded_log(params: dict, ctx: dict) -> Any:
     Include it — without first having to bring it into the workspace to
     look.
     """
-    path = _find_excluded_log_path(ctx, params["filename"])
+    log = _find_excluded_log(ctx, params["filename"])
     engine_cfg, engine_name = _current_engine(ctx)
-    content = path.read_bytes()
+    try:
+        content = log.read_bytes()
+    except LogUnavailable:
+        raise RpcError("NOT_FOUND", f"{params['filename']} can't be read right now")
     fa = analyze_flight(content, params["filename"], engine_cfg, engine_name, params=_analysis_params(ctx))
     # Spec 03 v0.22 §5.9: the header names the source format and, for a
     # resampled log, the share of filled rows.
@@ -1327,8 +1345,12 @@ def op_get_excluded_log_series(params: dict, ctx: dict) -> Any:
     channels = params.get("channels")
     if not channels:
         raise RpcError("BAD_PARAMS", "channels is required")
-    path = _find_excluded_log_path(ctx, params["filename"])
-    return _downsample_series(path.read_bytes(), params["filename"], _expand_channels(channels),
+    log = _find_excluded_log(ctx, params["filename"])
+    try:
+        content = log.read_bytes()
+    except LogUnavailable:
+        raise RpcError("NOT_FOUND", f"{params['filename']} can't be read right now")
+    return _downsample_series(content, params["filename"], _expand_channels(channels),
                               assignments=_assignments(ctx))
 
 
@@ -1597,7 +1619,7 @@ def op_remove_flight(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     removed = ws.remove_flight(workspace_dir, params["flight_id"])
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"]) if removed else None
+    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed else None
     if removed:
         ws.rebuild_fleet(workspace_dir)
     return {"removed": removed, "scan_result": scan_result.to_dict() if scan_result else None}
@@ -1610,7 +1632,7 @@ def op_remove_flights(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     workspace_dir = ctx["workspace_dir"]
     removed_ids = ws.remove_flights(workspace_dir, params["flight_ids"])
-    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"]) if removed_ids else None
+    scan_result = ws.scan_workspace(workspace_dir, ctx["registry_path"], sources=_sources(ctx)) if removed_ids else None
     if removed_ids:
         ws.rebuild_fleet(workspace_dir)
     return {"removed_flight_ids": removed_ids, "scan_result": scan_result.to_dict() if scan_result else None}
@@ -1678,9 +1700,9 @@ def op_delete_workspace(params: dict, ctx: dict) -> Any:
         if remaining:
             _activate_workspace(ctx, remaining[0].id)
         else:
-            ctx["active_workspace_id"] = None
-            ctx["workspace_dir"] = resolve_workspace_dir(None)
-            (ctx["workspace_dir"] / "flights").mkdir(parents=True, exist_ok=True)
+            # The last workspace is gone: reopen the data root as at start-up,
+            # so a configured location stays in use (Spec 02 §5.8.1).
+            _open_data_root(ctx)
 
     return {"deleted": True, "workspace_id": workspace_id}
 
@@ -1721,7 +1743,7 @@ def op_export_workspace(params: dict, ctx: dict) -> Any:
     out = _export_dir(ctx) / uuid.uuid4().hex
     try:
         result = wx.export_workspace(ctx["workspace_dir"], out, include_logs=bool(params.get("include_logs", True)),
-                                     anonymise=bool(params.get("anonymise", False)))
+                                     anonymise=bool(params.get("anonymise", False)), sources=_sources(ctx))
     except wx.ExportError as e:
         raise RpcError("EXPORT_FAILED", str(e))
     d = result.to_dict()
@@ -1788,7 +1810,7 @@ def op_match_import(params: dict, ctx: dict) -> Any:
     from . import workspace_export as wx
     _require_active(ctx)
     try:
-        return wx.match_import(ctx["workspace_dir"])
+        return wx.match_import(ctx["workspace_dir"], _sources(ctx))
     except ValueError as e:
         raise RpcError("NOT_IMPORTED", str(e))
 
@@ -1817,6 +1839,8 @@ def op_add_log_folder(params: dict, ctx: dict) -> Any:
     nothing and later matched nothing. `~` is expanded; the folder is
     stored as given (not resolved: a symlinked logs folder stays as linked)."""
     _require_active(ctx)
+    if not getattr(_sources(ctx), "add_folder_by_path", False):
+        raise RpcError("UNSUPPORTED_IN_HOST", "This host can't open a folder by its path; choose the folder instead.")
     raw = str(params.get("path") or "").strip()
     if not raw:
         raise RpcError("BAD_PATH", "Enter the folder's path.")
@@ -1827,6 +1851,19 @@ def op_add_log_folder(params: dict, ctx: dict) -> Any:
         raise RpcError("BAD_PATH", f"There's no folder at {folder}.")
     manifest = ws.add_log_folder(ctx["workspace_dir"], str(folder), ctx["registry_path"])
     return manifest.to_dict()
+
+
+def op_register_log_folder(params: dict, ctx: dict) -> Any:
+    """Link a folder the host can't see by path (Spec 02 §6.1, Spec 04
+    §9.3): a display name and the stable `folder_id` the transport keys
+    the folder's handle by. No reachability check — the next scan sets
+    `reachable` from whether the folder's source could list it."""
+    _require_active(ctx)
+    name = str(params.get("name") or "").strip()
+    folder_id = str(params.get("folder_id") or "").strip()
+    if not name or not folder_id:
+        raise RpcError("BAD_PARAMS", "expected the folder's name and folder_id")
+    return ws.add_log_folder(ctx["workspace_dir"], name, ctx["registry_path"], folder_id=folder_id).to_dict()
 
 
 def op_scan_workspace(params: dict, ctx: dict) -> Any:
@@ -1860,7 +1897,7 @@ def op_scan_workspace(params: dict, ctx: dict) -> Any:
 
     _emit(ctx, "scan", {"active": True, "phase": "starting"})
     try:
-        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress,
+        result = ws.scan_workspace(workspace_dir, ctx["registry_path"], on_progress=on_progress, sources=_sources(ctx),
                                    new_keys=new_keys, reanalyze_ids=reanalyze_ids)
     finally:
         _emit(ctx, "scan", {"active": False})
@@ -1920,25 +1957,25 @@ def op_change_data_location(params: dict, ctx: dict) -> Any:
     reopen the app on it. Refused while a scan runs."""
     if _is_running(ctx, "scan"):
         raise RpcError("BUSY", "A sync is running. Change the data location when it has finished.")
-    if _is_running(ctx, "location"):
+    if _is_running(ctx, "data_location"):
         raise RpcError("BUSY", "The data location is already being changed.")
 
     def on_progress(update: dict) -> None:
-        _emit(ctx, "location", {"active": True, **update})
+        _emit(ctx, "data_location", {"active": True, **update})
 
-    _emit(ctx, "location", {"active": True, "phase": "starting"})
+    _emit(ctx, "data_location", {"active": True, "phase": "starting"})
     try:
         result = data_location.change(_location_target(params), on_progress=on_progress)
     except data_location.DataLocationError as e:
         raise RpcError(e.code, e.message)
     finally:
-        _emit(ctx, "location", {"active": False})
+        _emit(ctx, "data_location", {"active": False})
     _open_data_root(ctx)
     return {**result, "location": op_get_data_location({}, ctx)}
 
 
 def op_get_data_location_progress(params: dict, ctx: dict) -> Any:
-    return ctx.get("location_progress", {"active": False})
+    return ctx.get("data_location_progress", {"active": False})
 
 
 def op_retry_data_location(params: dict, ctx: dict) -> Any:
@@ -2396,12 +2433,18 @@ _FEATURES = {
 
 def op_get_capabilities(params: dict, ctx: dict) -> Any:
     host = ctx.get("host", "server")
-    return {"host": host, "engine_version": __version__, "host_version": __version__,
-            "features": dict(_FEATURES[host])}
+    features = dict(_FEATURES[host])
+    # How folders are added follows the log sources the transport installed.
+    factory = ctx.get("log_sources")
+    if factory is not None:
+        features["add_folder_by_path"] = bool(getattr(factory, "add_folder_by_path", False))
+        features["choose_folder"] = bool(getattr(factory, "choose_folder", False))
+    return {"host": host, "engine_version": __version__, "host_version": __version__, "features": features}
 
 
 _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "get_capabilities": op_get_capabilities,
+    "register_log_folder": op_register_log_folder,
     "get_data_location": op_get_data_location,
     "assess_data_location": op_assess_data_location,
     "change_data_location": op_change_data_location,
@@ -2495,7 +2538,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
 }
 
 
-def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path, workspaces_root: Path) -> tuple[Path, Optional[str]]:
+def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path, workspaces_root: Path,
+                              configured_root: Optional[Path] = None) -> tuple[Path, Optional[str]]:
     """
     Spec 02 v0.5's registry, with the pre-registry single-workspace layout
     as an explicit, permanent fallback — never a special case that needs
@@ -2516,6 +2560,11 @@ def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path,
         match = match or registry.workspaces[0]
         return workspaces_root / match.id, match.id
 
+    if configured_root is not None:
+        # Spec 02 §5.8.1: a configured data location wins in every context,
+        # with or without a registry in it yet — no legacy fallback into a
+        # checkout's data/. Nothing is written until the first workspace.
+        return configured_root, None
     return resolve_workspace_dir(None), None
 
 
@@ -2535,22 +2584,26 @@ def _open_data_root(ctx: dict, workspace_arg: Optional[str] = None) -> None:
         ctx["workspace_dir"], ctx["active_workspace_id"] = loc.root, None
         return
     ctx.pop("data_location_missing", None)
+    configured = loc.root if loc.source in ("environment", "chosen") else None
     ctx["workspace_dir"], ctx["active_workspace_id"] = _resolve_active_workspace(
-        workspace_arg, ctx["registry_path"], ctx["workspaces_root"])
-    (ctx["workspace_dir"] / "flights").mkdir(parents=True, exist_ok=True)
+        workspace_arg, ctx["registry_path"], ctx["workspaces_root"], configured)
+    if ctx["active_workspace_id"] or configured is None:
+        (ctx["workspace_dir"] / "flights").mkdir(parents=True, exist_ok=True)
 
 
 
 
 # ── Dispatch (Spec 04 v0.4 §9.1) ──────────────────────────────────────────
 
-def new_context(*, host: str = "server", logs_dir: Optional[Path] = None, workspace_arg: Optional[str] = None,
+def new_context(*, log_sources, host: str = "server", logs_dir: Optional[Path] = None,
+                workspace_arg: Optional[str] = None,
                 emit_progress: Optional[Callable[[str, dict], None]] = None,
                 deliver_file: Optional[Callable[[Path, str], Any]] = None) -> dict:
     """The host's context for one transport's lifetime, with the data root
-    opened. The transport supplies emit_progress and deliver_file; it may
-    add an `uploads` map of files it received outside the envelope."""
-    ctx: dict = {"host": host, "logs_dir": logs_dir, "running": set(), "uploads": {},
+    opened. The transport supplies the log-source factory (how its folders
+    are listed and read), emit_progress and deliver_file; it may add to the
+    `uploads` map files it received outside the envelope."""
+    ctx: dict = {"host": host, "logs_dir": logs_dir, "running": set(), "uploads": {}, "log_sources": log_sources,
                  "emit_progress": emit_progress, "deliver_file": deliver_file or _no_delivery}
     _open_data_root(ctx, workspace_arg)
     return ctx
@@ -2570,7 +2623,7 @@ def dispatch(op: str, params: dict, ctx: dict) -> Any:
         if ctx.get("data_location_missing"):
             raise RpcError("DATA_LOCATION_MISSING",
                            f"The data location {ctx['data_location_missing']} can't be reached.")
-        if _is_running(ctx, "location"):
+        if _is_running(ctx, "data_location"):
             raise RpcError("BUSY", "Your data is being moved; try again when it has finished.")
     try:
         return _OPS[op](params, ctx)

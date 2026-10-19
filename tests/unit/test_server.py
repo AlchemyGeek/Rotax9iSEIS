@@ -28,6 +28,7 @@ from slingology_eis import host
 from slingology_eis import serialize
 from slingology_eis import workspace as ws
 from slingology_eis.cli import resolve_logs_dir
+from slingology_eis.log_sources import DISK
 from slingology_eis.server import _decode_content, build_server
 
 
@@ -38,9 +39,10 @@ class InProcess:
 
     def __init__(self, workspace_arg=None):
         self.downloads: dict = {}
-        self.ctx = {"scan_progress": {"active": False}, "location_progress": {"active": False}}
-        self.ctx.update(host.new_context(host="server", logs_dir=resolve_logs_dir(None), workspace_arg=workspace_arg,
-                                         emit_progress=self._emit, deliver_file=self._deliver))
+        self.ctx = {"scan_progress": {"active": False}, "data_location_progress": {"active": False}}
+        self.ctx.update(host.new_context(log_sources=DISK, host="server", logs_dir=resolve_logs_dir(None),
+                                         workspace_arg=workspace_arg, emit_progress=self._emit,
+                                         deliver_file=self._deliver))
 
     def _emit(self, stream, update):
         self.ctx[f"{stream}_progress"] = update
@@ -2100,7 +2102,7 @@ def test_scan_progress_goes_through_the_transports_emit_progress(isolated_packag
     """Spec 04 D5: the host reports progress through the transport's
     emit_progress; it doesn't keep the polling store itself."""
     updates = []
-    ctx = host.new_context(emit_progress=lambda stream, u: updates.append((stream, u)),
+    ctx = host.new_context(log_sources=DISK, emit_progress=lambda stream, u: updates.append((stream, u)),
                            deliver_file=lambda p, n: "unused")
     host.dispatch("create_workspace", {"name": "P", "engine_model": "916iS"}, ctx)
     logs = tmp_path / "logs"

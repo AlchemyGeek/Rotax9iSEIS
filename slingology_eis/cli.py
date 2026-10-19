@@ -42,6 +42,9 @@ from .rules import validate_rules, what_if_rules
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGED_HOME = Path.home() / "SlingologyEIS"
+# Spec 04 §9.3: the CLI's log folders are on this machine's disk, added
+# by path — the same log-source factory the HTTP server installs.
+from .log_sources import DISK as _DISK_SOURCES  # noqa: E402
 
 
 class CliUsageError(Exception):
@@ -680,7 +683,7 @@ def cmd_export_workspace(args) -> int:
     ws_dir = _registered_workspace_dir(args.workspace)
     try:
         result = _wx.export_workspace(ws_dir, Path(args.out or "."), include_logs=args.include_logs,
-                                      anonymise=args.anonymise)
+                                      anonymise=args.anonymise, sources=_DISK_SOURCES)
     except _wx.ExportError as e:
         raise CliOperationError(str(e))
     if args.json:
@@ -737,7 +740,7 @@ def cmd_import_workspace(args) -> int:
         print("No logs linked. Link them later with --logs, or from the app: Add logs…")
         return 0
 
-    match = _wx.match_import(ws_dir)
+    match = _wx.match_import(ws_dir, _DISK_SOURCES)
     print(f"{len(match['found'])} of {match['total']} flights found · {len(match['missing'])} missing"
           f" · {len(match['extra'])} other logs held out")
     for m in match["missing"]:
@@ -747,7 +750,7 @@ def cmd_import_workspace(args) -> int:
         if answer not in ("y", "yes"):
             print("Not analysed. Sync from the app, or run this import's workspace through `import`, later.")
             return 0
-    result = _workspace.scan_workspace(ws_dir, registry_path)
+    result = _workspace.scan_workspace(ws_dir, registry_path, sources=_DISK_SOURCES)
     if result.new_flight_ids or result.reanalyzed_flight_ids:
         _workspace.rebuild_fleet(ws_dir)
     print(f"Analysed {len(result.new_flight_ids)} flights.")

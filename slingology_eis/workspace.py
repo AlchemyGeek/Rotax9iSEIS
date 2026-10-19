@@ -48,6 +48,7 @@ from . import exclusions as _exclusions
 from . import serialize as _json_serialize
 from .filters import target_label
 from .limits import RETIRED_ENGINES, load_engine_config, resolve_min_flight_duration_min
+from .log_sources import DISK, LogEntry, LogRef, LogSource, LogUnavailable, reading
 from .loader import (
     find_duplicate_flights,
     flight_fingerprint,
@@ -179,19 +180,26 @@ class WorkspaceRegistry:
 
 @dataclass
 class LogFolder:
-    path: str
+    path: str                         # a real path, or (for a page-held folder) its display name
     reachable: bool = True
     last_scanned_at: Optional[str] = None
+    # Spec 02 §6.1: the stable key of a folder the host can't reach by path
+    # (a browser's directory handle lives outside the manifest, keyed by
+    # this). Absent for folders added by path.
+    folder_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = {"path": self.path, "reachable": self.reachable}
         if self.last_scanned_at is not None:
             d["last_scanned_at"] = self.last_scanned_at
+        if self.folder_id is not None:
+            d = {"folder_id": self.folder_id, **d}
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "LogFolder":
-        return cls(path=d["path"], reachable=d.get("reachable", True), last_scanned_at=d.get("last_scanned_at"))
+        return cls(path=d["path"], reachable=d.get("reachable", True), last_scanned_at=d.get("last_scanned_at"),
+                   folder_id=d.get("folder_id"))
 
 
 @dataclass
@@ -563,11 +571,19 @@ def list_workspaces(registry_path: Path) -> list[WorkspaceRegistryEntry]:
     return load_registry(registry_path).workspaces
 
 
-def add_log_folder(ws_dir: Path, folder_path: str, registry_path: Optional[Path] = None) -> WorkspaceManifest:
+def add_log_folder(ws_dir: Path, folder_path: str, registry_path: Optional[Path] = None,
+                   folder_id: Optional[str] = None) -> WorkspaceManifest:
+    """Link a folder: by path (the host walks it), or — with `folder_id` —
+    by display name only, for a folder whose listing and bytes the
+    transport supplies (Spec 04 §9.3). No check is made here that the
+    folder can be reached; the next scan sets `reachable`."""
     manifest = load_manifest(ws_dir)
-    if any(f.path == folder_path for f in manifest.log_folders):
+    if folder_id is not None:
+        if any(f.folder_id == folder_id for f in manifest.log_folders):
+            return manifest
+    elif any(f.path == folder_path and f.folder_id is None for f in manifest.log_folders):
         return manifest
-    manifest.log_folders.append(LogFolder(path=folder_path, reachable=True, last_scanned_at=None))
+    manifest.log_folders.append(LogFolder(path=folder_path, reachable=True, last_scanned_at=None, folder_id=folder_id))
     manifest.updated_at = _now()
     save_manifest(ws_dir, manifest)
     if registry_path is not None:
@@ -1205,17 +1221,7 @@ def save_workspace_settings(ws_dir: Path, settings: WorkspaceSettings) -> None:
 
 # ── Scanning (§5.1, §5.4, §5.5, §5.6, §5.7) ─────────────────────────────────
 
-def _find_csv_files(folder: Path) -> list[Path]:
-    """Recursive, case-insensitive *.csv — subfolders are included
-    automatically (§5.1), matching how loader.load_directory matches."""
-    return sorted(p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() == ".csv")
-
-
-def _relative_path(abspath: Path, folder: Path) -> str:
-    return str(abspath.relative_to(folder))
-
-
-def find_log_file_by_name(manifest: WorkspaceManifest, filename: str) -> Optional[Path]:
+def find_log_file_by_name(manifest: WorkspaceManifest, filename: str, sources: Callable = DISK) -> Optional[LogRef]:
     """
     Best-effort: search every reachable log_folders entry for a file
     with this exact name. exclusions.json only ever records a filename
@@ -1228,16 +1234,14 @@ def find_log_file_by_name(manifest: WorkspaceManifest, filename: str) -> Optiona
     """
     target = filename.lower()
     for lf in manifest.log_folders:
-        folder = Path(lf.path).expanduser()
-        if not folder.is_dir():
-            continue
-        for abspath in _find_csv_files(folder):
-            if abspath.name.lower() == target:
-                return abspath
+        source = sources(lf)
+        for entry in source.list() or []:
+            if entry.name.lower() == target:
+                return LogRef(source, entry)
     return None
 
 
-def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[bytes, str]]:
+def read_source_bytes(ws_dir: Path, src: "FlightSources", sources: Callable = DISK) -> Optional[tuple[bytes, str]]:
     """Best-effort re-read of a known flight's own source bytes — the
     workspace's own persisted copy for an uploaded flight, or the
     log_folders path for a scanned one. Shared by scan_workspace's
@@ -1248,13 +1252,23 @@ def read_source_bytes(ws_dir: Path, src: "FlightSources") -> Optional[tuple[byte
     timeline silently had nowhere to read from. None if nothing's
     reachable right now (src.missing already covers the common scan-time
     case; this also covers a folder that's since gone offline)."""
+    manifest = None
     for imp in reversed(src.imports):
         if imp.log_folder_path == UPLOADED_SOURCE:
             p = ws_dir / "flights" / src.flight_id / imp.filename
-        else:
-            p = Path(imp.log_folder_path).expanduser() / imp.relative_path
-        if p.is_file():
-            return p.read_bytes(), imp.filename
+            if p.is_file():
+                return p.read_bytes(), imp.filename
+            continue
+        if manifest is None:
+            try:
+                manifest = load_manifest(ws_dir)
+            except (FileNotFoundError, OSError, ValueError):
+                manifest = WorkspaceManifest(id="", name="", engine_model="")
+        try:
+            with reading(sources(_folder_by_path(manifest, imp.log_folder_path)), imp.relative_path) as data:
+                return data, imp.filename
+        except LogUnavailable:
+            continue
     return None
 
 
@@ -1313,7 +1327,7 @@ def _pending_log(skey: str, folder_path: str, rel: str, filename: str) -> dict:
             "filename": filename, "date": date_from_log_filename(filename)}
 
 
-def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
+def pending_work(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], list[str]]:
     """Read-only (Spec 03 v0.17 §5.1): logs in the workspace's folders not
     yet analysed (no known fingerprint, not recorded as a non-flight), and
     flights whose stored analysis predates the running engine and whose
@@ -1331,22 +1345,24 @@ def pending_work(ws_dir: Path) -> tuple[list[dict], list[str]]:
         if src.missing:
             continue
         fa = load_flight_analysis(ws_dir, fid)
-        if fa is not None and analysis_is_stale(fa, assignments) and read_source_bytes(ws_dir, src) is not None:
+        if fa is not None and analysis_is_stale(fa, assignments) and read_source_bytes(ws_dir, src, sources) is not None:
             stale.append(fid)
     new_logs: dict[str, dict] = {}
     unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
     for lf in manifest.log_folders:
-        folder = Path(lf.path).expanduser()
-        if not folder.is_dir():
-            continue
-        for abspath in _find_csv_files(folder):
-            if _exclusions.is_excluded(abspath.name, exclusions_data):
+        source = sources(lf)
+        for entry in source.list() or []:
+            if _exclusions.is_excluded(entry.name, exclusions_data):
                 continue
-            skey = _source_key(abspath.read_bytes())
+            try:
+                with reading(source, entry.relative_path) as data:
+                    skey = _source_key(data)
+            except LogUnavailable:
+                continue
             if skey in unreadable:
                 continue
             if skey not in known and skey not in new_logs:
-                new_logs[skey] = _pending_log(skey, lf.path, _relative_path(abspath, folder), abspath.name)
+                new_logs[skey] = _pending_log(skey, lf.path, entry.relative_path, entry.name)
     return list(new_logs.values()), stale
 
 
@@ -1387,10 +1403,134 @@ def _load_import_record(ws_dir: Path) -> Optional[dict]:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
+def _would_stay_excluded(filename: str, exclusions_data: dict) -> bool:
+    """Whether recording an auto-exclusion for this file now would leave it
+    excluded: add_auto_exclusion writes only when no entry exists, and an
+    existing entry may carry the user's override."""
+    return _exclusions._find_entry(exclusions_data, filename) is None or _exclusions.is_excluded(filename, exclusions_data)
+
+
+def _take_turn(ws_dir, content, folder_path, rel, filename, progress, found_by_key, known, all_sources,
+               stale_selected, fresh_by_fid, admission, unreadable_now, new_keys, sender_fids, planned_fids,
+               candidates, result, engine_cfg, engine_model, params_now, min_flight_duration_min) -> None:
+    """Everything one log's bytes are needed for, while they're in hand."""
+    skey = _source_key(content)
+    if skey in found_by_key:
+        return   # the same file reached through a second folder: the first folder claims it (§5.7)
+    found_by_key[skey] = (folder_path, rel, filename)
+
+    if skey in known:
+        fid, imp = known[skey]
+        if fid in stale_selected:
+            index = all_sources[fid].imports.index(imp)
+            best = fresh_by_fid.get(fid)
+            if best is None or index > best[0]:
+                progress("reanalyzing")
+                try:
+                    fresh = analyze_flight(content, filename, engine_cfg, engine_model, params=params_now)
+                except Exception:
+                    fresh = None
+                fresh_by_fid[fid] = (index, fresh)
+        return
+
+    # Not a known fingerprint. Could still be a new export path of an
+    # already-known flight (flight_id is a fingerprint of content, not of
+    # bytes) — that's only knowable after parsing.
+    if skey in admission:
+        if _exclusions.add_imported_entry(ws_dir, filename, admission[skey]):
+            pass
+    exclusions_data = _exclusions.load_exclusions(ws_dir)
+    if _exclusions.is_excluded(filename, exclusions_data):
+        return  # already recorded as not a flight (Spec 02 §5.11) — nothing new to do
+    if skey in unreadable_now and (new_keys is None or skey not in new_keys):
+        return  # this engine already found it unreadable — shown as Unreadable, not offered again
+    if new_keys is not None and skey not in new_keys:
+        result.pending_new_logs.append(_pending_log(skey, folder_path, rel, filename))
+        return
+
+    c: dict = {"skey": skey, "meta": (folder_path, rel, filename)}
+    candidates.append(c)
+    try:
+        df, info = load_log_bytes(content, filename)
+    except Exception as e:
+        c["read_error"] = e
+        return
+    # What duplicate detection needs, without the frame: the first and last
+    # timestamps, the file name and the airframe identity.
+    c["stub"] = (df.iloc[[0, -1]][["datetime", "_source_file"]].reset_index(drop=True) if len(df) else df[["datetime", "_source_file"]],
+                 info)
+    c["rows"] = len(df)
+    c["fid"] = _compute_flight_id(flight_fingerprint(df, info))
+    c["source_format"] = info.source_format
+    try:
+        phased = detect_phases(df, verbose=False)
+    except Exception as e:
+        c["phase_error"] = e
+        return
+    c["category"], c["reason"] = _exclusions.classify_for_auto_exclusion(phased, min_flight_duration_min)
+    del df, phased
+
+    # Analyse now unless the commit step will certainly not need it.
+    if c["fid"] in all_sources or c["fid"] in planned_fids:
+        return   # a second export path of a flight: recorded as an import, not analysed
+    if c["category"] is not None and _would_stay_excluded(filename, exclusions_data):
+        return
+    if sender_fids is not None and c["fid"] not in sender_fids and _would_stay_excluded(filename, exclusions_data):
+        return
+    progress("analyzing")
+    _analyse(c, content, filename, engine_cfg, engine_model, params_now)
+    if "fa" in c and c["fa"] is not None:
+        planned_fids.add(c["fid"])
+
+
+def _analyse(c: dict, content: bytes, filename: str, engine_cfg, engine_model, params_now) -> None:
+    try:
+        c["fa"] = analyze_flight(content, filename, engine_cfg, engine_model, params=params_now)
+    except Exception as e:
+        c["fa"], c["analyse_error"] = None, e
+
+
+def _analyse_candidate(ws_dir, c: dict, sources, manifest, engine_cfg, params_now) -> None:
+    folder_path, rel, filename = c["meta"]
+    source = sources(_folder_by_path(manifest, folder_path))
+    try:
+        with reading(source, rel) as content:
+            _analyse(c, content, filename, engine_cfg, manifest.engine_model, params_now)
+    except LogUnavailable as e:
+        c["fa"], c["analyse_error"] = None, e
+
+
+def _uploaded_reanalysis(ws_dir, src, best, engine_cfg, engine_model, params_now, on_progress) -> Optional[FlightAnalysis]:
+    """The fresh analysis read_source_bytes' choice gives: the latest
+    import whose bytes are available. A folder import's bytes were read on
+    its turn (`best`); an uploaded import's live in the workspace."""
+    for index in range(len(src.imports) - 1, -1, -1):
+        imp = src.imports[index]
+        if best is not None and best[0] == index:
+            return best[1]
+        if imp.log_folder_path == UPLOADED_SOURCE:
+            p = ws_dir / "flights" / src.flight_id / imp.filename
+            if p.is_file():
+                if on_progress:
+                    on_progress({"phase": "reanalyzing", "current": 1, "total": 1, "filename": imp.filename})
+                try:
+                    return analyze_flight(p.read_bytes(), imp.filename, engine_cfg, engine_model, params=params_now)
+                except Exception:
+                    return None
+    return None
+
+
+def _folder_by_path(manifest: "WorkspaceManifest", folder_path: str) -> "LogFolder":
+    """The manifest's folder for an import's log_folder_path (or a bare one
+    for a folder no longer in the manifest)."""
+    return next((lf for lf in manifest.log_folders if lf.path == folder_path), None) or LogFolder(path=folder_path)
+
+
 def scan_workspace(
     ws_dir: Path, registry_path: Optional[Path] = None, quiet: bool = True,
     on_progress: Optional[Callable[[dict], None]] = None,
     new_keys: Optional[set] = None, reanalyze_ids: Optional[set] = None,
+    sources: Callable = DISK,
 ) -> ScanResult:
     """
     Spec 03 v0.17 §5.1 (Sync asks before it analyses): `new_keys` limits
@@ -1439,27 +1579,10 @@ def scan_workspace(
     engine_cfg = load_engine_config(manifest.engine_model)  # locked, always this (§5.6) — never per-log
     exclusions_data = _exclusions.load_exclusions(ws_dir)
     min_flight_duration_min = resolve_min_flight_duration_min()
+    params_now = analysis_params(ws_dir)
+    assignments_now = load_workspace_settings(ws_dir).channel_assignments
 
     result = ScanResult()
-    found_by_key: dict[str, tuple[str, str, str, Path]] = {}  # source_key -> (folder_path, rel, filename, abspath)
-    unreachable_folder_paths: set[str] = set()
-
-    for lf in manifest.log_folders:
-        folder = Path(lf.path).expanduser()
-        if not folder.is_dir():
-            lf.reachable = False
-            unreachable_folder_paths.add(lf.path)
-            result.unreachable_folders.append(lf.path)
-            continue
-        lf.reachable = True
-        lf.last_scanned_at = _now()
-        for abspath in _find_csv_files(folder):
-            content = abspath.read_bytes()
-            skey = _source_key(content)
-            # First folder (in manifest order) to claim a given fingerprint
-            # wins if the same physical file is reachable via two folder
-            # references (§5.7's "same log in two folders" case).
-            found_by_key.setdefault(skey, (lf.path, _relative_path(abspath, folder), abspath.name, abspath))
 
     # Known fingerprints already in the workspace, and the flight/import
     # record each belongs to.
@@ -1487,99 +1610,120 @@ def scan_workspace(
     # out until included.
     import_record = _load_import_record(ws_dir)
     sender_fids: Optional[set] = None
+    admission: dict = {}
     if import_record is not None:
         sender_fids = {f["flight_id"] for f in import_record.get("manifest", [])}
         admission = {a["source_key"]: a for a in import_record.get("admission", []) if a.get("source_key")}
-        added = False
-        for skey, (_fp, _rel, filename, _abs) in found_by_key.items():
-            if skey in admission and skey not in known:
-                added |= _exclusions.add_imported_entry(ws_dir, filename, admission[skey])
-        if added:
-            exclusions_data = _exclusions.load_exclusions(ws_dir)
 
     unreadable_now = current_unreadable(ws_dir)
-    new_batch: list[tuple[bytes, str, str]] = []  # (content, filename, source_key) for genuinely new flight_ids
-    new_batch_meta: dict[str, tuple[str, str, str]] = {}  # source_key -> (folder_path, rel, filename)
 
-    for skey, (folder_path, rel, filename, abspath) in found_by_key.items():
-        if skey in known:
-            fid, imp = known[skey]
-            if imp.log_folder_path != folder_path or imp.relative_path != rel or imp.filename != filename:
-                # Rename/move under a known fingerprint — rematch, not a
-                # new import (§5.7).
-                imp.log_folder_path, imp.relative_path, imp.filename = folder_path, rel, filename
-                save_sources(ws_dir, all_sources[fid])
-                result.rematched_flight_ids.append(fid)
-            if all_sources[fid].missing:
-                all_sources[fid].missing = False
-                save_sources(ws_dir, all_sources[fid])
-                result.recovered_flight_ids.append(fid)
-            continue
-        # Not a known fingerprint. Could still be a new export path of an
-        # already-known flight (same physical flight, different file) —
-        # that's only knowable after parsing (flight_id is fingerprint-of-
-        # content, not of bytes), so defer to the batch below.
-        if _exclusions.is_excluded(filename, exclusions_data):
-            continue  # already recorded as not a flight (Spec 02 §5.11) — nothing new to do
-        if skey in unreadable_now and (new_keys is None or skey not in new_keys):
-            continue  # this engine already found it unreadable — shown as Unreadable, not offered again
-        if new_keys is not None and skey not in new_keys:
-            result.pending_new_logs.append(_pending_log(skey, folder_path, rel, filename))
-            continue
-        content = abspath.read_bytes()
-        new_batch.append((content, filename, skey))
-        new_batch_meta[skey] = (folder_path, rel, filename)
+    # Flights whose stored analysis is stale and that this scan may
+    # re-analyse: re-run from the bytes read_source_bytes would choose — the
+    # latest import whose bytes are available (Spec 02 §8).
+    stale_selected: dict[str, FlightAnalysis] = {}
+    for fid, src in all_sources.items():
+        fa = load_flight_analysis(ws_dir, fid)
+        if fa is not None and analysis_is_stale(fa, assignments_now) and (reanalyze_ids is None or fid in reanalyze_ids):
+            stale_selected[fid] = fa
+    fresh_by_fid: dict[str, tuple[int, Optional[FlightAnalysis]]] = {}  # fid -> (import index, fresh or None)
 
-    # Resolve the deferred batch: parse each, then split into "new export
-    # path of an existing flight" vs "genuinely new flight". Only an
-    # OVERLAP duplicate group (different flight_id — different fingerprint,
-    # but the same physical flight per the time-overlap heuristic) gets
-    # dropped here (Spec 01 R5's INGEST_DUPLICATE_OF case). An EXACT group
-    # (same flight_id) is deliberately *not* run through deduplicate_flights'
-    # drop-one-keep-one logic the way cli.py's single-workspace `import`
-    # does — that would throw away exactly the second export path §6.2
-    # wants recorded. Same flight_id already means "merge into one
-    # flights/<id>", which the per-file loop below does naturally by
-    # appending a second `imports[]` entry instead of re-analyzing.
-    parsed = []  # (df, info, content, filename, skey)
-    for i, (content, filename, skey) in enumerate(new_batch):
-        if on_progress:
-            on_progress({"phase": "reading", "current": i + 1, "total": len(new_batch), "filename": filename})
-        try:
-            df, info = load_log_bytes(content, filename)
-        except Exception as e:
+    # ── 1. List every folder, then 2. take each log in turn ────────────────
+    # Spec 04 v0.4 §9.3: list first; read each log's bytes only on its turn
+    # and release them after, so a page-supplied source can stream a folder.
+    # Everything that needs the bytes happens during the turn; what the
+    # rest of the scan needs is kept as a small record.
+    unreachable_folder_paths: set[str] = set()
+    listings: list[tuple["LogFolder", LogSource, list[LogEntry]]] = []
+    for lf in manifest.log_folders:
+        source = sources(lf)
+        entries = source.list()
+        if entries is None:
+            lf.reachable = False
+            unreachable_folder_paths.add(lf.path)
+            result.unreachable_folders.append(lf.path)
+            continue
+        lf.reachable = True
+        lf.last_scanned_at = _now()
+        listings.append((lf, source, entries))
+    total = sum(len(entries) for _lf, _s, entries in listings)
+
+    found_by_key: dict[str, tuple[str, str, str]] = {}  # source_key -> (folder_path, rel, filename), first folder wins (§5.7)
+    candidates: list[dict] = []          # new logs to admit, in listing order
+    planned_fids: set[str] = set()       # new flights this scan will analyse
+    turn = 0
+    for lf, source, entries in listings:
+        for entry in entries:
+            turn += 1
+            rel, filename = entry.relative_path, entry.name
+
+            def progress(phase: str) -> None:
+                if on_progress:
+                    on_progress({"phase": phase, "current": turn, "total": total, "filename": filename})
+
+            progress("reading")
+            try:
+                with reading(source, rel) as content:
+                    _take_turn(ws_dir, content, lf.path, rel, filename, progress, found_by_key, known,
+                               all_sources, stale_selected, fresh_by_fid, admission, unreadable_now, new_keys,
+                               sender_fids, planned_fids, candidates, result, engine_cfg, manifest.engine_model,
+                               params_now, min_flight_duration_min)
+            except LogUnavailable:
+                continue   # listed but not readable now — as a file that vanished mid-walk
+
+    # ── 3. Commit, in the order the scan has always written ────────────────
+    for skey, (folder_path, rel, filename) in found_by_key.items():
+        if skey not in known:
+            continue
+        fid, imp = known[skey]
+        if imp.log_folder_path != folder_path or imp.relative_path != rel or imp.filename != filename:
+            # Rename/move under a known fingerprint — rematch, not a new
+            # import (§5.7).
+            imp.log_folder_path, imp.relative_path, imp.filename = folder_path, rel, filename
+            save_sources(ws_dir, all_sources[fid])
+            result.rematched_flight_ids.append(fid)
+        if all_sources[fid].missing:
+            all_sources[fid].missing = False
+            save_sources(ws_dir, all_sources[fid])
+            result.recovered_flight_ids.append(fid)
+
+    meta = {c["skey"]: c["meta"] for c in candidates}
+    parsed = []
+    for c in candidates:
+        if c.get("read_error") is not None:
             # Spec 03 §5.1 "Unreadable": recorded with its reason, shown on
             # Flights — never left looking like it waits for analysis.
-            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "read")
+            _unreadable(ws_dir, result, meta, c["skey"], c["meta"][2], c["read_error"], "read")
             continue
-        parsed.append((df, info, content, filename, skey))
+        parsed.append(c)
 
+    # Only an OVERLAP duplicate group (different flight_id — different
+    # fingerprint, but the same physical flight per the time-overlap
+    # heuristic) is dropped here (Spec 01 R5's INGEST_DUPLICATE_OF case),
+    # keeping the export with the most rows. An EXACT group (same
+    # flight_id) is deliberately kept: same flight_id means "merge into one
+    # flights/<id>", which the loop below does by appending a second
+    # `imports[]` entry instead of re-analyzing (§6.2's second export path).
     dup_groups_excluded: set[str] = set()
     if len(parsed) > 1:
-        flights_for_dedup = [(df, info) for df, info, _, _, _ in parsed]
-        overlap_groups = [g for g in find_duplicate_flights(flights_for_dedup) if g.match_kind == "overlap"]
+        overlap_groups = [g for g in find_duplicate_flights([c["stub"] for c in parsed]) if g.match_kind == "overlap"]
         if overlap_groups:
-            file_to_row = {df["_source_file"].iloc[0]: (df, info) for df, info, _, _, _ in parsed}
+            by_file = {c["meta"][2]: c for c in parsed}
             for group in overlap_groups:
-                candidates = [file_to_row[f] for f in group.files if f in file_to_row]
-                if len(candidates) < 2:
+                group_cands = [by_file[f] for f in group.files if f in by_file]
+                if len(group_cands) < 2:
                     continue
-                keep_df, _ = max(candidates, key=lambda pair: len(pair[0]))
-                keep_name = keep_df["_source_file"].iloc[0]
-                for df, info, content, filename, skey in parsed:
-                    if filename in group.files and filename != keep_name:
-                        dup_groups_excluded.add(skey)
-                        fid = _compute_flight_id(flight_fingerprint(df, info))
-                        result.excluded.append({"flight_id": fid, "reason": f"duplicate export ({filename})"})
+                keep_name = max(group_cands, key=lambda c: c["rows"])["meta"][2]
+                for c in parsed:
+                    if c["meta"][2] in group.files and c["meta"][2] != keep_name:
+                        dup_groups_excluded.add(c["skey"])
+                        result.excluded.append({"flight_id": c["fid"], "reason": f"duplicate export ({c['meta'][2]})"})
 
-    for i, (df, info, content, filename, skey) in enumerate(parsed):
-        if on_progress:
-            on_progress({"phase": "analyzing", "current": i + 1, "total": len(parsed), "filename": filename})
+    for c in parsed:
+        skey, filename = c["skey"], c["meta"][2]
         if skey in dup_groups_excluded:
             continue
         if sender_fids is not None:
-            fid = _compute_flight_id(flight_fingerprint(df, info))
-            if fid not in sender_fids and fid not in all_sources:
+            if c["fid"] not in sender_fids and c["fid"] not in all_sources:
                 _exclusions.add_auto_exclusion(ws_dir, filename, "not_in_sender", _exclusions.NOT_IN_SENDER_REASON)
                 if _exclusions.is_excluded(filename, _exclusions.load_exclusions(ws_dir)):
                     result.auto_excluded.append({"filename": filename, "category": "not_in_sender",
@@ -1587,31 +1731,25 @@ def scan_workspace(
                     continue
                 # else: the user included it — an ordinary flight from here on.
 
-        try:
-            df = detect_phases(df, verbose=False)
-        except Exception as e:
-            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "analyse")
+        if c.get("phase_error") is not None:
+            _unreadable(ws_dir, result, meta, skey, filename, c["phase_error"], "analyse")
             continue
-        category, reason = _exclusions.classify_for_auto_exclusion(df, min_flight_duration_min)
-        if category is not None:
-            _exclusions.add_auto_exclusion(ws_dir, filename, category, reason)
+        if c["category"] is not None:
+            _exclusions.add_auto_exclusion(ws_dir, filename, c["category"], c["reason"])
             # add_auto_exclusion() is a no-op if an entry already exists
             # — including one a user already overrode (user_override:
-            # true). Re-check the current on-disk state, not the copy
-            # loaded at the top of this scan, so an override takes
-            # effect immediately, not just on the *next* scan (same
-            # reasoning as load_directory()'s equivalent check).
+            # true). Re-check the current on-disk state, so an override
+            # takes effect immediately, not just on the *next* scan.
             if _exclusions.is_excluded(filename, _exclusions.load_exclusions(ws_dir)):
-                result.auto_excluded.append({"filename": filename, "category": category, "reason": reason})
+                result.auto_excluded.append({"filename": filename, "category": c["category"], "reason": c["reason"]})
                 continue
             # else: overridden — falls through and becomes a flight below.
 
-        fid = _compute_flight_id(flight_fingerprint(df, info))
-        folder_path, rel, filename = new_batch_meta[skey]
-        via = via_for_source_format(info.source_format)
+        fid = c["fid"]
+        folder_path, rel, filename = c["meta"]
         imp = ImportRecord(
             source_key=skey, log_folder_path=folder_path, relative_path=rel,
-            filename=filename, imported_at=_now(), via=via,
+            filename=filename, imported_at=_now(), via=via_for_source_format(c["source_format"]),
         )
 
         if fid in all_sources:
@@ -1622,12 +1760,16 @@ def scan_workspace(
             result.rematched_flight_ids.append(fid)
             continue
 
-        try:
-            fa = analyze_flight(content, filename, engine_cfg, manifest.engine_model, params=analysis_params(ws_dir))
-        except Exception as e:
+        if "fa" not in c:
+            # Not analysed on its turn (it looked as if it would stay
+            # excluded, or another file seemed to be this flight). Rare:
+            # read it once more.
+            _analyse_candidate(ws_dir, c, sources, manifest, engine_cfg, params_now)
+        if c.get("analyse_error") is not None:
             # One log the engine can't analyse must not abort the whole sync.
-            _unreadable(ws_dir, result, new_batch_meta, skey, filename, e, "analyse")
+            _unreadable(ws_dir, result, meta, skey, filename, c["analyse_error"], "analyse")
             continue
+        fa = c["fa"]
         # fa.flight_id is computed the same way as `fid` above (same
         # fingerprint function); use fa's own value as the source of truth.
         ident = (fa.header or {}).get("aircraft", {}).get("ident")
@@ -1636,9 +1778,9 @@ def scan_workspace(
             primary_ident = ident  # first flight this workspace has ever seen sets it
 
         save_flight_analysis(ws_dir, fa)
-        sources = FlightSources(flight_id=fa.flight_id, imports=[imp], different_tail_number=different_tail)
-        save_sources(ws_dir, sources)
-        all_sources[fa.flight_id] = sources
+        new_sources = FlightSources(flight_id=fa.flight_id, imports=[imp], different_tail_number=different_tail)
+        save_sources(ws_dir, new_sources)
+        all_sources[fa.flight_id] = new_sources
         result.new_flight_ids.append(fa.flight_id)
 
     # Missing evaluation: any known flight none of whose fingerprints were
@@ -1659,18 +1801,9 @@ def scan_workspace(
             result.now_missing_flight_ids.append(fid)
 
     # Re-analysis: a known flight whose stored analysis predates the
-    # engine version actually running gets re-run for real, not left
-    # stale indefinitely — Spec 03's "needs_reanalysis" status names this
-    # case but nothing ever actually triggered it. Scoped to flights this
-    # scan can still reach a source for; skips ones just created above
-    # (already current) and ones already missing (nothing to re-read).
-    #
-    # Collected as one list first (cheap — just a provenance-string check
-    # per known flight, not the actual re-analysis) so on_progress can
-    # report a real total instead of counting down from "however many
-    # flights this workspace has," most of which won't need it at all.
-    assignments_now = load_workspace_settings(ws_dir).channel_assignments
-    stale: list[tuple[str, FlightSources, FlightAnalysis, bytes, str]] = []
+    # engine actually running (or the channel assignments now set) — re-run
+    # from the latest import whose bytes were available, read on that log's
+    # turn above, or the workspace's own copy of an uploaded log.
     for fid, src in all_sources.items():
         if fid in result.new_flight_ids or src.missing:
             continue
@@ -1680,19 +1813,10 @@ def scan_workspace(
         if reanalyze_ids is not None and fid not in reanalyze_ids:
             result.pending_reanalysis_flight_ids.append(fid)
             continue
-        found = read_source_bytes(ws_dir, src)
-        if found is None:
-            continue
-        content, filename = found
-        stale.append((fid, src, fa, content, filename))
-
-    for i, (fid, src, fa, content, filename) in enumerate(stale):
-        if on_progress:
-            on_progress({"phase": "reanalyzing", "current": i + 1, "total": len(stale), "filename": filename})
-        try:
-            fresh = analyze_flight(content, filename, engine_cfg, manifest.engine_model, params=analysis_params(ws_dir))
-        except Exception:
-            continue  # leave the stale analysis in place rather than losing it
+        fresh = _uploaded_reanalysis(ws_dir, src, fresh_by_fid.get(fid), engine_cfg, manifest.engine_model, params_now,
+                                     on_progress)
+        if fresh is None:
+            continue   # nothing readable, or it failed: leave the stale analysis in place rather than lose it
         if fresh.flight_id != fid:
             # Source bytes changed under an unchanged path/filename (a
             # different flight now, by fingerprint) — not safely

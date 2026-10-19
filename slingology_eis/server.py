@@ -30,6 +30,7 @@ from typing import Any, Optional
 from . import host as _host
 from . import serialize as _json_serialize
 from .cli import _REPO_ROOT, resolve_logs_dir
+from .log_sources import DISK
 
 # Kept importable from here for callers that predate the host split.
 RpcError = _host.RpcError
@@ -53,7 +54,7 @@ def _http_context(logs_dir: Optional[Path], workspace_arg: Optional[str]) -> dic
     """The host context with this transport's progress store and download
     registry. ctx is one shared dict for the server's lifetime, so a poll
     on another thread sees a scan thread's updates with no extra plumbing."""
-    ctx: dict = {"scan_progress": {"active": False}, "location_progress": {"active": False}, "downloads": {}}
+    ctx: dict = {"scan_progress": {"active": False}, "data_location_progress": {"active": False}, "downloads": {}}
 
     def emit_progress(stream: str, update: dict) -> None:
         # Where get_scan_progress / get_data_location_progress read it.
@@ -64,7 +65,8 @@ def _http_context(logs_dir: Optional[Path], workspace_arg: Optional[str]) -> dic
         ctx["downloads"][token] = Path(path)
         return f"/download/{token}"
 
-    ctx.update(_host.new_context(host="server", logs_dir=logs_dir, workspace_arg=workspace_arg,
+    # A server's folders are on its own disk, added by path.
+    ctx.update(_host.new_context(log_sources=DISK, host="server", logs_dir=logs_dir, workspace_arg=workspace_arg,
                                  emit_progress=emit_progress, deliver_file=deliver_file))
     return ctx
 
