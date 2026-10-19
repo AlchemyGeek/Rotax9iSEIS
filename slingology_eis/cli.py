@@ -39,6 +39,7 @@ from .operations import (
     update_fleet,
 )
 from .rules import validate_rules, what_if_rules
+from .resources import resource
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGED_HOME = Path.home() / "SlingologyEIS"
@@ -353,7 +354,7 @@ def _load_or_build_fleet(logs_dir: Path, workspace_dir: Path, engine_cfg: dict, 
 # ── subcommands ───────────────────────────────────────────────────────────
 
 def cmd_engines(args) -> int:
-    engines_dir = _REPO_ROOT / "engines"
+    engines_dir = resource("engines")
     results = []
     for p in sorted(engines_dir.glob("*.json")):
         cfg = json.loads(p.read_text())
@@ -374,7 +375,7 @@ def cmd_engines(args) -> int:
 def cmd_explain(args) -> int:
     engine_name = _resolve_engine_name(args.engine)
     engine_cfg = load_engine_config(engine_name)
-    rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    rules = json.loads(resource("insight_rules.json").read_text())
     topic_ids = [args.topic_id] if args.topic_id else None
     results, diagnostics = get_topic_help(topic_ids, engine_name, engine_cfg, rules)
 
@@ -475,7 +476,7 @@ def cmd_report(args) -> int:
         raise CliOperationError(f"Log not found: {log_path}")
     fa = analyze_flight(log_path.read_bytes(), log_path.name, engine_cfg, engine_name)
     fleet = _load_or_build_fleet(logs_dir, workspace_dir, engine_cfg, engine_name, args.quiet)
-    rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    rules = json.loads(resource("insight_rules.json").read_text())
     # Spec 09: the same limit filters the web UI saved for this workspace.
     filters_file = workspace_dir / "filters.json"
     filters = json.loads(filters_file.read_text()).get("filters", []) if filters_file.exists() else []
@@ -659,7 +660,7 @@ def cmd_rules_try(args) -> int:
     fa = analyze_flight(log_path.read_bytes(), log_path.name, engine_cfg, engine_name)
     fleet = _load_or_build_fleet(logs_dir, workspace_dir, engine_cfg, engine_name, args.quiet)
 
-    old_rules = json.loads((_REPO_ROOT / "insight_rules.json").read_text())
+    old_rules = json.loads(resource("insight_rules.json").read_text())
     new_rules = json.loads(Path(args.file).read_text())
     diff = what_if_rules(fa, fleet, old_rules, new_rules)
     if args.json:

@@ -33,13 +33,14 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+from .resources import resource
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _TOOLKIT_ROOT  = Path(__file__).resolve().parent.parent
-_ENGINES_DIR   = _TOOLKIT_ROOT / "engines"
-_TOOLKIT_CONFIG = _TOOLKIT_ROOT / "config.json"
+_ENGINES_DIR   = resource("engines")
+_TOOLKIT_CONFIG = resource("config.json")
 _DEFAULT_ENGINE = "916iS"
 
 

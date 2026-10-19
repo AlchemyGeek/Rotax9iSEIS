@@ -17,7 +17,7 @@ class FakeWorker {
   requests() { return this.sent.filter((m) => m.type === "request").map((m) => m.envelope as { op: string; request_id: string; params: unknown }); }
 }
 
-const RUNTIME = { host: "browser" as const, pyodide: "0.28.0", engine_wheel: "engine/x.whl" };
+const RUNTIME = { host: "browser" as const, pyodide: "0.28.0", pyodide_url: "pyodide/", engine_wheel: "engine/x.whl" };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 let workers: FakeWorker[];
@@ -35,11 +35,14 @@ const ready = (w: FakeWorker) => w.reply({ type: "ready", engine_version: "1.0.1
 describe("BrowserWorkerClient", () => {
   beforeEach(() => localStorage.clear());
 
-  it("starts the worker with the runtime's Pyodide and wheel, and queues requests until ready", async () => {
+  it("starts the worker with the site's own Pyodide and wheel, and queues requests until ready", async () => {
     const client = make();
     const w = workers[0];
-    expect(w.sent[0]).toMatchObject({ type: "init", pyodide: "0.28.0" });
+    expect(w.sent[0]).toMatchObject({ type: "init" });
     expect(String(w.sent[0].wheelUrl)).toMatch(/engine\/x\.whl$/);
+    // Same site as the page — never a CDN (Spec 04 §9.7).
+    expect(new URL(String(w.sent[0].pyodideUrl)).origin).toBe(window.location.origin);
+    expect(String(w.sent[0].pyodideUrl)).toMatch(/\/pyodide\/$/);
     const caps = client.getCapabilities();
     await tick();
     expect(w.requests()).toHaveLength(0);                        // not ready yet

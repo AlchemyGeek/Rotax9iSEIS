@@ -49,3 +49,6 @@ include = ["slingology_eis*"]
 # unresolved gap engines/*.json already has for a genuinely installed
 # wheel, not a new one.
 slingology_eis = ["help/topics.md"]
+# The runtime files (_data/) and the built UI (_web/) are added to the
+# wheel by setup.py's build step, copied from the repo root and web/dist;
+# slingology_eis/resources.py reads them when not in a checkout.

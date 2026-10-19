@@ -1,0 +1,94 @@
+# Spec 04 v0.8 §9.7 / §10 step 5 — CI. On every push and pull request:
+# the Python suite (with the private test logs when the secret is set,
+# otherwise the unit set — the real-data tests skip), the web type check,
+# lint and tests, the three-way conformance (in-process, HTTP, Pyodide in
+# Node — part of the Python suite), and the wheel and static-site builds,
+# kept as artifacts. On a tag v*: the wheel and the site zip are attached
+# to the GitHub release.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write   # attaching release assets on a tag
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_TEST_DATA: ${{ secrets.EIS_TEST_DATA_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The private flight logs (CLAUDE.md): only when the secret is set,
+      # e.g. not on pull requests from forks.
+      - name: Check out the test logs
+        if: env.HAS_TEST_DATA == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: AlchemyGeek/EIS-Test-Data
+          token: ${{ secrets.EIS_TEST_DATA_TOKEN }}
+          path: eis-test-data
+      - name: Link the test logs
+        if: env.HAS_TEST_DATA == 'true'
+        run: mkdir -p data && ln -sfn "$PWD/eis-test-data" data/logs
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          (cd web && npm ci)
+
+      # Pyodide's numpy/pandas wheels, for the Node conformance run and the
+      # static site (fetched once from the pinned release, hash-checked).
+      - uses: actions/cache@v4
+        with:
+          path: web/node_modules/.pyodide-packages
+          key: pyodide-packages-${{ hashFiles('PYODIDE_VERSION') }}
+
+      - name: Web — type check, lint, tests
+        working-directory: web
+        run: |
+          npx tsc -b --noEmit
+          npx oxlint src
+          npx vitest run
+
+      - name: Python — suite, three call paths
+        run: python -m pytest -q
+
+      - name: Build the static site and the wheel
+        run: python scripts/build_site.py --out _site
+
+      - name: Package artifacts
+        run: |
+          mkdir -p artifacts
+          cp _site/engine/*.whl artifacts/
+          (cd _site && zip -qr ../artifacts/slingology-eis-site.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slingology-eis
+          path: artifacts/
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "SlingologyEIS ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md."
+          gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber

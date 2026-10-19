@@ -721,7 +721,7 @@ export class LocalServerClient implements EngineClient {
 
 export type Runtime =
   | { host: "server" }
-  | { host: "browser"; pyodide: string; engine_wheel: string }
+  | { host: "browser"; pyodide: string; pyodide_url: string; engine_wheel: string }
   | { host: "incomplete"; message: string };
 
 let runtimePromise: Promise<{ runtime: Runtime; client: EngineClient }> | null = null;
@@ -733,7 +733,7 @@ async function loadRuntime(): Promise<Runtime> {
     if (!res.ok) return { host: "incomplete", message: `runtime.json: HTTP ${res.status}` };
     const r = await res.json();
     if (r.host === "server") return { host: "server" };
-    if (r.host === "browser" && r.pyodide && r.engine_wheel) return r;
+    if (r.host === "browser" && r.pyodide && r.pyodide_url && r.engine_wheel) return r;
     return { host: "incomplete", message: "runtime.json names no host this page knows" };
   } catch (e) {
     return { host: "incomplete", message: `runtime.json couldn't be read (${e instanceof Error ? e.message : String(e)})` };

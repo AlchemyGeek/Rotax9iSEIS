@@ -37,6 +37,7 @@ from . import exclusions as _exclusions
 from . import workspace as ws
 from .log_sources import DISK, LogUnavailable, areading, reading, run_now
 from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes, source_key as _source_key
+from .resources import resource
 
 FORMAT = "eisworkspace"
 FORMAT_VERSION = 1
@@ -365,7 +366,7 @@ def _summary(docs: dict[str, Any]) -> dict:
     active = docs.get("rules/active.json")
     rule_edits = disabled = 0
     if active is not None:
-        shipped = json.loads((Path(__file__).resolve().parent.parent / "insight_rules.json").read_text())
+        shipped = json.loads(resource("insight_rules.json").read_text())
         for _tid, kind in ws.rule_decisions(ws.strip_rule_comments(active), shipped):
             rule_edits += kind == "rule_edit"
             disabled += kind == "disabled_topic"
@@ -534,7 +535,7 @@ def _insight_ids(ws_dir: Path, docs: dict[str, Any], fid_map: dict[str, str]) ->
     engine_cfg = load_engine_config(ws.load_manifest(ws_dir).engine_model)
     limit_ids = [lim["id"] for lim in limit_catalog(engine_cfg)]
     fleet = ws.load_fleet_analysis(ws_dir)
-    shipped = json.loads((Path(__file__).resolve().parent.parent / "insight_rules.json").read_text())
+    shipped = json.loads(resource("insight_rules.json").read_text())
     rules = ws.load_workspace_rules(ws_dir, shipped)
     filters = ws.load_filters(ws_dir)["filters"]
     out: dict[str, str] = {}

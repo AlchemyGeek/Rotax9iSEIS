@@ -117,7 +117,7 @@ export function Trends() {
   function openPanel(panel: string, _flightIds: string[]) {
     setExpanded((prev) => new Set(prev).add(panel));
     // Give the panel a tick to mount/expand before scrolling to it.
-    setTimeout(() => panelRefs.current[panel]?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    setTimeout(() => panelRefs.current[panel]?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 50);
   }
 
   // Deep links (Spec 12 §9.4): ?panel=X[&flight=Y] opens a panel directly;

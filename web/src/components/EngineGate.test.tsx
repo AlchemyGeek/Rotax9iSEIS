@@ -16,7 +16,7 @@ vi.mock("../lib/engineClient", () => ({
 import { EngineGate } from "./EngineGate";
 import { EVICTION_MARKER } from "../lib/hostState";
 
-const BROWSER = { host: "browser", pyodide: "0.28.0", engine_wheel: "engine/x.whl" };
+const BROWSER = { host: "browser", pyodide: "0.28.0", pyodide_url: "pyodide/", engine_wheel: "engine/x.whl" };
 
 describe("EngineGate", () => {
   beforeEach(() => localStorage.clear());

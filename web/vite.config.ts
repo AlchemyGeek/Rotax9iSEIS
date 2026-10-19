@@ -8,7 +8,7 @@ import { defineConfig, type Plugin } from 'vite'
 // comes from here — the local server by default (the app then talks to
 // `slingology-eis serve` on 127.0.0.1:8420), the in-browser engine with
 // EIS_HOST=browser (`npm run dev:browser`, after `npm run engine` has
-// built the wheel into public/engine/).
+// built the wheel into public/engine/ and staged Pyodide in public/pyodide/).
 function devRuntime(): Plugin {
   return {
     name: 'eis-dev-runtime',
@@ -20,6 +20,7 @@ function devRuntime(): Plugin {
           body = {
             host: 'browser',
             pyodide: readFileSync(resolve(import.meta.dirname, '../PYODIDE_VERSION'), 'utf8').trim(),
+            pyodide_url: 'pyodide/',
             engine_wheel: `engine/${wheel}`,
           }
         }
@@ -33,6 +34,8 @@ function devRuntime(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative asset paths: the built site works at any sub-path (Spec 04 §9.7).
+  base: './',
   plugins: [react(), devRuntime()],
   worker: { format: 'es' },
   test: {

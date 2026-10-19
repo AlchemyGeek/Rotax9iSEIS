@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from .contract import Diagnostic
+from .resources import resource
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _TOOLKIT_ROOT = _PACKAGE_ROOT.parent
@@ -24,7 +25,7 @@ _HELP_PATH = _PACKAGE_ROOT / "help" / "topics.md"
 # (Spec 10 §5) — resolved the same repo-root-relative way engines/*.json
 # already is (limits.py's _TOOLKIT_ROOT), not as declared package data.
 # See pyproject.toml's package-data comment for why.
-_REGISTER_PATH = _TOOLKIT_ROOT / "docs" / "specs" / "topics" / "register.json"
+_REGISTER_PATH = resource("docs/specs/topics/register.json")
 
 _REQUIRED_KEYS = ("title", "applies_to", "last_reviewed")
 _HEADING_RE = re.compile(r"^## (.+)$")

@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite",
     "dev:browser": "npm run engine && EIS_HOST=browser vite",
-    "engine": "python3 ../scripts/build_engine_wheel.py --out public/engine",
+    "engine": "python3 ../scripts/build_engine_wheel.py --out public/engine && python3 ../scripts/stage_pyodide.py --out public/pyodide",
     "build": "tsc -b && vite build",
-    "build:browser": "tsc -b && vite build && python3 ../scripts/build_engine_wheel.py --out dist/engine --runtime dist/runtime.json",
+    "build:browser": "python3 ../scripts/build_site.py --out dist",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:site": "python3 ../scripts/build_site.py --out ../_site"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.2.6",
+    "@fontsource/ibm-plex-sans": "5.2.6",
     "echarts": "^6.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

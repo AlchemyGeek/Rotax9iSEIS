@@ -9,7 +9,8 @@ import type { DataLocationProgress, ScanProgress, WorkspaceManifest } from "../t
 
 export interface BrowserRuntime {
   host: "browser";
-  pyodide: string;
+  pyodide: string;        // the pinned version (PYODIDE_VERSION)
+  pyodide_url: string;    // its folder on this site, relative to the page
   engine_wheel: string;
 }
 
@@ -99,7 +100,8 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     this.worker.onmessage = (ev) => this.onMessage(ev.data);
     this.worker.onerror = () => this.restart();
     const wheelUrl = new URL(this.runtime.engine_wheel, document.baseURI).href;
-    this.worker.postMessage({ type: "init", pyodide: this.runtime.pyodide, wheelUrl });
+    const pyodideUrl = new URL(this.runtime.pyodide_url.replace(/\/?$/, "/"), document.baseURI).href;
+    this.worker.postMessage({ type: "init", pyodideUrl, wheelUrl });
   }
 
   /** The worker died (out of memory, an uncaught error): start a new one;

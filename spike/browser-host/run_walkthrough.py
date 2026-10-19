@@ -30,9 +30,15 @@ import re
 from playwright.sync_api import sync_playwright
 
 ANALYZE = re.compile(r"^Analyze \d+$")
-COUNT = """async () => { const { client } = await window.__eis.getRuntime();
-  const rows = (await client.listFlightsWithStatus()).rows;
-  return { analyzed: rows.filter(r => r.status === 'analyzed').length, total: rows.length }; }"""
+SUMMARY = re.compile(r"(\d+) flights · (\d+) in reference")
+
+
+def flights_shown(page) -> int:
+    """The number of flights Flights' summary line shows — UI only, so the
+    shipped site (no test hook) can be walked through too."""
+    loc = page.get_by_text(SUMMARY).first
+    loc.wait_for(timeout=60000)
+    return int(SUMMARY.search(loc.inner_text()).group(1))
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -53,17 +59,19 @@ def main() -> int:
     ap.add_argument("--logs", default=str(ROOT / "data" / "logs"))
     ap.add_argument("--limit", type=int, default=30)
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--site", default=str(ROOT / "web" / "dist"), help="the static site folder to serve")
     args = ap.parse_args()
     work = Path(tempfile.mkdtemp(prefix="eis-walk-"))
     folder = work / "My logs"
     folder.mkdir()
     for p in sorted(p for p in Path(args.logs).resolve().iterdir() if p.suffix.lower() == ".csv")[: args.limit]:
         shutil.copy(p, folder / p.name)
-    httpd = serve(ROOT / "web" / "dist")
+    httpd = serve(Path(args.site))
     url = f"http://localhost:{httpd.server_address[1]}/"
     profile = work / "profile"
     steps: list[dict] = []
     errors: list[str] = []
+    elsewhere: list[str] = []      # requests to any host but this site's server
 
     def step(name, ok, **info):
         steps.append({"step": name, "ok": bool(ok), **info})
@@ -76,6 +84,8 @@ def main() -> int:
         ctx.add_init_script("delete window.showDirectoryPicker;")
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
+        origin = url.rstrip("/")
+        ctx.on("request", lambda r: None if r.url.startswith((origin, "data:", "blob:")) else elsewhere.append(r.url))
         return ctx, page
 
     try:
@@ -118,7 +128,7 @@ def main() -> int:
                 if page.get_by_role("button", name=ANALYZE).count() == 0 and text and not text.startswith(("Analyzing", "Reading", "Starting", "Re-analyzing", "Syncing")):
                     break
                 time.sleep(0.5)
-            rows = page.evaluate(COUNT)["analyzed"]
+            rows = flights_shown(page)
             step("Sync analysed the logs with a live progress line", len(progress) > 1 and rows > 0,
                  button=label, progress_samples=sorted(progress)[:6], seconds=round(time.time() - t0, 1), flight_rows=rows)
 
@@ -156,7 +166,7 @@ def main() -> int:
             page.goto(url + "#/flights")
             page.reload()
             page.locator("tr").filter(has_text="2026-").first.wait_for(timeout=60000)
-            after_reload = page.evaluate(COUNT)["analyzed"]
+            after_reload = flights_shown(page)
             step("after reload everything is still there", after_reload == rows, flight_rows=after_reload)
             ctx.close()
 
@@ -165,7 +175,7 @@ def main() -> int:
             page.goto(url + "#/flights")
             page.locator("tr").filter(has_text="2026-").first.wait_for(timeout=60000)
             step("engine ready (warm, after restart)", True, seconds=round(time.time() - t0, 1))
-            after_restart = page.evaluate(COUNT)["analyzed"]
+            after_restart = flights_shown(page)
             reconnect = page.get_by_role("button", name="Not connected — reconnect").count()
             step("after restart: flights there; the session folder says Not connected — reconnect",
                  after_restart == rows and reconnect == 1, flight_rows=after_restart)
@@ -183,7 +193,9 @@ def main() -> int:
         httpd.shutdown()
         shutil.rmtree(work, ignore_errors=True)
 
-    result = {"at": datetime.now(timezone.utc).isoformat(), "logs": args.limit, "steps": steps, "page_errors": errors}
+    step("nothing loaded from anywhere but the site's own server", not elsewhere, elsewhere=sorted(set(elsewhere))[:5])
+    result = {"at": datetime.now(timezone.utc).isoformat(), "logs": args.limit, "steps": steps, "page_errors": errors,
+              "requests_elsewhere": sorted(set(elsewhere))}
     (HERE / "results").mkdir(exist_ok=True)
     out = HERE / "results" / f"walkthrough-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     out.write_text(json.dumps(result, indent=2))

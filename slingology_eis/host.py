@@ -68,9 +68,10 @@ from .operations import (
 from .phases import AIRBORNE_PHASES, detect_phases, phase_summary
 from .rules import validate_rules
 from . import filters as _filters
+from .resources import is_checkout, resource
 
-_DEFAULT_RULES_PATH = _REPO_ROOT / "insight_rules.json"
-_CHART_PRESETS_PATH = _REPO_ROOT / "chart_presets.json"
+_DEFAULT_RULES_PATH = resource("insight_rules.json")
+_CHART_PRESETS_PATH = resource("chart_presets.json")
 
 _SEVERITY_RANK = {"limit": 0, "warning": 1, "watch": 2, "info": 3}
 
@@ -552,7 +553,7 @@ def op_revert_rule_edit(params: dict, ctx: dict) -> Any:
 
 
 def op_list_engines(params: dict, ctx: dict) -> Any:
-    engines_dir = _REPO_ROOT / "engines"
+    engines_dir = resource("engines")
     results = []
     for p in sorted(engines_dir.glob("*.json")):
         cfg = json.loads(p.read_text())
@@ -2618,7 +2619,10 @@ def _open_data_root(ctx: dict, workspace_arg: Optional[str] = None) -> None:
         ctx["workspace_dir"], ctx["active_workspace_id"] = loc.root, None
         return
     ctx.pop("data_location_missing", None)
-    configured = loc.root if loc.source in ("environment", "chosen") else None
+    # Spec 02 §5.8.1: a configured location wins; and outside a developer
+    # checkout (an installed wheel, the browser) the default root is used as
+    # it is — the legacy single-workspace fallback is a checkout's alone.
+    configured = loc.root if loc.source in ("environment", "chosen") or not is_checkout() else None
     ctx["workspace_dir"], ctx["active_workspace_id"] = _resolve_active_workspace(
         workspace_arg, ctx["registry_path"], ctx["workspaces_root"], configured)
     if ctx["active_workspace_id"] or configured is None:

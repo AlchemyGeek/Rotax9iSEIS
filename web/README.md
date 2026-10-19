@@ -22,42 +22,57 @@ npx tsc -b --noEmit        # type check
 npm run lint               # oxlint
 ```
 
-`npm run build` is `tsc -b && vite build`. `npx vitest run` exits non-zero on a jsdom
-`scrollIntoView` error although every test passes; tracked in `../BACKLOG.md` (P5).
+`npm run build` is `tsc -b && vite build`. `npx vitest run` exits 0 (the jsdom
+`scrollIntoView` error of BACKLOG P5 is guarded in Trends).
 
-## Two hosts, one build (Spec 04 v0.7 §9.5)
+## Two hosts, one build (Spec 04 v0.8 §9.5, §9.7)
 
 The page reads `runtime.json` first and talks to whichever host it names:
 
-| Mode | `runtime.json` | Where the engine runs | How to run it |
+| Mode | `runtime.json` | Where the engine runs | Built and run with |
 |---|---|---|---|
-| Local server | `{"host": "server"}`, served by `slingology-eis serve` itself | The Python process on your machine | `npm run build`, then `slingology-eis serve` |
-| In the browser | `{"host": "browser", "pyodide": …, "engine_wheel": …}`, written by `npm run build:browser` | A Web Worker running Pyodide, data in the browser's OPFS | `npm run build:browser`, then serve `dist/` as plain files, e.g. `python -m http.server -d dist 8000` |
+| Local server | `{"host": "server"}`, answered by `slingology-eis serve` itself | The Python process on your machine | `pip install` the wheel (it carries this UI), then `slingology-eis serve`. In a checkout, `npm run build` and `serve` uses `web/dist` |
+| In the browser | `{"host": "browser", "pyodide", "pyodide_url", "engine_wheel"}`, written by the site build | A Web Worker running Pyodide, data in the browser's OPFS | `python ../scripts/build_site.py --out DIR` (or `npm run build:site` → `../_site/`), then serve that folder as plain files, e.g. `python -m http.server -d DIR 8000` |
 
-For development:
+### The static site
+The site folder works on any static host, including GitHub Pages: relative paths, and no custom headers. It holds:
+- `index.html` and `assets/`;
+- `runtime.json`;
+- `pyodide/`: the release pinned in `../PYODIDE_VERSION`, with only numpy, pandas and the packages they need. `MANIFEST.json` lists every file with its SHA-256 (`../scripts/stage_pyodide.py`);
+- `engine/`: the engine wheel.
 
+A built site loads nothing from any other server; even the fonts are bundled (`@fontsource`).
+
+### The engine wheel
+`python ../scripts/build_engine_wheel.py --out DIR` is a standard setuptools build. `../setup.py` adds the runtime files (engine profiles, rules, presets, config, the topic register) as `slingology_eis/_data/`, and this folder's `dist/` as `slingology_eis/_web/`.
+- **Build the UI first.** For a wheel that carries a current UI, run `npm run build` before building it. CI does this.
+- **Where files are looked up:** in a checkout the repo-root files and `web/dist` are used directly; anywhere else, the packaged copies (`slingology_eis/resources.py`).
+
+### Development
 ```bash
 npm run dev            # local-server mode: the app talks to `slingology-eis serve` on 127.0.0.1:8420
-npm run dev:browser    # browser mode: builds the engine wheel into public/engine/, then Vite with EIS_HOST=browser
+npm run engine         # once (and after engine changes): the wheel → public/engine/, Pyodide → public/pyodide/
+npm run dev:browser    # browser mode under Vite (runs `engine` first)
+npm run build:browser  # the browser site, in place in dist/
 ```
 
-- **Engine wheel:** `npm run engine` (or `python ../scripts/build_engine_wheel.py`) builds it from `../slingology_eis`. It is a build artefact (`public/engine/`, `dist/engine/`), not committed.
-- **Pinned Pyodide version:** read from `../PYODIDE_VERSION`. In this step Pyodide is loaded from the jsDelivr CDN; self-hosting is step 5.
-- **A missing or unreadable `runtime.json`** shows "This installation is incomplete" rather than guessing a host.
+A missing or unreadable `runtime.json` shows "This installation is incomplete" rather than guessing a host.
 
-**Browser host, in brief:**
-- `src/worker/engine.worker.ts` loads Pyodide, numpy, pandas and the wheel, and mounts OPFS at `/data`.
+### Browser host, in brief
+- `src/worker/engine.worker.ts` loads the site's own Pyodide and the wheel, and mounts OPFS at `/data`.
 - It runs `slingology_eis.browser_host`, and syncs the filesystem after every operation, before answering.
 - `src/lib/browserClient.ts` (`BrowserWorkerClient`) is `LocalServerClient`'s twin over `postMessage`.
-- `src/lib/pageFolders.ts` lists folders and supplies log bytes when the engine asks:
+- `src/lib/pageFolders.ts` lists each folder once per session (and again on Sync, Reconnect/Allow or Add), and supplies log bytes when the engine asks:
   - Chrome: `showDirectoryPicker`, with handles kept in IndexedDB;
   - Safari: `<input webkitdirectory>` or a dropped folder.
 - The UI gates on `get_capabilities` (`src/lib/capabilities.ts`), never on which host it is.
 
-**Checks:**
-- `.venv/bin/python spike/browser-host/run_parity.py` syncs the test logs in headless Chrome and compares the export and every analysis with server mode, with memory and timings.
-- `run_walkthrough.py` drives the UI end to end.
-- The conformance tests also run under Pyodide in Node (`tests/unit/test_server.py`, call path `pyodide_node`; needs `npm ci` here for the `pyodide` package).
+### Checks
+- `../spike/browser-host/run_parity.py` needs a site built with `--e2e`, which adds the test hook. It syncs the test logs in headless Chrome and compares every analysis and the export with server mode, with memory and timings.
+- `run_walkthrough.py --site DIR` drives a shipped site through its UI and checks that nothing loads from elsewhere.
+- `run_server_walkthrough.py --url … --logs …` does the same for `slingology-eis serve`.
+- The conformance tests also run under Pyodide in Node (`tests/unit/test_server.py`, call path `pyodide_node`; needs `npm ci` here).
+- CI (`../.github/workflows/ci.yml`) runs all of it and keeps the wheel and the site as artifacts.
 
 ## Layout
 

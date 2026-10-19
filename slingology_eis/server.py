@@ -29,7 +29,8 @@ from typing import Any, Optional
 
 from . import host as _host
 from . import serialize as _json_serialize
-from .cli import _REPO_ROOT, resolve_logs_dir
+from .cli import resolve_logs_dir
+from .resources import web_dist
 from .log_sources import DISK
 
 # Kept importable from here for callers that predate the host split.
@@ -198,16 +199,29 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path], quiet: bool):
     return Handler
 
 
+def _logs_dir_or_none(logs_dir: Optional[str]) -> Optional[Path]:
+    """The server's folders come from the workspace; a default --logs only
+    exists in a checkout or a legacy install. Without one (a fresh
+    `pip install`), the server starts all the same (BACKLOG P3)."""
+    from .cli import CliUsageError
+    try:
+        return resolve_logs_dir(logs_dir)
+    except CliUsageError:
+        if logs_dir:
+            raise
+        return None
+
+
 def build_server(logs_dir: Optional[str], workspace_dir: Optional[str], port: int, quiet: bool) -> ThreadingHTTPServer:
     """
     Construct (but don't run) the server — split out from run_server() so
     tests can start it in a background thread and call .shutdown()
     cleanly, instead of blocking forever on serve_forever() in-process.
     """
-    ctx = _http_context(resolve_logs_dir(logs_dir), workspace_dir)
+    ctx = _http_context(_logs_dir_or_none(logs_dir), workspace_dir)
 
-    ui_dist = _REPO_ROOT / "web" / "dist"
-    ui_dist = ui_dist if ui_dist.is_dir() else None
+    # A checkout's web/dist (developers), else the UI the wheel carries.
+    ui_dist = web_dist()
 
     httpd = ThreadingHTTPServer(("127.0.0.1", port), _make_handler(ctx, ui_dist, quiet))
     httpd.slingology_workspace_dir = ctx["workspace_dir"]  # type: ignore[attr-defined]

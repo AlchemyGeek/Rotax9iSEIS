@@ -4,7 +4,7 @@
 // root mounted from OPFS. The page never runs Python.
 //
 // Page → worker:
-//   {type:"init", pyodide, wheelUrl}
+//   {type:"init", pyodideUrl, wheelUrl}       both absolute, on the page's own site
 //   {type:"request", envelope}                 one Spec 01 §7 envelope
 //   {type:"upload", upload_id, filename, bytes} a dropped file / export zip
 //   {type:"listing", req, listing|null}        answers a need-listing
@@ -90,8 +90,9 @@ function packSeries(result: Record<string, [number, number | null][]>) {
 }
 const SERIES_OPS = new Set(["get_series", "get_flight_series", "get_excluded_log_series"]);
 
-async function boot(version: string, wheelUrl: string) {
-  const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
+// The site's own, pinned Pyodide (Spec 04 §9.7): `base` is its folder
+// beside the page (runtime.json's pyodide_url) — never a CDN.
+async function boot(base: string, wheelUrl: string) {
   post({ type: "loading", phase: "runtime", done: 0, total: 4 });
   const mod = await import(/* @vite-ignore */ `${base}pyodide.mjs`);
   pyodide = await mod.loadPyodide({ indexURL: base });
@@ -147,7 +148,7 @@ self.onmessage = async (ev: MessageEvent) => {
   try {
     switch (msg.type) {
       case "init":
-        await boot(msg.pyodide, msg.wheelUrl);
+        await boot(msg.pyodideUrl, msg.wheelUrl);
         break;
       case "request":
         await handle(msg.envelope);
