@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resetCapabilities } from "../lib/capabilities";
@@ -91,6 +91,22 @@ describe("capability gating", () => {
     state.folderState = "not_connected";
     renderAt("/flights", <Flights />);
     expect(await screen.findByRole("button", { name: "Not connected — reconnect" })).toBeTruthy();
+  });
+
+  it("Flights: where folder access isn't kept (Safari), the Not connected row carries a one-time note", async () => {
+    state.caps = BROWSER;
+    state.folders = [{ path: "My logs", folder_id: "f1", reachable: true }];
+    state.folderState = "not_connected";
+    localStorage.removeItem("slingology-eis-reconnect-note-dismissed");
+    const { unmount } = render(<MemoryRouter initialEntries={["/flights"]}><Flights /></MemoryRouter>);
+    const note = await screen.findByTestId("reconnect-note");
+    expect(note.textContent).toContain("Safari doesn't keep folder access between visits");
+    fireEvent.click(within(note).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByTestId("reconnect-note")).toBeNull();
+    unmount();
+    renderAt("/flights", <Flights />);                       // a later visit: plain row
+    await screen.findByRole("button", { name: "Not connected — reconnect" });
+    expect(screen.queryByTestId("reconnect-note")).toBeNull();
   });
 
   it("Flights: after a browser restart, Allow access on the folder row", async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import type { FolderPicking } from "../lib/browserClient";
+import { resetApp } from "../lib/appReset";
 import type { StorageUsage } from "../types/contract";
 
 // Spec 14 v0.16 §5.2.1 — Settings → App → Storage (browser host): how much
@@ -57,8 +58,11 @@ export function StoragePanel({ panelStyle, titleStyle }: { panelStyle: React.CSS
     setBusy("delete");
     try {
       await (client as unknown as FolderPicking).deleteAllData();
+      setBusy(null);
+      setConfirming(false);
+      // The first-run state, without a reload (Spec 14 v0.17 §5.2.1).
       window.location.hash = "#/flights";
-      window.location.reload();
+      resetApp();
     } catch (e) {
       setMessage(`Couldn't delete: ${e instanceof Error ? e.message : String(e)}`);
       setBusy(null);
@@ -73,6 +77,7 @@ export function StoragePanel({ panelStyle, titleStyle }: { panelStyle: React.CSS
         <div>
           <span style={{ color: "var(--text-tertiary)" }}>Space used: </span>
           <span className="mono">{usage ? size(usage.total_bytes) : "—"}</span>
+          {usage && usage.workspaces.length > 0 && <span aria-hidden> · </span>}
           {usage && usage.workspaces.length > 0 && (
             <button type="button" onClick={() => setExpanded((v) => !v)} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 }}>
               {expanded ? "hide" : "per workspace"}

@@ -16,10 +16,10 @@ function devRuntime(): Plugin {
       server.middlewares.use('/runtime.json', (_req, res) => {
         let body: unknown = { host: 'server' }
         if (process.env.EIS_HOST === 'browser') {
-          const wheel = readdirSync(resolve(__dirname, 'public/engine')).find((f) => f.endsWith('.whl'))
+          const wheel = readdirSync(resolve(import.meta.dirname, 'public/engine')).find((f) => f.endsWith('.whl'))
           body = {
             host: 'browser',
-            pyodide: readFileSync(resolve(__dirname, '../PYODIDE_VERSION'), 'utf8').trim(),
+            pyodide: readFileSync(resolve(import.meta.dirname, '../PYODIDE_VERSION'), 'utf8').trim(),
             engine_wheel: `engine/${wheel}`,
           }
         }

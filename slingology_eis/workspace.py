@@ -258,13 +258,21 @@ class ImportRecord:
     filename: str
     imported_at: str
     via: str = "unknown"  # "sd_card" | "garmin_pilot" | "unknown"
+    # Spec 02 v0.19 §5.7 (D12): the file's size and modified time when it
+    # was last seen, so the pending-work check can tell an unchanged file
+    # without reading it. Absent until a scan has seen the file.
+    size: Optional[int] = None
+    mtime_ms: Optional[int] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "source_key": self.source_key, "log_folder_path": self.log_folder_path,
             "relative_path": self.relative_path, "filename": self.filename,
             "imported_at": self.imported_at, "via": self.via,
         }
+        if self.size is not None:
+            d["size"], d["mtime_ms"] = self.size, self.mtime_ms
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "ImportRecord":
@@ -272,6 +280,7 @@ class ImportRecord:
             source_key=d["source_key"], log_folder_path=d["log_folder_path"],
             relative_path=d["relative_path"], filename=d["filename"],
             imported_at=d["imported_at"], via=d.get("via", "unknown"),
+            size=d.get("size"), mtime_ms=d.get("mtime_ms"),
         )
 
 
@@ -1306,10 +1315,13 @@ def current_unreadable(ws_dir: Path) -> dict[str, dict]:
     return {k: v for k, v in load_unreadable(ws_dir).items() if v.get("engine_version") == __version__}
 
 
-def _record_unreadable(ws_dir: Path, skey: str, filename: str, folder_path: str, rel: str, reason: str, detail: str) -> dict:
+def _record_unreadable(ws_dir: Path, skey: str, filename: str, folder_path: str, rel: str, reason: str, detail: str,
+                       stat: Optional[tuple] = None) -> dict:
     logs = load_unreadable(ws_dir)
     entry = {"filename": filename, "log_folder": folder_path, "relative_path": rel, "reason": reason,
              "detail": detail[:500], "engine_version": __version__, "at": _now()}
+    if stat is not None:
+        entry["size"], entry["mtime_ms"] = stat
     logs[skey] = entry
     _write_json(ws_dir / _UNREADABLE_FILE, {"version": "1", "logs": logs})
     return entry
@@ -1339,33 +1351,53 @@ def _pending_log(skey: str, folder_path: str, rel: str, filename: str) -> dict:
             "filename": filename, "date": date_from_log_filename(filename)}
 
 
+def file_stat(entry: "LogEntry") -> tuple[int, int]:
+    """(size, modified time in whole milliseconds) of a listed log — the
+    pair the fast path compares (Spec 02 v0.19 §5.7)."""
+    return int(entry.size), int(round(entry.last_modified * 1000))
+
+
 async def pending_work_async(ws_dir: Path, sources: Callable = DISK) -> tuple[list[dict], list[str]]:
     """Read-only (Spec 03 v0.17 §5.1): logs in the workspace's folders not
     yet analysed (no known fingerprint, not recorded as a non-flight), and
     flights whose stored analysis predates the running engine and whose
-    source can still be read. Hashing a folder is cheap; nothing is parsed."""
+    source can still be read. Nothing is parsed.
+
+    Fast path (Spec 02 v0.19 §5.7, Spec 04 D12): a listed file whose
+    folder, relative path, size and modified time all match a known source
+    (or a log already recorded as unreadable) is that log, without reading
+    it; anything else is read and fingerprinted. So after a completed sync
+    this reads no file at all."""
     manifest = load_manifest(ws_dir)
     exclusions_data = _exclusions.load_exclusions(ws_dir)
     assignments = load_workspace_settings(ws_dir).channel_assignments
+    unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
     known: set[str] = set()
-    stale: list[str] = []
+    seen_as: dict[tuple, tuple] = {}          # (folder, rel) -> (size, mtime_ms)
+    all_sources: list[FlightSources] = []
     for fid in list_flight_ids(ws_dir):
         src = load_sources(ws_dir, fid)
         if src is None:
             continue
-        known.update(imp.source_key for imp in src.imports)
-        if src.missing:
-            continue
-        fa = load_flight_analysis(ws_dir, fid)
-        if fa is not None and analysis_is_stale(fa, assignments) and (await read_source_bytes_async(ws_dir, src, sources)) is not None:
-            stale.append(fid)
+        all_sources.append(src)
+        for imp in src.imports:
+            known.add(imp.source_key)
+            if imp.size is not None:
+                seen_as[(imp.log_folder_path, imp.relative_path)] = (imp.size, imp.mtime_ms)
+    for entry in unreadable.values():
+        if entry.get("size") is not None:
+            seen_as[(entry.get("log_folder"), entry.get("relative_path"))] = (entry["size"], entry["mtime_ms"])
+
+    listed: set[tuple] = set()
     new_logs: dict[str, dict] = {}
-    unreadable = current_unreadable(ws_dir)   # shown as Unreadable, not offered again
     for lf in manifest.log_folders:
         source = sources(lf)
         for entry in (await source.alist()) or []:
+            listed.add((lf.path, entry.relative_path))
             if _exclusions.is_excluded(entry.name, exclusions_data):
                 continue
+            if seen_as.get((lf.path, entry.relative_path)) == file_stat(entry):
+                continue   # unchanged since a scan saw it: known, or recorded unreadable
             try:
                 async with areading(source, entry.relative_path) as data:
                     skey = _source_key(data)
@@ -1375,7 +1407,31 @@ async def pending_work_async(ws_dir: Path, sources: Callable = DISK) -> tuple[li
                 continue
             if skey not in known and skey not in new_logs:
                 new_logs[skey] = _pending_log(skey, lf.path, entry.relative_path, entry.name)
-    return list(new_logs.values()), stale
+
+    folder_paths = {lf.path for lf in manifest.log_folders}
+    stale: list[str] = []
+    for src in all_sources:
+        if src.missing:
+            continue
+        fa = load_flight_analysis(ws_dir, src.flight_id)
+        if fa is None or not analysis_is_stale(fa, assignments):
+            continue
+        # Readable now? From the listing, without reading the log — except
+        # an import from a folder no longer in the workspace, checked as before.
+        available = False
+        for imp in src.imports:
+            if imp.log_folder_path == UPLOADED_SOURCE:
+                available = (ws_dir / "flights" / src.flight_id / imp.filename).is_file()
+            elif imp.log_folder_path in folder_paths:
+                available = (imp.log_folder_path, imp.relative_path) in listed
+            else:
+                available = (await read_source_bytes_async(ws_dir, FlightSources(src.flight_id, [imp]), sources)) is not None
+            if available:
+                break
+        if available:
+            stale.append(src.flight_id)
+    stale_order = {fid: i for i, fid in enumerate(list_flight_ids(ws_dir))}
+    return list(new_logs.values()), sorted(stale, key=stale_order.get)
 
 
 def pending_work(*args, **kwargs):
@@ -1384,10 +1440,11 @@ def pending_work(*args, **kwargs):
     return run_now(pending_work_async(*args, **kwargs))
 
 
-def _unreadable(ws_dir: Path, result: "ScanResult", meta: dict, skey: str, filename: str, e: Exception, stage: str) -> None:
+def _unreadable(ws_dir: Path, result: "ScanResult", meta: dict, skey: str, filename: str, e: Exception, stage: str,
+                stat: Optional[tuple] = None) -> None:
     folder_path, rel, _fn = meta[skey]
     reason = unreadable_reason(e, stage)
-    _record_unreadable(ws_dir, skey, filename, folder_path, rel, reason, f"{type(e).__name__}: {e}")
+    _record_unreadable(ws_dir, skey, filename, folder_path, rel, reason, f"{type(e).__name__}: {e}", stat)
     result.unreadable.append({"filename": filename, "reason": reason})
 
 
@@ -1430,12 +1487,15 @@ def _would_stay_excluded(filename: str, exclusions_data: dict) -> bool:
 
 def _take_turn(ws_dir, content, folder_path, rel, filename, progress, found_by_key, known, all_sources,
                stale_selected, fresh_by_fid, admission, unreadable_now, new_keys, sender_fids, planned_fids,
-               candidates, result, engine_cfg, engine_model, params_now, min_flight_duration_min) -> None:
+               candidates, result, engine_cfg, engine_model, params_now, min_flight_duration_min,
+               stat=None, stat_by_key=None) -> None:
     """Everything one log's bytes are needed for, while they're in hand."""
     skey = _source_key(content)
     if skey in found_by_key:
         return   # the same file reached through a second folder: the first folder claims it (§5.7)
     found_by_key[skey] = (folder_path, rel, filename)
+    if stat_by_key is not None:
+        stat_by_key[skey] = stat
 
     if skey in known:
         fid, imp = known[skey]
@@ -1466,7 +1526,7 @@ def _take_turn(ws_dir, content, folder_path, rel, filename, progress, found_by_k
         result.pending_new_logs.append(_pending_log(skey, folder_path, rel, filename))
         return
 
-    c: dict = {"skey": skey, "meta": (folder_path, rel, filename)}
+    c: dict = {"skey": skey, "meta": (folder_path, rel, filename), "stat": stat}
     candidates.append(c)
     try:
         df, info = load_log_bytes(content, filename)
@@ -1672,17 +1732,24 @@ async def scan_workspace_async(
     total = sum(len(entries) for _lf, _s, entries in listings)
 
     found_by_key: dict[str, tuple[str, str, str]] = {}  # source_key -> (folder_path, rel, filename), first folder wins (§5.7)
+    stat_by_key: dict[str, tuple[int, int]] = {}         # source_key -> (size, mtime_ms) of that file
     candidates: list[dict] = []          # new logs to admit, in listing order
     planned_fids: set[str] = set()       # new flights this scan will analyse
     turn = 0
+    analysed = [0]
     for lf, source, entries in listings:
         for entry in entries:
             turn += 1
             rel, filename = entry.relative_path, entry.name
 
             def progress(phase: str) -> None:
+                # Spec 04 D9: the count is every listed log; "analysed" says
+                # how many of them needed (re-)analysis so far.
+                if phase in ("analyzing", "reanalyzing"):
+                    analysed[0] += 1
                 if on_progress:
-                    on_progress({"phase": phase, "current": turn, "total": total, "filename": filename})
+                    on_progress({"phase": phase, "current": turn, "total": total, "filename": filename,
+                                 "analysed": analysed[0]})
 
             progress("reading")
             try:
@@ -1690,7 +1757,7 @@ async def scan_workspace_async(
                     _take_turn(ws_dir, content, lf.path, rel, filename, progress, found_by_key, known,
                                all_sources, stale_selected, fresh_by_fid, admission, unreadable_now, new_keys,
                                sender_fids, planned_fids, candidates, result, engine_cfg, manifest.engine_model,
-                               params_now, min_flight_duration_min)
+                               params_now, min_flight_duration_min, file_stat(entry), stat_by_key)
             except LogUnavailable:
                 continue   # listed but not readable now — as a file that vanished mid-walk
 
@@ -1703,8 +1770,14 @@ async def scan_workspace_async(
             # Rename/move under a known fingerprint — rematch, not a new
             # import (§5.7).
             imp.log_folder_path, imp.relative_path, imp.filename = folder_path, rel, filename
+            imp.size, imp.mtime_ms = stat_by_key[skey]
             save_sources(ws_dir, all_sources[fid])
             result.rematched_flight_ids.append(fid)
+        elif (imp.size, imp.mtime_ms) != stat_by_key[skey]:
+            # Spec 02 v0.19 §5.7: what the fast path compares — recorded
+            # for sources that predate it, refreshed when the file changes.
+            imp.size, imp.mtime_ms = stat_by_key[skey]
+            save_sources(ws_dir, all_sources[fid])
         if all_sources[fid].missing:
             all_sources[fid].missing = False
             save_sources(ws_dir, all_sources[fid])
@@ -1716,7 +1789,7 @@ async def scan_workspace_async(
         if c.get("read_error") is not None:
             # Spec 03 §5.1 "Unreadable": recorded with its reason, shown on
             # Flights — never left looking like it waits for analysis.
-            _unreadable(ws_dir, result, meta, c["skey"], c["meta"][2], c["read_error"], "read")
+            _unreadable(ws_dir, result, meta, c["skey"], c["meta"][2], c["read_error"], "read", c.get("stat"))
             continue
         parsed.append(c)
 
@@ -1756,7 +1829,7 @@ async def scan_workspace_async(
                 # else: the user included it — an ordinary flight from here on.
 
         if c.get("phase_error") is not None:
-            _unreadable(ws_dir, result, meta, skey, filename, c["phase_error"], "analyse")
+            _unreadable(ws_dir, result, meta, skey, filename, c["phase_error"], "analyse", c.get("stat"))
             continue
         if c["category"] is not None:
             _exclusions.add_auto_exclusion(ws_dir, filename, c["category"], c["reason"])
@@ -1771,9 +1844,11 @@ async def scan_workspace_async(
 
         fid = c["fid"]
         folder_path, rel, filename = c["meta"]
+        size, mtime_ms = c["stat"] if c.get("stat") else (None, None)
         imp = ImportRecord(
             source_key=skey, log_folder_path=folder_path, relative_path=rel,
             filename=filename, imported_at=_now(), via=via_for_source_format(c["source_format"]),
+            size=size, mtime_ms=mtime_ms,
         )
 
         if fid in all_sources:
@@ -1791,7 +1866,7 @@ async def scan_workspace_async(
             await _analyse_candidate_async(ws_dir, c, sources, manifest, engine_cfg, params_now)
         if c.get("analyse_error") is not None:
             # One log the engine can't analyse must not abort the whole sync.
-            _unreadable(ws_dir, result, meta, skey, filename, c["analyse_error"], "analyse")
+            _unreadable(ws_dir, result, meta, skey, filename, c["analyse_error"], "analyse", c.get("stat"))
             continue
         fa = c["fa"]
         # fa.flight_id is computed the same way as `fid` above (same

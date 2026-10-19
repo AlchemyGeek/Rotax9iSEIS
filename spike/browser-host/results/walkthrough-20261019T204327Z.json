@@ -1,5 +1,5 @@
 {
-  "at": "2026-10-19T18:51:50.537835+00:00",
+  "at": "2026-10-19T20:43:27.543447+00:00",
   "logs": 30,
   "steps": [
     {
@@ -9,7 +9,7 @@
     {
       "step": "engine ready (cold)",
       "ok": true,
-      "seconds": 3.9
+      "seconds": 3.8
     },
     {
       "step": "workspace created; Flights offers Choose folder\u2026",
@@ -24,14 +24,14 @@
       "ok": true,
       "button": "Analyze 30",
       "progress_samples": [
-        "Analyzing 1/30",
-        "Analyzing 15/30",
-        "Analyzing 16/30",
-        "Analyzing 18/30",
-        "Analyzing 2/30",
-        "Analyzing 28/30"
+        "Analyzing 1/30 \u00b7 1 analysed",
+        "Analyzing 15/30 \u00b7 9 analysed",
+        "Analyzing 16/30 \u00b7 10 analysed",
+        "Analyzing 18/30 \u00b7 11 analysed",
+        "Analyzing 2/30 \u00b7 2 analysed",
+        "Analyzing 28/30 \u00b7 12 analysed"
       ],
-      "seconds": 18.5,
+      "seconds": 20.4,
       "flight_rows": 13
     },
     {
@@ -55,7 +55,7 @@
       "step": "Settings \u2192 App shows Storage",
       "ok": true,
       "text": [
-        "Space used: 754 KBper workspace",
+        "Space used: 755 KB \u00b7 per workspace",
         "The browser may clear this data if space runs low \u2014 export a copy to be safe."
       ]
     },
@@ -63,7 +63,7 @@
       "step": "export downloads",
       "ok": true,
       "file": "Walkthrough.zip",
-      "bytes": 5257371
+      "bytes": 5257382
     },
     {
       "step": "About line names the host",
@@ -77,7 +77,7 @@
     {
       "step": "engine ready (warm, after restart)",
       "ok": true,
-      "seconds": 2.9
+      "seconds": 3.4
     },
     {
       "step": "after restart: flights there; the session folder says Not connected \u2014 reconnect",

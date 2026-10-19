@@ -70,6 +70,17 @@ export class PageFolders {
   private sessionFiles = new Map<string, Map<string, File>>();
   private states = new Map<string, FolderState>();
   private readers = new Map<string, Map<string, () => Promise<File>>>();
+  // Spec 04 D12: a folder is listed once per session, then again only
+  // after invalidate() (Sync, Reconnect/Allow, a folder added) — never
+  // because a page was opened. Concurrent requests share one walk.
+  private listings = new Map<string, ListingEntry[] | null>();
+  private walking = new Map<string, Promise<ListingEntry[] | null>>();
+
+  /** Forget a folder's listing (or every folder's), so the next request walks it again. */
+  invalidate(folder_id?: string) {
+    if (folder_id === undefined) this.listings.clear();
+    else this.listings.delete(folder_id);
+  }
   /** Logs refused for size (D10), named for the page to tell the pilot. */
   refused: { folder_id: string; relative_path: string; size: number }[] = [];
   onChange: () => void = () => {};
@@ -79,6 +90,7 @@ export class PageFolders {
   async choose(folder_id: string = crypto.randomUUID()): Promise<{ folder_id: string; name: string }> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handle: DirHandle = await (window as any).showDirectoryPicker({ mode: "read" });
+    this.invalidate(folder_id);
     this.handles.set(folder_id, handle);
     await idb("readwrite", (s) => s.put(handle, folder_id));
     this.states.set(folder_id, "connected");
@@ -100,6 +112,7 @@ export class PageFolders {
       if (isLog(rel)) map.set(rel, f);
     }
     this.sessionFiles.set(folder_id, map);
+    this.invalidate(folder_id);
     this.states.set(folder_id, "connected");
     this.onChange();
     return { folder_id, name };
@@ -121,6 +134,7 @@ export class PageFolders {
     const handle = await this.handle(folder_id);
     if (!handle) return false;
     const perm = await handle.requestPermission({ mode: "read" });
+    this.invalidate(folder_id);
     this.states.set(folder_id, perm === "granted" ? "connected" : "needs_permission");
     this.onChange();
     return perm === "granted";
@@ -138,8 +152,20 @@ export class PageFolders {
     await idb("readwrite", (s) => s.clear()).catch(() => undefined);
   }
 
-  /** The engine's listing request: null when this page can't reach it. */
+  /** The engine's listing request: null when this page can't reach it.
+   * One walk per folder per event (see invalidate). */
   async list(folder_id: string): Promise<ListingEntry[] | null> {
+    if (this.listings.has(folder_id)) return this.listings.get(folder_id)!;
+    const running = this.walking.get(folder_id);
+    if (running) return running;
+    const walk = this.walkFolder(folder_id).finally(() => this.walking.delete(folder_id));
+    this.walking.set(folder_id, walk);
+    const listing = await walk;
+    this.listings.set(folder_id, listing);
+    return listing;
+  }
+
+  private async walkFolder(folder_id: string): Promise<ListingEntry[] | null> {
     const found: { entry: ListingEntry; get: () => Promise<File> }[] = [];
     const files = this.sessionFiles.get(folder_id);
     if (files) {
@@ -156,6 +182,7 @@ export class PageFolders {
     const keep = new Map<string, () => Promise<File>>();
     const listing: ListingEntry[] = [];
     for (const { entry, get } of found) {
+      if (keep.has(entry.relative_path)) continue;   // one entry per file, whatever the walk reported
       if (entry.size > MAX_LOG_BYTES) {
         this.refused.push({ folder_id, relative_path: entry.relative_path, size: entry.size });
         continue;
@@ -171,7 +198,7 @@ export class PageFolders {
   /** The engine's file request: the bytes, or null (an "unavailable" answer). */
   async read(folder_id: string, relative_path: string): Promise<ArrayBuffer | null> {
     let get = this.readers.get(folder_id)?.get(relative_path);
-    if (!get) {
+    if (!get && !this.listings.has(folder_id)) {
       await this.list(folder_id);
       get = this.readers.get(folder_id)?.get(relative_path);
     }

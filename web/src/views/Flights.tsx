@@ -19,6 +19,7 @@ import { useFilterAttention } from "../lib/filterAttention";
 import { DROP_PROMPT_THRESHOLD, plural, promptText } from "../lib/flightsSync";
 
 const client = getEngineClient();
+const RECONNECT_NOTE_KEY = "slingology-eis-reconnect-note-dismissed";
 
 const LEGACY_MANIFEST: WorkspaceManifest = {
   id: "legacy", name: "Workspace", engine_model: "", log_folders: [],
@@ -62,7 +63,7 @@ function scanProgressText(p: ScanProgress | null): string {
   if (!p || !p.active || !p.phase) return "Syncing…";
   const label = SCAN_PHASE_LABEL[p.phase];
   if (p.current == null || p.total == null) return `${label}…`;
-  return `${label} ${p.current}/${p.total}`;
+  return `${label} ${p.current}/${p.total}${p.analysed ? ` · ${p.analysed} analysed` : ""}`;
 }
 
 type GroupBy = "date" | "folder";
@@ -198,6 +199,16 @@ export function Flights() {
   const [reconnecting, setReconnecting] = useState<string | null>(null);
   const [folderStates, setFolderStates] = useState<Record<string, FolderState>>({});
   const [folderError, setFolderError] = useState<string | null>(null);
+  // Spec 03 v0.25 §5.1 (D14): where the browser can't keep folder access
+  // (Safari), the first Not connected row carries a note, dismissed once
+  // per browser — remembered outside OPFS.
+  const [reconnectNoteDismissed, setReconnectNoteDismissed] = useState(() => {
+    try { return localStorage.getItem(RECONNECT_NOTE_KEY) != null; } catch { return false; }
+  });
+  function dismissReconnectNote() {
+    try { localStorage.setItem(RECONNECT_NOTE_KEY, new Date().toISOString()); } catch { /* private mode */ }
+    setReconnectNoteDismissed(true);
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -858,6 +869,15 @@ export function Flights() {
               })}
               {hasFolders && addingFolder && folderForm}
             </div>
+            {pageFolders && !canKeepFolders() && !reconnectNoteDismissed
+              && Object.values(folderStates).includes("not_connected") && (
+              <div role="note" data-testid="reconnect-note" style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6, display: "flex", gap: 8, alignItems: "baseline", maxWidth: 640 }}>
+                <span>Safari doesn't keep folder access between visits. Your analyses are already here; reconnect to sync new logs or open charts.</span>
+                <button type="button" onClick={dismissReconnectNote} style={{ fontSize: 11, background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: 0 }}>
+                  Dismiss
+                </button>
+              </div>
+            )}
             <div className="mono" style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
               {summary.total} flights &middot; {summary.inBaselines} in reference
               {summary.missing > 0 && ` · ${summary.missing} missing`}

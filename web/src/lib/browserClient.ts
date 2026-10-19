@@ -184,7 +184,11 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
       await this.ready;
       const request_id = `b-${this.seq++}`;
       this.busy++;
-      if (op === "scan_workspace") this.scanProgress = { active: true, phase: "starting" };
+      if (op === "scan_workspace") {
+        this.scanProgress = { active: true, phase: "starting" };
+        // Sync looks at the folders afresh (Spec 04 D12).
+        this.folders.invalidate();
+      }
       try {
         return await new Promise<T>((resolve, reject) => {
           this.pending.set(request_id, { resolve: resolve as (v: unknown) => void, reject });

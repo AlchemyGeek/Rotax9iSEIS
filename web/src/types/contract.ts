@@ -976,6 +976,7 @@ export interface ScanProgress {
   current?: number;
   total?: number;
   filename?: string;
+  analysed?: number;   // of those, how many needed (re-)analysis so far (Spec 04 D9)
 }
 
 // Spec 02 §6.8 — a file that never became a

@@ -302,3 +302,96 @@ def test_an_async_source_cannot_be_driven_inline(isolated_packaged_home):  # noq
     host.dispatch("register_log_folder", {"name": "Logs", "folder_id": "f1"}, ctx)
     reply = host.reply({"op": "scan_workspace", "params": {}}, ctx)
     assert not reply["ok"] and "WouldWait" in reply["error"]["message"]
+
+
+# ── Metadata fast path (Spec 02 v0.19 §5.7, Spec 04 D12) ───────────────────
+
+def _counting_disk():
+    from slingology_eis.log_sources import DiskSources
+    reads: list[str] = []
+
+    class Counting(DiskLogSource):
+        def read(self, relative_path):
+            reads.append(relative_path)
+            return super().read(relative_path)
+
+    class Factory(DiskSources):
+        def __call__(self, folder):
+            return Counting(folder.path)
+
+    return Factory(), reads
+
+
+def test_flights_after_a_sync_reads_no_file_and_a_touched_one_is_read(isolated_packaged_home):  # noqa: F811
+    logs = {f"log_202601{d:02d}_120000_TEST.csv": _flight(d) for d in (1, 2, 3)}
+    logs["log_20260104_120000_KAWO.csv"] = b"not a log\n"                    # recorded as unreadable
+    mtimes = {n: 1_700_000_000.0 + i for i, n in enumerate(logs)}
+    reads: list[str] = []
+
+    def listing():
+        return [{"relative_path": n, "size": len(b), "last_modified": mtimes[n]} for n, b in logs.items()]
+
+    def read(rel):
+        reads.append(rel)
+        return logs[rel]
+
+    ctx = _ctx(SuppliedSources({"f1": SuppliedLogSource(None, read, list_provider=listing)}))
+    host.dispatch("create_workspace", {"name": "F", "engine_model": "916iS"}, ctx)
+    host.dispatch("register_log_folder", {"name": "Logs", "folder_id": "f1"}, ctx)
+    host.dispatch("scan_workspace", {}, ctx)
+    assert len(reads) == 4                                   # Sync fingerprints what it analyses
+
+    reads.clear()
+    rows = host.dispatch("list_flights_with_status", {}, ctx)["rows"]
+    assert reads == [] and sum(r["status"] == "analyzed" for r in rows) == 3
+
+    mtimes["log_20260102_120000_TEST.csv"] += 60             # touched (same content)
+    host.dispatch("list_flights_with_status", {}, ctx)
+    assert reads == ["log_20260102_120000_TEST.csv"]
+
+
+def test_the_disk_host_takes_the_fast_path_too(isolated_packaged_home, tmp_path):  # noqa: F811
+    import os
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    for d in (1, 2):
+        (folder / f"log_202601{d:02d}_120000_TEST.csv").write_bytes(_flight(d))
+    sources, reads = _counting_disk()
+    ctx = _ctx(sources)
+    host.dispatch("create_workspace", {"name": "D", "engine_model": "916iS"}, ctx)
+    host.dispatch("add_log_folder", {"path": str(folder)}, ctx)
+    host.dispatch("scan_workspace", {}, ctx)
+    reads.clear()
+    host.dispatch("list_flights_with_status", {}, ctx)
+    assert reads == []
+    touched = folder / "log_20260101_120000_TEST.csv"
+    os.utime(touched, (touched.stat().st_atime, touched.stat().st_mtime + 30))
+    host.dispatch("list_flights_with_status", {}, ctx)
+    assert reads == ["log_20260101_120000_TEST.csv"]
+
+
+def test_sources_from_before_the_fast_path_are_read_until_the_next_scan_records_them(isolated_packaged_home, tmp_path):  # noqa: F811
+    from slingology_eis import workspace as ws
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    for d in (1, 2):
+        (folder / f"log_202601{d:02d}_120000_TEST.csv").write_bytes(_flight(d))
+    sources, reads = _counting_disk()
+    ctx = _ctx(sources)
+    host.dispatch("create_workspace", {"name": "P", "engine_model": "916iS"}, ctx)
+    host.dispatch("add_log_folder", {"path": str(folder)}, ctx)
+    host.dispatch("scan_workspace", {}, ctx)
+    for fid in ws.list_flight_ids(ctx["workspace_dir"]):              # as written before v0.19
+        p = ctx["workspace_dir"] / "flights" / fid / "sources.json"
+        d = json.loads(p.read_text())
+        for imp in d["imports"]:
+            imp.pop("size"), imp.pop("mtime_ms")
+        p.write_text(json.dumps(d))
+    reads.clear()
+    host.dispatch("list_flights_with_status", {}, ctx)
+    assert len(reads) == 2                                   # no record yet: read, as before
+    result = host.dispatch("scan_workspace", {}, ctx)
+    assert result["rematched_flight_ids"] == [] and result["new_flight_ids"] == []
+    reads.clear()
+    host.dispatch("list_flights_with_status", {}, ctx)
+    assert reads == []

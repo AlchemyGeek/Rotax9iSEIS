@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DataLocationGate } from "./components/DataLocation";
 import { EngineGate } from "./components/EngineGate";
+import { AppReset } from "./lib/appReset";
 import { Flights } from "./views/Flights";
 import { FlightView } from "./views/FlightView";
 import { LogPreview } from "./views/LogPreview";
@@ -31,6 +32,7 @@ function App() {
     // every page with its notice.
     // Spec 04 v0.7 §9.5: which host, and (in the browser) the engine loading.
     <EngineGate>
+    <AppReset>
     <DataLocationGate>
     <HashRouter>
       {/* Spec 07 D7: the chart's channel selection lives above the routes
@@ -63,6 +65,7 @@ function App() {
       </ChartSessionProvider>
     </HashRouter>
     </DataLocationGate>
+    </AppReset>
     </EngineGate>
   );
 }
