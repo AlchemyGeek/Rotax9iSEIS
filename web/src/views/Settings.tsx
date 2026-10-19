@@ -8,7 +8,7 @@ import { useCapabilities } from "../lib/capabilities";
 import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
-import { getEngineClient } from "../lib/engineClient";
+import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import { ScopeCaption } from "../components/ScopeCaption";
 import { APPLY_LABEL } from "../lib/scope";
 import {
@@ -191,7 +191,13 @@ export function Settings() {
       try {
         const [app, active, chartPresets, liveFleet, limits, workspaceRules] = await Promise.all([
           client.getAppSettings(), client.getActiveWorkspace(), client.getChartPresets(),
-          client.getFleet(), client.getEngineLimits(), client.getWorkspaceRules(),
+          client.getFleet(), client.getEngineLimits(),
+          // No workspace yet (a first run): no rules to list — not a
+          // reason to show the sample settings instead.
+          client.getWorkspaceRules().catch((err) => {
+            if (err instanceof EngineRpcError && err.code === "NO_ACTIVE_WORKSPACE") return { rules: null, card_topic_ids: [] as string[] };
+            throw err;
+          }),
         ]);
         if (cancelled) return;
         setAppSettings(app);

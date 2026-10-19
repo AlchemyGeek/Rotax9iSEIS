@@ -7,6 +7,7 @@ import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { notifyFiltersChanged } from "../lib/filterAttention";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import { EngineRpcError, getEngineClient, type FlightSummary } from "../lib/engineClient";
+import { useCapabilities } from "../lib/capabilities";
 import type { Annotation, FilterTarget, JournalEntry, JournalEntryKind } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
 import { ScopeCaption } from "../components/ScopeCaption";
@@ -117,10 +118,19 @@ export function Journal() {
   // The server answered but couldn't read the Journal — say so, rather
   // than showing an empty sample page as if there were no decisions.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // No workspace yet (a first run): an empty Journal, not an error.
+  const [noWorkspace, setNoWorkspace] = useState(false);
+  const caps = useCapabilities();
 
   async function load() {
     const [j, a, f] = await Promise.all([
-      client.getJournal(),
+      client.getJournal().catch((err) => {
+        if (err instanceof EngineRpcError && err.code === "NO_ACTIVE_WORKSPACE") {
+          setNoWorkspace(true);
+          return { entries: [] as JournalEntry[] };
+        }
+        throw err;
+      }),
       client.listAnnotations(),
       client.listFlights().catch(() => [] as FlightSummary[]),
     ]);
@@ -447,13 +457,21 @@ export function Journal() {
 
         {activeTab === "journal" && loadError && (
           <div role="alert" style={{ fontSize: 13, color: "var(--severity-warning)", lineHeight: 1.5 }}>
-            Couldn't load the Journal — your decisions are still saved. If the local server was started
-            before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.
+            Couldn't load the Journal — your decisions are still saved.
+            {caps?.host !== "browser" && (
+              <> If the local server was started before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.</>
+            )}
             <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{loadError}</div>
           </div>
         )}
 
-        {activeTab === "journal" && !loadError && (
+        {activeTab === "journal" && !loadError && noWorkspace && (
+          <div data-testid="journal-no-workspace" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            No workspace yet. Create one from the workspace menu at the top; the decisions you make about its flights are listed here.
+          </div>
+        )}
+
+        {activeTab === "journal" && !loadError && !noWorkspace && (
           <>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
               <button type="button" onClick={() => setKindFilter("all")} style={chip(kindFilter === "all")}>All ({entries.length})</button>

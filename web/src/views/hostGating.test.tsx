@@ -14,7 +14,7 @@ const BROWSER = { host: "browser", engine_version: "1.0.1", host_version: "1.0.1
 const SERVER = { host: "server", engine_version: "1.0.1", host_version: "1.0.1",
   features: { data_location: true, add_folder_by_path: true, choose_folder: false, persistent_storage_status: false, download_url: true, folder_watching: false } };
 
-const state = vi.hoisted(() => ({ caps: null as unknown, folders: [] as unknown[], folderState: "connected" }));
+const state = vi.hoisted(() => ({ caps: null as unknown, folders: [] as unknown[], folderState: "connected", noWorkspace: false }));
 
 vi.mock("../lib/engineClient", async () => {
   const actual = await vi.importActual<typeof import("../lib/engineClient")>("../lib/engineClient");
@@ -30,7 +30,10 @@ vi.mock("../lib/engineClient", async () => {
     getChartPresets: async () => ({ presets: [] }),
     getFleet: async () => fleetAnalysis,
     getEngineLimits: async () => engineLimits,
-    getWorkspaceRules: async () => ({ rules: { version: "1", rules: {} }, card_topic_ids: [] }),
+    getWorkspaceRules: async () => {
+      if (state.noWorkspace) throw new actual.EngineRpcError("NO_ACTIVE_WORKSPACE", "no active workspace");
+      return { rules: { version: "1", rules: {} }, card_topic_ids: [] };
+    },
     listChangedSettings: async () => ({ settings: [] }),
     getLogChannels: async () => ({ channels: [] }),
     getStorageUsage: async () => ({ total_bytes: 3 * 1048576, other_bytes: 1000, workspace_count: 2, workspaces: [] }),
@@ -56,6 +59,15 @@ describe("capability gating", () => {
     resetCapabilities();
     state.folders = [];
     state.folderState = "connected";
+    state.noWorkspace = false;
+  });
+
+  it("Settings with no workspace yet (a first run) shows the real settings, not the sample", async () => {
+    state.caps = BROWSER;
+    state.noWorkspace = true;
+    renderAt("/settings?tab=app", <Settings />);
+    await screen.findByTestId("storage-panel");
+    expect(screen.queryByText(/sample/i)).toBeNull();
   });
 
   it("Flights: Choose folder… where the host can't open a path; Add folder where it can", async () => {
