@@ -1,11 +1,11 @@
 # Spec 04 — Runtime Adapters & Pyodide Feasibility Spike
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.3 — Part A complete, decision **GO** (real-code harness run on macOS Chrome, macOS Safari, iPad Safari)
+**Status:** v0.4 — Part B **normative**: one host, three transports; decisions D1–D7 (§9.0) and the plan (§10). Part A complete, decision **GO** (v0.3)
 **Suggested repo path:** `docs/specs/04-runtime-adapters-and-pyodide-spike.md`
-**Builds on:** Spec 01 — Engine Contract v0.2 (D2, P3, §7, §7.1, Stage 4, Q8)
+**Builds on:** Spec 01 — Engine Contract v0.23 (D2, P3, §5, §7, §7.1, §8.7, Q8); Spec 02 — Results Bundle & Workspace v0.17 (§5.8, §5.9, §7); Spec 03 v0.23 and Spec 14 v0.15 for the mode-specific UI
 **Precedes:** Spec 02 (Results Bundle & Workspace), Spec 03 (UI Information Architecture)
-**Baseline reviewed:** repo `main` at commit `ed0ca33` (2026-07-07), v0.10.0 tag; project logs
+**Baseline reviewed:** repo `main` at commit `ed0ca33` (2026-07-07), v0.10.0 tag; project logs. v0.4 against `main` at `761c8b7` (2026-10-17, 1.0.0): `server.py` 90 operations, `workspace.py`, `engineClient.ts` seam
 
 **Revision history**
 
@@ -14,6 +14,7 @@
 | 0.1 | Initial draft. |
 | 0.2 | Test matrix narrowed to the maintainer's actual environments: macOS Chrome, macOS Safari, iPad (§4.2). Added a support policy for untested platforms, Safari storage note (§2.8), and a way for contributors to submit their own results. |
 | 0.3 | Part A run against the **real** engine (not the synthetic proxy): a harness (`spike/`) ran `load_log` → `detect_phases` → `build_flight_metrics` on the KACV log inside Pyodide, on macOS Chrome, macOS Safari, and iPad Safari, diffed against a native golden. Result: **GO**, exact parity on all three, comfortably inside every target threshold. Appendix A/B filled in (§13). S5–S7 and stress/batch (W3/W4) remain untested; noted as follow-ups, not blockers. |
+| 0.4 | **Part B made normative** (2026-10-17). Written against 1.0.0, where the host has 90 operations and a 2,500-line workspace layer, so the September sketch (analysis in Python, workspace re-implemented in TypeScript over IndexedDB) is withdrawn. Decisions D1–D7 (§9.0): the **whole host runs in the browser** under Pyodide against an **OPFS**-backed filesystem; one transport-neutral host module behind HTTP, the worker and the CLI; logs enter the browser by page-side enumeration with Python classifying; a static `runtime.json` plus `get_capabilities` select the mode; progress is a host callback; packaging pins and self-hosts Pyodide and ships the engine as a CI-built wheel that also carries the built UI (resolves Spec 01 Q8, BACKLOG P3). Local-server mode stays fully supported — two hosts of one engine, neither a fallback. Desktop browsers first; the iPad's persistence probe is deferred. §9 rewritten, §10 is the six-step plan, §11–§12 updated. Part A and the appendices unchanged. |
 
 ---
 
@@ -24,7 +25,7 @@ The chosen deployment path 1b (Spec 01, D2) depends on one unproven assumption: 
 This spec has two parts:
 
 - **Part A — Feasibility spike (normative).** A time-boxed experiment: what to run, what to measure, pass/fail thresholds, and how the result decides the architecture.
-- **Part B — Runtime adapters (informative until Part A returns GO).** The three ways the engine is hosted (browser worker, local server, CLI), how they share one test suite, and how the UI is packaged for local hosting (resolves Spec 01 Q8).
+- **Part B — Runtime hosts (normative from v0.4).** How one host module serves three transports (browser worker, local server, CLI), how logs and files cross the browser boundary, how the browser persists the workspace, how the UI knows which host it has, one conformance suite, packaging, and the plan.
 
 **Out of scope:** the harness code itself (written when you ask for it), the UI, the results bundle format, any engine changes.
 
@@ -199,63 +200,178 @@ In the table, "Desktop" means macOS Chrome (P0) and macOS Safari (P1). The numbe
 - Implements the crash marker, the frame-gap sampler, and the persistence probes.
 - A separate native reference runner script produces the goldens and native timings (§6.1).
 
-## 9. Part B — Runtime adapters (informative until GO)
+## 9. Part B — Runtime hosts (normative from v0.4)
 
-All adapters expose the Spec 01 operations through the same envelope, so the UI cannot tell them apart.
+Part A answered "can the engine run in a browser?" (yes). Part B answers "how does the one app run in two places?" It was written as a sketch in v0.1; with the 1.0.0 host at 90 operations and a 2,500-line workspace layer, the sketch's assumptions no longer hold and this revision makes it normative.
 
-### 9.1 Browser adapter (path 1b)
+### 9.0 Decisions (2026-10-17)
 
-A dedicated Web Worker hosts Pyodide and the engine. The UI sends envelope requests with `postMessage`; progress events arrive on the same channel; series data crosses as transferable typed arrays. Logs enter as `File` → `ArrayBuffer` and are written into the virtual filesystem until Stage 1 adds a bytes-based loader. Cancellation is by terminating and restarting the worker. One flight's raw frame is resident at a time; the worker discards it after each `analyze_flight`. The whole runtime is precached by a service worker so the app also works offline.
+| # | Decision | Chosen | Rejected | Why |
+|---|---|---|---|---|
+| D1 | How much Python runs in the browser | **The whole host.** Every operation, the workspace layer, registry, filters, journal, export and import run unchanged inside Pyodide against a filesystem the browser persists. | Analysis in Python, workspace re-implemented in TypeScript over IndexedDB (Spec 02 v0.4–v0.16 §5.9) | A second workspace implementation would be the largest piece of code in the project and would have to track every host change forever. One host means one conformance suite and new operations work in both modes for free. |
+| D2 | How the browser persists the filesystem | **OPFS** (Origin Private File System) mounted as the data root, in the worker. | IDBFS (needs explicit sync after every write, loads everything into memory); whole-workspace blob export after each change | Real files, synchronous access in a worker, memory stays flat, maps one-to-one onto the data-root concept. Desktop browsers first; the iPad is verified later (§9.4). Persistence across reloads, restarts and updates is a hard requirement either way. |
+| D3 | How logs reach the browser | **The page enumerates, Python classifies.** The UI obtains a folder (or files); JavaScript lists them and streams bytes to the worker; fingerprinting, de-duplication, admission and analysis run exactly as on the server. A `LogSource` abstraction separates *disk folder* from *browser folder*. | Mounting the directory handle into Pyodide so Python walks it (Chrome only); drop-files only, no folder concept | Works on all three maintained platforms and keeps Spec 02's folder model. Handle mounting may return later as a Chrome-only fast path. |
+| D4 | How the UI knows its host | **One build, a static `runtime.json` beside `index.html`, and a `get_capabilities` operation.** | Probing `/rpc` at start-up; two builds | Probing is racy and makes a "nothing leaves your device" site open with a failing network call; two builds double the test matrix. |
+| D5 | Progress for long operations | **A progress callback given to every operation by the host.** The server stores it for polling (unchanged for the UI); the worker forwards it as a `progress` message. | Splitting scan into UI-driven steps | Invisible to the UI; one scan implementation. |
+| D6 | Where this lives | **Spec 04 Part B made normative;** Spec 02 §5.9 revised to the filesystem-on-OPFS realization; Spec 03 and 14 take the mode-specific UI. | A new spec | Part B always owned the adapters; project convention is to revise the owning spec. |
+| D7 | Packaging | Pinned, self-hosted Pyodide (numpy and pandas only); the engine delivered to the browser as one wheel built by CI from the same commit as `web/dist`; the same wheel carries `web/dist` so `pip install` suffices for the server (resolves Spec 01 Q8 → §9.5 option A, with D for Docker); conformance under Pyodide-in-Node in CI; service worker last. | — | Everything else stays a developer-only setup. |
 
-### 9.2 Local server adapter (path 2)
+### 9.1 One host, three transports
 
-A small HTTP server exposing the envelope (`POST /rpc`) with a progress stream, and serving the built UI at `/`. It binds to the loopback interface by default; when bound to any other interface (Docker on a NAS), it requires an access token, since it can read the mounted log folder. It can optionally watch the log folder and process new files automatically, which is the fully hands-off experience the browser cannot offer. The choice of server library is deferred, with a strong preference for minimal dependencies to keep installation easy for non-experts.
+```
+   ┌────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
+   │  CLI (argparse)│    │ HTTP server          │    │ Web Worker      │
+   │  in-process    │    │ POST /rpc, /download │    │ postMessage     │
+   └───────┬────────┘    └──────────┬───────────┘    └────────┬────────┘
+           │        envelope (Spec 01 §7) + progress          │
+   ┌───────▼───────────────────────▼─────────────────────────▼────────┐
+   │  Host module — transport-neutral                                 │
+   │  dispatch(op, params, ctx) · the 90 operations · capabilities    │
+   │  ctx: data root, registry, active workspace, emit_progress,      │
+   │       deliver_file, log_source factory                           │
+   ├──────────────────────────────────────────────────────────────────┤
+   │  workspace.py · operations.py · engine (Spec 01)                 │
+   ├──────────────────────────────────────────────────────────────────┤
+   │  Filesystem:  ~/SlingologyEIS (disk)   |   /data (OPFS mount)    │
+   └──────────────────────────────────────────────────────────────────┘
+```
 
-### 9.3 CLI adapter
+**The host module** holds everything that today sits in `server.py` apart from HTTP: the operation table, the dispatcher, the active-workspace context, data-root resolution and the capabilities declaration. A transport only converts its wire format to and from the envelope and supplies the host with the few things it cannot know on its own:
 
-Specified in Spec 01, §7.1. In-process, no transport.
-
-### 9.4 One conformance suite
-
-A single contract test suite (Spec 01, §12) runs unchanged against all three adapters and compares against the same golden outputs. After a GO decision, the browser run is also automated in continuous integration by running Pyodide under Node.js, which needs no browser. Browser-specific behaviour (especially iOS) still needs real-device checks before releases.
-
-### 9.5 UI packaging for local hosting (resolves Spec 01 Q8)
-
-| Option | Description | Assessment |
+| The host asks the transport for | Disk (server, CLI) | Browser (worker) |
 |---|---|---|
-| A | Built UI assets are bundled inside the Python package (wheel), so `slingology-eis serve` works after a plain install. | **Recommended.** Works offline, no extra step. Requires CI to build the UI before the wheel; build output is not committed to the repo. |
-| B | `serve` downloads UI assets from a release on first run. | Needs network and an extra failure mode. |
-| C | The hosted static site talks to a locally running API. | Not recommended: cross-origin and mixed-content rules differ by browser, and it weakens the "nothing leaves the device" story. |
-| D | A Docker image containing engine, server, and UI. | **Recommended alongside A** for NAS and third-party hosting. |
+| Where the data root is | Spec 02 §5.8.1 resolution | The OPFS mount, fixed |
+| `emit_progress(update)` | Store in `ctx` for `get_*_progress` polling | Post a `progress` message tagged with the `request_id` |
+| `deliver_file(path, filename)` | Register a one-shot `/download/<token>` URL | Transfer the bytes to the page, which saves them |
+| A `LogSource` for a folder | Walk the disk (§9.3) | Listing and bytes supplied by the page (§9.3) |
 
-## 10. Deliverables
+The dispatcher, not the transport, enforces the rules every mode shares: an operation that needs an active workspace, operations allowed while the data location is missing, the busy check during a scan. The contract suite calls `dispatch` directly (§9.6), so a transport cannot change behaviour without the suite noticing.
 
-1. `spike/` harness and native reference runner (on request, after this spec is accepted).
-2. `spike/RESULTS.md` and `spike/results/*.json`.
-3. A one-page **decision record** (Appendix B) committed with the results, referenced from Spec 01 and Spec 02.
-4. Updates to Spec 01 (P3, D2, Stage 4, Q8) reflecting the outcome.
+### 9.2 Browser transport
+
+- **Worker.** One dedicated Web Worker loads the pinned Pyodide, numpy, pandas and the engine wheel, mounts OPFS at the data root, imports the host module and enters a message loop. The page never runs Python. The UI's `BrowserWorkerClient` implements the same `EngineClient` interface as `LocalServerClient`; `getEngineClient()` chooses from `runtime.json` (§9.4). No view changes.
+- **Messages.** Requests are the Spec 01 §7 envelope objects, one `postMessage` each; the result or error comes back with the same `request_id`; progress messages carry the `request_id` of the operation they belong to. Two things cross as transferables, not JSON: log bytes going in (`ArrayBuffer`, written straight into the virtual filesystem under a scratch path and released after the operation) and series going out (typed arrays, `NaN` for null, as Spec 01 §8.7 already states). Base64 (`content_base64`) stays an HTTP-only encoding.
+- **Start-up.** The page shows a loading state with progress ("Setting up the analysis engine… about 30 MB, once"). On later visits the runtime comes from the browser cache. The worker reports `ready` with the engine version, Pyodide version and the data-root state; until then the client queues requests.
+- **One operation at a time.** The worker is single-threaded; the client serialises requests. A long operation (scan with analysis) blocks later requests, which is why progress is a message rather than a second request. The page warns on navigate-away while an operation is running ("Analysis in progress"), as it would for unsaved edits.
+- **Cancellation and failure.** Cancel = terminate the worker and start a new one; the workspace is on OPFS, so nothing in worker memory is lost beyond the operation in flight. A worker that dies (out of memory, an uncaught error) is restarted by the client, the pending request fails with `HOST_RESTARTED`, and the page says so once. A half-written analysis is prevented the same way as on disk: workspace writes are atomic per document (write to a temporary name, rename).
+- **Memory.** One flight's raw frame resident at a time (Spec 01 principle 8); the worker discards it after each operation. The spike measured 156 MB after one 4.5-hour flight; a 100-log scan must not grow beyond that by more than the §7 batch criterion. Verified in step 4 (§10).
+
+### 9.3 Log sources
+
+A workspace references folders (Spec 02 §5.1). What differs by host is how a folder's contents are listed and read:
+
+| | Disk folder | Browser folder |
+|---|---|---|
+| Added how | A typed path (`add_log_folder`) | **Choose folder…** — Chrome: `showDirectoryPicker`; Safari: `<input webkitdirectory>` or a dropped folder |
+| Listed how | Python walks it recursively (`*.csv`) | The page walks the handle or the file list, recursively, and sends `[ {relative_path, size, last_modified} ]` |
+| Read how | Python opens the file | The page sends bytes for the files the host asks for, one at a time, as transferables |
+| Remembered how | Path in the manifest | Chrome: the `FileSystemDirectoryHandle` persisted in a small IndexedDB store keyed by `folder_id` (Spec 02 §6.1); permission is re-confirmed with one click when the browser asks. Safari: nothing persists; the folder shows **Not connected — reconnect** until re-picked. |
+| Rescan | One click | Chrome: one click. Safari: *Reconnect folder*, then Sync |
+| Dropped files (no folder) | n/a | Supported in both browsers; they are classified and analysed like any other log and recorded as a source without a folder, exactly as the existing upload path records them |
+
+The host's scan operation therefore accepts, besides a folder to walk itself, an **externally supplied listing plus a byte provider**. Everything downstream — fingerprinting, duplicate detection, admission rules (Spec 02 §5.11), missing/moved re-matching (§5.5), the "needs re-analysis" bookkeeping, the per-log progress line — is the same code. In the browser a byte provider is a request to the page, so the scan is naturally incremental: the page is asked for one file, sends it, the host processes it, reports progress, asks for the next.
+
+Raw logs are never written to OPFS. The scratch copy of the file being processed is deleted as soon as the operation returns.
+
+### 9.4 Persistence (browser)
+
+- **Data root.** OPFS is mounted in the worker at a fixed path and holds exactly Spec 02 §5.8's layout: `registry.json`, app `settings.json`, `workspaces/<id>/…`. The documents are byte-identical to the disk realization — Spec 02 §5.10 becomes a statement of fact rather than a rule to police. The manifest's `storage_backend` reads `opfs`.
+- **What survives.** Reload, tab close, browser restart, machine reboot, and updates of the app (a new build reads the same storage; engine-version staleness works as today). This is the persistence requirement.
+- **What removes it.** The user clearing the site's data; Chrome under disk pressure if persistence was not granted; Safari's inactivity eviction. Mitigations, all in scope: the app requests durable storage (`navigator.storage.persist()`) when the first workspace is created (Spec 02 §9's open recommendation is now decided: yes); Settings → App shows a **Storage** panel — space used, *Persistent: yes/no*, **Export all workspaces…**, **Delete all data on this device** (Spec 14 §5.2); and if the app opens to an empty store where it had recorded a registry before (a marker in `localStorage`), it shows "Your workspace data isn't on this device any more — import an export or add your log folders again" instead of a silent first run.
+- **Backup** is the workspace export (Spec 02 §7), the same file in both modes, importable in either.
+- **Verification.** Before step 4 (§10) a short probe on macOS Chrome and Safari: OPFS available in a worker, a 50 MB write/read round trip, the Pyodide mount, data present after a reload and after a browser restart, `persist()` outcome. The iPad runs the same probe when it becomes a priority; until then the iPad is out of the supported set for browser mode (the Part A result stands as evidence it will work).
+
+### 9.5 Mode selection and capabilities
+
+- **`runtime.json`**, fetched by the page before anything else, is one of:
+  - `{ "host": "server" }` — served by `slingology-eis serve` beside the built UI; the client is `LocalServerClient` on the page's own origin (Vite dev keeps its fixed cross-origin default).
+  - `{ "host": "browser", "pyodide": "<pinned version>", "engine_wheel": "<file>" }` — shipped with the static site; the client is `BrowserWorkerClient`.
+  
+  Missing or unreadable: the page says the installation is incomplete rather than guessing.
+- **`get_capabilities`** (new operation, both hosts) returns `{ host: "server"|"browser", engine_version, host_version, features: { data_location, add_folder_by_path, choose_folder, persistent_storage_status, download_url, folder_watching } }` — booleans, extended as hosts diverge. The UI gates on `features`, never on `host`.
+- **Mode-specific operations** (data location, `add_log_folder` by path, `get_*_progress` polling) exist only in the host that supports them; calling one elsewhere returns `UNSUPPORTED_IN_HOST`. Nothing in the UI reaches them without the matching feature flag.
+
+### 9.6 One conformance suite
+
+The contract tests (Spec 01 §12, `tests/contract`) run three ways with no test changes:
+
+1. **In-process** — against `dispatch()` directly. This is the default and the fastest; it covers every operation and is where behaviour is specified.
+2. **Over HTTP** — against a server started by the test, to catch transport mistakes (encoding, the download route, error mapping).
+3. **Under Pyodide in Node.js** — the worker's entry module loaded by Node, OPFS replaced by Node's in-memory filesystem, the same tests sent as messages. No browser needed; runs in CI on every commit. It catches package-version and WebAssembly differences (the spike found none, but pandas under Pyodide lags the native release).
+
+Real-browser behaviour — folder pickers, handle persistence, OPFS, memory — is checked by hand on macOS Chrome and Safari before each release, using a checklist kept with the spec; the iPad joins when it is in scope.
+
+### 9.7 Packaging and delivery
+
+| Item | Rule |
+|---|---|
+| Pyodide version | One version file at the repo root, read by the static-site build, the worker, the Node conformance run and the docs (closes Q4). Upgraded deliberately, behind the suite. |
+| Pyodide files | Self-hosted with the static site (core runtime, numpy, pandas only), not loaded from a CDN. |
+| Engine delivery | CI builds one wheel of `slingology_eis` (which already carries the engine profiles and topic help as package data) from the tagged commit; the browser installs that wheel into Pyodide; the same wheel, with `web/dist` included, is what `pip install` gives the server user — BACKLOG P3 closes with this. |
+| Static site | A build target that emits `index.html`, `web/dist`, `runtime.json`, the Pyodide files and the wheel into one folder suitable for any static host. GitHub Pages cannot set headers, so nothing depends on cross-origin isolation (threads, `SharedArrayBuffer`). |
+| Offline | A service worker precaches the runtime and the wheel after the first visit, so the site opens and analyses with no network (closes S5). Added last so it does not complicate debugging the steps before it. |
+| Server packaging for NAS and Docker | Spec 04 v0.3 §9.5 options A and D stand; Docker is BACKLOG P2 and not part of this work. |
+
+### 9.8 User experience by host
+
+The principle: same app, same screens, same workspace documents. Differences exist only where the browser physically cannot do what a local process can.
+
+| | Local server | Browser |
+|---|---|---|
+| First visit | `slingology-eis serve`, open the page | Open the site; one-time engine download with progress (~3 s on broadband); later visits under a second |
+| Add logs | Type a path, or drop files | **Choose folder…** (OS picker) or drop files; Chrome remembers the folder, Safari asks again each session |
+| Sync | One click | Chrome: one click; Safari: reconnect folder, then Sync |
+| Where data lives | `~/SlingologyEIS` (movable, Settings → App) | The site's private storage; Settings → App shows **Storage** instead of *Data location* |
+| Export | Browser download from the server | Browser download from the page — same file |
+| Import | Pick the zip | Pick the zip |
+| Long sync | Progress line; other requests still answered | Progress line; the page warns before closing the tab |
+| Offline | Always | After the first visit (step 6) |
+| Visible mode indicator | None; Settings → Engine's About line names the host | Same |
+| Hidden in this host | — | Data location, add-folder-by-path, CLI, folder watching |
+
+The only new screen in the whole app is the browser's engine-loading state.
+
+## 10. Plan (v0.4)
+
+Work happens on branch `pyodide`, off `main` at 1.0.0, merged back when step 4 passes on macOS Chrome and Safari. Each step leaves the server mode behaving exactly as before and the full suite green; steps 1–2 may be merged to `main` on their own.
+
+| Step | What | Done when |
+|---|---|---|
+| 1 | **Extract the host.** The operations, their table and the dispatcher move out of `server.py` into a transport-neutral host module; `server.py` keeps only HTTP. The host receives `emit_progress` and `deliver_file` from its transport. `get_capabilities` added. The contract suite runs against `dispatch()` in-process (§9.6 mode 1) and over HTTP (mode 2). | No behaviour change; suite green both ways; `server.py` contains no operation bodies. |
+| 2 | **Log sources.** `LogSource` with a disk implementation wrapping today's walk; the scan accepts an external listing plus byte provider; export returns a file to the host, which decides between `/download/` and bytes. Still server-only. | Suite green; a test drives a scan with a supplied listing and in-memory bytes and gets the same workspace as the disk walk. |
+| 3 | **Persistence probe** (§9.4) on macOS Chrome and Safari. Half a day. Decides whether D2 stands or IDBFS is needed. | Written results in Appendix D. |
+| 4 | **Browser host.** Worker entry module, `worker.ts`, `BrowserWorkerClient`, OPFS data root, `runtime.json`, capability gating in the UI (Flights folder picker and reconnect state, Settings → App Storage panel, export download, loading state, navigate-away warning). Node conformance run (§9.6 mode 3). | A workspace of the full test-log set created, synced, browsed, exported and re-imported in Chrome and Safari; documents byte-identical to the server's; memory within §7; suite green three ways. |
+| 5 | **Packaging.** Version file, self-hosted Pyodide, CI-built wheel including `web/dist`, static-site build target; `pip install` then `serve` works without Node (P3). | A clean machine runs both modes from release artifacts. |
+| 6 | **Offline and polish.** Service worker, persistence request and eviction notice wired, support checklist, static-site docs. | The site opens and analyses with the network off. |
+
+Each step gets its own Claude Code prompt, written when the previous step is accepted. Prompts are functional; Code owns names and structure.
 
 ## 11. Risks and contingencies
 
 | Risk | Mitigation |
 |---|---|
-| The current stable Pyodide fails on iPad | Test the earlier pinned version; record working iPadOS/Safari versions; fall back to "GO, desktop only". |
-| Cold start is too slow for casual users | Self-host with compression, load only numpy and pandas, show progress, precache for later visits; measure what a first visit actually costs before optimizing. |
-| Too few raw logs to run W2 (scripts 03–04) and W4 | Mark blocked, ship the desktop and iPad verdict on W1 and W3, complete the rest when logs are available. |
-| Numerical differences at the last bit | Tolerance in §4.5; investigate anything beyond it. |
-| Pyodide releases move faster than the project | Pin an exact version in the repo, upgrade deliberately behind the conformance suite. |
-| Header limits of the static host (§2.7) | Do not depend on threads or shared memory. If a future need arises, move the static site to a host that allows custom headers; the site is plain files. |
+| OPFS mount or `persist()` behaves differently than expected on Safari | Step 3 finds out before anything depends on it; IDBFS is the documented fallback with the same layout. |
+| Cold start too slow on airfield Wi-Fi | Self-hosted, compressed, numpy and pandas only, progress shown; the service worker makes it a one-time cost. |
+| Worker memory over a 100-log scan | One frame resident at a time; measured in step 4 against §7's batch criterion; the worker restarts cleanly if it dies. |
+| Pandas under Pyodide lags native and diverges | The Node conformance run on every commit; the pinned version moves only behind it. |
+| The scan's host-driven byte provider is slow in the browser | Files are streamed one at a time as transferables; if enumeration itself is slow on Chrome, mount the handle (`mountNativeFS`) as a Chrome-only fast path. |
+| Two hosts drift | There is one host module; the transports contain no behaviour; the suite runs against all three. |
+| GitHub Pages header limits (§2.7) | Nothing depends on threads or shared memory. |
+| Pyodide releases move faster than the project | One pinned version, upgraded deliberately. |
 
 ## 12. Open questions
 
-| # | Question | Proposal |
+| # | Question | Status |
 |---|---|---|
-| Q1 | Which minimum iPadOS/Safari versions do we commit to supporting? | Decide from the spike results. |
-| Q2 | What about Windows, Linux, Firefox, Edge, Android, iPhone? | Community-verified only (§4.2 support policy); not tested by the maintainer and not blocking. |
-| Q3 | Should thresholds in §7 be tightened once real numbers exist? | Yes; revise after the first complete run. |
-| Q4 | Where is the pinned Pyodide version recorded so the harness, app, and CI agree? | One version file at the repo root, read by all three. |
-| Q5 | Do we keep the spike harness in the repo after the decision? | Archive under `spike/` with the results; delete only the harness code if it becomes dead weight. |
-| Q6 | Should the raw-log set for W4 be scrubbed before it is shared? | Yes. The anonymizer (Spec 01, §10) should exist before any log reaches the public repo. |
+| Q1 | Minimum iPadOS/Safari versions | Deferred with the iPad (§9.4); the Part A result is the known-good point. |
+| Q2 | Windows, Linux, Firefox, Edge, Android, iPhone | Community-verified only (§4.2). |
+| Q3 | Tighten §7 thresholds | After step 4's first full browser run. |
+| Q4 | Where the pinned Pyodide version lives | **Resolved (v0.4):** one version file at the repo root (§9.7). |
+| Q5 | Keep the spike harness | Kept under `spike/` as the Part A record; its `worker.js` is superseded by step 4's worker and may be deleted then. |
+| Q6 | Scrub the raw-log set before sharing | Unchanged; the anonymiser exists (Spec 02 §7.6). |
+| Q7 | Should the Chrome handle mount (`mountNativeFS`) replace page-side enumeration once it proves itself? | Open; decide after step 4's timings. |
+| Q8 | Rule-edit live preview under Pyodide (Spec 14 Q4) — debounced or explicit? | Measure in step 4; explicit step if a what-if round trip exceeds about 1 s. |
+| Q9 | Folder watching in server mode (Spec 03 §5.1's "watching" state) | Not part of this work; capability flag reserved. |
 
 ---
 
@@ -324,3 +440,11 @@ the decision below; they close remaining gaps in the picture.
 - Pyodide 0.27.1+ not working on iOS (issue #5428): https://github.com/pyodide/pyodide/issues/5428
 - Pyodide package channel (numpy, pandas versions): https://anaconda.org/pyodide/repo
 - Safari on iOS memory constraints for WebAssembly (general discussion): https://groups.google.com/g/emscripten-discuss/c/SlmrsE9hpwE
+
+## Appendix D — Persistence probe results (step 3; to be filled)
+
+| Browser | OPFS in worker | 50 MB round trip | Pyodide mount | After reload | After browser restart | `persist()` | Notes |
+|---|---|---|---|---|---|---|---|
+| macOS Chrome | | | | | | | |
+| macOS Safari | | | | | | | |
+| iPad Safari | deferred | | | | | | |

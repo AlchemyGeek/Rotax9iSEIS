@@ -1,9 +1,9 @@
 # Spec 03 — UI Information Architecture
 
 **Project:** SlingologyEIS web platform
-**Status:** v0.22 — source format shown on Flights and Log preview (Spec 01 v0.23); v0.21 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
+**Status:** v0.23 — browser host: folder picker, reconnect state, engine-loading state, Storage panel, navigate-away warning (Spec 04 v0.4); v0.22 — source format shown on Flights and Log preview (Spec 01 v0.23); v0.21 — implementation in progress (`web/src/views`, against the local-server adapter); §4, §5.2, §5.5–§5.7 realigned with Spec 14 as implemented on `webui` (`ac62b20`…`282631c`)
 **Suggested repo path:** `docs/specs/03-ui-information-architecture.md`
-**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.3 (GO); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
+**Builds on:** Spec 01 — Engine Contract v0.4; Spec 02 — Results Bundle & Workspace v0.7; Spec 04 — Runtime Adapters & Pyodide Spike v0.4 (Part B normative); Spec 14 — Settings, Journal, and Rule Editing on the Card v0.3 (for §4, §5.2, §5.5–§5.7)
 **Resolves:** Spec 02 Q1 (series caching scope), Spec 02 Q5 (read-only bundle preview)
 
 **Revision history**
@@ -31,6 +31,7 @@
 | 0.19 | Workspace export and import replace the results bundle (Spec 02 v0.11 §7). §5.7 App tab: *Export workspace…* and *Import workspace…*, anonymise-by-default removed. §5.8 rewritten as the import flow. R2 (read-only bundle preview) and the Flight view's *Export flight bundle* retired. |
 | 0.20 | §5.8 import flow simplified (Spec 02 v0.13): no link-logs step. An unzipped export folder's `logs/` is linked automatically and the match result follows; without one the workspace is created empty and opens on Flights' *Link your logs* empty state. Trends on a workspace with no flights shows an empty state, never the sample data (which is only for when no local server answers). |
 | 0.22 | **Garmin AXIS log source** (Spec 01 v0.23, 2026-10-17). §5.1: the Source column names the format (*G3X*, *Garmin Pilot*, *AXIS*) and the drop zone no longer says "G3X logs"; §5.9: Log preview's header shows the source format and, for a resampled log, the share of filled rows. Nothing else in the UI distinguishes sources. |
+| 0.23 | **Browser host** (Spec 04 v0.4, 2026-10-17). The UI is one build that serves two hosts and gates on `get_capabilities` features, never on host name (§6.4, new). §5.1: *Add folder* becomes **Choose folder…** where typed paths aren't available; a folder the browser can't reach this session shows **Not connected — reconnect** (Safari), distinct from Spec 02 §5.5's unreachable; Sync is unchanged. §5.7: Settings → App shows **Storage** in place of *Data location* in the browser; the persistence nudge becomes the Storage panel's state. §6.3: the browser's one-time engine-loading state, the queued-until-ready rule and the navigate-away warning during a running operation. Export saves the same file in both hosts. No other view changes. |
 | 0.21 | §5.8: import takes the export zip as is (Spec 02 v0.14) — one *Export file* chooser (`.zip` or `.eisworkspace`); the file is sent to the local server, which unzips it and keeps the logs in the new workspace. No path typing, no unzipping by the user. |
 **Baseline reviewed:** branch `webui` at commit `282631c` (2026-10-11)
 
@@ -98,8 +99,8 @@ A **global stale banner** appears under the nav bar, not per-view, whenever any 
 
 Replaces the old standalone Import destination and the never-built "just a list" gap between Import and Flight view. Grounded directly in Spec 02 v0.5's data model — this view is mostly a straightforward rendering of what §5–§6 of that spec already defines, not new design.
 
-- **Header:** active workspace's name, its log folders (each marked reachable/unreachable per Spec 02 §5.5), a **Rescan** action, and a one-line summary — "48 flights · 45 in reference · 2 missing · 1 other aircraft."
-- **Adding logs (v0.17).** While the workspace has **no log folders**, the page is the onboarding surface: a large drop zone / file picker ("Drop your Garmin EIS logs here", or pick a folder — G3X, Garmin Pilot export, or AXIS; v0.22) with **Add folder** — D3's non-technical first run, unchanged. Once at least one folder exists the panel disappears; the header gains **Add logs…** (drop files, or pick a folder — files are the Safari fallback, since it can't retain folder permissions) beside **Sync**, and dropping anywhere on the page still works. Import progress and the post-import summary (duplicates skipped, not-a-flight skipped) appear as a transient banner above the table, dismissable, never a permanent panel. The model stays Spec 02's: the app references logs where the pilot keeps them; a drop is a way to point at files, not to hand them over.
+- **Header:** active workspace's name, its log folders (each marked reachable/unreachable per Spec 02 §5.5; in the browser a third state, **Not connected — reconnect**, for a folder the page has no handle for this session — one click re-picks it, v0.23), a **Rescan** action, and a one-line summary — "48 flights · 45 in reference · 2 missing · 1 other aircraft."
+- **Adding logs (v0.17).** While the workspace has **no log folders**, the page is the onboarding surface: a large drop zone / file picker ("Drop your Garmin EIS logs here", or pick a folder — G3X, Garmin Pilot export, or AXIS; v0.22) with **Add folder** — D3's non-technical first run, unchanged. (v0.23: where the host has no `add_folder_by_path` feature the control is **Choose folder…**, the OS picker; the recursive listing and the bytes come from the page, the classification from the host — Spec 04 §9.3. Chrome remembers the folder; Safari asks again each session.) Once at least one folder exists the panel disappears; the header gains **Add logs…** (drop files, or pick a folder — files are the Safari fallback, since it can't retain folder permissions) beside **Sync**, and dropping anywhere on the page still works. Import progress and the post-import summary (duplicates skipped, not-a-flight skipped) appear as a transient banner above the table, dismissable, never a permanent panel. The model stays Spec 02's: the app references logs where the pilot keeps them; a drop is a way to point at files, not to hand them over.
 - **Table, one row per flight** (duplicate exports from Spec 01's `flight_id` matching collapse into one row):
 
   | Column | Content |
@@ -222,7 +223,7 @@ Not a top-level nav item (§4) — reached via the gear icon. The workspace swit
 
 - **Engine** — active profile and version (`engine_model` locked, read-only per Spec 02 §5.6 — changing it is a reason to make a new workspace); the OM limits it ships, read-only, with their phase-aware suppression windows; engine overrides when designed (Spec 02 §6.4, `reason`/`source` mandatory). Until then: "None".
 - **Reference & Models** — Spec 14 §5.1 (see §5.5).
-- **App** — units, which workspace reopens on launch; **Export workspace…** (Spec 02 §7.2: *Include logs*, *Anonymise logs*, privacy notice) and **Import workspace…** (§5.8); and the **persistence nudge** (Spec 02 §9 — one-time, dismissible, browser mode only). Anonymise-by-default removed (v0.19).
+- **App** — units, which workspace reopens on launch; **Export workspace…** (Spec 02 §7.2: *Include logs*, *Anonymise logs*, privacy notice) and **Import workspace…** (§5.8); *Data location* (Spec 14 §5.2) where the host has it, otherwise the **Storage** panel (Spec 14 §5.2, v0.23) — space used, persistence granted or not, *Export all workspaces…*, *Delete all data on this device*. The v0.19 persistence nudge is folded into that panel. Anonymise-by-default removed (v0.19).
 
 No changelog (Spec 14 v0.13). A setting that changes results and differs from shipped is marked with its shipped value and links to its Journal entry; display-only settings are unmarked. The Engine tab shows the engine version in effect and its user-facing *What's new* (Spec 13).
 
@@ -258,6 +259,14 @@ Reached from a Flights row whose status is *Ground session*, *Too short*, *Other
 Every Spec 01 `Diagnostic` has a UI treatment class, not a one-off: `info` renders as a quiet inline note, `warn` as a visible banner within the relevant view, `error` as a blocking state with no partial render. This mapping is a single lookup table, so a new diagnostic code (e.g. from a future topic, Spec 01 §9) gets sensible default treatment without new UI code.
 
 ### 6.3 What loads when
+
+(v0.23, browser host) Before the first request the page fetches `runtime.json`; in the browser it then shows a one-time **engine-loading state** with progress ("Setting up the analysis engine… about 30 MB, once") and queues requests until the worker reports ready; later visits take under a second from cache. While an operation is running the page warns on navigate-away ("Analysis in progress"), as for unsaved edits. If the host restarts under a request, the page says so once and the request can be retried. This is the only screen that exists in one host and not the other.
+
+### 6.4 Host capabilities (v0.23)
+
+The UI is one build. At start it asks the host `get_capabilities` and keeps the result; every control that exists in one host only is shown or hidden by a named **feature** flag (`data_location`, `add_folder_by_path`, `choose_folder`, `persistent_storage_status`, `download_url`, `folder_watching` — Spec 04 §9.5), never by the host's name. No view announces the mode; Settings → Engine's About line names the host for support. Export produces the same file in both hosts; how the page obtains it (a URL or bytes) is the client's business, not the view's.
+
+
 
 Consistent with R1 and Spec 02 §5's split between small derived data and re-parsed series: opening the app loads the workspace manifest and every flight's `FlightAnalysis` (small — Spec 04 measured under 3 KB per flight), enough to render the Flights table, the Trends list, and the ECU table immediately. Series data loads only when a specific flight's timeline is opened. This ordering is what keeps every view except Flight view fast regardless of fleet size.
 
