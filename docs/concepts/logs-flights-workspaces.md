@@ -39,7 +39,9 @@ If you think the app got one wrong, open it: a skipped log opens read-only in a 
 
 A workspace is where the app keeps everything it derives from your logs — each flight's analysis, your [reference](your-reference.md), the [decisions](your-decisions.md) you have made, your [Journal](the-journal.md). It is tied to one engine model, chosen when you create it, because the Operators Manual limits differ between the 912iS, 915iS and 916iS.
 
-A workspace is defined by **one or more log folders**. Subfolders are included. Add the folder where you already keep your logs and the app reads whatever is there; add logs to that folder and the next **Sync** picks them up. If a folder is on a disk that is unplugged, the app says so and offers *Locate folder* when it is back; a single log that has gone missing keeps its results until you choose to remove it.
+A workspace is defined by **one or more log folders**. Subfolders are included. Add the folder where you already keep your logs (**Choose folder…**, or drop files onto the page) and the app reads whatever is there; add logs to that folder and the next **Sync** picks them up. A single log that has gone missing keeps its results until you choose to remove it.
+
+Because the app runs in your browser, it reads your folders only with the browser's permission. Chrome keeps that permission between visits and occasionally asks you to confirm it (**Allow access** on the folder row). Safari forgets it when you leave, so the row shows **Not connected — reconnect** on your next visit; everything already analysed is still there, and you reconnect only to sync new logs or open a flight's charts. When the app runs as a program on your own computer instead, folders are typed as paths and stay connected; if one is on a disk that is unplugged, the app says so and offers *Locate folder* when it is back.
 
 You can have as many workspaces as you like, and switch between them from the name in the top bar. Two reasons to have more than one:
 
@@ -56,9 +58,12 @@ The workspace name is yours. The one you were last using reopens when you start 
 
 | What | Where |
 |---|---|
-| Your logs | Wherever you keep them. Never copied or modified. |
-| Workspaces and their results | A data folder on your computer (`~/SlingologyEIS` by default, shown and changeable under *Settings → App → Data location*). Derived from your logs; safe to delete and rebuild. |
+| Your logs | Wherever you keep them. Never copied or modified. (Logs that arrived inside an imported workspace are the one exception: the app keeps its own copy of those, with that workspace.) |
+| Workspaces and their results | In your browser's private storage for the site — on this device, in this browser. *Settings → App → Storage* shows the space used and whether the browser has agreed to keep it; **Delete all data** there empties it. It survives restarts and app updates, but not clearing the site's data, so keep a [workspace export](sharing-a-workspace.md) as your backup. Derived from your logs; safe to delete and rebuild. |
+| …when you run the app on your own computer | A data folder (`~/SlingologyEIS` by default, shown and changeable under *Settings → App → Data location*). Back it up like any other folder. |
+
+A workspace belongs to the browser it was made in. To use it in another browser or on another computer, export it there and import it here — the export carries every decision you made, and the logs if you ask.
 
 ---
 
-*Walkthrough: [Install and your first workspace](../walkthroughs/first-workspace.md).*
+*Walkthrough: [Open the app and your first workspace](../walkthroughs/first-workspace.md).*

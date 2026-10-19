@@ -45,7 +45,8 @@ Triggers that follow an Operators Manual limit are shown as such and have no num
 | **Units** | Imperial | app | °F / psi / inHg / gal, or °C / bar / hPa / L. Changes display only. |
 | **Workspace that reopens on launch** | last used | app | |
 | **Share a workspace** — Include logs / Anonymise logs | on / off | — | See [Sharing a workspace](../concepts/sharing-a-workspace.md). |
-| **Data location** | `~/SlingologyEIS` (or `data/` in a source checkout) | app | Where workspaces, their results and app settings are kept. Log folders stay where they are. *Change…* moves the data or adopts data already there. |
+| **Storage** | — | app | Shown when the app runs in your browser. Space used by each workspace; whether the browser has agreed to keep the data (if not, *export a copy to be safe*); **Export all workspaces…**; **Delete all data** on this device. Logs are never stored here. |
+| **Data location** | `~/SlingologyEIS` | app | Shown instead of *Storage* when the app runs as a program on your computer. Where workspaces, their results and app settings are kept. Log folders stay where they are. *Change…* moves the data or adopts data already there. |
 | **Chart presets** | six shipped | app | The channel sets offered above the Flight view chart. Make your own from the chart's *Save as preset…*; rename, reorder, duplicate or delete here. |
 
 ## Journal

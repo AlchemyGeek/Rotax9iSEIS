@@ -6,7 +6,7 @@
 
 ## Why export a whole workspace
 
-The useful thing to share is rarely one number. It is "look at this engine" — the flights, the way the limits have been tolerated, the trend that worried you. A workspace export carries all of that in one file, so the person at the other end sees your Flight views, your Trends and your Journal rather than a screenshot and a description.
+The export is also how a workspace moves between browsers or computers, and your backup against the browser clearing its storage — the same file does all three. The useful thing to share is rarely one number. It is "look at this engine" — the flights, the way the limits have been tolerated, the trend that worried you. A workspace export carries all of that in one file, so the person at the other end sees your Flight views, your Trends and your Journal rather than a screenshot and a description.
 
 ## What the export contains
 

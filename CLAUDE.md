@@ -2,7 +2,7 @@
 
 ## How the project is run
 
-- Design is spec-first. Every behaviour is owned by one of `docs/specs/01`–`14`; a change to
+- Design is spec-first. Every behaviour is owned by one of `docs/specs/01`–`15`; a change to
   behaviour is a revision of the owning spec (revision-history row, same numbering and scope
   conventions), never a standalone addendum. Prompts to Code are functional; Code owns the
   implementation decisions.
@@ -16,9 +16,21 @@
 ## Branches
 
 - `main` — releasable. Bug fixes are committed here directly.
-- `pyodide` — all Pyodide (in-browser engine) work. Merge `main` into it to pick up fixes;
-  a bug found during Pyodide work is fixed on `main` first.
-- `webui` — merged into `main` at 1.0.0; kept for history, no new work.
+- `webui` (merged at 1.0.0) and `pyodide` (merged at 1.1.0) — kept for history, no new work.
+  Feature work of that size goes on a branch off `main`, merged back as a release; `main` is
+  merged into it along the way to pick up fixes, and a bug found on the branch is fixed on
+  `main` first.
+
+## Two hosts, one engine
+
+The host (`slingology_eis/host.py`) owns the operations and knows nothing about transport;
+`server.py` is HTTP, `browser_host.py` is the Pyodide Web Worker entry. A new operation goes in
+the host, is gated in the UI by `get_capabilities` (never by which host it is), and is covered
+by the operations tests, which run three ways — in-process, over HTTP, and under Pyodide in
+Node.js (`web/scripts/node-host.mjs`; needs `npm ci` in `web/`). Anything that reads raw logs
+goes through a `LogSource` and must stay a resumable coroutine (one file outstanding), since in
+the browser the page supplies the bytes. `PYODIDE_VERSION` pins the runtime; a change there
+means re-running the browser parity and persistence checks under `spike/`.
 
 ## Real flight-log test data
 
@@ -67,15 +79,19 @@ Rules for the data:
 ```bash
 cd web
 npm ci
-npx vitest run        # 169 tests; exits 1 today on a jsdom scrollIntoView error (BACKLOG P5)
-npm run build         # tsc -b + vite build → web/dist/, which `slingology-eis serve` serves
+npx vitest run        # 198 tests; exits 1 today on a jsdom scrollIntoView error (BACKLOG P5)
+npm run build         # server-mode UI → web/dist/, which `slingology-eis serve` serves
+npm run build:browser # the static site for the browser mode (UI, runtime.json, Pyodide, wheel)
+npm run dev:browser   # browser mode under Vite, engine wheel built into public/engine/
 ```
 
-Verify UI changes live: `slingology-eis serve` and open `http://127.0.0.1:8420/`
-against a copy of a real workspace, never the owner's own — point
-`SLINGOLOGY_EIS_HOME` at a throwaway data root so nothing touches the real
-registry. A server started before a code change serves the old RPC surface;
-restart it before blaming the page. Fixtures under
+Verify UI changes live in both modes: `slingology-eis serve` and open
+`http://127.0.0.1:8420/` against a copy of a real workspace, never the owner's
+own — point `SLINGOLOGY_EIS_HOME` at a throwaway data root so nothing touches
+the real registry; and the static build in headless Chrome via
+`spike/browser-host/run_parity.py` (byte-identical to server mode) and
+`run_walkthrough.py`. A server started before a code change serves the old RPC
+surface; restart it before blaming the page. Fixtures under
 `web/src/fixtures/` are synthetic or scrubbed (`web/scripts/gen_cas_fixture.py`);
 they carry no tail number, GPS, airport or real time.
 

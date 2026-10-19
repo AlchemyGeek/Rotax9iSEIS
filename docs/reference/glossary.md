@@ -72,6 +72,8 @@
 
 **Still building** — The reference does not yet have n_min flights for this metric; the number is shown, the comparison withheld.
 
+**Storage** — Where the app keeps your workspaces when it runs in your browser: the browser's private storage for the site, on this device. Shown under *Settings → App*. Logs are never kept there.
+
 **Sync** — Rescan the workspace's folders for new or moved logs and offer to analyse them.
 
 **Topic** — One thing the app watches, with a card on every Flight view.
@@ -82,6 +84,6 @@
 
 **Unverified / not yet validated** — The topic runs on this engine model but no data from such an aircraft has yet confirmed it behaves sensibly.
 
-**Workspace** — The app's view of one aircraft: its log folders plus everything derived and every decision made.
+**Workspace** — The app's view of one aircraft: its log folders plus everything derived and every decision made. Lives in the browser it was made in (or, when the app runs as a program, in its data folder); moves by export and import.
 
 **z-threshold** — How many standard deviations from your usual a reading must be to count as unusual. Default 2.0.

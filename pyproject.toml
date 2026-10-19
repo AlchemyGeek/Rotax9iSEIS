@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slingology-eis"
-version = "1.0.1"
+version = "1.1.0"
 description = "Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -49,6 +49,3 @@ include = ["slingology_eis*"]
 # unresolved gap engines/*.json already has for a genuinely installed
 # wheel, not a new one.
 slingology_eis = ["help/topics.md"]
-# The runtime files (_data/) and the built UI (_web/) are added to the
-# wheel by setup.py's build step, copied from the repo root and web/dist;
-# slingology_eis/resources.py reads them when not in a checkout.

@@ -15,6 +15,136 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
+## 1.1.0 — October 19, 2026
+
+**The in-browser release.** The merge of the `pyodide` branch into `main`. SlingologyEIS now
+runs in two ways over one engine: as before, a local server on your own computer
+(`slingology-eis serve`), and new, **entirely inside your browser** from a hosted static site —
+the Python engine runs in a Web Worker under Pyodide, your workspace lives in the browser's own
+storage, and your logs are read from the folder you point at and never leave your device. Both
+modes produce byte-identical analyses. Also in this release: the pilot documentation site, the
+Slingology visual identity, and a second Garmin AXIS log's findings.
+
+**Existing workspaces:** the version jump from 1.0.0 marks every stored flight for re-analysis
+on the next Sync. Say yes once. The only analysis change since 1.0.0 is the AXIS CAS alias
+normalisation (1.0.1 below); G3X logs are unaffected.
+
+### Running in the browser (Spec 04 Part B)
+
+- **Open the hosted site and it works.** No install. On first visit the page loads the pinned
+  Pyodide runtime, numpy, pandas and the engine wheel into a Web Worker; later visits are a
+  warm start of a few seconds, with the loading state shown. The runtime is self-hosted with the
+  site, not fetched from a CDN. (Working with no network at all — a service worker precaching
+  the runtime — is the next step, BACKLOG P1.)
+- **Your workspace is in the browser.** The data root — the same `registry.json`, settings and
+  `workspaces/<id>/` layout the server writes to disk — lives in the browser's origin private
+  file system (OPFS), confirmed to persist across reloads and browser restarts on macOS Chrome
+  and Safari. Settings → App → *Storage* shows the space used in total and per workspace, whether
+  storage is persistent, *Export all*, and *Delete all data* (back to first run without a reload).
+- **Your logs are read from your folder.** Flights has *Choose folder…*: Chrome keeps the folder
+  handle between visits (an *Allow access* prompt on return); Safari can't, so each visit offers
+  *Not connected — reconnect* with a one-time note that analyses are already here and
+  reconnecting is only needed to sync or open charts. Dropped folders work in both. A folder is
+  listed once per session and again only on Sync, reconnect or add; Flights opens from the
+  stored documents alone without re-reading any log (each known log's path, size and modified
+  time are recorded beside its fingerprint). A file over 100 MB is refused with a message.
+- **One host, three transports.** The 90 operations, their dispatcher and the active-workspace
+  context moved from the HTTP server into a transport-neutral host (`slingology_eis/host.py`);
+  `server.py` is now only HTTP, and `browser_host.py` is the worker's Python entry. Every
+  operation that reads raw logs is a coroutine that pauses on a file request the page fulfils —
+  the server and CLI, whose sources read from disk, run it inline and behave exactly as before.
+  The scan streams: one log read at a time, every byte-dependent step done while it is in hand,
+  then released. The same operations tests run in-process, over HTTP, and under Pyodide in
+  Node.js.
+- **The page asks the host what it can do**, never which host it is: `runtime.json` names the
+  mode (`{"host":"server"}`, served by `serve` itself, or `{"host":"browser", …}` shipped with
+  the static site), and the UI gates each control on `get_capabilities` (choose a folder, add a
+  folder by path, persistent-storage status, data location, download URLs). Server-only
+  operations answer `UNSUPPORTED_IN_HOST`. A missing `runtime.json` says *This installation is
+  incomplete* rather than guessing.
+- **Measured** (Spec 04 §7): the 120-log test set synced in headless Chrome from the static
+  build — all 58 flight analyses and the export's documents byte-identical to server mode; heap
+  peak 277 MB; a rule-edit preview ≈180 ms, so Spec 14's preview is live in both modes. iPad is
+  deferred, not a current target.
+- **What the browser mode can't do:** choose a data location (storage is the browser's), add a
+  folder by typed path, or hand the OS a download URL — exports arrive as ordinary browser
+  downloads.
+
+### Packaging
+
+- **`pip install slingology-eis` then `slingology-eis serve` needs no Node.** The wheel carries
+  the built web UI as package data, with the engine profiles and topic help, so the server mode
+  runs from the wheel alone. The git-checkout path (`npm run build`) remains for development.
+- **Static-site build target:** `npm run build:browser` emits one folder — `index.html`, the UI,
+  `runtime.json`, the pinned Pyodide files and the engine wheel — for any static host. Nothing
+  depends on cross-origin isolation, so GitHub Pages serves it. The Pyodide version is pinned in
+  `PYODIDE_VERSION`.
+- **CI** builds the wheel and the static site from the same commit and runs the Python suite,
+  the web tests, and the operations tests under Pyodide in Node.
+
+### Pilot documentation site
+
+- `docs/` now holds the pilot documentation, built with MkDocs Material and published to
+  **https://alchemygeek.github.io/Rotax9iSEIS/**: thirteen concept pages (what EIS tells you,
+  why FADEC is different, logs/flights/workspaces, phases of flight, limits and events, topics
+  and insights, your reference, your decisions, the Journal, Trends, cylinder balance, sharing a
+  workspace, the topics), four walkthroughs (first workspace, first flight, insight to decision,
+  export/import), and reference pages (OM limits generated from `engines/*.json`, settings,
+  glossary, further reading). Each concept page carries an *In brief* block on top and *how it
+  works* below, with hand-drawn diagrams and screenshots from a real workspace; derivations are
+  left to the specs and the research paper. `docs/README-docs.md` says how to build it. The
+  specs and research paper stay under `docs/` for developers, outside the site's navigation.
+
+### Branding (Spec 15)
+
+- SlingologyEIS takes its place in the Slingology app family: the shared aircraft-silhouette
+  icon and **SLINGOLOGY / EIS** wordmark, and EIS's own colour, a muted slate-blue (`#3D5A73`)
+  chosen to stay clear of the severity and phase palettes. Applied to the web UI (logos,
+  favicons) and the documentation site.
+
+### Garmin AXIS, second log (Spec 01 v0.24) — engine 1.0.1
+
+- The AXIS column set **varies between logs** (102 columns on one, 117 on the next —
+  autopilot and terrain/traffic fields appear only when used); mapping is by column name,
+  unknown columns are tolerated, and nothing depends on column count or position.
+- **AXIS CAS wording is normalised to the G3X's** through a per-source alias table (*EFIS ON
+  BACKUP* → *EFIS ON BKUP*, *NAV ON BACKUP* → *NAV ON BKUP*), joined with ` / ` as the G3X
+  does; *TER N/A* is matched before the splitter so its `/` isn't read as a separator. This is
+  the 1.0.1 engine bump: a stored AXIS analysis from 1.0.0 names those alerts differently.
+- A log that opens with the engine already running raises nothing beyond
+  `LOG_RESAMPLED_TO_1HZ`. Whether AXIS names the ECU alert `ENGINE ECU` is still unconfirmed —
+  neither AXIS log carries one.
+
+### Fixes
+
+- **CLI: a configured data location wins.** With `SLINGOLOGY_EIS_HOME` or a chosen location set
+  and no `--workspace`, a command uses that location's active workspace, and stops with a usage
+  error (naming the folder and how to create a workspace) if it has none — nothing is written to
+  a checkout's `data/` any more. The developer-checkout fallback applies only when nothing is
+  configured.
+- A first run with no workspace shows an empty Journal and real Settings instead of an error or
+  the sample page.
+- *Delete all data* returns to the first-run state in place; the progress line counts analysed
+  flights; a folder can't be listed twice in one walk.
+
+### Tests
+
+- Python suite: 910 tests at the last branch commit (unit, contract, CLI, characterization, and
+  the operations tests three ways); web: 198 vitest tests; browser parity and UI walk-through
+  runs under `spike/browser-host/`; the OPFS persistence probe under `spike/persistence/`.
+
+### Known at release
+
+- `npx vitest run` still exits non-zero on the jsdom `scrollIntoView` error (BACKLOG P5)
+  although every test passes.
+- Browser mode is validated on macOS Chrome and Safari only; iPad is deferred. Safari does not
+  keep folder access between visits (by design of the browser).
+- The browser mode needs the network to load the runtime on each visit until the service worker
+  lands (BACKLOG P1). Pyodide interpreter snapshots, which would cut the warm start further, are
+  experimental and not used.
+
+---
+
 ## 1.0.0 — October 17, 2026
 
 **The web UI release.** This is the merge of the `webui` branch into `main`: everything built

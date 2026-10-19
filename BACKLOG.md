@@ -1,10 +1,10 @@
 # SlingologyEIS — Backlog
 
-Last updated: October 17, 2026 (the 1.0.0 merge of `webui` into `main`)
-Toolkit version: 1.0.0 · Research paper: Edition 0.3
+Last updated: October 19, 2026 (the 1.1.0 merge of `pyodide` into `main`)
+Toolkit version: 1.1.0 · Research paper: Edition 0.3
 
-Open work, organised by the spec or area that owns it. Everything completed between 0.11.0 and
-1.0.0 is in [CHANGELOG.md](CHANGELOG.md); this file no longer carries struck-through history.
+Open work, organised by the spec or area that owns it. Everything completed is in
+[CHANGELOG.md](CHANGELOG.md); this file no longer carries struck-through history.
 Each item names its type — **code**, **design**, **research**, **docs** — and, where one exists,
 the spec section that already designed it. Nothing here is scheduled; the next phase of the
 program is decided when the current screen reviews finish (see §2).
@@ -13,31 +13,32 @@ program is decided when the current screen reviews finish (see §2).
 
 ## 1. Platform and hosting
 
-### P1. In-browser analysis under Pyodide (static hosting)
-**Type:** code · **Owner:** Spec 04 (decision GO, Part B), Spec 02 §5.9
-The chosen hosting path: a static site Stathis hosts, with the engine running in the user's
-browser so logs never leave the device. Spec 04's Part A harness proved parity, speed and memory
-on macOS Chrome/Safari and iPad Safari with numpy + pandas only. Needs Part B's browser-worker
-adapter and the IndexedDB realization of the workspace (Spec 02 §5.9, not built). The local
-server mode stays supported alongside it, not replaced.
+### P1. Browser mode — offline and polish (Spec 04 step 6)
+**Type:** code · **Owner:** Spec 04 §9.5, Q10
+Shipped in 1.1.0: the app runs in the browser from a static site with a self-hosted runtime.
+Left from the plan: the service worker that precaches the runtime and wheel so a visited site
+opens and analyses with no network (closes Spec 04 S5); wire the persistent-storage request and
+the eviction notice fully; a support checklist (which browsers, what storage means); Pyodide interpreter snapshots to cut the warm
+start below "a few seconds" once the API is stable on Safari (D13); iPad as a target (deferred —
+folder access and storage on iPad still to be assessed).
 
-### P2. Easy self-hosting
-**Type:** code · **Owner:** Spec 04 Part B
-A one-command local hosting option (Docker, Synology) for users who want the server mode without
-a Python/Node setup.
+### P2. Easy self-hosting of the server mode
+**Type:** code · **Owner:** Spec 04 D7 (option D)
+A one-command option (Docker, Synology) for users who want the server mode without a Python
+setup. The browser mode's static site already runs on any static host.
 
-### P3. Packaged build — no Node for pilots
-**Type:** code
-`serve` needs `web/dist/`, which today only `npm` produces, so every pilot installs Node once.
-Ship a built UI (a release artifact or a wheel that includes `dist/`) so `pip install` is enough.
-Until then the README documents the one-time build.
+### P3. A browser-mode workspace on more than one device
+**Type:** design
+A browser-mode workspace lives in one browser on one device. Moving it is *Export all* →
+*Import*; there is no sync. Decide whether that stays the answer (it keeps the no-service
+promise) or whether an optional user-owned sync (a folder the user controls) is worth designing.
 
-### P4. Results bundle export and import
-**Type:** code · **Owner:** Spec 02 §7, Spec 03 §5.8
-`.eisbundle.json` / `.eisbundle.zip` — a self-describing snapshot of one flight, a subset or a
-whole workspace, openable cold on another device, with a *Previewing: not yet added to your
-workspace* path in the UI. `slingology-eis export-bundle` is a stub (exit 2). Prerequisite for
-community sharing (U4). Open: one format or two (Spec 02 Q2).
+### P4. Time-based engine instead of rows-as-seconds
+**Type:** code · **Owner:** Spec 01 §6.5 (decision 1)
+AXIS logs at ~0.83 Hz; the loader puts them on a 1-second grid (filled rows flagged) so the
+engine's row-counting paths (airborne minutes, phase minutes, overboost blocks, ECU run
+durations, cruise dwell, smoothing windows) stay correct. The honest long-term fix is
+`elapsed_s` arithmetic throughout. Hardening, not urgent.
 
 ### P5. Web test hygiene
 **Type:** code
@@ -45,12 +46,18 @@ community sharing (U4). Open: one format or two (Spec 02 Q2).
 (`Trends.tsx`'s panel scroll after a setTimeout) while all 169 tests pass. Stub it in the
 test setup or guard the call.
 
-### P6. Documentation site
-**Type:** docs · **Owner:** Spec 13 (deferred by decision until the app is complete)
-Two tiers — a casual-user tier (pictures, quick descriptions, steps) and a researcher tier (how
-things work) — searchable and askable through an AI assistant. Stathis will build the site; the
-README deliberately stops at getting the server running. Not to be started before the app is
-complete.
+### P6. Documentation site — next steps
+**Type:** docs · **Owner:** Spec 13
+The first edition shipped in 1.1.0 (concept pages, walkthroughs, reference; MkDocs Material on
+GitHub Pages). Open: retake the screenshot batch after each UI change; the generated "what's new"
+page the Settings → Engine tab points at; a browser-mode walkthrough (Choose folder, Storage,
+reconnect on Safari); searchable/askable via an AI assistant, as Spec 13 first imagined.
+
+### P7. Feedback channel for non-technical users
+**Type:** infrastructure
+A way for pilots without a GitHub account to report bugs and suggest features. Chosen:
+self-hosted Fider on the Synology NAS (DDNS hostname, Gmail sign-in mail, DSM reverse proxy),
+doubling as the self-hosting testbed for P2. Paused until after this release.
 
 ---
 
@@ -83,7 +90,7 @@ disable a topic (built, Spec 14). To be reassessed after U1.
 ### U4. Sharing insights and research with other pilots
 **Type:** design
 Users aren't software engineers, so sharing needs a simple path — possibly a custom website.
-Builds on P4. Community-wide aggregation of data remains out of scope.
+Builds on workspace export/import (shipped 1.0.0) and U6. Community-wide aggregation of data remains out of scope.
 
 ### U5. Fleet workspaces
 **Type:** design · **Owner:** Spec 02 §5.6 (interim)
@@ -257,22 +264,16 @@ handled. Needs a real pattern-work log to confirm before fixing.
 A log with an internal gap over 5 minutes is admitted as *corrupt log*; a mid-log POWERUP
 (the EIS restarting within one file) is not detected as such.
 
-### S4. AXIS: a time-based engine instead of rows-as-seconds
-**Type:** code · **Owner:** Spec 01 §6.5 (decision 1)
-AXIS logs at ~0.83 Hz; the loader puts them on a 1-second grid (filled rows flagged) so the
-engine's row-counting paths (airborne minutes, phase minutes, overboost blocks, ECU run durations,
-cruise dwell, smoothing windows) stay correct. The honest long-term fix is `elapsed_s` arithmetic
-throughout. Hardening, not urgent.
-
-### S5. AXIS: ENGINE ECU naming and power-up capture
+### S4. AXIS: ENGINE ECU naming and power-up capture
 **Type:** research · **Owner:** Spec 01 Q9, Q10
-Validated on one AXIS log, which carries no ECU alert and starts with the engine running.
-Confirm on the first AXIS log with an engine start and lane check that AXIS names the alert
-`ENGINE ECU` (else the classifier is untested on AXIS) and that power-up is captured at all.
+Two AXIS logs so far; neither carries an ECU alert and both start with the engine already
+running. Confirm on the first AXIS log with an engine start and lane check that AXIS names the
+alert `ENGINE ECU` (else the classifier is untested on AXIS) and that power-up is captured at all.
+The CAS alias table (Spec 01 v0.24) is where any other wording difference goes.
 Separately decide whether `onGroundState` should feed phase detection once the reference is
 AXIS-dominated — no change while G3X and AXIS flights share a reference.
 
-### S6. `log_summary()` on a log with no fuel-flow channel
+### S5. `log_summary()` on a log with no fuel-flow channel
 **Type:** code
 `loader.log_summary()` reads `cruise["fuel_flow_gph"]` guarded on `len(cruise)` only; a real log
 reaching cruise without that column would raise `KeyError` in `build_flight_metrics()`. Every
@@ -291,14 +292,15 @@ rework the characterization tests that run them live.
 
 ### H2. Research paper — Edition 0.4
 **Type:** docs (on explicit instruction only)
-Edition 0.3 predates the branch. Known corrections: §7's "four in-flight ENGINE ECU events" is
+Edition 0.3 predates the web UI. Known corrections: §7's "four in-flight ENGINE ECU events" is
 superseded by the phase-based classifier's zero; the topic register (removed/Research topics,
-flight facts); the web UI, workspaces, filters, Trends change page and Journal; 53 flights.
+flight facts); the web UI, workspaces, filters, Trends change page and Journal; the AXIS source
+and its 1-second grid; 58 flights from 120 logs.
 
 ### H3. Community announcement
 **Type:** docs
-The Discord post draft in the project space, updated for 1.0.0 and the install steps in the
-README.
+The Discord post draft in the project space, updated for 1.1.0: the hosted site needs no
+install, the documentation site, and the `pip install` path for the server mode.
 
 ---
 

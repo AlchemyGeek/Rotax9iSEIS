@@ -31,5 +31,5 @@ server      : The local HTTP server — /rpc operations and the built web UI
 cli         : The `slingology-eis` command-line adapter
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 __author__  = "Slingology EIS Research"

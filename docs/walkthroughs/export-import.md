@@ -1,6 +1,6 @@
 # Export and import
 
-*Five minutes. How to hand your whole workspace — flights, decisions and all — to another pilot, your mechanic, or anyone helping you read your engine; and how to open one someone sent you.*
+*Five minutes. How to hand your whole workspace — flights, decisions and all — to another pilot, your mechanic, or anyone helping you read your engine; and how to open one someone sent you. The same export is your **backup**: the workspace lives in your browser's storage, and an export is the only copy that survives the site's data being cleared. Make one after each batch of decisions.*
 
 ## Exporting
 
