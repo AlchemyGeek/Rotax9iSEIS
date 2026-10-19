@@ -13,6 +13,13 @@
   web UI's Sync uses it to mark flights for re-analysis. Web-only changes don't bump it.
 - Rotax Operators Manuals are never stored in the repo; profiles cite them by edition.
 
+## Branches
+
+- `main` — releasable. Bug fixes are committed here directly.
+- `pyodide` — all Pyodide (in-browser engine) work. Merge `main` into it to pick up fixes;
+  a bug found during Pyodide work is fixed on `main` first.
+- `webui` — merged into `main` at 1.0.0; kept for history, no new work.
+
 ## Real flight-log test data
 
 The flight logs (G3X, and from October 2026 Garmin AXIS) used by the
