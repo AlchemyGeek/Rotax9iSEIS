@@ -15,6 +15,7 @@ import type {
   EngineLimitsResult,
   ExclusionsResult,
   ChangedSetting,
+  HostCapabilities,
   LogChannelRow,
   LogSourceFormat,
   ImportInfo,
@@ -178,6 +179,8 @@ export interface EngineClient {
   previewExcludedLog(filename: string): Promise<{ flight_analysis: FlightAnalysis; source_filename: string; source_format?: LogSourceFormat; filled_share?: number }>;
   // Spec 14 v0.14 §5.3 — Settings → Engine → Log channels.
   getLogChannels(): Promise<{ channels: LogChannelRow[] }>;
+  // Spec 04 v0.4 §9.5 — what this host can do. No view uses it yet.
+  getCapabilities(): Promise<HostCapabilities>;
   setChannelAssignment(raw: string, target: string | null): Promise<{ channels: LogChannelRow[] }>;
   getExcludedLogSeries(filename: string, channels: string[]): Promise<SeriesResult>;
 
@@ -535,6 +538,10 @@ export class LocalServerClient implements EngineClient {
 
   previewExcludedLog(filename: string) {
     return this.rpc<{ flight_analysis: FlightAnalysis; source_filename: string; source_format?: LogSourceFormat; filled_share?: number }>("preview_excluded_log", { filename });
+  }
+
+  getCapabilities() {
+    return this.rpc<HostCapabilities>("get_capabilities", {});
   }
 
   getLogChannels() {

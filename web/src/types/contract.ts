@@ -1014,6 +1014,24 @@ export interface ExclusionsResult {
   sender_missing?: SenderMissingFlight[];
 }
 
+// ── Host capabilities (Spec 04 v0.4 §9.5) ───────────────────────────────────
+
+// What the host the UI talks to can do. The UI gates on `features`, never
+// on `host`.
+export interface HostCapabilities {
+  host: "server" | "browser";
+  engine_version: string;
+  host_version: string;
+  features: {
+    data_location: boolean;
+    add_folder_by_path: boolean;
+    choose_folder: boolean;
+    persistent_storage_status: boolean;
+    download_url: boolean;
+    folder_watching: boolean;
+  };
+}
+
 // ── Log sources (Spec 01 v0.23 §6.5) ─────────────────────────────────────────
 
 export type LogSourceFormat = "g3x_direct" | "garmin_pilot" | "axis" | "unknown";

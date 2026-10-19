@@ -1,33 +1,91 @@
 """
-Tests for server.py (Spec 04 §9.2, the local-server adapter).
+Tests for the host's operations (Spec 04 v0.4 §9.1, §9.6), run two ways.
 
-Starts the real ThreadingHTTPServer on an OS-assigned ephemeral port
-(port=0) in a background thread per test, and shuts it down cleanly via
-.shutdown() — never calls run_server()/serve_forever() in-process, which
-would block the test suite forever (this broke `slingology-eis serve`'s
-old CLI stub test when `cmd_serve` was wired to the real server).
+Every test using the `server` or `registry_server` fixture runs twice:
+
+- **in_process** — straight against `host.reply()` / `dispatch()`, through
+  `InProcess`, a minimal transport that supplies the host what a real one
+  would (progress store, file delivery, uploads);
+- **http** — against the real ThreadingHTTPServer on an OS-assigned
+  ephemeral port (port=0) in a background thread, shut down cleanly via
+  .shutdown() — never run_server()/serve_forever() in-process, which
+  would block the suite forever.
+
+Test bodies call `rpc(handle, op, params)` and never know which. Tests that
+are about HTTP itself (status codes, routes) start their own server.
 """
 import base64
 import json
 import threading
 import urllib.request
+import uuid
+from pathlib import Path
 
 import pytest
 
 from slingology_eis import data_location
+from slingology_eis import host
+from slingology_eis import serialize
 from slingology_eis import workspace as ws
-from slingology_eis.server import build_server
+from slingology_eis.cli import resolve_logs_dir
+from slingology_eis.server import _decode_content, build_server
 
 
-@pytest.fixture
-def server(tmp_path):
-    httpd = build_server(logs_dir=None, workspace_dir=str(tmp_path), port=0, quiet=True)
+class InProcess:
+    """The in-process call path: the same envelopes, no HTTP. Base64 in a
+    request body is decoded as the HTTP transport would, so test bodies are
+    the same for both paths; replies go through the same JSON encoding."""
+
+    def __init__(self, workspace_arg=None):
+        self.downloads: dict = {}
+        self.ctx = {"scan_progress": {"active": False}, "location_progress": {"active": False}}
+        self.ctx.update(host.new_context(host="server", logs_dir=resolve_logs_dir(None), workspace_arg=workspace_arg,
+                                         emit_progress=self._emit, deliver_file=self._deliver))
+
+    def _emit(self, stream, update):
+        self.ctx[f"{stream}_progress"] = update
+
+    def _deliver(self, path, filename):
+        token = uuid.uuid4().hex
+        self.downloads[token] = Path(path)
+        return f"/download/{token}"
+
+    def call(self, op, params, request_id):
+        envelope = {"op": op, "request_id": request_id, "params": _decode_content(json.loads(json.dumps(params)))}
+        return json.loads(serialize.dumps(host.reply(envelope, self.ctx)))
+
+    def download(self, url_path):
+        return self.downloads.pop(url_path.rsplit("/", 1)[-1]).read_bytes()
+
+    def upload(self, data, filename):
+        upload_id = uuid.uuid4().hex
+        target = host.scratch_dir(self.ctx) / "uploads" / upload_id / filename
+        target.parent.mkdir(parents=True)
+        target.write_bytes(data)
+        self.ctx["uploads"][upload_id] = {"path": target, "filename": target.name}
+        return upload_id
+
+
+CALL_PATHS = ["in_process", "http"]
+
+
+def _serve(request, workspace_dir):
+    """A handle for one test: an InProcess transport, or a server's URL."""
+    if request.param == "in_process":
+        yield InProcess(workspace_dir)
+        return
+    httpd = build_server(logs_dir=None, workspace_dir=workspace_dir, port=0, quiet=True)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_port}"
     httpd.shutdown()
     httpd.server_close()
     thread.join(timeout=5)
+
+
+@pytest.fixture(params=CALL_PATHS)
+def server(request, tmp_path):
+    yield from _serve(request, str(tmp_path))
 
 
 @pytest.fixture
@@ -44,23 +102,20 @@ def isolated_packaged_home(tmp_path, monkeypatch):
     return home
 
 
-@pytest.fixture
-def registry_server(isolated_packaged_home):
-    """A server started with no --workspace and no workspaces ever
-    created — the registry-aware startup path, not the legacy one the
-    plain `server` fixture above exercises."""
-    httpd = build_server(logs_dir=None, workspace_dir=None, port=0, quiet=True)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{httpd.server_port}"
-    httpd.shutdown()
-    httpd.server_close()
-    thread.join(timeout=5)
+@pytest.fixture(params=CALL_PATHS)
+def registry_server(request, isolated_packaged_home):
+    """A host started with no --workspace and no workspaces ever created —
+    the registry-aware startup path, not the legacy one the plain `server`
+    fixture above exercises."""
+    yield from _serve(request, None)
 
 
-def rpc(base_url, op, params, request_id="r-1"):
+def rpc(handle, op, params, request_id="r-1"):
+    """One operation, by whichever path the fixture chose."""
+    if isinstance(handle, InProcess):
+        return handle.call(op, params, request_id)
     body = json.dumps({"op": op, "request_id": request_id, "params": params}).encode()
-    req = urllib.request.Request(f"{base_url}/rpc", data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(f"{handle}/rpc", data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read())
 
@@ -1994,3 +2049,66 @@ def test_log_channel_assignment_round_trip(registry_server):
     assert rpc(registry_server, "list_changed_settings", {})["result"]["settings"] == []
     assert not [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
     assert rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_reanalysis_flight_ids"] == [axis_id]
+
+
+# ── The host and its transports (Spec 04 v0.4 §9.1, §9.5) ─────────────────
+
+def test_get_capabilities(server):
+    d = rpc(server, "get_capabilities", {})
+    assert d["ok"], d
+    caps = d["result"]
+    from slingology_eis import __version__
+    assert caps["host"] == "server" and caps["engine_version"] == __version__ and caps["host_version"] == __version__
+    assert caps["features"] == {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
+                                "persistent_storage_status": False, "download_url": True, "folder_watching": False}
+
+
+def test_dispatcher_errors_have_distinct_codes(registry_server):
+    unknown = rpc(registry_server, "no_such_op", {})
+    no_workspace = rpc(registry_server, "scan_workspace", {})
+    assert not unknown["ok"] and unknown["error"]["code"] == "UNKNOWN_OP"
+    assert not no_workspace["ok"] and no_workspace["error"]["code"] == "NO_ACTIVE_WORKSPACE"
+    assert unknown["request_id"] == "r-1"
+    # Reserved for mode-specific operations called in the wrong host (§9.5).
+    assert {"UNKNOWN_OP", "NO_ACTIVE_WORKSPACE", "UNSUPPORTED_IN_HOST"} <= set(host.ERROR_CODES)
+
+
+def test_host_and_http_transport_stay_apart():
+    """The host knows nothing about HTTP; server.py holds no operations and
+    reaches the workspace layer only through the host."""
+    import ast
+    import inspect
+    from slingology_eis import server as srv
+
+    def imported(mod):
+        tree = ast.parse(inspect.getsource(mod))
+        names = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                names |= {a.name for a in n.names}
+            elif isinstance(n, ast.ImportFrom):
+                names.add(("." * n.level) + (n.module or ""))
+                names |= {a.name for a in n.names}
+        return names
+
+    assert not {"http.server", "http", "urllib", "base64", "socketserver"} & imported(host)
+    assert not {"workspace", ".workspace", "operations", ".operations", "filters", ".filters"} & imported(srv)
+    assert not [n for n in dir(srv) if n.startswith("op_")]
+
+
+def test_scan_progress_goes_through_the_transports_emit_progress(isolated_packaged_home, tmp_path):
+    """Spec 04 D5: the host reports progress through the transport's
+    emit_progress; it doesn't keep the polling store itself."""
+    updates = []
+    ctx = host.new_context(emit_progress=lambda stream, u: updates.append((stream, u)),
+                           deliver_file=lambda p, n: "unused")
+    host.dispatch("create_workspace", {"name": "P", "engine_model": "916iS"}, ctx)
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "log_20260101_120000_TEST.csv").write_bytes(_flying_log_bytes())
+    host.dispatch("add_log_folder", {"path": str(logs)}, ctx)
+    host.dispatch("scan_workspace", {}, ctx)
+    assert {s for s, _ in updates} == {"scan"}
+    assert updates[0][1] == {"active": True, "phase": "starting"} and updates[-1][1] == {"active": False}
+    assert any(u.get("active") and u.get("phase") != "starting" for _, u in updates)   # per-log updates
+    assert "scan_progress" not in ctx and not ctx["running"]
