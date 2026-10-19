@@ -1,3 +1,4 @@
+import { appUrl } from "./appBase";
 import type { DataLocation, DataLocationAssessment, DataLocationChange, DataLocationProgress, ScanOptions } from "../types/contract";
 import type {
   ActiveWorkspace,
@@ -727,18 +728,35 @@ export type Runtime =
 let runtimePromise: Promise<{ runtime: Runtime; client: EngineClient }> | null = null;
 let resolvedClient: EngineClient | null = null;
 
-async function loadRuntime(): Promise<Runtime> {
+async function readRuntime(url: URL): Promise<Runtime | { retry: string }> {
   try {
-    const res = await fetch(new URL("runtime.json", document.baseURI), { cache: "no-store" });
-    if (!res.ok) return { host: "incomplete", message: `runtime.json: HTTP ${res.status}` };
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return { retry: `${url.href}: HTTP ${res.status}` };
     const r = await res.json();
     if (r.host === "server") return { host: "server" };
     if (r.host === "browser" && r.pyodide && r.pyodide_url && r.engine_wheel) return r;
-    return { host: "incomplete", message: "runtime.json names no host this page knows" };
+    return { host: "incomplete", message: `${url.href} names no host this page knows` };
   } catch (e) {
-    return { host: "incomplete", message: `runtime.json couldn't be read (${e instanceof Error ? e.message : String(e)})` };
+    return { retry: `${url.href} couldn't be read (${e instanceof Error ? e.message : String(e)})` };
   }
 }
+
+// Resolved against the app's base, not the document's URL (step 6); a
+// failed fetch is tried once more after a short pause — a restored Safari
+// tab has been seen to get one 404 that a reload cleared. The message
+// names the URL that was tried.
+async function loadRuntime(retryDelayMs = 400): Promise<Runtime> {
+  const url = appUrl("runtime.json");
+  let r = await readRuntime(url);
+  if ("retry" in r) {
+    await new Promise((ok) => setTimeout(ok, retryDelayMs));
+    r = await readRuntime(url);
+  }
+  return "retry" in r ? { host: "incomplete", message: r.retry } : r;
+}
+
+/** Test hook: the runtime read, with no cached answer. */
+export const __loadRuntimeForTest = loadRuntime;
 
 class IncompleteClient {
   readonly message: string;
@@ -754,7 +772,10 @@ export function getRuntime(): Promise<{ runtime: Runtime; client: EngineClient }
       let client: EngineClient;
       if (runtime.host === "browser") {
         const { BrowserWorkerClient } = await import("./browserClient");
-        client = new BrowserWorkerClient(runtime);
+        const browser = new BrowserWorkerClient(runtime);
+        client = browser;
+        // Step 6: the site's offline cache — browser host only, never server mode.
+        void import("./serviceWorker").then(({ registerSiteWorker }) => registerSiteWorker(() => browser.isBusy()));
       } else if (runtime.host === "server") {
         client = new LocalServerClient(import.meta.env.DEV ? "http://127.0.0.1:8420" : window.location.origin);
       } else {

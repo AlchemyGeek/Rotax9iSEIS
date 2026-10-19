@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getRuntime, type Runtime } from "../lib/engineClient";
 import { EVICTION_MARKER, type EngineStatus, type StatusSource } from "../lib/hostState";
+import { servedFromDevice, takeUpdateNotice } from "../lib/serviceWorker";
 
 // Spec 03 v0.24 §6.3, Spec 04 v0.7 §9.4–§9.5: what the app shows before a
 // page can run — the in-browser engine loading on a first visit, an
@@ -27,6 +28,8 @@ export function EngineGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [slow, setSlow] = useState(false);
   const [evictionDismissed, setEvictionDismissed] = useState(false);
+  const [fromDevice] = useState(servedFromDevice);
+  const [updatedTo, setUpdatedTo] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -35,7 +38,10 @@ export function EngineGate({ children }: { children: ReactNode }) {
     const t = setTimeout(() => setSlow(true), 400);
     getRuntime().then(({ runtime: r, client }) => {
       setRuntime(r);
-      if (r.host === "browser") unsubscribe = (client as unknown as StatusSource).onStatus(setStatus);
+      if (r.host === "browser") {
+        unsubscribe = (client as unknown as StatusSource).onStatus(setStatus);
+        void takeUpdateNotice().then(setUpdatedTo);
+      }
     });
     return () => { clearTimeout(t); unsubscribe(); };
   }, []);
@@ -73,10 +79,22 @@ export function EngineGate({ children }: { children: ReactNode }) {
       return (
         <Screen>
           <div role="status" data-testid="engine-loading" style={PANEL}>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setting up the analysis engine…</div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-              About 30 MB, once — after this it opens in about a second. Everything runs in this browser; your logs never leave your computer.
-            </div>
+            {fromDevice ? (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Starting the analysis engine…</div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  Loading from this device — no download needed. Everything runs in this browser; your logs never leave your computer.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setting up the analysis engine…</div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+                  Downloading about 30 MB, once — after this it opens from this device in a few seconds, with or without a network.
+                  Everything runs in this browser; your logs never leave your computer.
+                </div>
+              </>
+            )}
             <div style={{ height: 6, borderRadius: 3, background: "var(--panel-control)", overflow: "hidden" }}>
               <div style={{ width: `${Math.round((100 * done) / total)}%`, height: "100%", background: "var(--brand-tint)", transition: "width .3s" }} />
             </div>
@@ -112,7 +130,19 @@ export function EngineGate({ children }: { children: ReactNode }) {
     }
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {updatedTo && (
+        // Step 6: said once, after the page has switched to a new release.
+        <div role="status" data-testid="update-notice" style={{ position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 1000,
+          ...PANEL, padding: "10px 14px", display: "flex", alignItems: "center", gap: 14, fontSize: 12, boxShadow: "0 4px 18px rgba(0,0,0,0.4)", border: "1px solid var(--border)" }}>
+          <span>Updated to version {updatedTo}</span>
+          <button type="button" style={{ ...BUTTON, padding: "4px 10px", fontSize: 11 }} onClick={() => setUpdatedTo(null)}>Dismiss</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 function clearMarker() {

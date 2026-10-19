@@ -26,8 +26,57 @@ describe("EngineGate", () => {
     state.status = { phase: "loading", step: "numpy and pandas", done: 1, total: 4 };
     render(<EngineGate><div>app</div></EngineGate>);
     const loading = await screen.findByTestId("engine-loading", {}, { timeout: 2000 });
-    expect(loading.textContent).toContain("About 30 MB, once");
+    expect(loading.textContent).toContain("Downloading about 30 MB, once");
     expect(screen.queryByText("app")).toBeNull();
+  });
+
+  it("a later visit served by the offline cache says it loads from this device", async () => {
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { controller: {} } });
+    try {
+      state.runtime = BROWSER;
+      state.status = { phase: "loading", step: "numpy and pandas", done: 1, total: 4 };
+      render(<EngineGate><div>app</div></EngineGate>);
+      const loading = await screen.findByTestId("engine-loading", {}, { timeout: 2000 });
+      expect(loading.textContent).toContain("Loading from this device");
+      expect(loading.textContent).not.toContain("Downloading");
+    } finally {
+      delete (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
+    }
+  });
+
+  it("after a switch to a new release, says so once", async () => {
+    let release = "aaaa1111";
+    vi.stubGlobal("caches", { match: async () => new Response(JSON.stringify({ release, version: "1.0.2" })) });
+    try {
+      localStorage.setItem("slingology-eis-site-release", JSON.stringify({ release: "old0000", version: "1.0.1" }));
+      state.runtime = BROWSER;
+      state.status = { phase: "ready", engineVersion: "1.0.2", pyodideVersion: "0.28.0", registryPresent: true };
+      const { unmount } = render(<EngineGate><div>app</div></EngineGate>);
+      expect((await screen.findByTestId("update-notice")).textContent).toContain("Updated to version 1.0.2");
+      unmount();
+      render(<EngineGate><div>app</div></EngineGate>);             // the next load: nothing new
+      await screen.findByText("app");
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByTestId("update-notice")).toBeNull();
+      release = "aaaa1111";
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a first visit's cache is recorded silently, not announced", async () => {
+    vi.stubGlobal("caches", { match: async () => new Response(JSON.stringify({ release: "r1", version: "1.0.1" })) });
+    try {
+      state.runtime = BROWSER;
+      state.status = { phase: "ready", engineVersion: "1.0.1", pyodideVersion: "0.28.0", registryPresent: true };
+      render(<EngineGate><div>app</div></EngineGate>);
+      await screen.findByText("app");
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByTestId("update-notice")).toBeNull();
+      expect(localStorage.getItem("slingology-eis-site-release")).toContain("r1");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("says the installation is incomplete when runtime.json is missing", async () => {

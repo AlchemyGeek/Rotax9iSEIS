@@ -3,6 +3,7 @@
 // POST /rpc. Every operation method is inherited; only the transport and
 // the few calls that move bytes or poll progress differ.
 
+import { appUrl } from "./appBase";
 import { EngineRpcError, LocalServerClient, type SeriesResult, type UploadFile } from "./engineClient";
 import { PageFolders, MAX_LOG_BYTES, type FolderState } from "./pageFolders";
 import type { DataLocationProgress, ScanProgress, WorkspaceManifest } from "../types/contract";
@@ -83,6 +84,11 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     }
   }
 
+  /** An operation is running (the offline cache waits for idle before switching release). */
+  isBusy(): boolean {
+    return this.busy > 0;
+  }
+
   onStatus(fn: (s: EngineStatus) => void): () => void {
     this.statusListeners.add(fn);
     fn(this.status);
@@ -98,9 +104,13 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     this.ready = new Promise((resolve) => { this.markReady = resolve; });
     this.worker = this.makeWorker();
     this.worker.onmessage = (ev) => this.onMessage(ev.data);
-    this.worker.onerror = () => this.restart();
-    const wheelUrl = new URL(this.runtime.engine_wheel, document.baseURI).href;
-    const pyodideUrl = new URL(this.runtime.pyodide_url.replace(/\/?$/, "/"), document.baseURI).href;
+    this.worker.onerror = (e) => {
+      // Said in the console so a restart can be diagnosed (the page says it once, §9.2).
+      console.error("engine worker stopped:", e?.message ?? "(no message)", e?.filename ?? "", e?.lineno ?? "");
+      this.restart();
+    };
+    const wheelUrl = appUrl(this.runtime.engine_wheel).href;
+    const pyodideUrl = appUrl(this.runtime.pyodide_url.replace(/\/?$/, "/")).href;
     this.worker.postMessage({ type: "init", pyodideUrl, wheelUrl });
   }
 

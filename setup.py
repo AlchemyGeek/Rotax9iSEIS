@@ -8,7 +8,7 @@ are copied from the repo root into the package as `slingology_eis/_data/`,
 and the built web UI (`web/dist`, if present) as `slingology_eis/_web/`.
 The repo root stays the source of truth; a developer checkout reads it
 directly (slingology_eis/resources.py). Static-site extras in web/dist
-(the engine wheel, the Pyodide files, runtime.json) aren't carried.
+(the engine wheel, the Pyodide files, runtime.json, sw.js) aren't carried.
 """
 import shutil
 from pathlib import Path
@@ -19,7 +19,7 @@ from setuptools.command.build_py import build_py
 ROOT = Path(__file__).resolve().parent
 RUNTIME_FILES = ["config.json", "insight_rules.json", "chart_presets.json", "docs/specs/topics/register.json"]
 RUNTIME_GLOBS = ["engines/*.json"]
-SITE_ONLY = {"engine", "pyodide", "runtime.json"}
+SITE_ONLY = {"engine", "pyodide", "runtime.json", "sw.js"}
 
 
 class BuildWithRuntimeData(build_py):
