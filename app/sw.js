@@ -1,10 +1,11 @@
 self.__EIS_MANIFEST = {
- "release": "649fc3e30419efc0",
+ "release": "fd9d299d0ceca02e",
  "version": "1.0.1",
+ "commit": "18ffd8d",
  "files": {
   "Silingology-EIS-logo.png": "1b55c3a3c38dab6c",
   "SlingologyEIS_logo_transparent.png": "664ebca64925799c",
-  "assets/browserClient-CnoaFwG5.js": "f2430b6e1b4567e3",
+  "assets/browserClient-CyIsY5Lk.js": "8fbdfa8d008983ce",
   "assets/engine.worker-DH7J8_d6.js": "9ce92d315e46323f",
   "assets/ibm-plex-mono-latin-400-normal-Dm_PoFIZ.woff2": "3c5a451f9ec27a35",
   "assets/ibm-plex-mono-latin-400-normal-O6-GRVqx.woff": "d3d6fff8a9eaa4bf",
@@ -20,17 +21,17 @@ self.__EIS_MANIFEST = {
   "assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2": "8960851d691c054e",
   "assets/ibm-plex-sans-latin-700-normal-Bth3BMcD.woff": "973b42f17d4dbb83",
   "assets/ibm-plex-sans-latin-700-normal-Bxkt5Cjx.woff2": "42e7b0c143c19df9",
-  "assets/index-BevQV8pE.js": "ed270a1276795760",
+  "assets/index-CFP8uHfJ.js": "705f7f66e2419d7f",
   "assets/index-CzmXDInl.css": "d9b2aaaa1d92bc2f",
   "eis-mark.png": "458def2bf9afd4cd",
   "eis_icon_square.png": "2ab227ef14a1453e",
-  "engine/slingology_eis-1.0.1-py3-none-any.whl": "f1759c988bf10dfa",
+  "engine/slingology_eis-1.0.1-py3-none-any.whl": "57b8c40c5b8c65e3",
   "favicon-16.png": "0f9370e4b7acc27d",
   "favicon-180.png": "b0e59135daf5cef7",
   "favicon-32.png": "70d6375315536da2",
   "favicon-512.png": "a6a1b84026eef632",
   "icons.svg": "b45fa506195cfcde",
-  "index.html": "3ea4901359d777ce",
+  "index.html": "e9a8a31e5edac610",
   "pyodide/MANIFEST.json": "96a8ea32e11f484b",
   "pyodide/numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl": "467a88e8c79f9e10",
   "pyodide/pandas-2.3.0-cp313-cp313-pyodide_2025_0_wasm32.whl": "921a819fd1d60b69",
@@ -51,7 +52,7 @@ self.__EIS_MANIFEST = {
 //
 // scripts/build_site.py writes this file into the built site with the
 // release manifest prepended as `self.__EIS_MANIFEST`:
-//   { release: "<hash of every file>", version: "<package version>",
+//   { release: "<hash of every file>", version: "<package version>", commit: "<git commit>",
 //     files: { "<path relative to the site>": "<sha256 of that file>" } }
 // It is not part of `npm run build` and never served by `slingology-eis
 // serve`; the page registers it only when runtime.json says "browser".
