@@ -357,11 +357,15 @@ class AppSettings:
     # key in that dict for v0.1 (§6.5).
     chart_presets: list = field(default_factory=list)
     flight_chart: dict = field(default_factory=dict)
+    # Spec 15 §6: the display theme, "dark" | "light" — the pilot's
+    # preference, not the aircraft's, so app-level like units.
+    theme: str = "dark"
 
     def to_dict(self) -> dict:
         return {
             "units": self.units, "last_active_workspace_id": self.last_active_workspace_id,
             "chart_presets": self.chart_presets, "flight_chart": self.flight_chart,
+            "theme": self.theme,
         }
 
     @classmethod
@@ -369,6 +373,7 @@ class AppSettings:
         return cls(
             units=d.get("units", "imperial"), last_active_workspace_id=d.get("last_active_workspace_id"),
             chart_presets=d.get("chart_presets") or [], flight_chart=d.get("flight_chart") or {},
+            theme=d.get("theme") if d.get("theme") in ("dark", "light") else "dark",
         )
 
 

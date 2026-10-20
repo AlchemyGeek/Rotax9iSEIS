@@ -650,6 +650,16 @@ def test_app_and_workspace_settings_round_trip(registry_server):
     got = rpc(registry_server, "get_app_settings", {})
     assert got["result"]["units"] == "metric"
 
+    # Spec 15 §6: the theme is an app setting, dark by default; a save that
+    # leaves a key out (a page predating it) keeps the stored value.
+    assert got["result"]["theme"] == "dark"
+    rpc(registry_server, "save_app_settings", {"settings": {**got["result"], "theme": "light"}})
+    rpc(registry_server, "save_app_settings", {"settings": {"units": "imperial", "last_active_workspace_id": None}})
+    got = rpc(registry_server, "get_app_settings", {})
+    assert got["result"]["theme"] == "light" and got["result"]["units"] == "imperial"
+    rpc(registry_server, "save_app_settings", {"settings": {"theme": "sepia"}})
+    assert rpc(registry_server, "get_app_settings", {})["result"]["theme"] == "dark"
+
     # anonymize_by_default is retired (Spec 02 v0.11 §6.6): an old key is ignored.
     saved = rpc(registry_server, "save_workspace_settings", {"settings": {
         "anonymize_by_default": True, "active_engine_profile": "916iS", "aircraft_aliases": [["N1", "N2"]],

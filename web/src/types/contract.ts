@@ -763,6 +763,8 @@ export interface AppSettings {
   // landing in one of those phases. Global, like last_preset_id — not
   // scoped per-flight or per-workspace, so it carries across both.
   flight_chart: { last_preset_id?: string; phase_filter?: string[] | null };
+  // Spec 15 §6: display theme, app-level; absent in older settings = dark.
+  theme?: "dark" | "light";
 }
 
 export interface WorkspaceSettings {

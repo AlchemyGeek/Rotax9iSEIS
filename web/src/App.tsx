@@ -1,5 +1,5 @@
 import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DataLocationGate } from "./components/DataLocation";
 import { EngineGate } from "./components/EngineGate";
@@ -11,6 +11,7 @@ import { Trends } from "./views/Trends";
 import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
 import { ChartSessionProvider } from "./lib/chartSession";
+import { syncThemeFromSettings, useTheme } from "./lib/theme";
 
 // One page failing to render must not take every other route down with it.
 function PageBoundary({ children }: { children: ReactNode }) {
@@ -23,6 +24,14 @@ function SkippedRedirect() {
   return <Navigate to={`/logs/${encodeURIComponent(logKey ?? "")}`} replace />;
 }
 
+// Spec 15 §9: a theme switch remounts the views, so every chart rebuilds
+// with the new palette. The app settings are read once the engine answers.
+function Themed({ children }: { children: ReactNode }) {
+  const theme = useTheme();
+  useEffect(() => { void syncThemeFromSettings(); }, []);
+  return <div key={theme} style={{ display: "contents" }}>{children}</div>;
+}
+
 // Spec 03 v0.6 §4: "Flights" is the log browser (this corrected a real
 // nav bug — it used to point straight at single-flight detail). Import is
 // no longer a destination; it folded into Flights as a drop zone (§5.1).
@@ -32,6 +41,7 @@ function App() {
     // every page with its notice.
     // Spec 04 v0.7 §9.5: which host, and (in the browser) the engine loading.
     <EngineGate>
+    <Themed>
     <AppReset>
     <DataLocationGate>
     <HashRouter>
@@ -66,6 +76,7 @@ function App() {
     </HashRouter>
     </DataLocationGate>
     </AppReset>
+    </Themed>
     </EngineGate>
   );
 }

@@ -136,7 +136,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
     // "here."  Only the box OR the dot shows for one insight, never both.
     const highlightArea = highlight && highlight.marker_s === undefined
       ? [
-          { xAxis: highlight.start_s, itemStyle: { color: "transparent", borderColor: "rgba(229,72,77,0.9)", borderWidth: 1.5 } },
+          { xAxis: highlight.start_s, itemStyle: { color: "transparent", borderColor: colors.severityLimit, borderWidth: 1.5 } },
           { xAxis: highlight.end_s },
         ]
       : null;
@@ -228,7 +228,7 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
               // #e5484d is pixel-identical) and sit at the same normalized
               // height the marker does — a fill-only shape vanishes into
               // it. A white ring holds up regardless of what's underneath.
-              itemStyle: { color: "rgba(229,72,77,0.95)", borderColor: "#fff", borderWidth: 2 },
+              itemStyle: { color: colors.severityLimit, borderColor: colors.panel, borderWidth: 2 },
               label: { show: false },
               data: markPointData,
             }

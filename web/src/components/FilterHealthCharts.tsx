@@ -84,7 +84,7 @@ function chartOption({
         symbolSize: 6,
         data: pts.map((s) => ({ value: [s.engine_hours as number, s[field] as number], itemStyle: pointStyle(s) })),
         markArea: ref.length
-          ? { silent: true, itemStyle: { color: "rgba(174,183,191,0.08)" }, data: [[{ xAxis: Math.min(...ref) - 0.5 }, { xAxis: Math.max(...ref) + 0.5 }]] }
+          ? { silent: true, itemStyle: { color: colors.referenceFill }, data: [[{ xAxis: Math.min(...ref) - 0.5 }, { xAxis: Math.max(...ref) + 0.5 }]] }
           : undefined,
         markLine:
           band !== undefined && band !== null

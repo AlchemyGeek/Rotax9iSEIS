@@ -39,14 +39,11 @@ function withUnit(v: number, unit: string): string {
   return unit === "%" || unit.startsWith("°") ? `${v}${unit}` : `${v} ${unit}`;
 }
 
-const RECENT_WINDOW_FILL = colors.chartRecentFill;
-const REFERENCE_FILL = "rgba(174,183,191,0.10)";
 // Spec 12 §5.7.1 item 1 (v0.9, Session G — R10.4): one "not used" fill
 // for every eligible flight outside the pinned reference, on either
 // side — older than it, or between it and the recent window once the
 // window has moved past (D-1, retained). Session E/F's separate "gap"
 // style is retired; both cases read the same now.
-const NOT_USED_FILL = "rgba(174,183,191,0.015)";
 
 // "reference pinned · 40 flights · 12 Oct" (item 1's own example) — the
 // pin marker's date, short like the rest of this chart's axis labels;
@@ -144,7 +141,7 @@ export function TrendsPanelStrip({
       // Recent window: shaded full-height, distinct from the reference tint.
       markAreas.push({
         silent: true,
-        itemStyle: { color: RECENT_WINDOW_FILL },
+        itemStyle: { color: colors.chartRecentFill },
         data: [[{ xAxis: recent.hours_from }, { xAxis: recent.hours_to }]],
       });
       const pinned = ref.kind === "pinned";
@@ -158,8 +155,8 @@ export function TrendsPanelStrip({
           markAreas.push({
             silent: true,
             itemStyle: pinned
-              ? { color: REFERENCE_FILL, borderColor: colors.chartData, borderWidth: 1.5, borderType: "solid" }
-              : { color: REFERENCE_FILL },
+              ? { color: colors.referenceFill, borderColor: colors.chartData, borderWidth: 1.5, borderType: "solid" }
+              : { color: colors.referenceFill },
             data: [[
               { xAxis: ref.hours_from, yAxis: ref.mean - ref.std },
               { xAxis: ref.hours_to, yAxis: ref.mean + ref.std },
@@ -188,14 +185,14 @@ export function TrendsPanelStrip({
           if (Number.isFinite(earliestX) && earliestX < ref.hours_from) {
             markAreas.push({
               silent: true,
-              itemStyle: { color: NOT_USED_FILL },
+              itemStyle: { color: colors.notUsedFill },
               data: [[{ xAxis: earliestX }, { xAxis: ref.hours_from }]],
             });
           }
           if (recent.hours_from > ref.hours_to) {
             markAreas.push({
               silent: true,
-              itemStyle: { color: NOT_USED_FILL },
+              itemStyle: { color: colors.notUsedFill },
               data: [[{ xAxis: ref.hours_to }, { xAxis: recent.hours_from }]],
             });
           }

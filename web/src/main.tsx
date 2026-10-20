@@ -12,6 +12,10 @@ import '@fontsource/ibm-plex-mono/latin-600.css'
 import './index.css'
 import App from './App.tsx'
 import { getRuntime } from './lib/engineClient'
+import { initTheme } from './lib/theme'
+
+// Spec 15 §9: the theme this browser last showed, before the first paint.
+initTheme()
 
 // End-to-end checks only (spike/browser-host, built with VITE_E2E=1): the
 // chosen host and client. Not in a shipped build.

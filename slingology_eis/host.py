@@ -2028,7 +2028,10 @@ def op_get_app_settings(params: dict, ctx: dict) -> Any:
 
 
 def op_save_app_settings(params: dict, ctx: dict) -> Any:
-    settings = ws.AppSettings.from_dict(params["settings"])
+    # Keys the caller leaves out keep their stored value (a page that
+    # predates a setting — e.g. the theme — must not reset it).
+    stored = ws.load_app_settings(ctx["registry_path"]).to_dict()
+    settings = ws.AppSettings.from_dict({**stored, **params["settings"]})
     ws.save_app_settings(ctx["registry_path"], settings)
     return settings.to_dict()
 

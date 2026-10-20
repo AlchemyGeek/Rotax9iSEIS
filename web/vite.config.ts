@@ -41,5 +41,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Spec 15 §9: theme/brand.test.ts reads index.css as text (?raw);
+    // without this vitest hands every CSS import back empty.
+    css: { include: [/index\.css/] },
   },
 })

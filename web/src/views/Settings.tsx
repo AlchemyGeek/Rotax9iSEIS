@@ -21,6 +21,7 @@ import type {
   AppSettings, BaselineConfig, ChartPreset, EngineLimitsResult, FleetAnalysis,
   ChangedSetting, LogChannelRow, RuleSet, UnpinPreview, WorkspaceManifest,
 } from "../types/contract";
+import { getTheme } from "../lib/theme";
 
 const client = getEngineClient();
 
@@ -311,7 +312,9 @@ export function Settings() {
   }
 
   async function updateAppSettings(patch: Partial<AppSettings>) {
-    const next = { ...appSettings, ...patch };
+    // The theme is switched from the top bar, not here: keep its live value
+    // rather than this page's copy from when it opened.
+    const next = { ...appSettings, ...patch, theme: getTheme() };
     setAppSettings(next);
     if (usingFixture) return;
     try {

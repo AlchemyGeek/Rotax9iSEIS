@@ -89,7 +89,7 @@ export function PhaseMinimap({ phases, fullEnd, windowStart, windowEnd, onNaviga
         <div
           style={{
             position: "absolute", top: 0, left: 0, width: `${left}%`, height: 8,
-            background: "rgba(15,18,20,0.72)", borderRadius: "4px 0 0 4px", pointerEvents: "none",
+            background: "var(--minimap-dim)", borderRadius: "4px 0 0 4px", pointerEvents: "none",
           }}
         />
       )}
@@ -97,7 +97,7 @@ export function PhaseMinimap({ phases, fullEnd, windowStart, windowEnd, onNaviga
         <div
           style={{
             position: "absolute", top: 0, right: 0, width: `${right}%`, height: 8,
-            background: "rgba(15,18,20,0.72)", borderRadius: "0 4px 4px 0", pointerEvents: "none",
+            background: "var(--minimap-dim)", borderRadius: "0 4px 4px 0", pointerEvents: "none",
           }}
         />
       )}

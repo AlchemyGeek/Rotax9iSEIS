@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { colors } from "./colors";
+import { palettes, type Palette } from "./colors";
 import { PHASE_ORDER, phaseColor } from "../lib/phases";
 
 // Spec 15 §3: the brand color is reserved out of the phase and severity
@@ -38,28 +38,30 @@ const SOURCES = import.meta.glob<string>(["../**/*.{ts,tsx,css}", "!../**/*.test
   query: "?raw", import: "default", eager: true,
 });
 
-const BRAND = { brand: colors.brand, brandTint: colors.brandTint };
-const FUNCTIONAL: Record<string, string> = {
+// Both themes (§9): each theme's brand values against the phase colors and
+// that theme's severity colors.
+const brandOf = (c: Palette) => ({ brand: c.brand, brandTint: c.brandTint });
+const functionalOf = (c: Palette): Record<string, string> => ({
   ...Object.fromEntries(PHASE_ORDER.map((p) => [`phase ${p}`, phaseColor(p)])),
-  "severity limit": colors.severityLimit,
-  "severity warning": colors.severityWarning,
-  "severity watch": colors.severityWatch,
-  "severity info": colors.severityInfo,
-};
+  "severity limit": c.severityLimit,
+  "severity warning": c.severityWarning,
+  "severity watch": c.severityWatch,
+  "severity info": c.severityInfo,
+});
 
 describe("brand color reservation (Spec 15 §3)", () => {
-  it("the brand stays muted", () => {
-    for (const hex of Object.values(BRAND)) {
+  it.each(["dark", "light"] as const)("the brand stays muted (%s)", (theme) => {
+    for (const hex of Object.values(brandOf(palettes[theme]))) {
       const s = hslSaturation(hex);
       expect(s).toBeGreaterThanOrEqual(0.2);
       expect(s).toBeLessThanOrEqual(0.45);
     }
   });
 
-  it("no phase or severity color is near the brand", () => {
+  it.each(["dark", "light"] as const)("no phase or severity color is near the brand (%s)", (theme) => {
     const near: string[] = [];
-    for (const [bName, b] of Object.entries(BRAND)) {
-      for (const [name, c] of Object.entries(FUNCTIONAL)) {
+    for (const [bName, b] of Object.entries(brandOf(palettes[theme]))) {
+      for (const [name, c] of Object.entries(functionalOf(palettes[theme]))) {
         const min = hslSaturation(c) >= 0.2 ? 20 : 8;
         const d = deltaE(b, c);
         if (d < min) near.push(`${name} ${c} is ΔE ${d.toFixed(1)} from ${bName} ${b} (needs ${min})`);
@@ -79,5 +81,28 @@ describe("brand color reservation (Spec 15 §3)", () => {
       text.split("\n").forEach((line, i) => { if (banned.test(line)) hits.push(`${path}:${i + 1}`); });
     }
     expect(hits).toEqual([]);
+  });
+
+  it("index.css and colors.ts agree, in both themes", () => {
+    const css = SOURCES["../index.css"];
+    const block = (sel: string) => css.slice(css.indexOf(sel), css.indexOf("}", css.indexOf(sel)));
+    const vars = (b: string) => Object.fromEntries([...b.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim().toLowerCase()]));
+    const twins: Record<string, keyof Palette> = {
+      bg: "bg", panel: "panel", "panel-control": "panelControl", border: "border", "border-subtle": "borderSubtle",
+      "text-primary": "textPrimary", "text-secondary": "textSecondary", "text-tertiary": "textTertiary",
+      brand: "brand", "brand-tint": "brandTint", ok: "ok",
+      "severity-limit": "severityLimit", "severity-warning": "severityWarning", "severity-watch": "severityWatch", "severity-info": "severityInfo",
+      "chart-rpm": "chartRpm", "chart-data": "chartData", "chart-ias": "chartIas", "chart-oil-temp": "chartOilTemp", "chart-egt-spread": "chartEgtSpread",
+    };
+    for (const [theme, sel] of [["dark", ":root {"], ["light", ':root[data-theme="light"] {']] as const) {
+      const v = vars(block(sel));
+      const off = Object.entries(twins).filter(([cssName, key]) => v[cssName] !== String(palettes[theme][key]).toLowerCase())
+        .map(([cssName, key]) => `${theme} --${cssName} ${v[cssName]} vs ${key} ${palettes[theme][key]}`);
+      expect(off).toEqual([]);
+    }
+  });
+
+  it("the light palette has every value the dark one has", () => {
+    expect(Object.keys(palettes.light).sort()).toEqual(Object.keys(palettes.dark).sort());
   });
 });

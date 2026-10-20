@@ -6,6 +6,7 @@ import type { WorkspaceRegistryEntry } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
 import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
+import { setTheme, useTheme } from "../lib/theme";
 
 const client = getEngineClient();
 
@@ -23,6 +24,29 @@ const ICON_BUTTON: React.CSSProperties = {
   width: 32, height: 32, borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)",
   color: "var(--text-secondary)", display: "flex", alignItems: "center", justifyContent: "center",
 };
+
+// Spec 15 §6: dark ⇄ light. The icon shows where a click goes: a sun in
+// the dark theme, a moon in the light one.
+function ThemeToggle() {
+  const theme = useTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  const label = next === "light" ? "Switch to the light theme" : "Switch to the dark theme";
+  return (
+    <button type="button" onClick={() => void setTheme(next)} title={label} aria-label={label} data-testid="theme-toggle"
+      style={{ ...ICON_BUTTON, cursor: "pointer", padding: 0 }}>
+      {theme === "dark" ? (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 const NAV_LINK_STYLE = ({ isActive }: { isActive: boolean }) => ({
   padding: "6px 14px",
@@ -325,8 +349,9 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
           <span data-testid="brand-lockup" style={{ display: "flex", alignItems: "center", gap: 9 }}>
             {/* A light ring lifts the mark's slate circle off the dark bar; the
                 artwork itself is the family's, unchanged (§1). */}
-            <img src="eis-mark.png" alt="" width={34} height={34}
-              style={{ display: "block", borderRadius: "50%", background: "var(--text-secondary)", padding: 1.5 }} />
+            {/* §8: about 70% of the 56 px bar, on a thin ring that separates it from the bar. */}
+            <img src="eis-mark.png" alt="" width={40} height={40}
+              style={{ display: "block", borderRadius: "50%", background: "var(--mark-ring)", padding: 1.5 }} />
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
               <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: 1.2 }}>SLINGOLOGY</span>
               <span style={{ fontWeight: 600, fontSize: 10, letterSpacing: 2.4, color: "var(--text-secondary)", marginTop: 3 }}>EIS</span>
@@ -378,6 +403,9 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
               <path d="M22 4h-6a4 4 0 00-4 4v13a3 3 0 013-3h7z" />
             </svg>
           </a>
+          {/* §6: Docs leaves the app; the theme and Settings act on it. */}
+          <span aria-hidden="true" style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
+          <ThemeToggle />
           <NavLink
             to="/settings"
             title="Settings"

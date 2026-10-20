@@ -51,6 +51,57 @@
   --radius-md: 10px;
   --radius-lg: 12px;
   --radius-pill: 20px;
+
+  --minimap-dim: rgba(15, 18, 20, 0.72);
+  --mark-ring: #c9d0d6;
+  color-scheme: dark;
+}
+
+/* Spec 15 §9: the light theme — every value re-checked on white (text ≥
+   4.5:1, lines ≥ 3:1); severity darkened; the brand's fill and tint swap
+   roles. Kept equal to theme/colors.ts's light palette. Set by lib/theme.ts. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-control: #eef1f4;
+  --border: #d3d9df;
+  --border-subtle: #e6eaee;
+
+  --text-primary: #161b20;
+  --text-secondary: #3a434c;
+  --text-tertiary: #5a6570;
+
+  --brand: #3d5a73;
+  --brand-hover: #33506a;
+  --brand-tint: #3d5a73;
+  --brand-fill: rgba(61, 90, 115, 0.1);
+  --on-brand: #ffffff;
+
+  --link: #1f2933;
+  --link-underline: rgba(31, 41, 51, 0.35);
+  --ok: #0b7d6d;
+  --success: #127f45;
+  --tint-neutral: rgba(22, 27, 32, 0.04);
+
+  --severity-limit: #d1242f;
+  --severity-warning: #c4530a;
+  --severity-watch: #946800;
+  --severity-info: #5f6d80;
+  --severity-info-text: #56616d;
+
+  --chart-rpm: #0e9a87;
+  --chart-data: #0b7d6d;
+  --chart-ias: #6a5bd6;
+  --chart-oil-temp: #d1242f;
+  --chart-egt-spread: #b98900;
+
+  --phase-ground: #c9d0d7;
+  --phase-engine-start: #c4530a;
+  --phase-airborne: #3b6ea5;
+
+  --minimap-dim: rgba(244, 246, 248, 0.72);
+  --mark-ring: #d3d9df;
 }
 
 * {

@@ -8,16 +8,22 @@ import { colors } from "../theme/colors";
 // The 8 channels charted before this spec keep their fixed tokens
 // (Spec 07 §9) so returning users don't see their usual lines repainted
 // a different color on the same flights they already know.
-export const FIXED_CHANNEL_COLORS: Record<string, string> = {
-  rpm: colors.chartRpm,
-  ias_kt: colors.chartIas,
-  oil_temp_f: colors.chartOilTemp,
-  egt_spread_f: colors.chartEgtSpread,
-  coolant_temp_f: colors.chartCoolantTemp,
-  map_inhg: colors.chartMap,
-  fuel_flow_gph: colors.chartFuelFlow,
-  vs_fpm: colors.chartVs,
+// Read from the palette in effect each time (Spec 15 §9: the light theme
+// has its own values), never copied at load.
+const FIXED_CHANNEL_TOKENS: Record<string, keyof typeof colors> = {
+  rpm: "chartRpm",
+  ias_kt: "chartIas",
+  oil_temp_f: "chartOilTemp",
+  egt_spread_f: "chartEgtSpread",
+  coolant_temp_f: "chartCoolantTemp",
+  map_inhg: "chartMap",
+  fuel_flow_gph: "chartFuelFlow",
+  vs_fpm: "chartVs",
 };
+export function fixedChannelColor(id: string): string | undefined {
+  const token = FIXED_CHANNEL_TOKENS[id];
+  return token ? (colors[token] as string) : undefined;
+}
 
 // Any other channel gets a color from this 6-slot palette when activated
 // (Spec 07 §9) — chosen to stay clear of the severity palette (reds/
@@ -26,7 +32,7 @@ export const FIXED_CHANNEL_COLORS: Record<string, string> = {
 export const SLOT_PALETTE = ["#38BDF8", "#34D399", "#A78BFA", "#F472B6", "#22D3EE", "#818CF8"];
 
 // egt_cyl (Spec 07 D3): one hue family, four lightness steps, cylinder 1→4.
-export const EGT_CYL_COLORS = ["#FDE68A", "#FBBF24", "#D97706", "#92400E"];
+// (theme/colors.ts egtCyl, per theme.)
 
 function egtCylinderIndex(id: string): number | null {
   const m = /^egt([1-4])_f$/.exec(id);
@@ -43,13 +49,14 @@ export function assignChannelColors(activeIds: string[], prev: Record<string, st
   const usedSlotColors = new Set<string>();
 
   for (const id of activeIds) {
-    if (FIXED_CHANNEL_COLORS[id]) {
-      next[id] = FIXED_CHANNEL_COLORS[id];
+    const fixed = fixedChannelColor(id);
+    if (fixed) {
+      next[id] = fixed;
       continue;
     }
     const cylIdx = egtCylinderIndex(id);
     if (cylIdx !== null) {
-      next[id] = EGT_CYL_COLORS[cylIdx] ?? SLOT_PALETTE[0];
+      next[id] = colors.egtCyl[cylIdx] ?? SLOT_PALETTE[0];
     }
   }
   for (const id of activeIds) {

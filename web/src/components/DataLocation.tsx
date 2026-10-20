@@ -98,12 +98,12 @@ function Chooser({ fixedTarget, onCancel }: { fixedTarget?: DataLocationTarget; 
         />
       )}
       {assessment && (
-        <div data-testid="location-assessment" style={{ fontSize: 12, color: assessment.action === "refused" ? "var(--warning, #e0a040)" : "var(--text-primary)" }}>
+        <div data-testid="location-assessment" style={{ fontSize: 12, color: assessment.action === "refused" ? "var(--severity-warning)" : "var(--text-primary)" }}>
           {fixedTarget && <span className="mono" style={{ display: "block", color: "var(--text-tertiary)", fontSize: 11, marginBottom: 2 }}>{assessment.path}</span>}
           {assessmentText(assessment)}
         </div>
       )}
-      {error && <div role="alert" style={{ fontSize: 12, color: "var(--critical, #e05050)" }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 12, color: "var(--severity-limit)" }}>{error}</div>}
       <span style={{ display: "flex", gap: 6 }}>
         {ready && assessment && (
           <button type="button" style={PRIMARY} disabled={changing} onClick={confirm}>

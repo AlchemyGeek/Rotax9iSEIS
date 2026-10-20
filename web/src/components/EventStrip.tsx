@@ -24,8 +24,6 @@ function tickDetail(e: EventTick): string {
     .join("<br/>");
 }
 
-const RECENT_WINDOW_FILL = colors.chartRecentFill;
-const REFERENCE_FILL = "rgba(174,183,191,0.10)";
 
 interface Props {
   events: EventTick[];
@@ -46,12 +44,12 @@ export function EventStrip({ events, frequency, highlightFlight, onOpenFlight, v
     const markAreas: any[] = [];
     if (recentEvents.length) {
       markAreas.push({
-        xAxis: [recentEvents[0].x, recentEvents[recentEvents.length - 1].x], color: RECENT_WINDOW_FILL,
+        xAxis: [recentEvents[0].x, recentEvents[recentEvents.length - 1].x], color: colors.chartRecentFill,
       });
     }
     if (referenceEvents.length) {
       markAreas.push({
-        xAxis: [referenceEvents[0].x, referenceEvents[referenceEvents.length - 1].x], color: REFERENCE_FILL,
+        xAxis: [referenceEvents[0].x, referenceEvents[referenceEvents.length - 1].x], color: colors.referenceFill,
       });
     }
 

@@ -4,8 +4,9 @@
 // where var(--x) works fine. So every color handed to an ECharts `option`
 // must be a literal value. This file is that literal mirror of
 // index.css's tokens, for chart code only — DOM styling should keep using
-// var(--x) directly.
-export const colors = {
+// var(--x) directly. Both themes (Spec 15 §9): keep each value equal to its
+// index.css twin under :root (dark) and :root[data-theme="light"].
+const dark = {
   bg: "#0f1214",
   panel: "#171b1e",
   panelControl: "#20252a",
@@ -39,7 +40,72 @@ export const colors = {
   chartMap: "#7ed957",
   chartFuelFlow: "#ff8a4c",
   chartVs: "#e86ba6",
-} as const;
+  // egt_cyl (Spec 07 D3): one hue family, four lightness steps, cylinder 1→4.
+  egtCyl: ["#FDE68A", "#FBBF24", "#D97706", "#92400E"],
+  // Chart shading: the reference band, flights not used, the minimap's
+  // outside-the-window dimming.
+  referenceFill: "rgba(174,183,191,0.10)",
+  notUsedFill: "rgba(174,183,191,0.015)",
+  minimapDim: "rgba(15,18,20,0.72)",
+};
+
+export type Palette = { [K in keyof typeof dark]: (typeof dark)[K] extends readonly string[] ? string[] : string };
+
+// Spec 15 §9: the light theme. Every value re-checked on white rather than
+// carried over — text ≥ 4.5:1, lines and markers ≥ 3:1; the severity
+// colors darkened (the dark theme's pale watch yellow is ~1.3:1 on white);
+// the brand's fill and tint swap roles (#3d5a73 itself reads at 7:1 here).
+const light: Palette = {
+  bg: "#f4f6f8",
+  panel: "#ffffff",
+  panelControl: "#eef1f4",
+  border: "#d3d9df",
+  borderSubtle: "#e6eaee",
+
+  textPrimary: "#161b20",
+  textSecondary: "#3a434c",
+  textTertiary: "#5a6570",
+
+  brand: "#3d5a73",
+  brandTint: "#3d5a73",
+  ok: "#0b7d6d",
+
+  severityLimit: "#d1242f",
+  severityWarning: "#c4530a",
+  severityWatch: "#946800",
+  severityInfo: "#5f6d80",
+
+  chartHighlight: "#000000",
+  chartData: "#0b7d6d",
+  chartRecentFill: "rgba(11,125,109,0.07)",
+  chartRpm: "#0e9a87",
+  chartIas: "#6a5bd6",
+  chartOilTemp: "#d1242f",
+  chartEgtSpread: "#b98900",
+  chartCoolantTemp: "#2f78c2",
+  chartMap: "#3f9e1f",
+  chartFuelFlow: "#e0661c",
+  chartVs: "#c9417f",
+  egtCyl: ["#E3A008", "#C27803", "#9F580A", "#723B13"],
+  referenceFill: "rgba(90,101,112,0.10)",
+  notUsedFill: "rgba(90,101,112,0.03)",
+  minimapDim: "rgba(244,246,248,0.72)",
+};
+
+export type Theme = "dark" | "light";
+export const palettes: Record<Theme, Palette> = { dark: dark as Palette, light };
+
+/**
+ * The palette in effect. Chart code reads it when it builds an option, so
+ * it is one mutable object, switched in place by `applyPalette` (lib/theme.ts
+ * remounts the views on a theme change, and every chart rebuilds).
+ */
+export const colors: Palette = { ...(dark as Palette), egtCyl: [...dark.egtCyl] };
+
+export function applyPalette(theme: Theme) {
+  const p = palettes[theme];
+  Object.assign(colors, p, { egtCyl: [...p.egtCyl] });
+}
 
 // Canvas text doesn't inherit the page's CSS font-family either — same
 // class of bug as the color one above. Every ECharts textStyle/label

@@ -928,7 +928,7 @@ export function Flights() {
               onClick={() => { setDeletingWorkspace(true); setDeleteConfirmText(""); setDeleteError(null); }}
               disabled={!isRegistryActive}
               title={!isRegistryActive ? "no active workspace to delete" : "permanently delete this workspace and everything in it"}
-              style={{ ...BUTTON, background: "transparent", color: isRegistryActive ? "#e5484d" : "var(--text-tertiary)", cursor: isRegistryActive ? "pointer" : "default" }}
+              style={{ ...BUTTON, background: "transparent", color: isRegistryActive ? "var(--severity-limit)" : "var(--text-tertiary)", cursor: isRegistryActive ? "pointer" : "default" }}
             >
               Delete workspace
             </button>
@@ -936,8 +936,8 @@ export function Flights() {
         </div>
 
         {deletingWorkspace && (
-          <div style={{ padding: "14px", borderRadius: 8, background: "var(--panel)", border: "1px solid #e5484d", fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ color: "#e5484d", fontWeight: 600 }}>
+          <div style={{ padding: "14px", borderRadius: 8, background: "var(--panel)", border: "1px solid var(--severity-limit)", fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ color: "var(--severity-limit)", fontWeight: 600 }}>
               Delete workspace "{manifest.name}"?
             </div>
             <div style={{ color: "var(--text-secondary)" }}>
@@ -945,7 +945,7 @@ export function Flights() {
               Your original log files are not touched — this only deletes what SlingologyEIS derived from them, not the source CSVs on disk.
               Type <span className="mono" style={{ fontWeight: 600 }}>DELETE</span> to confirm.
             </div>
-            {deleteError && <div style={{ color: "#e5484d" }}>{deleteError}</div>}
+            {deleteError && <div style={{ color: "var(--severity-limit)" }}>{deleteError}</div>}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
                 autoFocus
@@ -961,7 +961,7 @@ export function Flights() {
                 disabled={deleteConfirmText !== "DELETE" || deleteBusy}
                 style={{
                   padding: "6px 12px", borderRadius: 6, border: "none", fontSize: 12, fontWeight: 600, color: "#fff",
-                  background: deleteConfirmText === "DELETE" ? "#e5484d" : "var(--border)",
+                  background: deleteConfirmText === "DELETE" ? "var(--severity-limit)" : "var(--border)",
                   cursor: deleteConfirmText === "DELETE" && !deleteBusy ? "pointer" : "default",
                 }}
               >
@@ -1168,7 +1168,7 @@ export function Flights() {
                 <button
                   onClick={() => handleRemoveMany(Array.from(selectedIds))}
                   disabled={removeBusy}
-                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, background: "#e5484d", border: "none", color: "#fff", fontSize: 11, fontWeight: 600, cursor: removeBusy ? "default" : "pointer" }}
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, background: "var(--severity-limit)", border: "none", color: "#fff", fontSize: 11, fontWeight: 600, cursor: removeBusy ? "default" : "pointer" }}
                 >
                   {removeBusy ? "Removing…" : "Yes, remove"}
                 </button>
@@ -1314,7 +1314,7 @@ export function Flights() {
                             <button
                               onClick={() => handleRemoveMany([fid])}
                               disabled={removeBusy}
-                              style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, background: "#e5484d", border: "none", color: "#fff", cursor: removeBusy ? "default" : "pointer" }}
+                              style={{ fontSize: 10, padding: "3px 6px", borderRadius: 4, background: "var(--severity-limit)", border: "none", color: "#fff", cursor: removeBusy ? "default" : "pointer" }}
                             >
                               {removeBusy ? "…" : "Yes"}
                             </button>
