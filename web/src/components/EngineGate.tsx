@@ -81,16 +81,16 @@ export function EngineGate({ children }: { children: ReactNode }) {
           <div role="status" data-testid="engine-loading" style={PANEL}>
             {fromDevice ? (
               <>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Starting the analysis engine…</div>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Loading the analysis engine from this device…</div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Loading from this device — no download needed. Everything runs in this browser; your logs never leave your computer.
+                  No download needed. Everything runs in this browser; your logs never leave your computer.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setting up the analysis engine…</div>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Downloading the analysis engine… (about 30 MB, once)</div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
-                  Downloading about 30 MB, once — after this it opens from this device in a few seconds, with or without a network.
+                  After this it opens from this device in a few seconds, with or without a network.
                   Everything runs in this browser; your logs never leave your computer.
                 </div>
               </>

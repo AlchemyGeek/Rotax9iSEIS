@@ -98,7 +98,7 @@ def main() -> int:
                 loading = page.get_by_test_id("engine-loading").inner_text()
             except Exception:
                 loading = None
-            step("first visit shows the engine-loading state", loading and "Downloading about 30 MB, once" in loading)
+            step("first visit shows the engine-loading state", loading and "Downloading the analysis engine" in loading)
             page.get_by_text("+ New workspace").first.wait_for(timeout=60000)
             step("engine ready (cold)", True, seconds=round(time.time() - t0, 1))
 

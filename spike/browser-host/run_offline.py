@@ -114,7 +114,7 @@ def main() -> int:
         page.goto(url)
         again = loading_text(page)
         page.get_by_text("+ New workspace").first.wait_for(timeout=90000)
-        step("offline: the site opens from this device", again is None or "Loading from this device" in again,
+        step("offline: the site opens from this device", again is None or "from this device" in again,
              loading=again and again.splitlines()[0], seconds=round(time.time() - t0, 1))
         page.get_by_text("+ New workspace").first.click()
         page.get_by_placeholder("Workspace name").fill("Offline")

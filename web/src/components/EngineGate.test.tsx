@@ -26,7 +26,7 @@ describe("EngineGate", () => {
     state.status = { phase: "loading", step: "numpy and pandas", done: 1, total: 4 };
     render(<EngineGate><div>app</div></EngineGate>);
     const loading = await screen.findByTestId("engine-loading", {}, { timeout: 2000 });
-    expect(loading.textContent).toContain("Downloading about 30 MB, once");
+    expect(loading.textContent).toContain("Downloading the analysis engine… (about 30 MB, once)");
     expect(screen.queryByText("app")).toBeNull();
   });
 
@@ -37,7 +37,7 @@ describe("EngineGate", () => {
       state.status = { phase: "loading", step: "numpy and pandas", done: 1, total: 4 };
       render(<EngineGate><div>app</div></EngineGate>);
       const loading = await screen.findByTestId("engine-loading", {}, { timeout: 2000 });
-      expect(loading.textContent).toContain("Loading from this device");
+      expect(loading.textContent).toContain("Loading the analysis engine from this device");
       expect(loading.textContent).not.toContain("Downloading");
     } finally {
       delete (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;

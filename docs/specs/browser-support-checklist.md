@@ -12,14 +12,14 @@ browser version at the top of the run.
 
 | # | Step | Expected |
 |---|---|---|
-| 1 | Open the site. | *Setting up the analysis engine… Downloading about 30 MB, once*, with progress; then the app, with **+ New workspace** in the top bar. |
+| 1 | Open the site. | *Downloading the analysis engine… (about 30 MB, once)*, with progress; then the app, with **+ New workspace** in the top bar. |
 | 2 | **+ New workspace**, give it a name, **Create**. | Flights for the new workspace, with the drop area and **Choose folder…**. |
 | 3 | **Choose folder…** and pick the log folder. | Chrome: the system folder picker. Safari: the folder dialog, then the browser's upload confirmation. The folder appears as a row; the top button reads *Analyze N*. |
 | 4 | Click **Analyze N**. | A progress line counting the logs (*Analyzing k/N*); then the flights listed, and *N new flights analyzed*. |
 | 5 | Open a flight. | The flight view: facts, insights, the timeline chart with the phase strip, Events. |
 | 6 | **Edit rules…** on a card, change a value, **Apply to all flights**. | The card marks *rule changed*; Journal lists the edit. |
 | 7 | Settings → App → **Export workspace…** with *Include logs*. | A `.zip` download. |
-| 8 | Quit the browser fully (⌘Q) and open the site again. | *Starting the analysis engine… Loading from this device*; the workspace is there. Chrome: the folder row offers **Allow access**. Safari: the row reads **Not connected — reconnect**, with a one-time note about Safari. |
+| 8 | Quit the browser fully (⌘Q) and open the site again. | *Loading the analysis engine from this device…*; the workspace is there. Chrome: the folder row offers **Allow access**. Safari: the row reads **Not connected — reconnect**, with a one-time note about Safari. |
 | 9 | Chrome: **Allow access**. Safari: **Not connected — reconnect** and pick the same folder. | The row is connected again. |
 | 10 | **Sync**. | *No changes* — nothing re-analysed. |
 | 11 | Settings → App → **Storage**. | Space used (a few MB), *Persistent: yes* or *no*, **Export all workspaces…**, **Delete all data on this device**. |
