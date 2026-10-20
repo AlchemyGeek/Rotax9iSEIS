@@ -14,7 +14,7 @@ export const RELEASE_SEEN = "slingology-eis-site-release";
 const MANIFEST_KEY = "__eis_manifest__";
 const IDLE_POLL_MS = 3000;
 
-export interface SiteRelease { release: string; version: string }
+export interface SiteRelease { release: string; version: string; commit?: string }
 
 /** Whether this page load is served by the offline cache (a later visit). */
 export function servedFromDevice(): boolean {
@@ -27,7 +27,7 @@ export async function cachedRelease(): Promise<SiteRelease | null> {
     const res = await caches.match(appUrl(MANIFEST_KEY).href);
     if (!res) return null;
     const m = await res.json();
-    return { release: m.release, version: m.version };
+    return { release: m.release, version: m.version, commit: m.commit };
   } catch {
     return null;
   }
@@ -44,8 +44,9 @@ export async function takeUpdateNotice(): Promise<string | null> {
   try { seen = JSON.parse(localStorage.getItem(RELEASE_SEEN) ?? "null"); } catch { /* private mode */ }
   try { localStorage.setItem(RELEASE_SEEN, JSON.stringify(now)); } catch { /* private mode */ }
   if (!seen || seen.release === now.release) return null;
-  // Same package version, new build (a developer rebuild): name the build.
-  return seen.version === now.version ? `${now.version} (build ${now.release.slice(0, 7)})` : now.version;
+  // Same package version, new build: name the build — the commit, as
+  // Settings → App's "This build" does.
+  return seen.version === now.version ? `${now.version} (build ${now.commit || now.release.slice(0, 7)})` : now.version;
 }
 
 /** Register the site's worker; `isBusy` holds a switch while an operation runs. */

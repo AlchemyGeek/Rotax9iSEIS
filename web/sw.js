@@ -3,7 +3,7 @@
 //
 // scripts/build_site.py writes this file into the built site with the
 // release manifest prepended as `self.__EIS_MANIFEST`:
-//   { release: "<hash of every file>", version: "<package version>",
+//   { release: "<hash of every file>", version: "<package version>", commit: "<git commit>",
 //     files: { "<path relative to the site>": "<sha256 of that file>" } }
 // It is not part of `npm run build` and never served by `slingology-eis
 // serve`; the page registers it only when runtime.json says "browser".

@@ -44,7 +44,12 @@ def write_service_worker(site: Path, wheel: Path) -> dict:
             files[rel] = hashlib.sha256(p.read_bytes()).hexdigest()[:16]
     release = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:16]
     version = wheel.name.split("-")[1]
-    manifest = {"release": release, "version": version, "files": files}
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=ROOT, capture_output=True,
+                                text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        commit = ""
+    manifest = {"release": release, "version": version, "commit": commit, "files": files}
     (site / "sw.js").write_text(f"self.__EIS_MANIFEST = {json.dumps(manifest, indent=1)};\n\n"
                                 + (ROOT / "web" / "sw.js").read_text())
     return manifest

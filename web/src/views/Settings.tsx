@@ -22,6 +22,7 @@ import type {
   ChangedSetting, LogChannelRow, RuleSet, UnpinPreview, WorkspaceManifest,
 } from "../types/contract";
 import { getTheme } from "../lib/theme";
+import { APP_BUILD, describeBuild } from "../lib/buildInfo";
 
 const client = getEngineClient();
 
@@ -915,9 +916,17 @@ export function Settings() {
                     <option value="metric">Metric</option>
                   </select>
                 </div>
-                <div style={{ ...ROW_STYLE, marginBottom: 0 }}>
+                <div style={ROW_STYLE}>
                   <span style={{ color: "var(--text-secondary)" }}>Workspace that reopens on launch</span>
                   <span className="mono" style={{ color: "var(--text-primary)" }}>{manifest.name}</span>
+                </div>
+                {/* Which build this page is: version, commit, when it was built. */}
+                <div style={{ ...ROW_STYLE, marginBottom: 0 }} data-testid="app-build">
+                  <span style={{ color: "var(--text-secondary)" }}>This build</span>
+                  <span className="mono" style={{ color: "var(--text-primary)" }}
+                    title={APP_BUILD.modified ? "Built from changes not yet committed" : `Built from commit ${APP_BUILD.commit}`}>
+                    {describeBuild()}
+                  </span>
                 </div>
               </div>
 
