@@ -1,6 +1,6 @@
 # Spec 15 — Branding & Visual Identity
 
-**Status:** v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
+**Status:** v0.6 — top-bar icon cluster with a theme toggle, icon legibility, light/dark theming (design; not built); v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
 **Depends on:** Spec 13 (Documentation System — §11 Q1 hosting), Spec 03 (§4 nav, §5.2 phase palette, §5.7 Settings/gear icon placement)
 **Scope:** SlingologyEIS's place in the Slingology app family — shared identity elements, this app's color, and how both the web UI and the docs website apply them.
 
@@ -70,13 +70,20 @@ This replaces today's placeholder teal (`accent: "#4fc3b0"` in `theme/colors.ts`
 - **Replace `web/public/favicon.svg`** — it's currently a generic framework-default icon, not ours. This is a replacement, not an addition alongside it.
 - Functional outcome to preserve: a reader should never be able to mistake the brand accent for a severity or phase signal. Enforced by the test in §3.
 
-## 6. Docs button in the top bar
+## 6. Top-bar icon cluster: Docs, theme toggle, Settings
 
-A new top-bar icon, placed next to Settings, linking out to the docs site (`https://alchemygeek.github.io/Rotax9iSEIS/` — confirmed permanent, v0.4).
+*(v0.6; v0.2–v0.5 had the Docs button alone, built in v0.4.)* Three controls, in this order: `[Docs]` | `[Theme toggle] [Settings]`. The divider isn't just spacing — it marks a real distinction: Docs *leaves* the app, theme and Settings both *act on* it.
 
-- **Icon color:** the default secondary/muted icon color — the same as Settings — not the brand accent. The brand color (§4) means "this is the active, live thing in the app"; a static link to an external site isn't that, and giving it the brand color would blur the one rule §3/§4 depend on.
+**Docs button** — links out to the docs site (`https://alchemygeek.github.io/Rotax9iSEIS/` — confirmed permanent, v0.4).
 - **Opens in a new tab.** Every other nav icon stays inside the app; this one leaves it, and should look and behave like it does.
-- **Icon choice:** a book/docs glyph (distinct from the Settings gear), consistent with the icon set already in `public/icons.svg`.
+- **Icon choice:** a book/docs glyph (distinct from the Settings gear), drawn like the gear (`public/icons.svg` turned out to be the framework's unused template sprite, so the book is inline, as the gear is).
+
+**Theme toggle** — switches the app between dark and light. Binary, no third "system" state for v1.
+- **Icon swaps with current state:** a moon when in light mode (click to go dark), a sun when in dark mode (click to go light) — the standard convention, so it needs no label.
+- **Persistence:** app-level setting (Spec 02's app-vs-workspace split — same bucket as units, last active workspace), not workspace-level; it's a display preference about the person, not the aircraft data. One line to add to Spec 14: a new app-level setting exists for this, without re-deciding anything there.
+- Default: dark, matching what ships today; light is the opt-in.
+
+**Docs and the theme toggle use the default secondary/muted icon color, same as Settings** — not the brand accent. The brand color (§4) means "this is the active, live thing in the app"; none of these three is that, and giving any of them the brand color would blur the one rule §3/§4 depend on. (Settings, while its page is open, shows the active state like a nav tab — §4.)
 
 ## 7. For the docs website
 
@@ -88,9 +95,34 @@ Same token, same rule, applied to a different surface:
 - The site has no severity/phase systems of its own, so §3's reservation rule doesn't carry over — the accent is free to use more broadly on the site than it is in the app.
 - **Resolves Spec 13 §11 Q1 (hosting):** that question weighed same-host `/docs/` against a separate `docs.` subdomain. The actual URL, `alchemygeek.github.io/Rotax9iSEIS`, is neither — it's GitHub's own Pages domain. Spec 13 v0.2 marks Q1 resolved, pointing here.
 
-## 8. Outstanding before this is final
+## 8. Icon legibility on dark chrome
 
-None (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), the favicons are in hand (§7), and Spec 13 §11 Q1 is marked resolved (§7).
+*(v0.6.)* Observed live in the app: the nav-bar icon reads poorly — too small, and its own circular fill is close enough in value to the near-black bar that the badge's edge nearly disappears into the background. Two independent fixes, not mutually exclusive:
+
+- **Size:** render the icon larger relative to bar height — roughly 70–75% (about 40 px on the 56 px bar).
+- **A thin light-value outline ring** around the circle's edge, so it separates from the bar regardless of exactly how dark the chrome is. This is a framing device, not a second colorway of the mark — it doesn't conflict with §1's "one icon, never redrawn per context."
+
+As built in v0.5 (2026-10-19): 34 px (about 60% of the bar) on a 1.5 px light ring — the ring is in place; the size grows to 70–75%.
+
+Light mode (§9) also resolves this for anyone who switches, but dark stays the default (§6), so the ring fix matters regardless of whether theming ships.
+
+## 9. Light/dark theming
+
+*(v0.6.)* The architecture already supports this cleanly, checked directly against the repo rather than assumed: every DOM color in the app reads from CSS custom properties defined once in a single `:root` block (`index.css`) — including, since v0.4, the brand, link, OK and chart roles of §4. Adding light-mode values is mostly additive at the DOM layer.
+
+**One real piece of work, not just values:** `theme/colors.ts` is a separate literal-value mirror of the same tokens, needed because Canvas/ECharts can't read `var(--x)` strings — they silently fail. A light theme needs:
+- A light value set for every `index.css` token, gated by a theme attribute (e.g. `data-theme="light"`).
+- A second value set in `colors.ts`, plus a small selection mechanism so chart-building code picks the right one at render time — Code's call on the exact shape (a hook, a context, a function call per chart build).
+- **Severity and phase colors re-checked for contrast on white, not assumed to carry over unchanged** — e.g. the pale `severityWatch` yellow that reads fine on near-black may not read fine on white. This is a real check, not a formality.
+- **The brand's two values swap roles:** on white `#3D5A73` itself reads well (about 7:1) and serves for lines and text, while the dark theme's tint `#7FA3C2` is too light there (§2). The reservation test (§3) runs against both themes' phase and severity values.
+
+**Scope boundary, stated explicitly so this doesn't balloon:** this is "light mode exists and every screen reads correctly in it," not a full visual redesign pass. The layout, spacing and component choices stay as they are — only the token values and the chart-color selection change.
+
+## 10. Outstanding before this is final
+
+1. Update Spec 14 to note the new app-level theme setting exists (§6).
+
+Settled earlier (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), the favicons are in hand (§7), and Spec 13 §11 Q1 is marked resolved (§7).
 
 ## Changelog
 
@@ -101,3 +133,4 @@ None (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), t
 | 0.3 | Renumbered 07 → 15 after checking the real repo: 07–14 are already in use (01–05, 07–10, 12–14; 06 and 11 are reserved, not free). Added the `chartRpm` token finding (§4/§5 — a second, previously-missed use of the placeholder teal, this one a chart series rather than a UI accent). Added the existing `web/public/favicon.svg` replacement note (§5 — it's a generic framework default, not ours). Added the Spec 13 §11 Q1 cross-reference (§7) — the real docs URL resolves that spec's open hosting question. |
 | 0.4 | From the implementation review (2026-10-19). §2: measured distances — the nearest chromatic color was `TAXI`, not `TAKEOFF_ROLL`, so `TAXI` becomes `#84CC16` (Spec 03 v0.26); a light tint `#7FA3C2` of the same hue for lines and text, since `#3D5A73` is 2.4–2.6:1 on the dark theme; primary buttons take light text. §3: greys are separated by role; the rule is enforced by a ΔE test. §4: roles widened to selected tabs/chips/segmented controls and "live" states; *zoom controls* dropped (none exist); every other former teal use classified (link, OK, chart highlight/data, neutral); `chartRpm` keeps `#4fc3b0`. §6: URL confirmed. §8: nothing outstanding. |
 | 0.5 | §4: the family mark and §1 lockup open the app's top bar, replacing the plain *SlingologyEIS* text (2026-10-19). |
+| 0.6 | §6 restructured into the full top-bar cluster (Docs, theme toggle, Settings) after seeing the live nav bar — icon too small and barely separated from the dark chrome. Added §8 (icon-legibility fix: size + outline ring; the ring is already built, the size grows to 70–75%) and §9 (light/dark theming — architecture already token-based at the DOM layer; `colors.ts` needs a real light-mode variant since Canvas can't read CSS vars, severity/phase colors need a fresh contrast check on white, and the brand's fill and tint swap roles on white). Theme toggle is an app-level setting, binary, dark by default. Outstanding renumbered §10. (Drafted on v0.3 as "0.4"; merged onto v0.5, 2026-10-19.) |
