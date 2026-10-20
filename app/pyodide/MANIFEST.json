@@ -1,0 +1,62 @@
+{
+  "pyodide": "0.28.0",
+  "packages": [
+    "numpy",
+    "pandas",
+    "python-dateutil",
+    "pytz",
+    "six"
+  ],
+  "files": [
+    {
+      "name": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "sha256": "467a88e8c79f9e10c8e7052bcc32dd12d44d51098beb3b8f970e1cfc965c6757",
+      "size": 3109648
+    },
+    {
+      "name": "pandas-2.3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "sha256": "921a819fd1d60b69e46c74b09827d8c2405ade44ea278ba94c02d4d1b854c938",
+      "size": 5291112
+    },
+    {
+      "name": "pyodide-lock.json",
+      "sha256": "6c6ba6e257a75193fc935a456963b0bfd3f9f4e307c52378b030e25b0b968227",
+      "size": 108703
+    },
+    {
+      "name": "pyodide.asm.js",
+      "sha256": "da195d86c80caece821124dcd4f049e6465a7a73797f1b2b4147283e445d02a2",
+      "size": 1072130
+    },
+    {
+      "name": "pyodide.asm.wasm",
+      "sha256": "4ee3dc1deab639b454fdc6683651b4cf6c86fc587072e4f7b6c8eaed777d9db6",
+      "size": 8645010
+    },
+    {
+      "name": "pyodide.mjs",
+      "sha256": "e056e624b55134dd4723130594c4cb0f6cb7ed8d331a5653929a00fe0784469c",
+      "size": 15828
+    },
+    {
+      "name": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "sha256": "9792745fdfff19fe681a2d2ccd1b72de71650d4b09151567ff85fb266ca86291",
+      "size": 229892
+    },
+    {
+      "name": "python_stdlib.zip",
+      "sha256": "1cc90fccf52e5145bd1bd3ef3540f5e1dd8bf17c5fc66c3e037802ef06ea62af",
+      "size": 2416414
+    },
+    {
+      "name": "pytz-2025.2-py2.py3-none-any.whl",
+      "sha256": "4a449e011aa4eacfa58b6c06cd4db6581cf86f62d4caa320b8c30e54f4a1accb",
+      "size": 509225
+    },
+    {
+      "name": "six-1.17.0-py2.py3-none-any.whl",
+      "sha256": "f213e36bbaae4640f256c86a6626e9122ce2b02b8b02e88a82053d0e4c50c02a",
+      "size": 11050
+    }
+  ]
+}

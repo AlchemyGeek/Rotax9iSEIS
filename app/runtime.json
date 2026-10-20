@@ -1,0 +1,6 @@
+{
+  "host": "browser",
+  "pyodide": "0.28.0",
+  "pyodide_url": "pyodide/",
+  "engine_wheel": "engine/slingology_eis-1.0.1-py3-none-any.whl"
+}
