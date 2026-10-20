@@ -1,0 +1,3632 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engine health analytics for Rotax iS aircraft engines — what it tells you and why">
+      
+      
+      
+        <link rel="canonical" href="https://alchemygeek.github.io/Rotax9iSEIS/reference/research-paper/">
+      
+      
+        <link rel="prev" href="../glossary/">
+      
+      
+        <link rel="next" href="../further-reading/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../img/favicon-32.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>The research paper - SLINGOLOGY EIS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rotax-91xis-engine-data-analytics" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="SLINGOLOGY EIS" class="md-header__button md-logo" aria-label="SLINGOLOGY EIS" data-md-component="logo">
+      
+  <img src="../../img/eis-icon.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SLINGOLOGY EIS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              The research paper
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/AlchemyGeek/Rotax9iSEIS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AlchemyGeek/Rotax9iSEIS
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="SLINGOLOGY EIS" class="md-nav__button md-logo" aria-label="SLINGOLOGY EIS" data-md-component="logo">
+      
+  <img src="../../img/eis-icon.png" alt="logo">
+
+    </a>
+    SLINGOLOGY EIS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/AlchemyGeek/Rotax9iSEIS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AlchemyGeek/Rotax9iSEIS
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding your engine's data
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Understanding your engine's data
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/what-eis-tells-you/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS tells you
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/why-fadec-is-different/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Why a FADEC Rotax is different
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/logs-flights-workspaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logs, flights and workspaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/phases-of-flight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phases of flight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS watches
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    What EIS watches
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/limits-and-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators Manual limits and events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/your-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/topics-and-insights/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topics and insights
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/the-topics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The topics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cylinder-balance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cylinder balance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deciding what matters
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deciding what matters
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/your-decisions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/trends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trends: is my engine changing?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/the-journal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Journal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working with others
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Working with others
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/sharing-a-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing a workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Walkthroughs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Walkthroughs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/first-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and your first workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/first-flight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reading your first flight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/insight-to-decision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From an insight to a decision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/export-import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export and import
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../om-limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators Manual limits by engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings and their defaults
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The research paper
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The research paper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a-research-foundation-for-fadec-native-engine-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Research Foundation for FADEC-Native Engine Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#abstract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Abstract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-introduction-and-motivation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Introduction and Motivation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-data-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Data Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Data Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-garmin-eis-log-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Garmin EIS log sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-engine-parameters-available-from-the-fadec-can-bus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Engine parameters available from the FADEC CAN bus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-parameters-not-available-in-the-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Parameters not available in the log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-the-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 The dataset
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-operating-limits-and-how-they-become-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Operating Limits and How They Become Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Operating Limits and How They Become Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-engine-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Engine profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-the-916is-limits-om-chapter-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 The 916iS limits (OM Chapter 2.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-from-a-reading-to-an-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 From a reading to an event
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-eco-power-mode-still-not-detectable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. ECO / POWER Mode — Still Not Detectable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-automatic-flight-phase-detection-and-log-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Automatic Flight Phase Detection and Log Admission
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Automatic Flight Phase Detection and Log Admission">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-detector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The detector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-which-phases-feed-what" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Which phases feed what
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-log-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Log admission
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-two-layers-what-rotax-says-and-what-is-normal-for-this-aircraft" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Two Layers: What Rotax Says and What Is Normal for This Aircraft
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Two Layers: What Rotax Says and What Is Normal for This Aircraft">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-the-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 The reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-stratification-by-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Stratification by conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-trends-over-engine-hours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Trends over engine hours
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-analytics-topics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Analytics Topics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Analytics Topics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-admission-why-these-topics-and-not-others" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Admission: why these topics and not others
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-cylinder-balance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Cylinder balance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-oil-and-coolant-temperature-peaks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Oil and coolant temperature peaks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-time-at-takeoff-power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Time at takeoff power
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-turbo-boost-at-takeoff-the-empirical-map-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 Turbo boost at takeoff — the empirical MAP model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#76-operators-manual-limits-events-and-saturation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.6 Operators Manual limits — events and saturation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#77-flight-facts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.7 Flight facts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#78-topics-removed-or-sent-to-research" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.8 Topics removed or sent to research
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-engine-ecu-classification-and-a-corrected-finding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ENGINE ECU — Classification and a Corrected Finding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. ENGINE ECU — Classification and a Corrected Finding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-classification-as-built-spec-01-86" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Classification as built (Spec 01 §8.6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-findings-edition-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Findings, Edition 0.4
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-limit-filters-and-the-change-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Limit Filters and the Change Monitor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-trends-is-my-engine-changing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Trends — Is My Engine Changing?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-the-software-slingologyeis-101" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. The Software — SlingologyEIS 1.0.1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-competitive-landscape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Competitive Landscape
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-open-questions-and-research-agenda" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Open Questions and Research Agenda
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Open Questions and Research Agenda">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131-engine-and-fadec-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 Engine and FADEC behaviour
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#132-cas-and-avionics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.2 CAS and avionics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#133-data-and-analytics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.3 Data and analytics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-revision-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Revision History
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../further-reading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further reading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a-research-foundation-for-fadec-native-engine-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Research Foundation for FADEC-Native Engine Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#abstract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Abstract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-introduction-and-motivation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Introduction and Motivation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-data-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Data Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Data Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-garmin-eis-log-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Garmin EIS log sources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-engine-parameters-available-from-the-fadec-can-bus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Engine parameters available from the FADEC CAN bus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-parameters-not-available-in-the-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Parameters not available in the log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-the-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 The dataset
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-operating-limits-and-how-they-become-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Operating Limits and How They Become Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Operating Limits and How They Become Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-engine-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Engine profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-the-916is-limits-om-chapter-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 The 916iS limits (OM Chapter 2.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-from-a-reading-to-an-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 From a reading to an event
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-eco-power-mode-still-not-detectable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. ECO / POWER Mode — Still Not Detectable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-automatic-flight-phase-detection-and-log-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Automatic Flight Phase Detection and Log Admission
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Automatic Flight Phase Detection and Log Admission">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-detector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The detector
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-which-phases-feed-what" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 Which phases feed what
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-log-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Log admission
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-two-layers-what-rotax-says-and-what-is-normal-for-this-aircraft" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Two Layers: What Rotax Says and What Is Normal for This Aircraft
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Two Layers: What Rotax Says and What Is Normal for This Aircraft">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-the-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 The reference
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-stratification-by-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Stratification by conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-trends-over-engine-hours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Trends over engine hours
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-analytics-topics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Analytics Topics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Analytics Topics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-admission-why-these-topics-and-not-others" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Admission: why these topics and not others
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-cylinder-balance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Cylinder balance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-oil-and-coolant-temperature-peaks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Oil and coolant temperature peaks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-time-at-takeoff-power" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Time at takeoff power
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-turbo-boost-at-takeoff-the-empirical-map-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 Turbo boost at takeoff — the empirical MAP model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#76-operators-manual-limits-events-and-saturation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.6 Operators Manual limits — events and saturation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#77-flight-facts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.7 Flight facts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#78-topics-removed-or-sent-to-research" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.8 Topics removed or sent to research
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-engine-ecu-classification-and-a-corrected-finding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. ENGINE ECU — Classification and a Corrected Finding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. ENGINE ECU — Classification and a Corrected Finding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-classification-as-built-spec-01-86" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Classification as built (Spec 01 §8.6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-findings-edition-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Findings, Edition 0.4
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-limit-filters-and-the-change-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Limit Filters and the Change Monitor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-trends-is-my-engine-changing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Trends — Is My Engine Changing?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-the-software-slingologyeis-101" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. The Software — SlingologyEIS 1.0.1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-competitive-landscape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Competitive Landscape
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-open-questions-and-research-agenda" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Open Questions and Research Agenda
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Open Questions and Research Agenda">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131-engine-and-fadec-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 Engine and FADEC behaviour
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#132-cas-and-avionics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.2 CAS and avionics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#133-data-and-analytics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.3 Data and analytics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-revision-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Revision History
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<div class="admonition info inline end">
+<p class="admonition-title">About this page</p>
+<p>This is the project's research paper, published here unchanged from <code>docs/ROTAX 91XiS Engine Data Analytics.md</code> in the repository. It is written for readers who want the evidence and reasoning behind the app; the <a href="../../concepts/what-eis-tells-you/">concept pages</a> say the same things in plain language.</p>
+</div>
+<h1 id="rotax-91xis-engine-data-analytics">ROTAX 91XiS ENGINE DATA ANALYTICS<a class="headerlink" href="#rotax-91xis-engine-data-analytics" title="Permanent link">&para;</a></h1>
+<h2 id="a-research-foundation-for-fadec-native-engine-monitoring">A Research Foundation for FADEC-Native Engine Monitoring<a class="headerlink" href="#a-research-foundation-for-fadec-native-engine-monitoring" title="Permanent link">&para;</a></h2>
+<p><strong>Slingology EIS Project  |  N117ZS Sling TSi  |  KAWO</strong></p>
+<p>Living Document — Edition 0.4 (draft for review)  |  October 2026</p>
+<hr />
+<h2 id="abstract">Abstract<a class="headerlink" href="#abstract" title="Permanent link">&para;</a></h2>
+<p>This paper documents a research programme to build open-source, FADEC-native engine health analytics for Rotax iS-powered aircraft, and records what the first 58 flights of one Rotax 916iS have shown. General-purpose platforms such as Savvy Aviation and FlySto are built around pilot-controlled mixture management; their signature diagnostics (rich-of-peak / lean-of-peak analysis, exhaust-valve detection from leaning behaviour) do not apply to an engine whose dual-lane ECU sets fuel, spark and operating mode itself. SlingologyEIS starts instead from what the iS engine actually controls and what its Garmin engine log actually contains.</p>
+<p>Since Edition 0.3 the toolkit has become an application. SlingologyEIS 1.0.1 (October 2026) runs either as a local server or entirely inside the browser, reads Garmin G3X, Garmin Pilot and Garmin AXIS logs, keeps per-aircraft workspaces whose logs never leave the pilot's own folders, and answers two questions about every flight: <em>did anything go outside the Rotax Operators Manual limits</em> (events), and <em>is this flight unusual for this engine</em> (insights against a reference learned only from the aircraft's own history). A Trends page asks the second question over a longer horizon — <em>is my engine changing</em>. The analytics topics shown to pilots now rest on written admission criteria; several of Edition 0.3's modules were removed or demoted under them, and one of its findings — four "in-flight" ENGINE ECU events — was withdrawn as a classifier defect.</p>
+<p>The dataset is 120 logs from N117ZS (April–October 2026, engine hours 28.2 → 122.2): 59 ground sessions are skipped automatically and three duplicate exports collapse, leaving 58 flights and 76 airborne hours. Findings as of this edition: cylinder 4 is the hottest cylinder on 58/58 flights, by a median 40 °F; cruise EGT spread averages 60.3 ± 5.5 °F and is rising at 0.12 °F per engine hour (R² 0.42), with the last twelve flights 5 °F wider than the reference, carried by cylinder 4; oil and coolant peaks have never approached their limits (201 ± 12 °F and 181 ± 7 °F against 248 °F) and depend on flight length more than on weather; one time-at-takeoff-power exceedance (389 s against 300 s) and one close call; the takeoff manifold-pressure model now stands at n = 56, R² 0.64, with the recent takeoffs delivering about 0.8 inHg more boost than it predicts; zero in-flight ENGINE ECU events in 117 logs. Three Operators Manual limits fire on most flights for diagnosed aircraft-specific reasons (fuel-pressure sender offset, a low idle setting, propeller-governor overshoot) and are handled by filters with a note rather than by changing the limits.</p>
+<p>The long-term goal is unchanged: free, FADEC-native engine monitoring for the Rotax iS community, validated beyond a single aircraft.</p>
+<hr />
+<h2 id="1-introduction-and-motivation">1. Introduction and Motivation<a class="headerlink" href="#1-introduction-and-motivation" title="Permanent link">&para;</a></h2>
+<p>The Rotax 916iS is a turbocharged, intercooled, liquid-cooled-head, FADEC-controlled four-cylinder engine: 160 hp (119 kW) at takeoff, 2,000-hour TBO, the highest-performance engine in the Rotax light-aviation line. The 915iS (139 hp, turbocharged) and 912iS (100 hp, normally aspirated) share its control architecture. All three differ from the Lycoming and Continental engines that dominate general-aviation analytics tooling in three ways that matter for engine monitoring:</p>
+<ul>
+<li><strong>No pilot mixture control.</strong> A dual-redundant ECU (Lane A / Lane B) reads throttle position, manifold pressure and air temperature and from them sets injection, ignition timing and — above roughly 97 % throttle — the ECO/POWER mode transition. The pilot has one input, the throttle.</li>
+<li><strong>Liquid-cooled cylinder heads, air-cooled barrels.</strong> The cooling-health observables are coolant temperature and EGT, not cylinder-head temperature in the traditional sense.</li>
+<li><strong>FADEC-calculated fuel flow.</strong> There is no physical flow sensor. Fuel flow is a model-based value with a manufacturer-stated tolerance of about ±10 %.</li>
+</ul>
+<p>Existing platforms do not account for this. Savvy Aviation's FEVA exhaust-valve analytics and ROP/LOP diagnostics depend on the mixture being varied by hand; on a FADEC engine they either cannot run or produce noise. FlySto replays flights and graphs any channel but has no engine-health model for an iS engine. Rotax's own B.U.D.S. software reads the ECU fault log directly but needs a hardware interface and is used at maintenance, not after every flight. A pilot with a Rotax iS engine and a modern glass panel has therefore been collecting a rich engine log on every flight with nothing designed to read it.</p>
+<p>The question this programme asks is: with the mixture fixed by the computer, which engine-health questions can a flight log answer, and how should they be answered so that a pilot can trust them? The answers so far are the subject of this paper.</p>
+<p><strong>What changed since Edition 0.3.</strong> Edition 0.3 (July 2026) described a Python toolkit and a 23-flight dataset. Since then: the dataset has grown to 58 flights; the toolkit has become a web application with a local-server and an in-browser mode; the aircraft's avionics changed from Garmin G3X to Garmin AXIS, adding a second log format; the analytics topics were audited against written admission criteria and the set changed; limit detection was reworked after a diagnosis of why some limits fired on every flight; limit filters, a change monitor, a Trends change page and a Journal of decisions were added; and the ENGINE ECU finding of Edition 0.3 was corrected. Each of these is covered below.</p>
+<hr />
+<h2 id="2-data-architecture">2. Data Architecture<a class="headerlink" href="#2-data-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="21-garmin-eis-log-sources">2.1 Garmin EIS log sources<a class="headerlink" href="#21-garmin-eis-log-sources" title="Permanent link">&para;</a></h3>
+<p>The engine reads Garmin engine logs from three export paths. All three normalise, inside the loader, to one channel registry; nothing downstream knows which path produced a frame.</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Identification</th>
+<th>Layout</th>
+<th>Sampling</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>G3X direct</strong> (GDU 460 + GEA-24)</td>
+<td>Row 1 <code>#airframe_info … product="GDU 4xx"</code></td>
+<td>metadata row · column header · 1 Hz rows</td>
+<td>1 Hz (verified: all inter-row deltas 1.000 s, N = 16,198)</td>
+<td>Primary source April–October 2026. File name <code>log_YYYYMMDD_HHMMSS_ICAO.csv</code>; 111 columns.</td>
+</tr>
+<tr>
+<td><strong>Garmin Pilot export</strong></td>
+<td>As above with row 2 prefixed <code>#</code></td>
+<td>same</td>
+<td>1 Hz</td>
+<td>Same columns; any file name. A flight exported both ways appears twice and collapses to one (§2.4).</td>
+</tr>
+<tr>
+<td><strong>Garmin AXIS</strong></td>
+<td>Row 1 <code>Product="AXIS"</code>; row 2 a <code>#</code> units row; row 3 camelCase column names</td>
+<td>metadata · units · column names · rows</td>
+<td>≈ 0.83 Hz</td>
+<td>Since October 2026 on N117ZS. <strong>Variable column set</strong> — 102 columns on one log, 117 on the next; mapping is by name only.</td>
+</tr>
+</tbody>
+</table>
+<p>The G3X metadata row carries aircraft ident, software version, system ID, airframe hours and engine hours. The AXIS carries the ident as <code>tail_number</code>, no system ID and no hours fields; engine hours are taken from the first row's <code>e1TachTime</code> channel — on N117ZS the same hour meter the G3X wrote (119.6 h on 14 October 2026, continuous with the G3X series), so baselines and trends carry straight across the avionics change with no user input.</p>
+<p><strong>AXIS sampling.</strong> The AXIS writes roughly five samples every six seconds (a repeating pattern of four 1,000 ms steps and one 2,000 ms step), so about one row in six is missing. Several engine paths count rows as seconds. The loader therefore reindexes AXIS frames onto a 1-second grid: numeric channels are linearly interpolated across holes of at most 2 s, text and CAS channels carry the previous value forward, longer holes stay missing, filled rows are flagged, and every AXIS analysis carries an informational diagnostic with the filled share (≈ 17 %). G3X logs are never resampled. G3X and AXIS frames are therefore sample-for-sample comparable, and phase detection, limits and topics produce the same classes on either. A time-based engine (elapsed-second arithmetic throughout) is the honest long-term fix and is on the backlog as hardening.</p>
+<p><strong>AXIS differences handled in the loader.</strong> CAS alert tokens are normalised to the G3X wording through a per-source alias table (<em>EFIS ON BACKUP</em> → <em>EFIS ON BKUP</em>, <em>NAV ON BACKUP</em> → <em>NAV ON BKUP</em>), so events, filters and Journal entries use one name per alert; AXIS names the ECU alert <code>ENGINE ECU</code> as the G3X does (confirmed on the 18 October log). General-purpose analog inputs (<code>engine1GeneralPurposeAnalog&lt;n&gt;</code>) carry whatever the installation wired to them and are <strong>never mapped by assumption</strong>: they enter under a raw id and appear under a registry name (CO ppm on N117ZS) only when the pilot assigns them in the app's settings. AXIS-only channels (<code>onGroundState</code>, <code>flightTime</code>, <code>e1TachTime</code>) are carried raw and are not used by phase detection, so a reference built from G3X flights stays valid for AXIS flights of the same aircraft. The first AXIS logs examined opened with the engine already running, one to two minutes after boot; of the five now in the set, two do record the engine start, three carry a complete two-lane check, and all five name the alert <code>ENGINE ECU</code> (§8) — so the ECU classifier works unchanged on AXIS, and a log that opens mid-run is treated as normal for the source rather than as a mid-log power cycle.</p>
+<h3 id="22-engine-parameters-available-from-the-fadec-can-bus">2.2 Engine parameters available from the FADEC CAN bus<a class="headerlink" href="#22-engine-parameters-available-from-the-fadec-can-bus" title="Permanent link">&para;</a></h3>
+<p>The GEA-24 (and the AXIS engine interface) receives the following from the 916iS over the Rotax display CAN bus (Garmin G3X Installation Manual §24.2.2.3; Rotax OM communication-interfaces section):</p>
+<table>
+<thead>
+<tr>
+<th>Channel</th>
+<th>Source</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RPM</td>
+<td>FADEC CAN</td>
+<td>Propeller-shaft rpm after gearbox reduction</td>
+</tr>
+<tr>
+<td>Engine power (%)</td>
+<td>FADEC CAN</td>
+<td>ECU-computed share of rated power; can exceed 100 % at takeoff</td>
+</tr>
+<tr>
+<td>Manifold pressure (inHg)</td>
+<td>FADEC CAN</td>
+<td>Plenum pressure; the turbocharger health observable</td>
+</tr>
+<tr>
+<td>Oil pressure (psi), oil temperature (°F)</td>
+<td>FADEC CAN</td>
+<td></td>
+</tr>
+<tr>
+<td>Coolant temperature (°F)</td>
+<td>FADEC CAN</td>
+<td>Cylinder-head liquid cooling</td>
+</tr>
+<tr>
+<td>Fuel flow (gal/h)</td>
+<td>FADEC calculated</td>
+<td>Model-based; no physical sensor; ±10 %</td>
+</tr>
+<tr>
+<td>Fuel pressure (psi)</td>
+<td>Separate sensor</td>
+<td>Rail pressure relative to manifold pressure</td>
+</tr>
+<tr>
+<td>EGT1–4 (°F)</td>
+<td>FADEC CAN</td>
+<td>Per-cylinder exhaust gas temperature</td>
+</tr>
+<tr>
+<td>Main volts, battery amps</td>
+<td>GEA-24 / AXIS</td>
+<td>Bus voltage and battery current</td>
+</tr>
+<tr>
+<td>CAS alert string</td>
+<td>Avionics</td>
+<td>Composite annunciation of all active alerts (<code>ENGINE ECU</code>, <code>FUEL PRESS</code>, <code>OIL PRESS</code>, …)</td>
+</tr>
+</tbody>
+</table>
+<p>Plus the flight data the analytics need to know what the aircraft was doing: indicated and true airspeed, ground speed, barometric and GPS altitude, vertical speed, outside air temperature, density altitude, position.</p>
+<h3 id="23-parameters-not-available-in-the-log">2.3 Parameters not available in the log<a class="headerlink" href="#23-parameters-not-available-in-the-log" title="Permanent link">&para;</a></h3>
+<p>The following exist in the ECU but are not exposed over the display CAN bus and do not appear in any of the three log formats. They are accessible only through B.U.D.S. at maintenance:</p>
+<ul>
+<li>Throttle position — the quantity that determines ECO vs POWER mode</li>
+<li>Lane A / Lane B individual fault codes and status</li>
+<li>Injector pulse width per cylinder; ignition advance angle</li>
+<li>Wastegate (boost-control valve) position</li>
+<li>Manifold air temperature (on the CAN bus, not in the standard column set)</li>
+<li>The ECU's internal fault history</li>
+</ul>
+<p>This gap is a design constraint, not a footnote. The topic-admission criteria (§7.1) exclude any topic that needs one of these channels, and the app never infers them. ECO/POWER mode detection remains an open research item (§4).</p>
+<h3 id="24-the-dataset">2.4 The dataset<a class="headerlink" href="#24-the-dataset" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Aircraft</td>
+<td>N117ZS, Sling TSi, Rotax 916iS, constant-speed propeller with governor</td>
+</tr>
+<tr>
+<td>Avionics</td>
+<td>Garmin G3X Touch (GDU 460, GEA-24) to 5 October 2026; Garmin AXIS from 14 October 2026</td>
+</tr>
+<tr>
+<td>Logs</td>
+<td>120 files: 112 G3X direct, 3 Garmin Pilot exports, 5 AXIS</td>
+</tr>
+<tr>
+<td>Admission</td>
+<td>59 ground sessions skipped (no airborne phase); 3 duplicate exports collapsed; 0 short flights; 0 corrupt logs → <strong>58 flights</strong> (52 G3X, 1 Garmin Pilot, 5 AXIS)</td>
+</tr>
+<tr>
+<td>Period</td>
+<td>8 April – 18 October 2026; engine hours 28.2 → 122.2</td>
+</tr>
+<tr>
+<td>Time</td>
+<td>93.9 h recorded, <strong>76.0 h airborne</strong>; median flight 45 min airborne, longest 293 min; 17 flights under 20 min airborne, 26 over an hour</td>
+</tr>
+<tr>
+<td>Departures</td>
+<td>18 airports; home field KAWO (27 departures); a July cross-country to Oshkosh (KBIL, KFCM, KOSH, KMML, KRAP, KHLN); 5 departures above 2,000 ft pressure altitude (max 3,685 ft, KHLN)</td>
+</tr>
+<tr>
+<td>Conditions</td>
+<td>cruise OAT 1.6–24.1 °C (OAT bands: 48 mild, 6 cold, 1 warm, 0 hot; 3 flights with no cruise); cruise density altitude 775–15,506 ft (DA bands: 12 low, 28 moderate, 7 high, 8 very high); maximum altitude 15,066 ft</td>
+</tr>
+<tr>
+<td>Fuel</td>
+<td>508 gal FADEC-integrated, 6.7 gal per airborne hour overall</td>
+</tr>
+</tbody>
+</table>
+<p>The same 120 logs are the test set for the application: the characterization and contract tests assert on this set's counts, and every analysis in this paper was produced by the released engine (1.0.1) with its shipped defaults and <strong>no filters applied</strong> — the topics' natural signal, not what the pilot sees after setting filters.</p>
+<p><strong>Single-aircraft caveat.</strong> Every empirical number in this paper comes from one 916iS in one airframe. The topic register records every such finding as <em>E3 (916iS, 1 aircraft)</em>, and every topic is <em>Unverified</em> on the 912iS and 915iS until data from such an aircraft exists (§7.1).</p>
+<hr />
+<h2 id="3-operating-limits-and-how-they-become-events">3. Operating Limits and How They Become Events<a class="headerlink" href="#3-operating-limits-and-how-they-become-events" title="Permanent link">&para;</a></h2>
+<h3 id="31-engine-profiles">3.1 Engine profiles<a class="headerlink" href="#31-engine-profiles" title="Permanent link">&para;</a></h3>
+<p>Limits come from each engine's Rotax Operators Manual and live in an engine profile (<code>engines/&lt;model&gt;.json</code>) with the edition cited. The OM text is never stored in the repository.</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Source</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>916iS</td>
+<td>OM-916 i/C24, Edition 0 / Rev. 1, December 2023</td>
+<td>VERIFIED</td>
+</tr>
+<tr>
+<td>915iS</td>
+<td>OM-915 i A/C24, Edition 0 / Rev. 4, September 2022</td>
+<td>VERIFIED</td>
+</tr>
+<tr>
+<td>912iS</td>
+<td>OM-912 i Series, Edition 2 / Rev. 2, September 2025</td>
+<td>VERIFIED — no manifold-pressure or EGT-split limit, as the OM defines none</td>
+</tr>
+</tbody>
+</table>
+<p>A "914iS" placeholder that existed earlier was removed: the Rotax 914 is a carburetted turbo engine, not an iS engine, and no such OM exists.</p>
+<h3 id="32-the-916is-limits-om-chapter-21">3.2 The 916iS limits (OM Chapter 2.1)<a class="headerlink" href="#32-the-916is-limits-om-chapter-21" title="Permanent link">&para;</a></h3>
+<p><strong>Engine speed</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Minimum</th>
+<th>Maximum</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Idle</td>
+<td>1,800 rpm</td>
+<td>—</td>
+<td></td>
+</tr>
+<tr>
+<td>Normal continuous</td>
+<td>—</td>
+<td>5,500 rpm</td>
+<td></td>
+</tr>
+<tr>
+<td>Takeoff (max 5 min)</td>
+<td>—</td>
+<td>5,800 rpm</td>
+<td>Time-limited</td>
+</tr>
+<tr>
+<td>Boost pressure peak</td>
+<td>—</td>
+<td>6,500 rpm</td>
+<td>Max 1,990 hPa for 3 s only</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Temperatures</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Min</th>
+<th>Max</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Oil temp — takeoff minimum</td>
+<td>50 °C / 122 °F</td>
+<td>—</td>
+<td>Must be reached before takeoff</td>
+</tr>
+<tr>
+<td>Oil temp — normal</td>
+<td>50 °C / 122 °F</td>
+<td>120 °C / 248 °F</td>
+<td></td>
+</tr>
+<tr>
+<td>Oil temp — optimal</td>
+<td>90–110 °C / 194–230 °F</td>
+<td></td>
+<td>Below this risks condensation in the sump</td>
+</tr>
+<tr>
+<td>Coolant temp</td>
+<td>—</td>
+<td>120 °C / 248 °F</td>
+<td></td>
+</tr>
+<tr>
+<td>EGT, per cylinder</td>
+<td>—</td>
+<td>950 °C / 1,742 °F</td>
+<td></td>
+</tr>
+<tr>
+<td>EGT split, fuel flow &gt; 3 L/h</td>
+<td>—</td>
+<td>200 °C / 392 °F</td>
+<td>The cylinder-balance limit</td>
+</tr>
+<tr>
+<td>EGT split, fuel flow &lt; 3 L/h</td>
+<td>—</td>
+<td>500 °C / 932 °F</td>
+<td>Idle only</td>
+</tr>
+<tr>
+<td>Manifold air temp</td>
+<td>—</td>
+<td>50 °C normal, 80 °C extended</td>
+<td>Not logged</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Pressures</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Min</th>
+<th>Max</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Oil pressure, &gt; 3,500 rpm</td>
+<td>2.0 bar / 29 psi</td>
+<td>5.0 bar / 72.5 psi</td>
+<td></td>
+</tr>
+<tr>
+<td>Oil pressure, cold start</td>
+<td>—</td>
+<td>7.0 bar / 101.5 psi</td>
+<td></td>
+</tr>
+<tr>
+<td>Manifold / boost pressure</td>
+<td>—</td>
+<td>1,800 hPa / 53.15 inHg</td>
+<td>Peak 1,990 hPa for 3 s</td>
+</tr>
+<tr>
+<td>Fuel pressure (rail, relative to MAP)</td>
+<td>2.9 bar / 42 psi</td>
+<td>3.2 bar / 46 psi</td>
+<td>Exceedance band 2.5–3.5 bar for max 3 s after a power change</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Other:</strong> negative G −0.5 G for 5 s; critical altitude 15,000 ft; max operating altitude 23,000 ft; ECO/POWER threshold ≈ 97 % throttle position; single-lane operation always POWER mode.</p>
+<p>The 915iS and 912iS profiles differ in a few values (912iS idle minimum 1,400 rpm; 915iS/912iS oil maximum 266 °F; 912iS oil-pressure minimum 12 psi below 3,500 rpm; MAP maximum 51.09 inHg on the 915iS, none on the 912iS). The app also checks bus voltage (11.5–14.5 V), which is not an OM limit: it is a 12 V installation check included because a charging fault shows there first.</p>
+<h3 id="33-from-a-reading-to-an-event">3.3 From a reading to an event<a class="headerlink" href="#33-from-a-reading-to-an-event" title="Permanent link">&para;</a></h3>
+<p>A reading past a limit for one second is not an event. The 916iS profile checks 21 limits (including per-cylinder EGT maximums, the two EGT-split limits and the five-minute takeoff-power rule) under three rules that were found necessary on real data:</p>
+<ol>
+<li><strong>Some excursions must last.</strong> Idle minimum must persist 30 s (a brief dip as the governor settles is normal); fuel-pressure minimum 10 s; fuel-pressure maximum 10 s in climb and descent but 30 s in cruise, where switching tanks causes a longer, harmless spike.</li>
+<li><strong>Some limits are checked only when they make sense.</strong> Low oil pressure, low fuel pressure and low voltage are not checked with the engine stopped (an engine-running gate at 1,000 rpm). Oil-pressure minimum is checked only once airborne; the oil-temperature-before-takeoff minimum from the takeoff roll on; fuel-pressure maximum not during taxi at all, because that is when the fuel-pump test is run. Idle minimum is checked only after idle rpm has been reached once since engine start.</li>
+<li><strong>Nearby excursions are one event.</strong> An event ends only after the reading has stayed inside the limit for 30 s (the <em>merge gap</em>). A value that bounces across the line for two minutes is one two-minute event, not forty.</li>
+</ol>
+<p>What remains is an event: time, phase, limit, duration and excess, at most one insight per limit per flight. Each limit carries the OM's own WARNING or CAUTION label; the labels help read the table and nothing else — the app never hides a caution, escalates a warning or decides on the pilot's behalf which deserves action (a program principle recorded in October 2026: the OM is the only predefined rule; the pilot overrides it through operations such as filters; the system's job is to say when something in those operations changed).</p>
+<p>Why this matters: before phase awareness the fuel-pressure maximum "fired" on four flights out of five and the low-voltage limit on half of them — the fastest way to teach a pilot to ignore every alert. The limits are unchanged; what changed is knowing when a reading is <em>expected</em> to be out of range.</p>
+<p><strong>Time at takeoff power.</strong> The OM's two rpm rules were encoded wrongly in earlier toolkit versions: 5,500 rpm "continuous" raised a caution on every takeoff because it had no time allowance, while a short run above 5,800 rpm went unreported. Now a single rule — <em>overboost</em> — owns the five-minute allowance: the longest continuous block above 5,500 rpm or 100 % power (with the same 30 s merge), an event past 300 s, a <em>close call</em> within 60 s of it. The 5,800 rpm ceiling is a separate hard limit with no time allowance (§7.6 on why it fires on most flights of this aircraft).</p>
+<hr />
+<h2 id="4-eco-power-mode-still-not-detectable">4. ECO / POWER Mode — Still Not Detectable<a class="headerlink" href="#4-eco-power-mode-still-not-detectable" title="Permanent link">&para;</a></h2>
+<p>The 916iS FADEC runs two fuel/ignition maps: POWER (≥ 97 % throttle position: enrichment, maximum performance, takeoff and climb) and ECO (&lt; 97 %: lean mapping, best economy, cruise and descent; available only with both lanes operating). The threshold is a <em>throttle-position</em> percentage, not an engine-power percentage: 97 % throttle at altitude with a coarse propeller setting may produce 55 % of rated power. The log carries engine power (ECU-computed output), not throttle position.</p>
+<p>Edition 0.2 hypothesised that ECO transitions are detectable as correlated simultaneous drops in fuel flow and EGT at constant altitude and rpm. That remains a hypothesis. Validation requires a flight with deliberate, known throttle positions, which has not been flown; the 912iS OM states no throttle-position threshold at all. The app does not attempt the inference and no topic depends on it (backlog A8). The practical consequence is that fuel-flow comparisons across flights mix two ECU maps, which is one of the reasons cruise fuel flow is no longer an analytics topic (§7.8).</p>
+<hr />
+<h2 id="5-automatic-flight-phase-detection-and-log-admission">5. Automatic Flight Phase Detection and Log Admission<a class="headerlink" href="#5-automatic-flight-phase-detection-and-log-admission" title="Permanent link">&para;</a></h2>
+<p>Manual phase labelling is excluded by design: the pilot never annotates a log. Everything else in the system — which part of a flight feeds which topic, when a limit is checked, whether an ENGINE ECU alert is expected — depends on the phase detector, so it is described here as built.</p>
+<h3 id="51-the-detector">5.1 The detector<a class="headerlink" href="#51-the-detector" title="Permanent link">&para;</a></h3>
+<p>A state machine runs over smoothed signals (rpm, IAS, vertical speed, barometric altitude, power; 5–11-sample moving means so that one noisy reading cannot flip a phase), with dwell times before committing to a new phase.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Entered when</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PRE_START</td>
+<td>log start</td>
+<td>Avionics on, engine not running</td>
+</tr>
+<tr>
+<td>ENGINE_START</td>
+<td>rpm &gt; 500</td>
+<td></td>
+</tr>
+<tr>
+<td>WARMUP</td>
+<td>rpm 1,500–3,000 and IAS &lt; 30 kt</td>
+<td>A generous IAS ceiling: several real flights show a 10–25 kt IAS floor while parked (wind, pitot noise), and ENGINE_START has no other exit</td>
+</tr>
+<tr>
+<td>TAXI</td>
+<td>IAS &gt; 5 kt from WARMUP</td>
+<td>A run-up that drops back to idle without leaving the ground stays in TAXI</td>
+</tr>
+<tr>
+<td>TAKEOFF_ROLL</td>
+<td>rpm &gt; 4,500, IAS &lt; 60 kt, height above field &lt; 50 ft</td>
+<td>A turbocharged iS can spool from idle to full power within one 1 Hz sample; the gate is wide for that reason. A gusty run-up falls back to TAXI</td>
+</tr>
+<tr>
+<td>CLIMB</td>
+<td>IAS &gt; 50 kt and VS &gt; 200 fpm</td>
+<td>The only gate that confirms lift-off</td>
+</tr>
+<tr>
+<td>CRUISE</td>
+<td>|VS| &lt; 200 fpm sustained 60 s (45 s from DESCENT)</td>
+<td>Exit at ±300 fpm held 3 s (hysteresis)</td>
+</tr>
+<tr>
+<td>DESCENT</td>
+<td>VS &lt; −300 fpm</td>
+<td></td>
+</tr>
+<tr>
+<td>APPROACH</td>
+<td>low (&lt; 500–1,500 ft above field, depending on the phase left) and slowing</td>
+<td>Reachable from CLIMB only after climbing 800 ft clear of the pattern</td>
+</tr>
+<tr>
+<td>LANDING_ROLL</td>
+<td>rpm &lt; 2,000, IAS &lt; 30 kt, near the ground</td>
+<td></td>
+</tr>
+<tr>
+<td>SHUTDOWN</td>
+<td>rpm &lt; 500</td>
+<td>Can return to ENGINE_START (a restart)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Field elevation</strong> is estimated from barometric altitude while stationary before takeoff — no user entry — and re-anchored wherever the aircraft is next detected on the ground (sustained IAS &lt; 30 kt with rpm &lt; 2,000 for 10 s, which cannot happen in flight). Without that, flights landing at a higher field than they left (eleven in this set, 107–3,422 ft higher) stayed in DESCENT or APPROACH through roll-out, taxi and shutdown, and multi-leg logs could not detect the next takeoff.</p>
+<p>Three further fixes came from real flights that had collapsed into one TAXI or ENGINE_START phase; each was made under a regression rule (snapshot every log's phases, metrics and exceedances before the change, compare after, confirm every difference is intended) that is now mandatory for any change to a detection heuristic.</p>
+<p><strong>Known limitations</strong> (backlog S1, S2): after landing, DESCENT/APPROACH can run through the taxi-in because taxi power is above the on-ground test's 2,000 rpm, and LANDING_ROLL leaves only on IAS &lt; 5 kt, which some logs never show at rest — so an in-flight label can outlast the engine cut (the ECU classifier works around this with an engine-state rule, §8); and LANDING_ROLL exits only to TAXI or SHUTDOWN, so a touch-and-go misclassifies every later circuit (stop-and-goes and go-arounds are handled). Both are hardening items, not blockers.</p>
+<h3 id="52-which-phases-feed-what">5.2 Which phases feed what<a class="headerlink" href="#52-which-phases-feed-what" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Cylinder balance (spread and per-cylinder deviation): <strong>cruise only</strong>, where the engine is settled and the cylinders can be compared fairly.</li>
+<li>Turbo boost at takeoff: <strong>takeoff roll</strong> at ≥ 5,500 rpm.</li>
+<li>Time at takeoff power: every second above the threshold, any phase.</li>
+<li>Oil and coolant peaks: the whole flight.</li>
+<li>ENGINE ECU runs: sorted by phase into expected (start, lane check, shutdown) and not expected (ground with the engine running, in flight).</li>
+<li>Phase-aware limit checks: §3.3.</li>
+</ul>
+<p>A short flight, a pattern session or a flight that never settled may have no cruise; the cruise-based cards then say <em>unavailable: no cruise detected</em> rather than reporting a number from a few seconds of level flight (3 of the 58 flights).</p>
+<h3 id="53-log-admission">5.3 Log admission<a class="headerlink" href="#53-log-admission" title="Permanent link">&para;</a></h3>
+<p>Every discovered file is classified once, when first seen, by one classifier shared by the CLI loader, the folder scan and drag-and-drop import, so the three cannot disagree:</p>
+<ol>
+<li><strong>Ground session</strong> — no row lands in an airborne phase (CLIMB, CRUISE, DESCENT, APPROACH, LANDING_ROLL). TAKEOFF_ROLL deliberately does not count: TAXI → TAKEOFF_ROLL fires on rpm alone, and only CLIMB's altitude-gain gate confirms lift-off. The case that proved it was a ground run-up on 6 July that pushed rpm past 4,500 with the altitude flat. This rule replaced an earlier proxy (rpm &gt; 3,000 and IAS &gt; 30 kt for ≥ 3 min); on the 54 files then available the two agreed exactly.</li>
+<li><strong>Short flight</strong> — total airborne time under 10 minutes (configurable). Aimed at three-minute circuits, not at a twelve-minute hop. No log in the current set trips it.</li>
+<li><strong>Corrupt log</strong> — a time gap of more than 5 minutes inside one session, evaluated on the 1-second grid so AXIS's routine 2 s holes never count.</li>
+</ol>
+<p>Skipped logs are recorded with the reason, listed under <em>Skipped</em> in the app with a read-only preview, and can be included by the pilot; the override is permanent and survives rescans. Duplicate exports of the same flight (the same G3X session copied from the SD card and exported from Garmin Pilot) are identified by a content fingerprint and collapse to one. A file the loader cannot read is listed as <em>Unreadable</em> with the reason and never stops the other logs. On the current set: 120 files → 59 ground sessions → 61 loaded → 3 duplicates → 58 flights.</p>
+<p>A separate, pilot-only tier keeps an admitted flight out of the <em>reference</em> (§6) without removing it from the workspace — for a flight after maintenance, a known bad probe, a ferry flight flown very differently from the norm. Exclusion needs a reason and is a Journal decision.</p>
+<hr />
+<h2 id="6-two-layers-what-rotax-says-and-what-is-normal-for-this-aircraft">6. Two Layers: What Rotax Says and What Is Normal for This Aircraft<a class="headerlink" href="#6-two-layers-what-rotax-says-and-what-is-normal-for-this-aircraft" title="Permanent link">&para;</a></h2>
+<p>The analysis is built in two layers, and keeping them apart is the design's central decision.</p>
+<p><strong>Layer 1 — the engine profile: what Rotax says.</strong> One per engine type, from that engine's OM, every limit cited. It answers <em>did anything go outside the manufacturer's limits</em> and is the same for every aircraft with that engine (§3).</p>
+<p><strong>Layer 2 — the aircraft model: what is normal for <em>this</em> aircraft.</strong> Learned only from that aircraft's own flights: baselines, trends, the takeoff-MAP model, the usual hottest cylinder. It answers <em>is this flight different from how this engine usually behaves</em>. No number learned from one aircraft is applied to another. Two 916iS engines in two Sling TSis will not run the same oil temperature on the same day — cowling, baffling, oil cooler, probe placement, the individual engine shift the numbers by more than the changes the system is trying to detect — so a fleet-wide "normal" would hide exactly the changes that matter.</p>
+<h3 id="61-the-reference">6.1 The reference<a class="headerlink" href="#61-the-reference" title="Permanent link">&para;</a></h3>
+<p>For each tracked metric the reference is the mean and standard deviation across the aircraft's <strong>other</strong> flights. "Other" is literal: a flight is left out of its own reference (leave-one-out), so one unusual flight cannot make itself look normal. On the 23-flight dataset of Edition 0.3, self-inclusion changed four borderline results (z between 1.8 and 2.1, always damped).</p>
+<p>A flight is flagged when a metric sits more than <strong>z = 2.0</strong> standard deviations from its reference (the <em>outlier z-threshold</em>, roughly the outer 5 % of the aircraft's own history), once at least <strong>n_min = 10</strong> other comparable flights exist; below that the card shows the number with <em>still building</em>. One number, two consumers: the same threshold rings outlier points on Trends charts and fires the baseline-deviation insight, so "unusual" means the same thing everywhere.</p>
+<p><strong>Minimum detectable change.</strong> The practical consequence of a baseline anchor is that the smallest change a trigger can separate from flight-to-flight noise is about 2 SD of the metric. This <em>MDC</em> is now an admission criterion (§7.1): a topic whose mechanism implies a change smaller than its MDC needs conditioning before it is shown.</p>
+<h3 id="62-stratification-by-conditions">6.2 Stratification by conditions<a class="headerlink" href="#62-stratification-by-conditions" title="Permanent link">&para;</a></h3>
+<p>Every cross-flight comparison assumes the flights are comparable. They are not by default: density altitude and outside air temperature both affect engine behaviour independently of anything mechanical, and they affect different things.</p>
+<ul>
+<li><strong>Density altitude</strong> is the right single normaliser for <em>performance</em> quantities — power at a throttle setting, manifold pressure, true airspeed from indicated: two flights at the same DA present the engine with the same oxygen.</li>
+<li><strong>Outside air temperature</strong> is separately needed for <em>thermal</em> quantities — EGT, oil and coolant temperatures — because the ambient air is simultaneously the cooling medium for the intercooler, oil cooler and radiator. A hot-and-high flight and a cold-and-low flight can share a DA and have different cooling margins.</li>
+<li><strong>Stratification is preferred over invented correction formulas</strong> where no OM reference exists.</li>
+</ul>
+<p>Bands as implemented: OAT cold &lt; 5 °C, mild 5–20, warm 20–30, hot &gt; 30; DA low &lt; 2,000 ft, moderate 2,000–5,000, high 5,000–9,000, very high &gt; 9,000. Thermal metrics (spread, per-cylinder deviations, oil and coolant peaks) use the OAT band; cruise fuel figures and the takeoff-MAP limit metric use the DA band; event counts and climb rates are not stratified.</p>
+<p>Since engine 0.25.0 stratification is no longer display-only: the baseline-deviation insight compares a flight against the leave-one-out reference of its <strong>own band</strong> when that band has at least n_min other flights, falling back to all flights otherwise, and the message says which (<em>2.1 std devs above your other mild flights, n = 47</em> vs <em>above all your flights, n = 57</em>). This removed seasonal false positives — a hot-day oil peak standing out against a reference that included winter flights — and made the insights agree with the stratified Trends view. The cost, accepted deliberately, is that per-band samples are smaller: on this dataset 48 of 55 cruise flights are <em>mild</em>, so the cold, warm and hot bands fall back to the unstratified reference.</p>
+<h3 id="63-trends-over-engine-hours">6.3 Trends over engine hours<a class="headerlink" href="#63-trends-over-engine-hours" title="Permanent link">&para;</a></h3>
+<p>Besides <em>is this flight unusual</em>, the reference answers <em>is this metric drifting</em>. A straight line is fitted to each metric against engine hours across all flights; a trend is reported — and a trend insight fires — only when the line explains at least half the variation (<strong>R² ≥ 0.5</strong>) and there are at least ten flights. Below that gate no line is drawn and no insight fires; a weak trend is not reported as if it were strong. The gate has not yet been cleared by any metric on N117ZS (§7.2).</p>
+<hr />
+<h2 id="7-analytics-topics">7. Analytics Topics<a class="headerlink" href="#7-analytics-topics" title="Permanent link">&para;</a></h2>
+<h3 id="71-admission-why-these-topics-and-not-others">7.1 Admission: why these topics and not others<a class="headerlink" href="#71-admission-why-these-topics-and-not-others" title="Permanent link">&para;</a></h3>
+<p>Edition 0.3 listed fourteen "agreed topics" that had grown bottom-up as modules were built where gaps were found. In October 2026 the set was audited against seven written criteria (Spec 10), and each topic now has a written case for existing, an evidence grade, and a status per engine. The criteria:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Criterion</th>
+<th>Test</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>Observable</td>
+<td>Every input channel is in the standard log and the phases it needs occur on a typical flight (rules out anything needing throttle position, lane status, injector data)</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>FADEC-relevant</td>
+<td>The question still means something when the ECU controls mixture, injection and ignition (rules out ROP/LOP, peak-EGT, FEVA)</td>
+</tr>
+<tr>
+<td>A3</td>
+<td>Anchored</td>
+<td>At least one anchor — OM limit, personal baseline, empirical model, or classification rule — and the analysis line states it</td>
+</tr>
+<tr>
+<td>A4</td>
+<td>Mechanism</td>
+<td>Names what it detects and grades the evidence: E1 manufacturer, E2 established engineering practice, E3 observed in this project's data (always with engine type and aircraft count), E4 hypothesis. <strong>Admission needs E1 or E2</strong>; E3 alone shows a pattern exists, not what it means</td>
+</tr>
+<tr>
+<td>A5</td>
+<td>Actionable</td>
+<td>A pilot or mechanic does something different when it fires; "interesting" is not an action</td>
+</tr>
+<tr>
+<td>A6</td>
+<td>Distinct</td>
+<td>No other topic or limit fires on the same signal; two cards for one event is a defect</td>
+</tr>
+<tr>
+<td>A7</td>
+<td>Discriminating</td>
+<td>For baseline and model anchors, the measured MDC is below the change the mechanism implies, within the comparison scope actually used</td>
+</tr>
+</tbody>
+</table>
+<p>Two consequences of A6 shape what the pilot sees. <strong>Every event is reported once</strong>, by the <em>Operators Manual limits</em> topic, whatever its source (an OM limit or a classified CAS alert); a topic that references a limit — oil peak, coolant peak, time at takeoff power, ENGINE ECU — states it in its analysis line and mirrors the badge but never emits a second insight. And <strong>planning numbers are not topics</strong>: cruise nm/gal, cruise fuel flow and fuel burned are mostly wind, weight and the pilot's choice of power, so they appear as <em>flight facts</em> in the flight header (alongside the lane-check result) with no insight and no trend.</p>
+<p>The register as of this edition, for the 916iS:</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Question</th>
+<th>Anchor</th>
+<th>Status</th>
+<th>Trends panel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cylinder balance (EGT spread)</td>
+<td>Are my cylinders burning evenly?</td>
+<td>OM split limit · baseline · trend</td>
+<td>Admitted</td>
+<td>Cylinder balance</td>
+</tr>
+<tr>
+<td>Cylinder EGT deviation</td>
+<td>Is any one cylinder drifting from the others?</td>
+<td>baseline · trend, per cylinder</td>
+<td>Admitted (Spec 08)</td>
+<td>Cylinder balance</td>
+</tr>
+<tr>
+<td>Hottest cylinder (rank)</td>
+<td>Has the usually-hottest cylinder changed?</td>
+<td>classification</td>
+<td>Admitted — insight retired, rank kept as context</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Oil temperature peak</td>
+<td>Did oil get hotter than usual?</td>
+<td>OM limit (referenced) · baseline</td>
+<td>Admitted</td>
+<td>Thermal</td>
+</tr>
+<tr>
+<td>Coolant temperature peak</td>
+<td>Did coolant get hotter than usual?</td>
+<td>OM limit (referenced) · baseline</td>
+<td>Admitted</td>
+<td>Thermal</td>
+</tr>
+<tr>
+<td>Time at takeoff power</td>
+<td>Did I stay at takeoff power too long?</td>
+<td>OM limit (referenced) · close-call margin</td>
+<td>Admitted</td>
+<td>Boost / power</td>
+</tr>
+<tr>
+<td>Turbo boost at takeoff</td>
+<td>Is the turbo making expected boost?</td>
+<td>empirical model</td>
+<td>Admitted (not on the 912iS)</td>
+<td>Boost / power</td>
+</tr>
+<tr>
+<td>Engine computer alerts in flight</td>
+<td>Did the FADEC report a fault in flight?</td>
+<td>classification</td>
+<td>Admitted (provisional)</td>
+<td>per-alert event panel</td>
+</tr>
+<tr>
+<td>Operators Manual limits</td>
+<td>Did anything go outside an OM limit?</td>
+<td>all OM limits</td>
+<td>Admitted — owner of events</td>
+<td>per-limit event panels</td>
+</tr>
+<tr>
+<td>Climb thermal rate</td>
+<td>—</td>
+<td>baseline</td>
+<td><strong>Research</strong> (fails A7)</td>
+<td>context strip</td>
+</tr>
+<tr>
+<td>Oil/coolant ratio, EGT4 elevation, flight-phase mix, cruise efficiency, cruise fuel flow</td>
+<td>—</td>
+<td>—</td>
+<td><strong>Removed</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>On the 912iS and 915iS every applicable topic is <em>Unverified</em>: the same analysis runs, the card says it has not yet been validated on that engine, and it becomes Admitted when data from such an aircraft passes A7. The whole register is re-audited when the flight count doubles, before each edition of this paper, and whenever data from a new aircraft or engine type arrives.</p>
+<h3 id="72-cylinder-balance">7.2 Cylinder balance<a class="headerlink" href="#72-cylinder-balance" title="Permanent link">&para;</a></h3>
+<p>On a FADEC engine the four cylinders should behave as a matched set: the ECU gives each the fuel and spark it intends, so a cylinder that drifts from its neighbours is reporting on an injector, plug, coil or probe — not on how the engine was leaned. Two measurements, both in cruise:</p>
+<ul>
+<li><strong>Spread</strong> — hottest minus coolest cruise EGT — the one-number summary and the OM-limited quantity (392 °F above 3 L/h fuel flow).</li>
+<li><strong>Deviation</strong> — each cylinder's cruise EGT minus the mean of the other three — the diagnostic version: which cylinder moved, which way. The four deviations sum to zero, so when one moves the others appear to move the other way; the insight names the cylinder whose change is largest. Admission evidence E2 (lean cylinder runs hot → injector; cooler → ignition or plug; erratic → probe), with Spec 08 as the topic spec.</li>
+</ul>
+<p>The earlier toolkit assumed cylinder 4 is hottest ("typical for the 916iS — turbo exhaust proximity"). That assumption is not universal (installation, individual engine, probe insertion all shift it), so the app now <strong>learns</strong> the usual hottest cylinder per aircraft — one cylinder winning ≥ 70 % of ten or more flights by a clear margin — with the engine profile's expectation (cylinder 4 on the turbo engines, none on the 912iS) as a prior until then.</p>
+<p><strong>Findings, Edition 0.4 (n = 58):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Mean ± SD</th>
+<th>Range</th>
+<th>MDC (2 SD)</th>
+<th>Mild band (n = 48)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EGT spread, cruise mean</td>
+<td><strong>60.3 ± 5.5 °F</strong></td>
+<td>45.3–70.2</td>
+<td>11.1 °F</td>
+<td>60.9 ± 5.8</td>
+</tr>
+<tr>
+<td>Cyl 1 deviation</td>
+<td>−31.6 ± 5.3 °F</td>
+<td>−40.8 to −14.0</td>
+<td>10.5</td>
+<td>−32.2 ± 5.1</td>
+</tr>
+<tr>
+<td>Cyl 2 deviation</td>
+<td>−9.1 ± 5.9 °F</td>
+<td>−25.5 to +10.2</td>
+<td>11.9</td>
+<td>−9.1 ± 5.9</td>
+</tr>
+<tr>
+<td>Cyl 3 deviation</td>
+<td>−6.9 ± 4.0 °F</td>
+<td>−16.9 to +0.6</td>
+<td>7.9</td>
+<td>−7.0 ± 4.1</td>
+</tr>
+<tr>
+<td>Cyl 4 deviation</td>
+<td><strong>+47.6 ± 5.3 °F</strong></td>
+<td>+28.9 to +58.2</td>
+<td>10.7</td>
+<td>+48.3 ± 5.5</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Hottest cylinder: cylinder 4 on 58 of 58 flights</strong>, learned at 100 % (n = 57), by a margin over the next cylinder of 14.0–50.4 °F (median 39.8). Rank order 4-3-2-1 on 32 flights, 4-2-3-1 on 25, 4-3-1-2 on one; the hottest-cylinder-changed condition has never fired. Edition 0.3's "EGT4 elevation +44.7 ± 5.3 °F" is the same observation with a slightly different denominator (EGT4 minus the mean of 1–3); that metric was removed as redundant with the cylinder-4 deviation.</li>
+<li><strong>Spread trend: +0.118 °F per engine hour, R² 0.42</strong> over 58 flights (Edition 0.3: +0.22 °F/h, R² 0.30, n = 23). The direction has been consistent through three editions; R² has not cleared the 0.5 reporting gate, so no trend insight has fired.</li>
+<li><strong>The recent window is wider.</strong> Trends' change summary (§10) ranks the spread second of six qualifying changes: the last 12 flights (111.9–122.2 h) average <strong>65.1 °F</strong> against the 60.3 °F reference (shift z = +3.7, with a <em>bend</em> — the recent slope is 0.66 °F/h against 0.11 °F/h over the whole history). The change is carried by <strong>cylinder 4</strong>, whose deviation averages +51.8 °F in the window (z = +3.3), with cylinder 2 moving the other way (−12.7 °F, z = −2.7). The five AXIS flights are in the window, but the seven G3X flights in it average 64.6 °F spread and +50.4 °F on cylinder 4, so the change is not an artefact of the avionics change or the 1-second resampling. It is the first engine-level change the Trends page has reported on this aircraft and the one to watch.</li>
+<li><strong>Insights fired (unfiltered):</strong> 9 per-cylinder deviation insights on 8 flights — cylinder 1 twice, cylinder 2 three times, cylinder 3 twice, cylinder 4 twice — all <em>watch</em>, none on consecutive flights, and 3 of them noting that the spread was also outside its range. At z = 2 across four cylinders and 58 flights about 12 chance firings are expected, so this rate is consistent with noise; no cylinder shows a persistent pattern. The spread's own baseline trigger never fired alone — it is folded into the cylinder insight whenever both fire (Spec 10 D8), and its niche (a divergence across cylinders that no single cylinder explains) has not occurred.</li>
+<li>No EGT maximum or EGT split limit has ever been approached (highest spread 70 °F against 392 °F).</li>
+</ul>
+<h3 id="73-oil-and-coolant-temperature-peaks">7.3 Oil and coolant temperature peaks<a class="headerlink" href="#73-oil-and-coolant-temperature-peaks" title="Permanent link">&para;</a></h3>
+<p>OM limit 248 °F for both (E1). Each topic compares the flight's peak with the aircraft's usual peak in the same OAT band; the limit itself belongs to the limits topic (§7.1).</p>
+<p><strong>Findings, Edition 0.4 (n = 58):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Mean ± SD</th>
+<th>Range</th>
+<th>MDC</th>
+<th>OM limit</th>
+<th>Exceedances</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Oil peak</td>
+<td><strong>201.1 ± 12.1 °F</strong></td>
+<td>180–225</td>
+<td>24 °F</td>
+<td>248 °F</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Coolant peak</td>
+<td><strong>180.8 ± 7.1 °F</strong></td>
+<td>170–198</td>
+<td>14 °F</td>
+<td>248 °F</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>The headroom is large: the hottest oil peak (225 °F, Billings, 17 July, 31 °C departure) sits 23 °F under the limit, the hottest coolant peak (198 °F) 50 °F under it. The <em>cold</em> band (n = 6) runs a hotter oil peak (209.5 °F) than <em>mild</em> (200.5 °F): the band is set by cruise OAT, and those six are long cross-country flights cruising high enough for the air to be cold — which is the point of the next finding.</li>
+<li><strong>Flight length drives the peaks more than weather does.</strong> Peak oil temperature correlates with airborne time at <strong>r = 0.66</strong> (coolant r = 0.39): hour-plus flights peak about 18 °F above 10–20-minute ones, and 17 of 58 flights are under 20 minutes airborne, never reaching thermal equilibrium. Edition 0.3's wider SDs (31 and 26 °F on an earlier snapshot) were a duration artefact, not weather. No airborne-time threshold was applied, because the measurement found no duration beyond which the dependence stops (r ≈ 0.6 at every candidate from 10 to 30 minutes); predicting the expected peak from airborne time and OAT is a research item (backlog A6), and the topic help tells the pilot that a lower peak after a short hop is normal.</li>
+<li><strong>Insights (unfiltered):</strong> 3 oil and 3 coolant <em>watch</em> insights, on the same three flights — 8 April (26 °C departure, the aircraft's first flight in the set), 17 July (KBIL, 31 °C) and 23 July (KHLN, 31 °C): the three hottest, highest-elevation departures of the year, each flagged against the mild band it was compared with because the warm band holds a single flight. These are the stratification fallback working as specified, and the kind of case that stays a note rather than a finding.</li>
+<li><strong>The optimal band is rarely reached.</strong> The OM gives 90–110 °C (194–230 °F) as the optimal oil range, below which condensation can accumulate in the sump. On N117ZS oil temperature is below 194 °F for <strong>90.6 ± 12.6 %</strong> of flight time (Edition 0.3: 91 %). The metric is computed but has no topic yet; it is candidate C1 in the register (E1 basis, clear action), the one coverage gap with a known mechanism and no card.</li>
+<li><strong>Recent window.</strong> Both peaks rank in the change summary as <em>lower</em> (oil 192.7 °F, coolant 176.3 °F; z ≈ −2.9). The twelve recent flights average 46 minutes airborne against 81 for the reference, so this is the duration effect again, not cooling improving. It is also the clearest argument on current data for the planned condition strip under each Trends panel (backlog T3), which would show duration and OAT next to the metric.</li>
+</ul>
+<p><strong>Oil/coolant ratio — removed.</strong> Edition 0.3 reported an oil/coolant peak ratio of 1.10 ± 0.04 as "a signature of thermal health". It was dropped under the audit for two reasons: a ratio of two temperatures on an interval scale has no physical meaning (the same flight gives a different ratio in °C, and an equal rise in both moves it), and the mechanism was unsourced. Its very low CV reflected the ratio compressing the data, not a stable signal. A better form — the cruise-phase mean of the simultaneous oil − coolant difference, 19.9 ± 2.6 °F over 47 flights, MDC 5.1 °F — is discriminating and physically interpretable (oil-cooler effectiveness vs radiator effectiveness), but whether the oil–coolant relationship is an established health indicator in Rotax or engine-monitoring practice is unknown, and admitting it ahead of that answer would repeat the original mistake with a better number. It is candidate C5, Proposed, with the measurements above as its starting data.</p>
+<h3 id="74-time-at-takeoff-power">7.4 Time at takeoff power<a class="headerlink" href="#74-time-at-takeoff-power" title="Permanent link">&para;</a></h3>
+<p>Operational class; the OM's five-minute allowance at takeoff power (E1); the action is throttle discipline — reduce to climb power once safely airborne.</p>
+<p><strong>Findings, Edition 0.4 (n = 58):</strong></p>
+<ul>
+<li><strong>One exceedance:</strong> 23 April (KTOA → KACV), longest block <strong>389 s</strong> against 300 s (Edition 0.3 reported 381 s on the same flight; the 30 s merge gap now joins a brief dip). Confirmed cause: ATC workload before the throttle was reduced.</li>
+<li><strong>One close call:</strong> 27 May (KSFF departure), 274 s — 26 s under the limit.</li>
+<li>56 of 58 flights ≤ 240 s. Mean longest block 70 s, median 58 s; total time at takeoff power 101 ± 84 s per flight.</li>
+<li>Since Spec 09 v0.12 the exceedance is an ordinary event owned by the limits topic; the <em>Time at takeoff power</em> card references it and keeps what only it can report — the close call and the time-in-regime context.</li>
+</ul>
+<h3 id="75-turbo-boost-at-takeoff-the-empirical-map-model">7.5 Turbo boost at takeoff — the empirical MAP model<a class="headerlink" href="#75-turbo-boost-at-takeoff-the-empirical-map-model" title="Permanent link">&para;</a></h3>
+<p>Under-boost at full power points to the turbo, wastegate or an intake leak (E1: OM reference MAP and air-supply guidance); over-boost is usually worth a sensor check. Rather than a single OM reference point, the app fits the aircraft's own takeoffs: rows with phase TAKEOFF_ROLL and rpm ≥ 5,500; features pressure altitude and OAT; target manifold pressure; ordinary least squares.</p>
+<p><strong>Findings, Edition 0.4:</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Edition 0.3</th>
+<th>Spec 10 audit (Oct 1)</th>
+<th>Edition 0.4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>n (takeoffs)</td>
+<td>15</td>
+<td>48</td>
+<td><strong>56</strong></td>
+</tr>
+<tr>
+<td>R²</td>
+<td>0.71</td>
+<td>0.75</td>
+<td><strong>0.64</strong></td>
+</tr>
+<tr>
+<td>Residual SE</td>
+<td>—</td>
+<td>—</td>
+<td><strong>0.84 inHg</strong></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Fitted: MAP = 42.87 + 0.000675·PA(ft) + 0.155·OAT(°C) inHg. Over the dataset's ranges (PA −264 to 3,685 ft; OAT 12.7–31.1 °C) each term spans about 2.5 inHg. Observed takeoff MAP: 46.3 ± 1.4 inHg (43.8–49.5). The OM's single reference figure (1,690 mbar ≈ 49.9 inHg at 5,800 rpm, 25–35 °C) stays on the analysis line as context, not as a tolerance.</li>
+<li><strong>The tolerance comes from the model, not a hard-coded number.</strong> Edition 0.3's ±1.5 inHg was a coded constant, and the rules file said 20 hPa — a mismatch the audit quantified (1 firing at 1.5 inHg vs 23 at 20 hPa on 48 flights). Now: tolerance = 2 × the leave-one-out residual SD, so a flight is never judged by a model it helped fit; on current data ±1.5–1.7 inHg. A <strong>fitted-range guard</strong> suppresses the judgement, with a note, when a takeoff's PA or OAT lies outside anything the model was fitted on — which under leave-one-out means the dataset's extreme flight on each axis is never judged (4 of 48 at the audit). Accepted: "never extrapolate" is the simplest defensible rule, and the range widens as more places are flown.</li>
+<li><strong>Altitude diversity is still thin:</strong> 5 departures above 2,000 ft. The guard means this limits <em>where</em> the topic can judge, not whether its judgements are sound.</li>
+<li><strong>One insight:</strong> 14 October (the third AXIS flight), observed 47.9 inHg at −212 ft and 17 °C against 45.4 expected — +2.56 inHg, <em>verify sensor</em>. It is on an AXIS log, the first with the 1-second resampling; whether the capture window behaves identically on AXIS is a question for the next AXIS flights.</li>
+<li><strong>The top-ranked change on Trends is this model's residual.</strong> The last 11 takeoffs deliver on average <strong>0.8 inHg more boost than the model predicts</strong> (z = −4.7, with a bend); the September–October G3X takeoffs show it as clearly as the AXIS ones. A model fitted on all 56 takeoffs is pulled by the spring and summer departures; recent takeoffs at the home field in mild conditions sit above its line. This is not a boost deficit, and on one aircraft it cannot be separated from a season or airport effect the two-feature model does not carry. It is logged as what it is: the residual has shifted, in the direction that is <em>not</em> the failure mode, and the model will be re-fitted as data accumulates.</li>
+</ul>
+<h3 id="76-operators-manual-limits-events-and-saturation">7.6 Operators Manual limits — events and saturation<a class="headerlink" href="#76-operators-manual-limits-events-and-saturation" title="Permanent link">&para;</a></h3>
+<p>The limits topic owns every event. On the 58 flights, with no filters:</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Events</th>
+<th>Flights</th>
+<th>Excess (median / max)</th>
+<th>Duration (median / max)</th>
+<th>Diagnosis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Takeoff rpm 5,800 max</td>
+<td>101</td>
+<td><strong>55 / 58</strong></td>
+<td>20 / 100 rpm</td>
+<td>16 / 57 s</td>
+<td>3a — propeller-governor overshoot on power application</td>
+</tr>
+<tr>
+<td>Fuel pressure 46 psi max</td>
+<td>175</td>
+<td><strong>48 / 58</strong></td>
+<td>0.9 / 4.6 psi</td>
+<td>139 s / 2 h 35 min</td>
+<td>3a — steady sender offset through climb, cruise, descent</td>
+</tr>
+<tr>
+<td>Idle rpm 1,800 min</td>
+<td>44</td>
+<td><strong>25 / 58</strong></td>
+<td>40 / 110 rpm</td>
+<td>51 / 188 s</td>
+<td>3a — idle set 20–30 rpm low</td>
+</tr>
+<tr>
+<td>Overboost (5-minute rule)</td>
+<td>1</td>
+<td>1 / 58</td>
+<td>89 s</td>
+<td>389 s</td>
+<td>real (§7.4)</td>
+</tr>
+<tr>
+<td>Bus voltage 11.5 V min</td>
+<td>2</td>
+<td>2 / 58</td>
+<td>—</td>
+<td>2 s, 24 s</td>
+<td>one 0 V reading in the first minute of an AXIS log (14 October), one 6 V reading for 2 s (9 April) — artefacts to confirm</td>
+</tr>
+<tr>
+<td>The other 14 limits (temperatures, EGT maxima and split, MAP, oil pressure, fuel-pressure minimum, voltage maximum)</td>
+<td>0</td>
+<td>0</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>132 limit insights on 58 flights, unfiltered. A limit that fires on nearly every flight tells the pilot nothing about <em>this</em> flight, whatever its OM basis — the first audit found five limits firing on 23–50 of 50 flights. The diagnosis that followed (Spec 10 D6) classified each saturating limit by its fingerprint in the data and assigned responsibility:</p>
+<table>
+<thead>
+<tr>
+<th>Cause</th>
+<th>Fingerprint</th>
+<th>Whose problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 — limit encoded wrongly</td>
+<td>Fires during a procedure the OM allows (every takeoff), normal values</td>
+<td>Ours</td>
+<td>Engine profile</td>
+</tr>
+<tr>
+<td>2 — phase or artefact gap</td>
+<td>Fires at transitions; impossible values (0.0 V running, −0.6 psi)</td>
+<td>Ours</td>
+<td>Phase rule or gate</td>
+</tr>
+<tr>
+<td>3a — persistent, stable (sensor, calibration, installation)</td>
+<td>Steady offset through steady operation, plausible values</td>
+<td>The aircraft</td>
+<td>Filter with a note; the change monitor watches it</td>
+</tr>
+<tr>
+<td>3b — anything else</td>
+<td></td>
+<td>Unexplained</td>
+<td>Research</td>
+</tr>
+</tbody>
+</table>
+<p>Results: fuel-pressure minimum (50/50) was cause 2, fixed by the engine-running gate; bus-voltage minimum (23/50) cause 2, the same gate; the retired 5,500 rpm "continuous" rule (49/50) cause 1; fuel-pressure maximum, idle minimum and takeoff rpm are <strong>cause 3a on N117ZS</strong> — the sender reads 0.9–1.6 psi high, the idle is set 20–30 rpm low (worth checking with a service centre), and the propeller governor overshoots 5,800 rpm by 10–100 rpm on power application (worth mentioning to whoever maintains the governor; the OM allows no transient overspeed and rpm is logged in 10 rpm steps, so no tolerance is applied). Each is recorded in a per-aircraft allowlist with its evidence, and the pilot handles it with a filter (§9).</p>
+<p>Two principles came out of this and are now enforced by tests: a nominal synthetic flight following OM procedures must raise <strong>zero</strong> events on every profile, and no limit may fire on more than half the real flights without an allowlist entry giving its cause-3 classification; and <strong>a limit fix must trace to the OM, Rotax documentation or sensor physics — never to clearing a test</strong>. A limit is never removed or demoted for firing often. Both cause-3a classifications rest on one aircraft: a limit that saturates the same way on a second airframe would move to cause 1 and get a profile fix.</p>
+<h3 id="77-flight-facts">7.7 Flight facts<a class="headerlink" href="#77-flight-facts" title="Permanent link">&para;</a></h3>
+<p>Shown in the flight header, never judged: fuel burned (FADEC-integrated), cruise nm/gal, mean cruise fuel flow, lane-check result. On the dataset: 508 gal over 76 airborne hours; cruise efficiency 18.9 ± 1.5 nm/gal (n = 46, 15.5–22.7); cruise fuel flow 6.40 ± 0.53 gal/h (5.5–7.5), rising with density altitude from 5.9 in the low band to 6.9 in the very-high band.</p>
+<p><strong>Why these are not topics</strong> (Spec 10 §4.2): nm/gal integrates ground speed, so a headwind looks like an efficiency loss — the dominant term is wind, not the engine; and at a given power and DA the FADEC sets fuel flow from its own map, so a blended comparison mostly reports the pilot's choice of power, and may mix the ECO and POWER maps (§4). Both were topics in Edition 0.3 (cruise efficiency "decreasing — worth watching" at the time, a trend the data could not support). A power-% × DA fuel-flow model (backlog A7) is the route back, entered as research — with the caveat that on a FADEC engine it may mostly reflect the ECU's map and be more useful for ECO/POWER inference than as a wear indicator.</p>
+<p><strong>Fuel quantity sensors.</strong> The Sling TSi's float-type tank senders are attitude-sensitive; instantaneous quantity readings are not usable for consumption. FADEC flow integration is the consumption signal, used directly and uncalibrated; tank deltas serve only as a plausibility check. Calibrating FADEC flow against pump receipts was built in an early version and deliberately removed: for an aircraft fuelled full-to-full, gallons added at the pump already equal true consumption since the previous fill, and no log-dependent step is needed.</p>
+<h3 id="78-topics-removed-or-sent-to-research">7.8 Topics removed or sent to research<a class="headerlink" href="#78-topics-removed-or-sent-to-research" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Climb thermal rate</strong> (Edition 0.3 §6.7) — Research. The mechanism is sound (cooling capacity at high power and low airspeed, E2) and the physical effect is confirmed: oil-temperature rise rate climbs from +0.1 °F/min in gentle climbs (200–500 fpm) through +2.2 (500–1,000 fpm) to +6.2 °F/min in aggressive climbs (≥ 1,000 fpm). But within-bucket noise exceeds the effect (aggressive-climb MDC 14.8 °F/min); start-of-climb oil temperature explains almost nothing (r = −0.18). On the full set the overall rate is 1.3 ± 3.6 °F/min (n = 58, MDC 7.2). The metrics are still computed (CLI, notebooks, a context strip on the Thermal panel), no card is shown, and re-admission needs a predictor this data does not yet have — climb duration, power, OAT, or a rate over a fixed altitude band.</li>
+<li><strong>Hottest-cylinder-changed insight</strong> — retired (D4): with cylinder 4 leading by a median 40 °F, another cylinder can only overtake it after a relative movement of ~55 °F, by which point the per-cylinder deviation insight (MDC ~10 °F) has long fired. The rank stays as context on Trends and is named in the deviation insight when it changes.</li>
+<li><strong>EGT4 elevation</strong> — removed as redundant with the cylinder-4 deviation (D3). <strong>Flight-phase mix</strong> — removed; it described the mission, not the engine. <strong>Oil/coolant ratio</strong> — removed (§7.3). <strong>Cruise efficiency and cruise fuel flow</strong> — flight facts (§7.7).</li>
+</ul>
+<hr />
+<h2 id="8-engine-ecu-classification-and-a-corrected-finding">8. ENGINE ECU — Classification and a Corrected Finding<a class="headerlink" href="#8-engine-ecu-classification-and-a-corrected-finding" title="Permanent link">&para;</a></h2>
+<p>The string <code>ENGINE ECU</code> appears in the CAS column of every log from the first row, before engine start, and recurs through the session. Edition 0.3 reported, after a correlation study across 23 flights, "four genuine in-flight ENGINE ECU events … consistent with intermittent CAN communication", one of them with <code>OIL PRESS</code> co-active, and recommended a B.U.D.S. fault-log read and a wiring check. <strong>That finding is withdrawn.</strong> The classifier behind it labelled a run IN_FLIGHT whenever it was not power-up, shutdown or a lane check; it never tested for flight. Reviewed against the raw logs, the four runs were a 1 s blip 2.5 minutes after power-on at 1,720 rpm, a 1 s blip on the ground at 1,770 rpm, a 1 s blip at 510 rpm with 2 psi oil pressure — the engine catching, which is where the <code>OIL PRESS</code> co-activity came from — and a 5 s run that was the log ending as the engine was cut. Four single-aircraft maintenance recommendations were built on a classifier defect; the register now grades the topic's E3 evidence as absent, and the help text carries no aircraft-specific wiring guidance.</p>
+<h3 id="81-classification-as-built-spec-01-86">8.1 Classification as built (Spec 01 §8.6)<a class="headerlink" href="#81-classification-as-built-spec-01-86" title="Permanent link">&para;</a></h3>
+<p>Contiguous <code>ENGINE ECU</code> rows form a run; runs closer than 5 s merge; runs shorter than 3 s after merging are <strong>sub-threshold blips</strong>, counted for data quality but never events — at 1 Hz a single-row token is indistinguishable from a sampling artefact. Classification is by the flight phase the run overlaps, with no private rpm, IAS or voltage heuristics:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Phases</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GROUND_START</td>
+<td>PRE_START, ENGINE_START, WARMUP</td>
+<td>Avionics boot, RS-232 fallback, the engine catching. Expected.</td>
+</tr>
+<tr>
+<td>LANE_CHECK</td>
+<td>WARMUP or TAXI with the lane-check signature: rpm in the OM run-up band (4,000 ± 500 rpm on the 916iS/912iS, 2,500 on the 915iS), stationary, short, paired within 90 s</td>
+<td>The deliberate single-lane run-up. Expected; reported as a flight fact (<em>both lanes ✓</em> / <em>one lane only</em> / <em>not detected</em>).</td>
+</tr>
+<tr>
+<td>GROUND</td>
+<td>TAXI (not a lane check), or LANDING_ROLL after stopping</td>
+<td>Engine running on the ground, not starting, not a lane check. <strong>An event</strong>, with the reason it is not a lane check.</td>
+</tr>
+<tr>
+<td>IN_FLIGHT</td>
+<td>TAKEOFF_ROLL to LANDING_ROLL, <strong>and</strong> IAS above the taxi ceiling during the overlap</td>
+<td><strong>The event that matters.</strong></td>
+</tr>
+<tr>
+<td>GROUND_SHUTDOWN</td>
+<td>SHUTDOWN</td>
+<td>Expected.</td>
+</tr>
+</tbody>
+</table>
+<p>Two rules guard the phase detector's known lag at the engine cut: a run during which rpm falls below the running threshold and stays there is GROUND_SHUTDOWN whatever its phase labels say, and a run whose rows all precede the first running rpm is GROUND_START. A run in an UNKNOWN phase takes the nearest preceding phase and is flagged <em>phase uncertain</em>; and when takeoff was not detected on a flight, a GROUND run with IAS above the taxi ceiling is reported as IN_FLIGHT, uncertain, rather than silently downgraded.</p>
+<h3 id="82-findings-edition-04">8.2 Findings, Edition 0.4<a class="headerlink" href="#82-findings-edition-04" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>58 flights</th>
+<th>All 117 analysed logs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ENGINE ECU occurrences in the CAS string</td>
+<td>262</td>
+<td>—</td>
+</tr>
+<tr>
+<td>GROUND_START runs</td>
+<td>79</td>
+<td>149</td>
+</tr>
+<tr>
+<td>LANE_CHECK runs</td>
+<td>97</td>
+<td>103</td>
+</tr>
+<tr>
+<td>GROUND_SHUTDOWN runs</td>
+<td>56</td>
+<td>70</td>
+</tr>
+<tr>
+<td>GROUND events</td>
+<td><strong>1</strong></td>
+<td><strong>3</strong></td>
+</tr>
+<tr>
+<td>IN_FLIGHT events</td>
+<td><strong>0</strong></td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>Sub-threshold blips</td>
+<td>24</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Lane check: both / one lane / not detected</td>
+<td>44 / 9 / 5</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>The three GROUND events are all <em>rpm below band</em>: a pair on 5 October at KBVS (7 s and 8 s, 15 s apart, ~2,550 rpm, in a stationary ground run) consistent with a lane check performed well below the OM's 4,000 rpm; and 20 May (11 s, TAXI, 3,402 rpm) — the first half of a paired lane check in which rpm fell from ~4,300 to ~2,600–3,160 while the lane was off, pulling the run's mean below the band. None is a fault.</p>
+<p>Zero in-flight events across 117 logs means the topic's positive case has never been observed. It is therefore <strong>Admitted (provisional)</strong>: mechanism sound (E1 for the alert's meaning), noise test passed trivially, closed by the first true positive or a deliberate injected-excerpt test. Everything that used to be a pooled "in-flight pattern analysis" with recommended actions left the engine; what remains is per-event context (rpm, IAS, co-active alerts, oil-pressure dropout) on each GROUND or IN_FLIGHT event, which is a CAS event in the same list as the limit exceedances, filterable by duration, with its own event-frequency panel on Trends. The ECU page that existed in the web UI for a while was removed when this became true: the flight header's lane-check fact and the Events table carry everything it showed.</p>
+<p><strong>Lane-check adherence</strong> — whether the pilot performed the two-lane check — is pilot procedure, not an engine signal, and is deliberately not a topic (candidate C6, awaiting a definition of a "procedure" class). <strong>Other CAS alerts</strong> (<code>FUEL PRESS</code> 152 occurrences, <code>OIL PRESS</code> 46, <code>CO PPM</code> 50, the avionics backup and fail annunciations) are recorded per flight but not yet classified; each one admitted through the lifecycle would become a CAS event target in the same way.</p>
+<hr />
+<h2 id="9-limit-filters-and-the-change-monitor">9. Limit Filters and the Change Monitor<a class="headerlink" href="#9-limit-filters-and-the-change-monitor" title="Permanent link">&para;</a></h2>
+<p>Three limits fire on most flights of N117ZS for stable, diagnosed reasons (§7.6). The design problem is to let the pilot silence a known, consistent exceedance without the system slowly accepting a problem that is getting worse — and without the pilot learning to skim the limits card.</p>
+<p><strong>A filter</strong> is the pilot's own statement about one limit: "on my aircraft this limit is exceeded in a way I understand and accept." It is set from a limit insight, requires a note on WARNING-severity limits, and never changes the displayed limit. It carries any combination of three independent conditions, each a distinct pilot intention — an event needs only one reason to be fine:</p>
+<ul>
+<li><strong>magnitude</strong> — "a little high is fine": an absolute band, a percentage, or z against the filter's frozen reference of peak excess;</li>
+<li><strong>duration</strong> — "brief spikes are fine": a maximum event length;</li>
+<li><strong>phase</strong> — "this happens on the ground, and that's fine": an event lying wholly within listed phases is suppressed; one that touches any other phase is judged by the other conditions. Per limit only — a workspace-wide phase exclusion would hide an oil-pressure loss while taxiing.</li>
+</ul>
+<p>Filtered events are suppressed, not deleted: they collapse into one informational line per limit, expandable to the events. A breach — an event no condition tolerates — is reported at the limit's normal severity, marked <em>beyond your filter</em>. The oil-pressure minimum stays unfilterable. Filters apply retroactively to every flight and travel with a workspace export.</p>
+<p><strong>The change monitor</strong> is what makes a filter safe. Every filter freezes a reference — the membership of the most recent included flights at creation, its statistics recomputed from current analyses — and watches the limit's per-flight metrics (peak excess, time above the limit as a share of engine-running time, share of flights with an event) on every later flight, excluded-phase events included. Statuses in priority order: <strong>Breached</strong>, <strong>Drifting</strong> (two consecutive flights more than z above the frozen mean in the worsening direction, or the share of flights with events up by 30 points over the last ten), <strong>Review due</strong> (engine hours since the last review exceed the limit's interval), <strong>Quiet</strong> (no events on recent flights — the filter may no longer be needed), <strong>Collecting</strong>, <strong>Stable</strong>. The pilot's own baseline keeps learning as the engine ages; the filter's reference does not, because a filter that kept learning would accept a worsening problem.</p>
+<p>The baseline and the filter answer different questions and work together: a filter hides known exceedances; it does not switch off the baseline. A pilot who filters fuel-pressure maximum because the sender reads high still gets a <em>watch</em> insight on a flight whose pressure is unusual <em>for this engine</em>.</p>
+<hr />
+<h2 id="10-trends-is-my-engine-changing">10. Trends — Is My Engine Changing?<a class="headerlink" href="#10-trends-is-my-engine-changing" title="Permanent link">&para;</a></h2>
+<p>The Flight view asks whether one flight was unusual; a single unusual flight can be weather, a long taxi, a short hop. A metric that has <em>shifted</em> — whose recent average sits somewhere different from where it used to — is a change in the engine or its installation, and can be small enough that no single flight was ever flagged. Trends was rebuilt in October 2026 from a metric picker into a change page (Spec 12) that finds the second kind.</p>
+<p><strong>The change statistic.</strong> The <strong>recent window</strong> is the newest flights spanning at least 10 engine hours with at least 5 flights, capped at 15 (wear tracks hours; statistical power tracks flight count; 10 h is about a month for an active private pilot). For each metric, <strong>shift</strong> is the recent window's mean against the reference, in standard errors — stratified per band where the metric has one, with the same n_min fallback as the insights — and a metric enters the summary when |shift z| ≥ 2.0, the same number as everywhere else. <strong>Bend</strong> (the recent slope differs from the reference slope by more than two standard errors, in the worsening direction) is a qualifier, never a ranking key. A <strong>level crossing</strong> — the recent mean has used up three quarters of the headroom to an OM limit, or crossed the edge of a filter band — outranks every shift. For limit and CAS panels <strong>event frequency</strong> (share of flights with an event, recent vs reference, qualifying at +30 points) is the primary signal, because peak excess exists only on flights that went over and cannot say "this used to happen once a year and now it is every flight".</p>
+<p><strong>Reference: rolling or pinned.</strong> The reference rolls by default. A pilot can pin a metric's reference to the flights in the current zoom — the twenty flights before an injector change — and every later flight is compared with that set until unpinned; pins are visible on every strip, listed in the Journal, and unpinning never rewrites the shift history.</p>
+<p><strong>The change summary on N117ZS, 20 October 2026</strong> (58 flights; recent window 12 flights, 111.9–122.2 h; rolling reference):</p>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Metric</th>
+<th>Direction</th>
+<th>Shift z</th>
+<th>Reading</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Takeoff-MAP model residual</td>
+<td>more boost than predicted</td>
+<td>−4.7, bend</td>
+<td>§7.5 — the model lags the recent takeoffs; not the failure direction</td>
+</tr>
+<tr>
+<td>2</td>
+<td>EGT spread</td>
+<td>wider, 65.1 vs 60.3 °F</td>
+<td>+3.7, bend</td>
+<td>§7.2 — the one engine-level change to watch</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cylinder balance (cyl 4 leads; cyl 2 member)</td>
+<td>cyl 4 hotter relative to the others</td>
+<td>+3.3, bend</td>
+<td>§7.2 — the cylinder carrying the spread change</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Oil temperature peak</td>
+<td>lower, 192.7 vs 201.1 °F</td>
+<td>−2.9, bend</td>
+<td>§7.3 — shorter recent flights</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Coolant temperature peak</td>
+<td>lower, 176.3 vs 180.8 °F</td>
+<td>−2.9</td>
+<td>§7.3 — shorter recent flights</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Cruise efficiency (planning panel)</td>
+<td>lower</td>
+<td>−2.1, bend</td>
+<td>wind, weight, short cruises</td>
+</tr>
+</tbody>
+</table>
+<p>Nothing has crossed an OM margin line; no limit's event frequency has qualified; the ENGINE ECU panel reads <em>rare</em>. The summary is doing what it was built to do — surfacing the spread change weeks before any single flight would trip the trend gate — and also showing what it cannot yet do: two of the six rows are explained by flight duration rather than the engine, which is the case for the condition strip (T3) and the maintenance annotations (T2) planned for the next version.</p>
+<hr />
+<h2 id="11-the-software-slingologyeis-101">11. The Software — SlingologyEIS 1.0.1<a class="headerlink" href="#11-the-software-slingologyeis-101" title="Permanent link">&para;</a></h2>
+<p>The toolkit of Edition 0.3 (four scripts, a CSV of fleet metrics) became an application between September and October 2026. It is described here only as far as it bears on the research: how the analysis is run, where the data lives, and what is reproducible.</p>
+<p><strong>One engine, three hosts.</strong> The analysis engine (<code>slingology_eis</code>, pure Python on pandas and numpy; <code>operations.py</code> is the contract: <code>analyze_flight</code>, <code>update_fleet</code>, <code>evaluate_insights</code>, filters, trends) is stateless — bytes in, typed results out, validated against JSON schemas. Around it sit a command-line interface, a local HTTP server with a React web UI (<code>slingology-eis serve</code>, listening only on 127.0.0.1), and — since 1.0.1 — a browser host: the same Python engine runs inside the browser under Pyodide in a Web Worker, from a static site, with the workspace in the browser's origin-private file system and the logs read from a folder the pilot points at. Both modes produce byte-identical analyses on the 120-log test set (58 flight analyses and the export documents compared); the in-browser heap peaked at 277 MB and a rule-edit preview takes about 180 ms. Every operation that reads raw logs is a resumable coroutine that pauses on a file request the page fulfils, so the server, the CLI and the browser share one scan.</p>
+<p><strong>Workspaces.</strong> Logs stay in the pilot's own folders and are never copied or uploaded; a workspace holds derived results only (per-flight analyses, the reference, rules, filters, notes, the Journal) and references its log folders, re-matching renamed or moved logs by fingerprint. Any number of workspaces, one active at a time — another aircraft, or an experiment on a subset of logs organised in the pilot's own file system. The engine model is fixed per workspace, which is what guarantees a filter can never apply to the wrong engine. A workspace with more than one tail number is told so; one aircraft per workspace is the recommendation until fleet workspaces (engine-type insights across many aircraft) are designed.</p>
+<p><strong>Decisions are first-class.</strong> Everything a pilot decides — a filter, a rule edit, a disabled topic, a flight excluded from the reference, a pinned reference, a changed setting, a note — is a Journal entry with its scope (<em>this flight only</em> / <em>all flights in this workspace</em>), its live effect (<em>changes the verdict on N other flights</em>), and a notice when its basis has moved. Rule edits are made on the topic card with a preview of the effect across the whole workspace before applying. A workspace export carries the decisions and a flight manifest (never analyses), optionally the logs in a zip, optionally anonymised; the recipient imports it, points at the logs and re-analyses to see the same screens — the route by which another pilot's 916iS data would reach this research.</p>
+<p><strong>Reproducibility.</strong> The private log set (<code>AlchemyGeek/EIS-Test-Data</code>, 120 files) is the test oracle: characterization goldens, contract tests that assert on the set's counts, the nominal-flight and saturation tests of §7.6, and the phase-regression snapshot tool. 910 Python tests and 198 web tests at 1.0.1; the operations tests run in-process, over HTTP and under Pyodide in Node.js. Every number in §§7–10 was produced by <code>slingology-eis import</code> and <code>slingology-eis fleet</code> on that set with the 1.0.1 engine, followed by <code>evaluate_insights</code> with the shipped rules and no filters.</p>
+<p><strong>Where things are.</strong> Repository: https://github.com/AlchemyGeek/Rotax9iSEIS (MIT). Hosted in-browser app: https://alchemygeek.github.io/Rotax9iSEIS/app/. Pilot documentation (concept pages, walkthroughs, OM limits by engine): https://alchemygeek.github.io/Rotax9iSEIS/. Design: specifications 01–15 under <code>docs/specs/</code>, one per behaviour, each with its revision history; the topic register at <code>docs/specs/topics/register.json</code>; engine profiles under <code>engines/</code>; shipped trigger rules in <code>insight_rules.json</code> (v1.8). <code>CHANGELOG.md</code> records every engine version and what a stored analysis's <code>engine_version</code> meant.</p>
+<hr />
+<h2 id="12-competitive-landscape">12. Competitive Landscape<a class="headerlink" href="#12-competitive-landscape" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Strengths</th>
+<th>Gaps for a Rotax iS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Savvy Aviation</td>
+<td>Largest GA engine dataset, human analysts, FEVA exhaust-valve detection, ML research</td>
+<td>Built for pilot-mixture engines; FEVA and ROP/LOP inapplicable to FADEC; no Rotax-specific models; subscription</td>
+</tr>
+<tr>
+<td>FlySto</td>
+<td>Excellent Garmin import, 3D replay, approach scoring, free tier</td>
+<td>Raw engine graphs only; no engine-health model, no FADEC analytics, no trend detection</td>
+</tr>
+<tr>
+<td>B.U.D.S. (Rotax)</td>
+<td>Full ECU fault access, both lanes, injector and ignition data</td>
+<td>Hardware interface, maintenance-interval use, no flight-log integration, no trends</td>
+</tr>
+<tr>
+<td>SlingologyEIS 1.0.1</td>
+<td>FADEC-native topics with written admission criteria; OM limits with phase awareness; per-aircraft reference with stratification; filters with a change monitor; a Trends change page; a Journal of decisions; three Garmin log formats; runs in the browser with no upload; free, open source, documented</td>
+<td>Validated on one aircraft; no borescope or maintenance-record integration; no human analyst; ECO/POWER mode not detectable</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="13-open-questions-and-research-agenda">13. Open Questions and Research Agenda<a class="headerlink" href="#13-open-questions-and-research-agenda" title="Permanent link">&para;</a></h2>
+<h3 id="131-engine-and-fadec-behaviour">13.1 Engine and FADEC behaviour<a class="headerlink" href="#131-engine-and-fadec-behaviour" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>EGT spread widening</strong> — the first engine-level change surfaced by Trends (§7.2): +5 °F in the last twelve flights, carried by cylinder 4, visible on G3X and AXIS logs alike. Watch over the next ten flights; if it persists, cylinder 4's injector and probe are where a mechanic would look.</li>
+<li><strong>Takeoff-MAP residual</strong> — the recent takeoffs make 0.8 inHg more boost than the model predicts (§7.5). Re-fit as data accumulates; a season or airport term is the obvious candidate if it persists. Altitude diversity remains thin (backlog A10).</li>
+<li><strong>ECO/POWER mode detection</strong> — open, blocked on a known-throttle test flight (A8).</li>
+<li><strong>Oil below the optimal band 91 % of the time</strong> — a candidate topic with an E1 basis (C1); the action is operational (longer warm-up, cowl-flap or oil-thermostat settings) and installation-specific.</li>
+<li><strong>Climb thermal rate</strong> — research; needs a predictor beyond VS bucket and starting temperature (A5).</li>
+<li><strong>Peak temperature vs flight length</strong> — predict the expected peak from airborne time and OAT (A6).</li>
+<li><strong>Oil–coolant balance (C5)</strong> — is the relationship used as a health indicator anywhere in Rotax or engine-monitoring practice, and what is the sourced mechanism?</li>
+<li><strong>Fuel-pressure sender offset on N117ZS</strong> — root cause with a mechanic (E2); separating pump cycling from sensor and regulator behaviour would need a pump-state inference from the pressure signature (A9).</li>
+</ul>
+<h3 id="132-cas-and-avionics">13.2 CAS and avionics<a class="headerlink" href="#132-cas-and-avionics" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>ENGINE ECU in flight</strong> — positive case never seen; a deliberate injected-excerpt test would close the provisional status (A2).</li>
+<li><strong>AXIS</strong> — the alert naming and lane-check capture are now confirmed on five logs (§2.1); still open: whether <code>onGroundState</code> should feed phase detection once the reference is AXIS-dominated, the 0 V bus-voltage reading at the start of the 14 October AXIS log, and whether the takeoff-MAP capture window behaves identically on resampled logs (S4).</li>
+<li><strong>Other CAS alerts</strong> — <code>FUEL PRESS</code>, <code>OIL PRESS</code>, <code>CO PPM</code> and the avionics annunciations are recorded but unclassified; each is a candidate CAS event target.</li>
+</ul>
+<h3 id="133-data-and-analytics">13.3 Data and analytics<a class="headerlink" href="#133-data-and-analytics" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Single-aircraft evidence</strong> — every E3 grade and every cause-3a classification rests on N117ZS. The practical path to a second 916iS is other pilots' logs through workspace export/import, and fleet workspaces for engine-type insights (A1, U5).</li>
+<li><strong>Trends v2</strong> — OM headroom projection, maintenance annotations on the time axis, a condition strip under each panel, change-point detection (CUSUM) as a research-mode first (T1–T4).</li>
+<li><strong>Research mode</strong> — reviewing a metric outside expected thresholds over many flights and a path from a research finding to the operational side (Spec 06, reserved).</li>
+<li><strong>Engine hours as the x-axis</strong> — the log header's hours are the Hobbs at log creation; compare with cumulative airborne hours derived from the logs (T5).</li>
+<li><strong>Band granularity</strong> — 48 of 55 cruise flights fall in one OAT band; whether the bands should be re-cut once data from other climates exists is open.</li>
+</ul>
+<hr />
+<h2 id="14-revision-history">14. Revision History<a class="headerlink" href="#14-revision-history" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Date</th>
+<th>Changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.1</td>
+<td>June 2026</td>
+<td>Initial edition. Operating limits from OM. Data architecture documented. Analytics modules defined. First flight log analysed (N117ZS, 18 May 2026). ENGINE ECU investigation initiated.</td>
+</tr>
+<tr>
+<td>0.2</td>
+<td>June 2026</td>
+<td>ENGINE ECU classified as expected behaviour (POWERUP/LANE_CHECK/SHUTDOWN). Second log format (Garmin Pilot export). Fuel-flow calibration explored, built, then descoped. Climb-rate-correlated thermal analysis and DA/OAT normalisation approach added. <code>fleet.py</code> baselines/trends/outliers.</td>
+</tr>
+<tr>
+<td>0.3</td>
+<td>July 2026</td>
+<td>Registration corrected to N117ZS. 23 flights from 50 logs. EGT findings (spread 56.4 ± 5.1 °F, EGT4 +44.7 °F), one overboost exceedance (381 s), empirical MAP model (n = 15, R² 0.71), climb thermal findings, "four in-flight ENGINE ECU events", DA/OAT implementation status, toolkit v0.10.0 (script 04, two-layer format, insight rules).</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>October 2026</td>
+<td><strong>Dataset:</strong> 58 flights from 120 logs (59 ground sessions skipped at admission, 3 duplicates collapsed), 28.2–122.2 engine hours, 76 airborne hours; Garmin AXIS added as a third log source with 1-second resampling (§2). <strong>Corrections:</strong> §8 — Edition 0.3's four in-flight ENGINE ECU events withdrawn as a classifier defect; the phase-based classifier finds 0 in-flight and 3 ground events in 117 logs. <strong>Topics (§7):</strong> written admission criteria and the register; oil/coolant ratio, EGT4 elevation, flight-phase mix removed; climb thermal rate to research; cruise efficiency and cruise fuel flow to flight facts; hottest-cylinder-changed insight retired; learned hottest cylinder. <strong>Limits (§3, §7.6):</strong> phase-aware event rules, the 30 s merge gap, overboost as single owner of the five-minute rule, the saturation diagnosis and per-aircraft allowlist, the "fixes trace to the OM" principle. <strong>Reference (§6):</strong> leave-one-out, n_min, one z-threshold, stratified insight comparison. <strong>New sections:</strong> limit filters and the change monitor (§9), Trends as a change page with the current change summary (§10), the application and its reproducibility (§11). <strong>Findings updated:</strong> spread 60.3 ± 5.5 °F rising 0.12 °F/h (R² 0.42) with a +5 °F recent shift carried by cylinder 4; cylinder 4 hottest 58/58; oil 201 ± 12 °F and coolant 181 ± 7 °F peaks, duration-driven (r = 0.66), no exceedances; overboost 389 s and one close call; MAP model n = 56, R² 0.64, tolerance from leave-one-out residuals, recent residual shift; three saturating limits diagnosed as aircraft-specific. Open questions rewritten against the 1.0.1 backlog.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Slingology EIS Research  •  N117ZS  •  KAWO  •  Living document — update with each analytical finding</em></p>
+<p><em>Edition 0.4 — October 2026 — draft for review</em></p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../glossary/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Glossary">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Glossary
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../further-reading/" class="md-footer__link md-footer__link--next" aria-label="Next: Further reading">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Further reading
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
