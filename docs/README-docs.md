@@ -3,7 +3,7 @@
 The pilot documentation lives in this folder and is built with [MkDocs](https://www.mkdocs.org/) and the Material theme.
 
 ```bash
-pip install mkdocs-material
+pip install "mkdocs-material==9.7.*"
 python3 docs/tools/gen_om_limits.py     # regenerate reference/om-limits.md from engines/*.json
 mkdocs serve                             # live preview at http://127.0.0.1:8000
 mkdocs build --strict                    # static site into site/
@@ -18,3 +18,10 @@ Layout:
 - `diagrams/` — hand-drawn SVGs inlined into concept pages (they follow the site's light/dark theme)
 - `img/` — screenshots taken from the N117ZS workspace; retake as a batch after a UI change
 - `specs/` and the research paper are kept here for developers and excluded from the site nav
+
+## Theme override
+
+`docs/overrides/partials/header.html` is a copy of Material's header partial (from the version pinned
+in these instructions) with one addition: the **Open the app** button, which reads its address from
+`extra.app_url` in `mkdocs.yml`. After upgrading `mkdocs-material`, re-copy the partial from the new
+version and re-apply that block, or the header may miss newer theme changes.

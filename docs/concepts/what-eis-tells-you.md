@@ -42,4 +42,4 @@ It does not grade the flight, score the engine or combine the two questions into
 
 ---
 
-*Further reading: the research paper [Rotax 91XiS Engine Data Analytics](../reference/further-reading.md) sets out the reasoning behind this two-question design.*
+*Further reading: the research paper [Rotax 91XiS Engine Data Analytics](../reference/research-paper.md) sets out the reasoning behind this two-question design.*

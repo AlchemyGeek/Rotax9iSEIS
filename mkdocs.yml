@@ -9,6 +9,7 @@ edit_uri: ""
 
 theme:
   name: material
+  custom_dir: docs/overrides
   language: en
   logo: img/eis-icon.png
   favicon: img/favicon-32.png
@@ -63,6 +64,7 @@ extra_css:
 # Specs are kept in docs/specs for developers but are not part of the site nav.
 exclude_docs: |
   specs/
+  overrides/
   ROTAX 91XiS Engine Data Analytics.md
 
 nav:
@@ -93,4 +95,8 @@ nav:
       - Operators Manual limits by engine: reference/om-limits.md
       - Settings and their defaults: reference/settings.md
       - Glossary: reference/glossary.md
+      - The research paper: reference/research-paper.md
       - Further reading: reference/further-reading.md
+
+extra:
+  app_url: https://alchemygeek.github.io/Rotax9iSEIS/app/

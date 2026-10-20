@@ -4,9 +4,9 @@ The pages on this site explain what the app shows and why. The material below is
 
 ## The research paper
 
-*Rotax 91XiS Engine Data Analytics* — the paper that motivated the project and records what was learned from the first fifty flights of a Rotax 916iS. It sets out why FADEC engines need their own analytics (§§1–3), the flight-phase approach (§4), the limit checks (§5), cylinder balance (§6), the engine-computer alert classification (§7), and the stratification by weather conditions (§9).
+*Rotax 91XiS Engine Data Analytics* — the paper that motivated the project and records what was learned from the first fifty flights of a Rotax 916iS. It sets out why FADEC engines need their own analytics (§§1–2), how limits become events (§3), the flight-phase approach (§5), the two layers and stratification by conditions (§6), each analytics topic including cylinder balance (§7), the engine-computer alert classification (§8), filters and the change monitor (§9), and Trends (§10).
 
-→ `docs/ROTAX 91XiS Engine Data Analytics.md` in the repository.
+→ Read it on this site: [The research paper](research-paper.md). The source is `docs/ROTAX 91XiS Engine Data Analytics.md` in the repository.
 
 ## The specifications
 

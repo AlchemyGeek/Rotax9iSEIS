@@ -39,4 +39,4 @@ And underneath all of them, the Operators Manual limits, checked with an underst
 
 ---
 
-*Further reading: the research paper [Rotax 91XiS Engine Data Analytics](../reference/further-reading.md), sections 1–3, sets out this argument in full with references to the Rotax documentation.*
+*Further reading: the research paper [Rotax 91XiS Engine Data Analytics](../reference/research-paper.md), sections 1–2, sets out this argument in full with references to the Rotax documentation.*

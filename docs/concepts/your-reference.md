@@ -62,4 +62,4 @@ The condition bands are fixed; they come from the research behind the app and ar
 
 ---
 
-*Further reading: research paper §9 (stratification) and Spec 12 (Trends) in the [repository](../reference/further-reading.md).*
+*Further reading: [research paper §6](../reference/research-paper.md) (the reference and stratification) and Spec 12 (Trends) in the [repository](../reference/further-reading.md).*

@@ -54,4 +54,4 @@ As always, one flight is a note; a trend across flights is a conversation with y
 
 ---
 
-*Further reading: Spec 08 (cylinder balance) and research paper §6 in the [repository](../reference/further-reading.md).*
+*Further reading: Spec 08 (cylinder balance) and [research paper §7.2](../reference/research-paper.md) in the [repository](../reference/further-reading.md).*
