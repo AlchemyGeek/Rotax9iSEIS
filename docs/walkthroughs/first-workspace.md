@@ -4,7 +4,7 @@
 
 ## 1. Open the app
 
-Open **[SlingologyEIS](APP_URL)** in your browser. The first time, the page sets up the analysis engine — about 30 MB, downloaded once and kept by your browser — and shows its progress. Later visits take a few seconds.
+Open **[SlingologyEIS](https://alchemygeek.github.io/Rotax9iSEIS/app/)** in your browser. The first time, the page sets up the analysis engine — about 30 MB, downloaded once and kept by your browser — and shows its progress. Later visits take a few seconds, and work without a network: the app starts from the copy your browser kept. When a new version is published, the next visit with a network picks it up and says *Updated to version …* once.
 
 Everything the app does from here on happens inside your browser, on your computer. Your logs are read from your own folders and never uploaded; the results are kept by your browser, on this device. There is no account and no server holding your data.
 

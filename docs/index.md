@@ -19,7 +19,7 @@ SlingologyEIS reads the engine logs your Garmin avionics already record on every
 
 The limits come from Rotax. The idea of "usual" comes from your own flight history. What to do about either is your call — the app never silences anything on its own, and it never stops watching something you've told it to tolerate.
 
-**[Open SlingologyEIS](APP_URL)** — it runs entirely in your browser. There is nothing to install and no account; the analysis happens on your computer and the results stay there. Your logs stay in your own folders — the app reads them; it never copies or uploads them. If you would rather run it as a program on your own machine, you can ([how](walkthroughs/first-workspace.md#running-the-app-on-your-own-computer)).
+**[Open SlingologyEIS](https://alchemygeek.github.io/Rotax9iSEIS/app/)** — it runs entirely in your browser. There is nothing to install and no account; the analysis happens on your computer and the results stay there. Your logs stay in your own folders — the app reads them; it never copies or uploads them. If you would rather run it as a program on your own machine, you can ([how](walkthroughs/first-workspace.md#running-the-app-on-your-own-computer)).
 
 !!! warning "Keep a copy of your workspace"
     Your workspaces are kept by your browser, on this device. Clearing the site's data removes them, and a browser short of space may clear them on its own. **Settings → App → Export workspace…** writes one file that restores everything — make one after your first analysis and whenever you have made decisions you would not want to redo. [How](walkthroughs/export-import.md).
