@@ -19,6 +19,26 @@ import { useFilterAttention } from "../lib/filterAttention";
 import { DROP_PROMPT_THRESHOLD, plural, promptText } from "../lib/flightsSync";
 
 const client = getEngineClient();
+
+// The flights table's columns, shared by every date/folder group (each is
+// its own <table>) so the groups line up: fixed widths, the Source column
+// takes the rest. Checkbox, date/route, duration, insights, in reference,
+// status, source, actions.
+const FLIGHT_COLUMNS = (
+  <colgroup>
+    <col style={{ width: 36 }} />
+    <col style={{ width: "19%" }} />
+    <col style={{ width: "16%" }} />
+    <col style={{ width: "10%" }} />
+    <col style={{ width: "10%" }} />
+    <col style={{ width: "13%" }} />
+    <col />
+    <col style={{ width: 136 }} />
+  </colgroup>
+);
+// A long file name is cut with an ellipsis (whole name on hover), never
+// allowed to widen its column.
+const SOURCE_CELL: React.CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 const RECONNECT_NOTE_KEY = "slingology-eis-reconnect-note-dismissed";
 
 const LEGACY_MANIFEST: WorkspaceManifest = {
@@ -735,7 +755,7 @@ export function Flights() {
             <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2, maxWidth: 320 }}>{row.unreadable_reason}</div>
           )}
         </td>
-        <td className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }} title={row.log_folder}>{row.filename}</td>
+        <td className="mono" style={{ ...SOURCE_CELL, fontSize: 10, color: "var(--text-tertiary)" }} title={`${row.filename} — ${row.log_folder}`}>{row.filename}</td>
         <td />
       </tr>
     );
@@ -754,7 +774,7 @@ export function Flights() {
         <td>{dash}</td>
         <td>{dash}</td>
         <td><span style={{ color: STATUS_COLOR[row.status], fontWeight: 600, fontSize: 12 }}>{STATUS_LABEL[row.status]}</span></td>
-        <td className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }} title={row.log_folder}>{row.filename}</td>
+        <td className="mono" style={{ ...SOURCE_CELL, fontSize: 10, color: "var(--text-tertiary)" }} title={`${row.filename} — ${row.log_folder}`}>{row.filename}</td>
         <td onClick={(e) => e.stopPropagation()}>
           {offered && (
             <button
@@ -1208,7 +1228,9 @@ export function Flights() {
           </div>
         )}
 
-        {/* Table, grouped */}
+        {/* Table, grouped. One <table> per group, so every group shares the
+            same fixed column widths (FLIGHT_COLUMNS) — otherwise each table
+            sizes its columns from its own rows and the groups don't line up. */}
         {!showSkipped && (
         <div style={{ background: "var(--panel)", borderRadius: 12, padding: "6px 14px" }}>
           {groups.map(([groupName, groupRows]) => (
@@ -1216,10 +1238,11 @@ export function Flights() {
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-tertiary)", padding: "10px 10px 4px" }}>
                 {groupName.toUpperCase()} ({groupRows.length})
               </div>
-              <table>
+              <table style={{ tableLayout: "fixed" }}>
+                {FLIGHT_COLUMNS}
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                    <th style={{ width: 24 }}>
+                    <th>
                       <input
                         type="checkbox"
                         checked={groupIds(groupRows).length > 0 && groupIds(groupRows).every((id) => selectedIds.has(id))}
@@ -1298,7 +1321,7 @@ export function Flights() {
                           {STATUS_LABEL[row.status]}
                         </span>
                       </td>
-                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer" }} title={row.log_folder}>
+                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ ...SOURCE_CELL, fontSize: 10, color: "var(--text-tertiary)", cursor: "pointer" }} title={`${row.filename} — ${row.log_folder}`}>
                         {row.source_format && SOURCE_FORMAT_LABEL[row.source_format] && (
                           // Spec 03 v0.22 §5.1: the Source column names the format.
                           <span data-testid="source-format" style={{ fontFamily: "inherit", fontSize: 10, color: "var(--text-secondary)", marginRight: 6 }}>
