@@ -74,11 +74,17 @@ export async function registerSiteWorker(isBusy: () => boolean): Promise<void> {
     };
     attempt();
   };
-  if (reg.waiting) takeOver(reg.waiting);
-  reg.addEventListener("updatefound", () => {
-    const installing = reg.installing;
+  // A new release may already be waiting, or already installing by the time
+  // this runs (the browser checks for one as the page loads): handle both,
+  // as well as one found later.
+  const watch = (installing: ServiceWorker | null) => {
     installing?.addEventListener("statechange", () => {
       if (installing.state === "installed" && reg.waiting) takeOver(reg.waiting);
     });
-  });
+  };
+  if (reg.waiting) takeOver(reg.waiting);
+  else watch(reg.installing);
+  reg.addEventListener("updatefound", () => watch(reg.installing));
+  // And ask once more now, rather than only on the next navigation.
+  void reg.update().catch(() => undefined);
 }

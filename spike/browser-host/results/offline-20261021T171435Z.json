@@ -1,0 +1,53 @@
+{
+  "at": "2026-10-21T17:14:35.498053+00:00",
+  "steps": [
+    {
+      "step": "first visit: downloads, then the whole release is cached",
+      "ok": true,
+      "release": "77cf7c3554686391",
+      "cache_seconds": 0.5,
+      "cache_bytes": 32905984
+    },
+    {
+      "step": "offline: the site opens from this device",
+      "ok": true,
+      "loading": "Loading the analysis engine from this device\u2026",
+      "seconds": 2.7
+    },
+    {
+      "step": "offline: a dropped log is analysed",
+      "ok": true,
+      "rows": 1,
+      "seconds": 3.0
+    },
+    {
+      "step": "offline: a flight opens with its chart",
+      "ok": true
+    },
+    {
+      "step": "offline: nothing needed the network",
+      "ok": true,
+      "failed": []
+    },
+    {
+      "step": "next online visit switches to the new release and says so",
+      "ok": true,
+      "notice": "Updated to version 1.0.1 (build 2710dd8)",
+      "release": "6e0210ced2bac65f",
+      "expected": "6e0210ced2bac65f"
+    },
+    {
+      "step": "the notice is said once",
+      "ok": true
+    },
+    {
+      "step": "the workspace made offline is still there",
+      "ok": true
+    },
+    {
+      "step": "no page errors",
+      "ok": true,
+      "errors": []
+    }
+  ]
+}
