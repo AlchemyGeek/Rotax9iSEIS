@@ -24,6 +24,9 @@ import type {
 import { getTheme } from "../lib/theme";
 import { APP_BUILD, describeBuild } from "../lib/buildInfo";
 
+// Spec 15 §10: bug reports and feature requests.
+const FEEDBACK_URL = "https://feedback.slingology.synology.me/";
+
 const client = getEngineClient();
 
 const LEGACY_MANIFEST: WorkspaceManifest = {
@@ -920,13 +923,23 @@ export function Settings() {
                   <span style={{ color: "var(--text-secondary)" }}>Workspace that reopens on launch</span>
                   <span className="mono" style={{ color: "var(--text-primary)" }}>{manifest.name}</span>
                 </div>
-                {/* Which build this page is: version, commit, when it was built. */}
-                <div style={{ ...ROW_STYLE, marginBottom: 0 }} data-testid="app-build">
-                  <span style={{ color: "var(--text-secondary)" }}>This build</span>
-                  <span className="mono" style={{ color: "var(--text-primary)" }}
-                    title={APP_BUILD.modified ? "Built from changes not yet committed" : `Built from commit ${APP_BUILD.commit}`}>
-                    {describeBuild()}
-                  </span>
+                {/* Spec 15 §10: About — the build running, and where to report on it. */}
+                <div data-testid="app-about" style={{ borderTop: "1px solid var(--border-subtle)", marginTop: 14, paddingTop: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-tertiary)", marginBottom: 8 }}>About</div>
+                  <div style={ROW_STYLE} data-testid="app-build">
+                    <span style={{ color: "var(--text-secondary)" }}>This build</span>
+                    <span className="mono" style={{ color: "var(--text-primary)" }}
+                      title={APP_BUILD.modified ? "Built from changes not yet committed" : `Built from commit ${APP_BUILD.commit}`}>
+                      {describeBuild()}
+                    </span>
+                  </div>
+                  <div style={{ ...ROW_STYLE, marginBottom: 0 }}>
+                    <a href={FEEDBACK_URL} target="_blank" rel="noopener noreferrer" data-testid="feedback-link"
+                      title="Opens the feedback site in a new tab — include the build above in a bug report"
+                      style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      Report a bug or request a feature ↗
+                    </a>
+                  </div>
                 </div>
               </div>
 

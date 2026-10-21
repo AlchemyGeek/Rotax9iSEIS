@@ -127,6 +127,17 @@ describe("capability gating", () => {
     expect(screen.getByRole("button", { name: "Delete all data on this device" })).toBeTruthy();
   });
 
+  it("Settings → App: About names the build and links to the feedback site in a new tab (Spec 15 §10)", async () => {
+    state.caps = SERVER;
+    renderAt("/settings?tab=app", <Settings />);
+    const about = await screen.findByTestId("app-about");
+    expect(within(about).getByTestId("app-build").textContent).toMatch(/This build.*build /);
+    const link = within(about).getByTestId("feedback-link");
+    expect(link.getAttribute("href")).toBe("https://feedback.slingology.synology.me/");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+
   it("Settings → App: Data location in the server host, no Storage panel", async () => {
     state.caps = SERVER;
     renderAt("/settings?tab=app", <Settings />);

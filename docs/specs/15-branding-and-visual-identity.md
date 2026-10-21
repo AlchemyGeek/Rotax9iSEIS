@@ -1,6 +1,6 @@
 # Spec 15 — Branding & Visual Identity
 
-**Status:** v0.6 — top-bar icon cluster with a theme toggle, icon legibility, light/dark theming (design; not built); v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
+**Status:** v0.7 — feedback link and About block in Settings → App; v0.6 — top-bar icon cluster with a theme toggle, icon legibility, light/dark theming; v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
 **Depends on:** Spec 13 (Documentation System — §11 Q1 hosting), Spec 03 (§4 nav, §5.2 phase palette, §5.7 Settings/gear icon placement)
 **Scope:** SlingologyEIS's place in the Slingology app family — shared identity elements, this app's color, and how both the web UI and the docs website apply them.
 
@@ -102,7 +102,7 @@ Same token, same rule, applied to a different surface:
 - **Size:** render the icon larger relative to bar height — roughly 70–75% (about 40 px on the 56 px bar).
 - **A thin light-value outline ring** around the circle's edge, so it separates from the bar regardless of exactly how dark the chrome is. This is a framing device, not a second colorway of the mark — it doesn't conflict with §1's "one icon, never redrawn per context."
 
-As built in v0.5 (2026-10-19): 34 px (about 60% of the bar) on a 1.5 px light ring — the ring is in place; the size grows to 70–75%.
+As built: 34 px on a 1.5 px light ring in v0.5 (2026-10-19); 40 px since 2026-10-20.
 
 Light mode (§9) also resolves this for anyone who switches, but dark stays the default (§6), so the ring fix matters regardless of whether theming ships.
 
@@ -118,11 +118,24 @@ Light mode (§9) also resolves this for anyone who switches, but dark stays the 
 
 **Scope boundary, stated explicitly so this doesn't balloon:** this is "light mode exists and every screen reads correctly in it," not a full visual redesign pass. The layout, spacing and component choices stay as they are — only the token values and the chart-color selection change.
 
-## 10. Outstanding before this is final
+## 10. Feedback — bugs and feature requests
 
-1. Update Spec 14 to note the new app-level theme setting exists (§6).
+*(v0.7.)* A feedback site now exists (`https://feedback.slingology.synology.me/`) for bug reports and feature requests. Primary home is **Settings → App**, not a fourth top-bar icon — reasoning below — with a second entry point noted for consistency.
 
-Settled earlier (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), the favicons are in hand (§7), and Spec 13 §11 Q1 is marked resolved (§7).
+**Why Settings → App over the top-bar cluster:** a bug/feature report is reached for rarely, unlike Docs (genuine reference) and the theme toggle (a one-click preference used often). §6 already grouped the top bar into exactly two always-visible, frequently-used external/display controls; a fourth icon for a rarely-used link re-crowds the cluster §8/§6 just worked to declutter. Settings → App is also where this naturally sits alongside the app version, which should accompany any bug report.
+
+**What to add to Settings → App:**
+- An "About" block: the app version — the *This build* line (version, build commit, build date) already in Settings → App since 2026-10-20 — and a line, *"Report a bug or request a feature"*, linking to the feedback site.
+- **Opens in a new tab**, same convention as Docs (§6).
+- Standard secondary/muted color, same as every other non-brand control (§4).
+
+**Not a new top-bar icon.** If one click from anywhere ever becomes a real need, it should surface *inside* the existing Settings icon's destination, not as additional top-bar chrome — consistent with how the top bar was deliberately kept to three controls in §6.
+
+## 11. Outstanding before this is final
+
+1. Update Spec 14 to note the new app-level theme setting exists (§6) and the About/feedback block in Settings → App (§10).
+
+Settled earlier (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its teal (§4), the favicons are in hand (§7), and Spec 13 §11 Q1 is marked resolved (§7). Built (2026-10-20): §6's cluster, §8's 40 px mark on its ring, §9's light theme.
 
 ## Changelog
 
@@ -134,3 +147,4 @@ Settled earlier (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its te
 | 0.4 | From the implementation review (2026-10-19). §2: measured distances — the nearest chromatic color was `TAXI`, not `TAKEOFF_ROLL`, so `TAXI` becomes `#84CC16` (Spec 03 v0.26); a light tint `#7FA3C2` of the same hue for lines and text, since `#3D5A73` is 2.4–2.6:1 on the dark theme; primary buttons take light text. §3: greys are separated by role; the rule is enforced by a ΔE test. §4: roles widened to selected tabs/chips/segmented controls and "live" states; *zoom controls* dropped (none exist); every other former teal use classified (link, OK, chart highlight/data, neutral); `chartRpm` keeps `#4fc3b0`. §6: URL confirmed. §8: nothing outstanding. |
 | 0.5 | §4: the family mark and §1 lockup open the app's top bar, replacing the plain *SlingologyEIS* text (2026-10-19). |
 | 0.6 | §6 restructured into the full top-bar cluster (Docs, theme toggle, Settings) after seeing the live nav bar — icon too small and barely separated from the dark chrome. Added §8 (icon-legibility fix: size + outline ring; the ring is already built, the size grows to 70–75%) and §9 (light/dark theming — architecture already token-based at the DOM layer; `colors.ts` needs a real light-mode variant since Canvas can't read CSS vars, severity/phase colors need a fresh contrast check on white, and the brand's fill and tint swap roles on white). Theme toggle is an app-level setting, binary, dark by default. Outstanding renumbered §10. (Drafted on v0.3 as "0.4"; merged onto v0.5, 2026-10-19.) |
+| 0.7 | Added §10: feedback site (bugs/feature requests) homed in Settings → App, not a fourth top-bar icon — kept the cluster at the controls §6 deliberately settled on — in an About block with the app version (the *This build* line). Outstanding renumbered §11; §6, §8 and §9 noted as built. (Drafted on an earlier copy as "0.5"; merged onto v0.6, 2026-10-21.) |
