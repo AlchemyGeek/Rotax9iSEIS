@@ -1,6 +1,6 @@
 # Spec 15 — Branding & Visual Identity
 
-**Status:** v0.7 — feedback link and About block in Settings → App; v0.6 — top-bar icon cluster with a theme toggle, icon legibility, light/dark theming; v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
+**Status:** v0.8 — feedback also in the top bar, left of Docs; v0.7 — feedback link and About block in Settings → App; v0.6 — top-bar icon cluster with a theme toggle, icon legibility, light/dark theming; v0.5 — the family mark and lockup in the app's top bar; v0.4 — use classification approved, light tint for lines and text, `TAXI` recoloured, docs URL confirmed (2026-10-19)
 **Depends on:** Spec 13 (Documentation System — §11 Q1 hosting), Spec 03 (§4 nav, §5.2 phase palette, §5.7 Settings/gear icon placement)
 **Scope:** SlingologyEIS's place in the Slingology app family — shared identity elements, this app's color, and how both the web UI and the docs website apply them.
 
@@ -72,7 +72,7 @@ This replaces today's placeholder teal (`accent: "#4fc3b0"` in `theme/colors.ts`
 
 ## 6. Top-bar icon cluster: Docs, theme toggle, Settings
 
-*(v0.6; v0.2–v0.5 had the Docs button alone, built in v0.4.)* Three controls, in this order: `[Docs]` | `[Theme toggle] [Settings]`. The divider isn't just spacing — it marks a real distinction: Docs *leaves* the app, theme and Settings both *act on* it.
+*(v0.6; v0.2–v0.5 had the Docs button alone, built in v0.4.)* In this order: `[Feedback] [Docs]` | `[Theme toggle] [Settings]` (Feedback since v0.8, §10). The divider isn't just spacing — it marks a real distinction: Feedback and Docs *leave* the app, theme and Settings both *act on* it.
 
 **Docs button** — links out to the docs site (`https://alchemygeek.github.io/Rotax9iSEIS/` — confirmed permanent, v0.4).
 - **Opens in a new tab.** Every other nav icon stays inside the app; this one leaves it, and should look and behave like it does.
@@ -129,7 +129,7 @@ Light mode (§9) also resolves this for anyone who switches, but dark stays the 
 - **Opens in a new tab**, same convention as Docs (§6).
 - Standard secondary/muted color, same as every other non-brand control (§4).
 
-**Not a new top-bar icon.** If one click from anywhere ever becomes a real need, it should surface *inside* the existing Settings icon's destination, not as additional top-bar chrome — consistent with how the top bar was deliberately kept to three controls in §6.
+**Also in the top bar (v0.8, the owner's call after seeing v0.7 live).** A speech-bubble icon left of Docs opens the same site in a new tab, so a report is one click from any page. It sits with Docs on the *leaves the app* side of the divider (§6), in the same muted icon color. Settings → App keeps the link beside the build, which a bug report should quote. (v0.7 had argued for Settings → App alone, to keep the top bar to the controls used often.)
 
 ## 11. Outstanding before this is final
 
@@ -148,3 +148,4 @@ Settled earlier (v0.4): the docs URL is confirmed (§6), `chartRpm` keeps its te
 | 0.5 | §4: the family mark and §1 lockup open the app's top bar, replacing the plain *SlingologyEIS* text (2026-10-19). |
 | 0.6 | §6 restructured into the full top-bar cluster (Docs, theme toggle, Settings) after seeing the live nav bar — icon too small and barely separated from the dark chrome. Added §8 (icon-legibility fix: size + outline ring; the ring is already built, the size grows to 70–75%) and §9 (light/dark theming — architecture already token-based at the DOM layer; `colors.ts` needs a real light-mode variant since Canvas can't read CSS vars, severity/phase colors need a fresh contrast check on white, and the brand's fill and tint swap roles on white). Theme toggle is an app-level setting, binary, dark by default. Outstanding renumbered §10. (Drafted on v0.3 as "0.4"; merged onto v0.5, 2026-10-19.) |
 | 0.7 | Added §10: feedback site (bugs/feature requests) homed in Settings → App, not a fourth top-bar icon — kept the cluster at the controls §6 deliberately settled on — in an About block with the app version (the *This build* line). Outstanding renumbered §11; §6, §8 and §9 noted as built. (Drafted on an earlier copy as "0.5"; merged onto v0.6, 2026-10-21.) |
+| 0.8 | §10, §6: the feedback link also in the top bar — a speech-bubble icon left of Docs, on the *leaves the app* side of the divider, muted, new tab; Settings → App keeps its link beside the build (2026-10-21). |

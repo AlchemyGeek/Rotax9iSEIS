@@ -19,6 +19,8 @@ const ENGINE_MODELS = ["912iS", "915iS", "916iS"];
 // Spec 15 §6: the docs site, confirmed permanent. One constant — there is
 // no redirect layer to absorb a move.
 export const DOCS_URL = "https://alchemygeek.github.io/Rotax9iSEIS/";
+// Spec 15 §10: bug reports and feature requests.
+export const FEEDBACK_URL = "https://feedback.slingology.synology.me/";
 
 const ICON_BUTTON: React.CSSProperties = {
   width: 32, height: 32, borderRadius: 8, background: "var(--panel)", border: "1px solid var(--border)",
@@ -388,8 +390,21 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {right}
-          {/* Spec 15 §6: leaves the app, so a plain link in a new tab, in the
-              muted icon color — never the brand's "active" color. */}
+          {/* Spec 15 §6, §10: Feedback and Docs leave the app, so plain links in
+              a new tab, in the muted icon color — never the brand's "active" color. */}
+          <a
+            href={FEEDBACK_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Report a bug or request a feature (opens in a new tab)"
+            aria-label="Report a bug or request a feature (opens in a new tab)"
+            data-testid="nav-feedback"
+            style={{ ...ICON_BUTTON, textDecoration: "none" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
+          </a>
           <a
             href={DOCS_URL}
             target="_blank"
@@ -403,7 +418,7 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
               <path d="M22 4h-6a4 4 0 00-4 4v13a3 3 0 013-3h7z" />
             </svg>
           </a>
-          {/* §6: Docs leaves the app; the theme and Settings act on it. */}
+          {/* §6: Feedback and Docs leave the app; the theme and Settings act on it. */}
           <span aria-hidden="true" style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
           <ThemeToggle />
           <NavLink

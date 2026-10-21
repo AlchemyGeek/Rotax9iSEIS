@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { NavShell } from "../components/NavShell";
+import { NavShell, FEEDBACK_URL } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { DataLocationPanel } from "../components/DataLocation";
 import { StoragePanel } from "../components/StoragePanel";
@@ -23,9 +23,6 @@ import type {
 } from "../types/contract";
 import { getTheme } from "../lib/theme";
 import { APP_BUILD, describeBuild } from "../lib/buildInfo";
-
-// Spec 15 §10: bug reports and feature requests.
-const FEEDBACK_URL = "https://feedback.slingology.synology.me/";
 
 const client = getEngineClient();
 

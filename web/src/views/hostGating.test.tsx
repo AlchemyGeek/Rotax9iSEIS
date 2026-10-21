@@ -138,6 +138,19 @@ describe("capability gating", () => {
     expect(link.getAttribute("rel")).toContain("noopener");
   });
 
+  it("the top bar: Feedback and Docs (new tabs), then the theme toggle and Settings (Spec 15 §6, §10)", async () => {
+    state.caps = SERVER;
+    renderAt("/settings?tab=app", <Settings />);
+    const feedback = await screen.findByTestId("nav-feedback");
+    const docs = screen.getByRole("link", { name: "Documentation (opens in a new tab)" });
+    expect(feedback.getAttribute("href")).toBe("https://feedback.slingology.synology.me/");
+    expect(feedback.getAttribute("target")).toBe("_blank");
+    const order = [feedback, docs, screen.getByTestId("theme-toggle"), screen.getByRole("link", { name: "Settings" })];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
   it("Settings → App: Data location in the server host, no Storage panel", async () => {
     state.caps = SERVER;
     renderAt("/settings?tab=app", <Settings />);
