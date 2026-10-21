@@ -24,6 +24,9 @@ The limits come from Rotax. The idea of "usual" comes from your own flight histo
 !!! warning "Keep a copy of your workspace"
     Your workspaces are kept by your browser, on this device. Clearing the site's data removes them, and a browser short of space may clear them on its own. **Settings → App → Export workspace…** writes one file that restores everything — make one after your first analysis and whenever you have made decisions you would not want to redo. [How](walkthroughs/export-import.md).
 
+!!! tip "No logs yet? Try the sample workspace"
+    [Download the sample workspace](https://github.com/AlchemyGeek/Rotax9iSEIS/releases/download/sample-workspace/SlingologyEIS-sample-N117ZS.zip) (10 MB) — a season of N117ZS, the Sling TSi the app was developed on: 19 flights, the three filters its owner set and why, and one annotation. Open the app, go to **Settings → App → Import workspace…** and pick the zip; the app analyses the flights in about a minute. Then look at Trends for the widening EGT spread, open the 2 September flight to see the fuel-pressure filter at work, and read the Journal. The sample is the same workspace the screenshots on this site were taken from.
+
 <figure class="screenshot" markdown>
 ![The Flights page with a season of flights analysed](img/flights-overview.png){ .screenshot }
 <figcaption>Every flight in a workspace, with its insights at a glance.</figcaption>

@@ -22,6 +22,9 @@ The app asks for a workspace **name** and the **engine model**, with an optional
 
 ## 3. Point it at your logs
 
+!!! tip "No logs yet?"
+    Skip this step and the next: [download the sample workspace](https://github.com/AlchemyGeek/Rotax9iSEIS/releases/download/sample-workspace/SlingologyEIS-sample-N117ZS.zip) (10 MB) and use **Settings → App → Import workspace…** instead. It is a season of flights from the aircraft the app was developed on, decisions included. Pick up again at step 5 — the sample has four ground runs in *Skipped*, and the [export and import](export-import.md) walkthrough explains what an import does.
+
 Click **Choose folder…** and pick the folder where you keep your logs — subfolders are included. Or drop files onto the page. The app only *reads* this folder; it never copies, moves or renames anything in it. You can add more folders later, and if you move logs around, **Sync** finds them again.
 
 How the browser remembers the folder differs:
