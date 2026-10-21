@@ -87,3 +87,17 @@
   .md-nav--primary .md-nav__item--section > .md-nav { padding-left: .25rem; border-left: 2px solid var(--md-default-fg-color--lightest); margin-left: .1rem; }
   .md-nav--primary .md-nav__item--section .md-nav__item .md-nav__link { padding-left: .55rem; }
 }
+
+/* "Feedback" link in the header, beside "Open the app" (extra.feedback_url) */
+.md-header__feedback {
+  display: inline-flex; align-items: center; gap: .3rem;
+  margin: 0 .1rem 0 .4rem; padding: .3rem .6rem; border-radius: 999px;
+  color: #fff !important; font-size: .7rem; font-weight: 600; white-space: nowrap;
+  opacity: .9; transition: background .15s, opacity .15s;
+}
+.md-header__feedback:hover, .md-header__feedback:focus { background: rgba(255,255,255,.14); opacity: 1; }
+.md-header__feedback svg { width: .9rem; height: .9rem; fill: currentColor; }
+@media screen and (max-width: 44.9375em) {
+  .md-header__feedback { padding: .3rem .35rem; margin-left: .1rem; }
+  .md-header__feedback-text { display: none; }
+}
