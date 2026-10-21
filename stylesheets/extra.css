@@ -78,7 +78,7 @@
 @media screen and (min-width: 76.25em) {
   .md-nav--primary .md-nav__item--section { margin-top: 1.1rem; }
   .md-nav--primary .md-nav__item--section > .md-nav__link {
-    font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--md-primary-fg-color);
     padding-top: .45rem; margin-bottom: .2rem;
     border-top: 1px solid var(--md-default-fg-color--lightest);
