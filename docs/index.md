@@ -48,6 +48,10 @@ The limits come from Rotax. The idea of "usual" comes from your own flight histo
 - *Deciding what matters* — [your decisions](concepts/your-decisions.md), [Trends](concepts/trends.md), [the Journal](concepts/the-journal.md)
 - *Working with others* — [sharing a workspace](concepts/sharing-a-workspace.md)
 
+## Found a problem? Have an idea?
+
+Tell us on the **[SlingologyEIS feedback board](https://feedback.slingology.synology.me/)** — no GitHub account needed. Report something that looks wrong, suggest a feature, or vote for the ideas other pilots have posted; the votes help decide what gets built next. When reporting a problem, say which page you were on, what you expected, what you saw and which browser you use; a screenshot helps. If the problem is in the analysis of a flight, a [workspace export](walkthroughs/export-import.md) lets it be seen exactly as you see it — say in the report that you can share one.
+
 ## What this app is, and isn't
 
 SlingologyEIS is a reading aid for the data your engine already produces. It will show you when a reading went past a limit, when a flight looks different from your own history, and when something about your engine has been slowly changing. It will not tell you whether your aircraft is airworthy, and it does not replace the Operators Manual, your maintenance schedule or your mechanic. When the app says something is *worth raising with your mechanic*, that is what it means — a conversation starter with the evidence attached, not a diagnosis.

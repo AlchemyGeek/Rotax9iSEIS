@@ -100,3 +100,11 @@ nav:
 
 extra:
   app_url: https://alchemygeek.github.io/Rotax9iSEIS/app/
+  feedback_url: https://feedback.slingology.synology.me/
+  social:
+    - icon: material/message-alert-outline
+      link: https://feedback.slingology.synology.me/
+      name: Report a problem or suggest a feature
+    - icon: fontawesome/brands/github
+      link: https://github.com/AlchemyGeek/Rotax9iSEIS
+      name: Source code on GitHub

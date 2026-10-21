@@ -37,6 +37,12 @@
     {% if config.extra.alternate %}
       {% include "partials/alternate.html" %}
     {% endif %}
+    {% if config.extra.feedback_url %}
+      <a href="{{ config.extra.feedback_url }}" class="md-header__feedback" title="Report a problem or suggest a feature" target="_blank" rel="noopener">
+        {% include ".icons/material/message-alert-outline.svg" %}
+        <span class="md-header__feedback-text">Feedback</span>
+      </a>
+    {% endif %}
     {% if config.extra.app_url %}
       <a href="{{ config.extra.app_url }}" class="md-header__app" title="Open SlingologyEIS in your browser" target="_blank" rel="noopener">
         <span class="md-header__app-text">Open the app</span><span class="md-header__app-short">App</span>

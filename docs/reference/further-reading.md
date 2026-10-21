@@ -30,6 +30,10 @@ Each part of the app is described in a numbered specification, kept up to date a
 
 The limits the app checks come from the Operators Manual for each engine model; the edition and revision used are shown under *Settings → Engine* and on the [limits page](om-limits.md). The manuals are Rotax's and are not included in the project; they are available from Rotax and your engine's documentation.
 
+## Reporting a problem or suggesting a feature
+
+The [feedback board](https://feedback.slingology.synology.me/) is where bugs are reported and features are suggested and voted on. It needs no GitHub account. For a problem with the analysis of a flight, the most useful thing you can offer is a [workspace export](../concepts/sharing-a-workspace.md) — anonymised if you prefer.
+
 ## Asking an assistant
 
 Everything on this site is plain text in the repository under `docs/`. If you use an AI assistant, you can point it at the repository or paste the pages you are interested in and ask questions in your own words. The concept pages are written so that their opening *In brief* reads correctly out of context.
