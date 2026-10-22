@@ -44,6 +44,9 @@ interface Props {
   // the same two glyphs (▲ limit, ◆ CAS); a filtered event is muted, the
   // row the pilot is looking at is emphasised.
   markers?: EventMarker[];
+  // Spec 07 §11.4: where the selected limit event reached its reported
+  // worst value — the triangle marks where it began.
+  worst?: { x_s: number; label: string } | null;
 }
 
 export interface EventMarker {
@@ -62,7 +65,7 @@ export interface EventMarker {
 // y-axis stays honest about being an index rather than a value scale.
 // The active-channel chip row / picker lives one level up (Spec 07 §8) —
 // this component only draws what's already been decided active.
-export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange, markers }: Props) {
+export function ChannelTimeline({ series, activeChannels, colorFor, phases, highlight, zoomWindow, onZoomChange, markers, worst }: Props) {
   // Must be memoized, not a plain .filter() — it's a dependency of the
   // option useMemo below, and an unmemoized array is a *new reference on
   // every render*. Dragging to pan fires 'dataZoom' events continuously,
@@ -256,9 +259,22 @@ export function ChannelTimeline({ series, activeChannels, colorFor, phases, high
             tooltip: { trigger: "item" as const, formatter: (p: { name?: string }) => `Event ${p.name ?? ""}` },
             z: 5,
           }]
+        : []),
+      // The selected event's worst moment: a dashed line, labelled with the
+      // value the event reports, neutral like the markers.
+      ...(worst
+        ? [{
+            type: "line" as const, data: [], silent: true,
+            markLine: {
+              silent: true, symbol: "none",
+              lineStyle: { color: colors.textPrimary, type: "dashed" as const, width: 1, opacity: 0.8 },
+              label: { formatter: worst.label, position: "insideEndTop" as const, color: colors.textPrimary, fontFamily: fontMono, fontSize: 10 },
+              data: [{ xAxis: worst.x_s }],
+            },
+          }]
         : [])],
     } as EChartsOption;
-  }, [active, series, colorFor, phases, highlight, zoomWindow, markers]);
+  }, [active, series, colorFor, phases, highlight, zoomWindow, markers, worst]);
 
   return (
     <div>

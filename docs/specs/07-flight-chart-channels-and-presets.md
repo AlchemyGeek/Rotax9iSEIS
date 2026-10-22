@@ -1,7 +1,7 @@
 # Spec 07 — Flight Chart: Channel Registry, Picker, and Presets
 
 **Project:** SlingologyEIS web platform
-**Status:** Draft v0.2 — design agreed, ready for implementation when instructed
+**Status:** v0.3 — detail on zoom, and a limit event's worst moment marked (2026-10-22); v0.2 — design agreed
 **Suggested repo path:** `docs/specs/07-flight-chart-channels-and-presets.md`
 **Builds on:** Spec 01 v0.4 (§6.4 channel registry, §8.7 SeriesData, insight evidence), Spec 02 (app vs. workspace settings), Spec 03 v0.5 (§5.2 palettes, §6.1 Flight view), Spec 05 v0.2 (§4 overlaid indexed timeline, channel picker)
 **Depends on:** the downsampling fix (§11.2), which is tracked and implemented separately
@@ -13,6 +13,7 @@
 |---|---|
 | 0.1 | Initial draft. Presets first-class; hard cap of 6 slots; registry as single source of truth. |
 | 0.2 | Open questions Q1–Q5 resolved (§15). User presets are app-level. The chart opens on the last-used preset, and chart state carries across flights. Individual cylinder EGTs are offered alongside the group and are mutually exclusive with it. Insight context channels come from registry `companions`, not `insight_rules.json`; the `context_channels` evidence field is dropped. The downsampling fix is split out as a prerequisite. |
+| 0.3 | **Chart detail and the worst moment** (2026-10-22, from the owner: the value at an event's triangle didn't match the event's reported value). New §11.3: zoomed to 10 minutes or less, the chart fetches the visible stretch at full resolution (`get_flight_series` takes an optional `start_s`/`end_s`; a stretch of up to 800 rows comes back whole). New §11.4: the event triangle stays at the event's start (the Events table's *Time*), and selecting a limit event adds a dashed line where it reached the worst value it reports, labelled with that value. No stored analysis changes; engine version unchanged. |
 
 ---
 
@@ -240,6 +241,21 @@ Tracked and implemented separately. This spec relies on these properties of the 
 - Bucket edges depend only on the flight's length, so channels fetched at different times align.
 - NaN rows are excluded from the envelope.
 - The cursor readout finds the nearest point in each active series, instead of relying on shared x values.
+
+### 11.3 Detail on zoom (v0.3)
+
+The whole-flight series is the envelope of §11.2 — each channel's high and low point per 1/400th of the flight, so on a long flight its points are 10–20 s apart, and a reading at the cursor can come from several seconds away. When the visible window is **10 minutes or less**, the chart fetches that window (plus a quarter of its width on each side) for the active channels at full resolution and draws it in place of the envelope there; outside it, the envelope stays. The request waits until zooming or panning has paused (~0.3 s), and a window already covered is not fetched again. Wider than 10 minutes, the envelope alone is drawn, as before.
+
+- `get_flight_series` takes optional `start_s` and `end_s` (seconds into the flight). A stretch of up to 800 rows comes back as every row; a longer stretch gets the §11.2 envelope over that stretch alone.
+- The 0–100% index of each line is still the whole flight's range, so the lines don't jump when the detail arrives.
+
+### 11.4 An event's start and its worst moment (v0.3)
+
+A limit event's triangle marks where it **started** — the first reading past the limit, the Events table's *Time*. The value the event reports (*worst 49.0 psi*) is its **worst** reading anywhere within it, which on a long event can come minutes later; the reading at the triangle is close to the limit itself (Spec 03 §5.2 markers).
+
+- Selecting a limit event (its row's *Chart*, or its insight) fetches the event's own span at full resolution (§11.3) for its channel and draws a **dashed line where it reached the reported value**, labelled *worst 49.0 psi* — neutral, like the markers, never a severity color. The triangle doesn't move.
+- The moment is found from the log, not stored with the analysis: stored analyses are unchanged and no re-analysis is needed. If no reading in the span equals the reported value (a limit whose value isn't a reading, such as a duration), no line is drawn.
+- A CAS event has no value, so it has no worst line.
 
 ## 12. Contract and API changes (summary)
 

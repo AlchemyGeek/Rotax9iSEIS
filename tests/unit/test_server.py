@@ -347,6 +347,25 @@ def test_get_flight_series_expands_slot_group(server):
     assert set(d["result"].keys()) == {"egt1_f", "egt2_f", "egt3_f", "egt4_f"}
 
 
+def test_get_flight_series_window_returns_every_row_of_that_stretch(server):
+    """Spec 07 §11.3: a stretch of the flight comes back at full resolution
+    (a zoomed chart, an event's worst moment); the whole flight stays the
+    min/max envelope."""
+    b64 = base64.b64encode(_flying_log_bytes()).decode()
+    imp = rpc(server, "import_files", {"files": [{"content_base64": b64, "filename": "log_20260101_120000_TEST.csv"}]})
+    flight_id = imp["result"]["results"][0]["flight_id"]
+    whole = rpc(server, "get_flight_series", {"flight_id": flight_id, "channels": ["rpm"]})["result"]["rpm"]
+    part = rpc(server, "get_flight_series", {"flight_id": flight_id, "channels": ["rpm"], "start_s": 100, "end_s": 160})
+    assert part["ok"], part
+    times = [p[0] for p in part["result"]["rpm"]]
+    assert times[0] >= 100 and times[-1] <= 160
+    assert len(times) == len({t for t in times}) and len(times) >= 55          # every second of it
+    assert all(t2 - t1 <= 1.0 + 1e-6 for t1, t2 in zip(times, times[1:]))
+    assert len(whole) <= 800
+    bad = rpc(server, "get_flight_series", {"flight_id": flight_id, "channels": ["rpm"], "start_s": 50, "end_s": 10})
+    assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
+
+
 def test_get_chart_presets_returns_shipped_set(registry_server):
     # registry_server (not the plain server fixture) is required here:
     # get_chart_presets/save_user_preset persist through ctx["registry_path"],

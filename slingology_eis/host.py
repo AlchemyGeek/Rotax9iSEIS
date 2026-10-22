@@ -228,7 +228,8 @@ def _load_workspace_flights(workspace_dir: Path) -> list[FlightAnalysis]:
 
 
 def _downsample_series(content: bytes, filename: str, channels: list[str], n_buckets: int = 400,
-                       assignments: Optional[dict] = None) -> dict:
+                       assignments: Optional[dict] = None,
+                       window: Optional[tuple[float, float]] = None) -> dict:
     """
     Each channel is downsampled independently, with its own min/max
     envelope per bucket (Spec 07 §11.2) — not all channels sampled at one
@@ -246,10 +247,19 @@ def _downsample_series(content: bytes, filename: str, channels: list[str], n_buc
     nearest-point lookup per series instead (§11.2).
     """
     df, _info = load_log_bytes(content, filename, channel_assignments=assignments)
+    if window is not None:
+        # Spec 07 §11.3: one stretch of the flight, for a zoomed chart or an
+        # event's worst moment — every row when it fits in 2 × n_buckets
+        # points, else the same envelope over that stretch alone.
+        start_s, end_s = window
+        df = df[(df["elapsed_s"] >= start_s) & (df["elapsed_s"] <= end_s)].reset_index(drop=True)
     t = df["elapsed_s"].to_numpy()
     present = [c for c in channels if c in df.columns]
     if not present:
         return {}
+    if window is not None and len(df) <= 2 * n_buckets:
+        return {col: [[round(float(ts), 1), None if v != v else round(float(v), 1)]
+                      for ts, v in zip(t, df[col].to_numpy(dtype=float))] for col in present}
 
     edges = [int(round(i * len(df) / n_buckets)) for i in range(n_buckets + 1)]
 
@@ -896,6 +906,14 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
     channels = params.get("channels")
     if not channels:
         raise RpcError("BAD_PARAMS", "channels is required")
+    window = None
+    if params.get("start_s") is not None or params.get("end_s") is not None:
+        try:
+            window = (float(params.get("start_s", 0.0)), float(params.get("end_s", float("inf"))))
+        except (TypeError, ValueError):
+            raise RpcError("BAD_PARAMS", "start_s and end_s are seconds into the flight")
+        if window[1] < window[0]:
+            raise RpcError("BAD_PARAMS", "end_s is before start_s")
     workspace_dir = ctx["workspace_dir"]
     flight_dir = workspace_dir / "flights" / flight_id
     source_files = [p for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] if flight_dir.is_dir() else []
@@ -909,7 +927,7 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
         content, filename = found
     return _downsample_series(content, filename, _expand_channels(channels),
-                              assignments=_assignments(ctx))
+                              assignments=_assignments(ctx), window=window)
 
 
 def op_rebuild_fleet(params: dict, ctx: dict) -> Any:

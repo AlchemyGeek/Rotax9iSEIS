@@ -97,6 +97,9 @@ export interface SeriesResult {
   [channel: string]: [number, number | null][];
 }
 
+/** Seconds into the flight: a stretch of it (Spec 07 §11.3). */
+export type SeriesWindowRange = { start_s: number; end_s: number };
+
 export interface EngineClient {
   listEngines(): Promise<{ id: string; engine: string; source_status: string; hash: string }[]>;
   getEngineLimits(): Promise<EngineLimitsResult>;
@@ -132,7 +135,8 @@ export interface EngineClient {
   }>;
   getFleet(): Promise<FleetAnalysis>;
   rebuildFleet(): Promise<FleetAnalysis>;
-  getFlightSeries(flightId: string, channels: string[]): Promise<SeriesResult>;
+  /** With `window`, that stretch of the flight in full detail (Spec 07 §11.3). */
+  getFlightSeries(flightId: string, channels: string[], window?: SeriesWindowRange): Promise<SeriesResult>;
 
   // Spec 02 §6.5 annotations — pilot notes on a specific insight or
   // event, never a chart point or config (Spec 03's "not a valid ref
@@ -420,8 +424,8 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<FleetAnalysis>("rebuild_fleet", {});
   }
 
-  getFlightSeries(flightId: string, channels: string[]) {
-    return this.rpc<SeriesResult>("get_flight_series", { flight_id: flightId, channels });
+  getFlightSeries(flightId: string, channels: string[], window?: SeriesWindowRange) {
+    return this.rpc<SeriesResult>("get_flight_series", { flight_id: flightId, channels, ...(window ?? {}) });
   }
 
   listAnnotations(flightId?: string) {

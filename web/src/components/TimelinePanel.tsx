@@ -15,7 +15,7 @@ const ZOOM_BUTTON: React.CSSProperties = {
 // picker, the chart with phase tint (and, on a flight, event markers) and
 // the phase caption. Shared by Flight view and Log preview.
 export function TimelinePanel({
-  tl, phases, availableChannels, startUtc, hasPhaseWarning, markers, emptyText,
+  tl, phases, availableChannels, startUtc, hasPhaseWarning, markers, worst, emptyText,
 }: {
   tl: Timeline;
   phases: Phase[];
@@ -23,6 +23,7 @@ export function TimelinePanel({
   startUtc: string | null;
   hasPhaseWarning: boolean;
   markers?: EventMarker[];
+  worst?: { x_s: number; label: string } | null;
   emptyText: string;
 }) {
   const { visibleWindow } = tl;
@@ -144,7 +145,7 @@ export function TimelinePanel({
             </div>
           )}
           <ChannelTimeline
-            series={tl.seriesCache}
+            series={tl.series}
             activeChannels={tl.activeChannelIds}
             colorFor={tl.colorFor}
             phases={phases}
@@ -152,6 +153,7 @@ export function TimelinePanel({
             zoomWindow={tl.zoomWindow}
             onZoomChange={(s, e) => tl.setVisibleWindow([s, e])}
             markers={markers}
+            worst={worst}
           />
         </>
       ) : (

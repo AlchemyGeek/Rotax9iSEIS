@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getEngineClient, type SeriesResult } from "./engineClient";
+import { getEngineClient, type SeriesResult, type SeriesWindowRange } from "./engineClient";
 import { useChartSession } from "./chartSession";
 import { toSeriesFixture } from "./series";
 import { assignChannelColors } from "./channels";
@@ -14,6 +14,35 @@ const client = getEngineClient();
 // caller supplies where series come from (a flight id or a skipped log).
 
 const FALLBACK_OVERVIEW_IDS = ["rpm", "ias_kt", "oil_temp_f", "egt_spread_f"];
+
+// Spec 07 §11.3: the whole-flight series is a min/max envelope (one high
+// and one low point per 1/400th of the flight — 10–20 s apart on a long
+// flight). Zoomed to this span or less, the chart fetches the visible
+// stretch (plus a margin) in full and draws every second of it.
+export const DETAIL_SPAN_S = 600;
+const DETAIL_DEBOUNCE_MS = 300;
+
+type Points = SeriesFixture["channels"][string]["points"];
+
+/** The overview's points outside `[s, e]` with the detail's points inside it. */
+export function spliceDetail(overview: Points, detail: Points, [s, e]: [number, number]): Points {
+  return [...overview.filter((p) => (p[0] ?? 0) < s), ...detail, ...overview.filter((p) => (p[0] ?? 0) > e)];
+}
+
+/**
+ * Where in `[start_s, start_s + duration_s]` a limit event reached its
+ * reported worst value (Spec 07 §11.4), from that stretch in full detail:
+ * the time of the highest (MAX) or lowest (MIN) reading, if it matches the
+ * reported value — otherwise null (a limit whose "value" isn't a reading).
+ */
+export function worstMoment(points: Points, limitType: "MIN" | "MAX", observed: number): number | null {
+  let best: [number, number] | null = null;
+  for (const [t, v] of points) {
+    if (t === null || v === null) continue;
+    if (!best || (limitType === "MAX" ? v > best[1] : v < best[1])) best = [t, v];
+  }
+  return best && Math.abs(best[1] - observed) <= 0.051 ? best[0] : null;
+}
 
 function sameSlotSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -49,8 +78,14 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
   const [seriesCache, setSeriesCache] = useState<SeriesFixture>({ flight_id: "", channels: {} });
   const [hasTimeline, setHasTimeline] = useState(true);
   const [savePresetDraft, setSavePresetDraft] = useState<string | null>(null);
-  // Where more channels come from once the chart is set up.
-  const source = useRef<{ key: string; fetch: (ids: string[]) => Promise<SeriesResult> } | null>(null);
+  // Where more channels come from once the chart is set up; fetchWindow,
+  // where the host can answer a stretch in full (a flight, not a skipped log).
+  const source = useRef<{
+    key: string;
+    fetch: (ids: string[]) => Promise<SeriesResult>;
+    fetchWindow?: (ids: string[], w: SeriesWindowRange) => Promise<SeriesResult>;
+  } | null>(null);
+  const [detail, setDetail] = useState<{ key: string; window: [number, number]; channels: SeriesFixture["channels"] } | null>(null);
 
   const fullEnd = phases.at(-1)?.end_s ?? 0;
   useEffect(() => {
@@ -90,6 +125,7 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
   async function setupLive(args: {
     key: string;
     fetch: (ids: string[]) => Promise<SeriesResult>;
+    fetchWindow?: (ids: string[], w: SeriesWindowRange) => Promise<SeriesResult>;
     registry: { channels: ChannelRegistryEntry[]; slot_groups: SlotGroupEntry[]; max_chart_slots: number };
     presets: ChartPreset[];
     appSettings: AppSettings;
@@ -97,7 +133,8 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     isCancelled: () => boolean;
   }) {
     const { key, registry, carried, isCancelled } = args;
-    source.current = { key, fetch: args.fetch };
+    source.current = { key, fetch: args.fetch, fetchWindow: args.fetchWindow };
+    setDetail(null);
     setChannelRegistry(registry.channels);
     setSlotGroups(registry.slot_groups);
     setMaxSlots(registry.max_chart_slots);
@@ -135,6 +172,7 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
   // series keeps the picker functional, limited to that fixture's channels.
   function setupFixture(key: string, series: SeriesFixture | null, carried: CarriedState) {
     source.current = null;
+    setDetail(null);
     const syntheticRegistry: ChannelRegistryEntry[] = series
       ? Object.entries(series.channels).map(([id, ch]) => ({
           id, unit: ch.unit, description: ch.label, label: ch.label,
@@ -167,6 +205,58 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChannelIds]);
   const colorFor = useMemo(() => (id: string) => channelColors[id] ?? themeColors.textSecondary, [channelColors]);
+
+  // §11.3: zoomed to DETAIL_SPAN_S or less, fetch the visible stretch in full.
+  useEffect(() => {
+    const src = source.current;
+    const [s, e] = visibleWindow;
+    const span = e - s;
+    if (usingFixture || !src?.fetchWindow || span <= 0 || span > DETAIL_SPAN_S || activeChannelIds.length === 0) {
+      setDetail(null);
+      return;
+    }
+    if (detail && detail.key === src.key && detail.window[0] <= s && detail.window[1] >= e
+        && activeChannelIds.every((id) => detail.channels[id] || !seriesCache.channels[id])) return;   // already covered
+    const margin = span * 0.25;
+    const w: [number, number] = [Math.max(0, s - margin), e + margin];
+    const timer = setTimeout(() => {
+      src.fetchWindow!(activeChannelIds, { start_s: w[0], end_s: w[1] })
+        .then((raw) => {
+          if (source.current?.key !== src.key) return;
+          const fixture = toSeriesFixture(src.key, raw, (id) => channelMetaFor(id, channelRegistry));
+          setDetail({ key: src.key, window: w, channels: fixture.channels });
+        })
+        .catch(() => {
+          // keep the overview — it is still correct, only coarser
+        });
+    }, DETAIL_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleWindow, activeChannelIds, usingFixture, seriesCache]);
+
+  // What the chart draws: the overview, with the detailed stretch spliced in.
+  const series = useMemo<SeriesFixture>(() => {
+    if (!detail || detail.key !== seriesCache.flight_id) return seriesCache;
+    const channels = { ...seriesCache.channels };
+    for (const [id, ch] of Object.entries(detail.channels)) {
+      const base = channels[id];
+      if (base) channels[id] = { ...base, points: spliceDetail(base.points, ch.points, detail.window) };
+    }
+    return { ...seriesCache, channels };
+  }, [seriesCache, detail]);
+
+  /** §11.4: when a limit event reached its worst value, from its stretch in full. */
+  async function findWorstMoment(param: string, limitType: "MIN" | "MAX", observed: number, start_s: number, duration_s: number): Promise<number | null> {
+    const src = source.current;
+    if (usingFixture || !src?.fetchWindow) return null;
+    try {
+      const raw = await src.fetchWindow([param], { start_s, end_s: start_s + Math.max(duration_s, 1) });
+      const points = raw[param];
+      return points ? worstMoment(points as Points, limitType, observed) : null;
+    } catch {
+      return null;
+    }
+  }
 
   function ensureLoaded(ids: string[]) {
     if (usingFixture || !source.current) return;
@@ -346,14 +436,14 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
   return {
     // state
     zoomWindow, visibleWindow, setVisibleWindow, highlight, fullEnd,
-    channelRegistry, slotGroups, maxSlots, presets, seriesCache, hasTimeline,
+    channelRegistry, slotGroups, maxSlots, presets, seriesCache, series, hasTimeline,
     savePresetDraft, setSavePresetDraft, activeSlots, activeChannelIds, presetId, chartState, insightLabel,
     previousStateLabel, expandGroups, colorFor,
     // setup
     beginFlight, setupLive, setupFixture,
     // actions
     togglePickerChannel, selectPreset, revert, confirmSaveAsPreset, backFromInsight, stepZoom, resetZoom,
-    navigateTo, focusEvidence, focusMoment,
+    navigateTo, focusEvidence, focusMoment, findWorstMoment,
   };
 }
 

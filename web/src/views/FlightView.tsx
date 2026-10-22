@@ -25,7 +25,7 @@ import { buildEventRows, insightEventId, type EventRow } from "../lib/flightEven
 import { REFERENCE_DERIVED_TOPICS, topicCardModel } from "../lib/topicRoster";
 import { isCasInsightEvent } from "../types/contract";
 import type {
-  Annotation, CasEvent, FilterTarget, FlightAnalysis, Insight, InsightSeverity, InsightSet,
+  Annotation, CasEvent, ExceedanceEvent, FilterTarget, FlightAnalysis, Insight, InsightSeverity, InsightSet,
   ReferenceChangeMarker, ReferenceState, RuleSet,
 } from "../types/contract";
 
@@ -77,6 +77,10 @@ export function FlightView() {
   // The event a clicked insight or Events row points at — its row and
   // chart marker are emphasised.
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const activeEventRef = useRef<string | null>(null);
+  useEffect(() => { activeEventRef.current = activeEventId; }, [activeEventId]);
+  // Spec 07 §11.4: where the selected limit event reached its worst value.
+  const [worst, setWorst] = useState<{ x_s: number; label: string } | null>(null);
 
   const tl = useTimeline({ phases: flightAnalysis.phases, usingFixture });
 
@@ -84,6 +88,7 @@ export function FlightView() {
     let cancelled = false;
     const carried = tl.beginFlight();
     setActiveEventId(null);
+    setWorst(null);
 
     async function load() {
       if (!flightId) {
@@ -126,6 +131,7 @@ export function FlightView() {
         await tl.setupLive({
           key: flightId,
           fetch: (ids) => client.getFlightSeries(flightId, ids),
+          fetchWindow: (ids, w) => client.getFlightSeries(flightId, ids, w),
           registry: registryResult,
           presets: presetsResult.presets,
           appSettings,
@@ -390,6 +396,7 @@ export function FlightView() {
   // the chart marker (Spec 03 v0.16 §5.2).
   function handleEvidenceClick(insight: Insight, evidenceIndex = 0) {
     setActiveEventId(insightEventId(insight, evidenceIndex));
+    setWorst(null);
     for (const ev of insight.evidence.slice(evidenceIndex)) {
       if (ev.kind === "series_window") {
         tl.focusEvidence(ev, insight.message.text);
@@ -426,6 +433,18 @@ export function FlightView() {
 
   function openEventOnChart(row: EventRow) {
     setActiveEventId(row.key);
+    // Spec 07 §11.4: a limit event's worst value happens somewhere in it —
+    // mark where, so the chart's reading there matches the value reported.
+    setWorst(null);
+    const lim = row.source === "limit" ? (row.event as ExceedanceEvent) : null;
+    if (lim && row.elapsed_s !== null) {
+      const key = row.key;
+      void tl.findWorstMoment(lim.param, lim.limit_type, lim.observed_value, row.elapsed_s, row.duration_s).then((x_s) => {
+        if (x_s !== null && activeEventRef.current === key) {
+          setWorst({ x_s, label: `worst ${lim.observed_value.toFixed(1)} ${lim.unit}` });
+        }
+      });
+    }
     const ev = row.insight?.evidence[row.eventIndex];
     if (ev?.kind === "series_window") tl.focusEvidence(ev, row.insight!.message.text);
     else if (row.elapsed_s !== null) tl.focusMoment(row.elapsed_s, row.duration_s);
@@ -612,6 +631,7 @@ export function FlightView() {
               startUtc={h.start_utc}
               hasPhaseWarning={hasPhaseWarning}
               markers={markers}
+              worst={worst}
               emptyText="No timeline available for this flight (its source log wasn't retained by the server)."
             />
 
