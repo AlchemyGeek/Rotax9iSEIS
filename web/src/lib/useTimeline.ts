@@ -86,6 +86,17 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     fetchWindow?: (ids: string[], w: SeriesWindowRange) => Promise<SeriesResult>;
   } | null>(null);
   const [detail, setDetail] = useState<{ key: string; window: [number, number]; channels: SeriesFixture["channels"] } | null>(null);
+  // The chart's zoom is baked into its option (zoomWindow, EChartBase): a
+  // redraw re-applies it. Wheel and drag zooming only move visibleWindow, so
+  // before the detail changes the series (and the chart redraws), zoomWindow
+  // is brought to what is on screen — or the chart would jump back to the
+  // last window the app navigated to (e.g. the event's).
+  const visibleRef = useRef(visibleWindow);
+  visibleRef.current = visibleWindow;
+  const replaceDetail = (next: typeof detail) => {
+    setZoomWindow([...visibleRef.current] as [number, number]);
+    setDetail(next);
+  };
 
   const fullEnd = phases.at(-1)?.end_s ?? 0;
   useEffect(() => {
@@ -212,7 +223,7 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     const [s, e] = visibleWindow;
     const span = e - s;
     if (usingFixture || !src?.fetchWindow || span <= 0 || span > DETAIL_SPAN_S || activeChannelIds.length === 0) {
-      setDetail(null);
+      if (detail) replaceDetail(null);
       return;
     }
     if (detail && detail.key === src.key && detail.window[0] <= s && detail.window[1] >= e
@@ -224,7 +235,7 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
         .then((raw) => {
           if (source.current?.key !== src.key) return;
           const fixture = toSeriesFixture(src.key, raw, (id) => channelMetaFor(id, channelRegistry));
-          setDetail({ key: src.key, window: w, channels: fixture.channels });
+          replaceDetail({ key: src.key, window: w, channels: fixture.channels });
         })
         .catch(() => {
           // keep the overview — it is still correct, only coarser
