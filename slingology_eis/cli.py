@@ -543,6 +543,23 @@ def cmd_flights(args) -> int:
     exclusions_data = _exclusions.load_exclusions(workspace_dir)
     summary = _exclusions.exclusion_summary(exclusions_data)
 
+    # One flight exported twice (SD card and Garmin Pilot) is one flight here
+    # too, as in `fleet` and the app: keep the more complete file
+    # (Spec 02 §5.5), list the other as a merged duplicate.
+    merged_rows = []
+    groups = find_duplicate_flights(flights)
+    if groups:
+        deduped = deduplicate_flights(flights, prefer="most_rows", verbose=False)
+        kept = {df["_source_file"].iloc[0] for df, _ in deduped}
+        for g in groups:
+            keeper = next((f for f in g.files if f in kept), None)
+            for f in g.files:
+                if f not in kept:
+                    merged_rows.append({"filename": f, "duplicate_of": keeper, "match_kind": g.match_kind,
+                                        "date": g.overlap_start.strftime("%Y-%m-%d")})
+        flights = deduped
+    merged_rows.sort(key=lambda r: (r["date"], r["filename"]))
+
     included_rows = []
     for df, info in flights:
         start, end = df["datetime"].iloc[0], df["datetime"].iloc[-1]
@@ -577,6 +594,7 @@ def cmd_flights(args) -> int:
             "included": included_rows,
             "excluded_summary": summary,
             "excluded": excluded_rows if args.show_excluded else None,
+            "merged_duplicates": merged_rows,
         })
         return 0
 
@@ -587,6 +605,8 @@ def cmd_flights(args) -> int:
         n = summary.get(cat, 0)
         if n:
             header_bits.append(f"{n} {label}{'s' if n != 1 else ''} excluded")
+    if merged_rows:
+        header_bits.append(f"{len(merged_rows)} duplicate export{'s' if len(merged_rows) != 1 else ''} merged")
     print(f"{ident} — " + "  ·  ".join(header_bits))
     print("─" * 70)
     for r in included_rows:
@@ -597,6 +617,8 @@ def cmd_flights(args) -> int:
         for r in excluded_rows:
             tag = "  [overridden by user]" if r.get("user_override") else ""
             print(f"{r['date'] or '?':<10}  {r['filename']:<32}  {r['reason']}{tag}")
+        for r in merged_rows:
+            print(f"{r['date']:<10}  {r['filename']:<32}  same flight as {r['duplicate_of']} (merged)")
     return 0
 
 

@@ -363,6 +363,27 @@ def test_flights_without_show_excluded_omits_excluded_detail(synthetic_logs_dir,
     assert d["excluded_summary"]["ground_session"] == 1
 
 
+@requires_flight_logs
+def test_flights_merges_one_flight_exported_twice(tmp_path, capsys):
+    """An SD-card log and a Garmin Pilot export of the same flight are one
+    flight in `flights`, as in `fleet` and the app."""
+    sd, pilot = "log_20260617_143425_KAWO.csv", "c6df2e24-e7fd-4f15-8369-30cc239640a4.csv"
+    if not (LOGS_DIR / sd).exists() or not (LOGS_DIR / pilot).exists():
+        pytest.skip("needs the 2026-06-17 SD-card and Garmin Pilot pair")
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    for name in (sd, pilot):
+        (logs / name).write_bytes((LOGS_DIR / name).read_bytes())
+    rc = main(["flights", "--logs", str(logs), "--workspace", str(tmp_path / "workspace"), "--json", "--quiet"])
+    assert rc == 0
+    d = json.loads(capsys.readouterr().out)
+    assert len(d["included"]) == 1
+    assert len(d["merged_duplicates"]) == 1
+    merged = d["merged_duplicates"][0]
+    assert {merged["filename"], merged["duplicate_of"]} == {sd, pilot}
+    assert d["included"][0]["filename"] == merged["duplicate_of"]
+
+
 def test_exclude_requires_reason(synthetic_logs_dir, tmp_path):
     with pytest.raises(SystemExit) as exc:
         main(["exclude", _SYNTHETIC_NAME, "--logs", str(synthetic_logs_dir),
@@ -379,13 +400,13 @@ def test_include_unknown_filename_exits_one(tmp_path, capsys):
 @requires_flight_logs
 def test_exclude_then_include_roundtrip(tmp_path, capsys):
     workspace = tmp_path / "workspace"
-    first_log = sorted(LOGS_DIR.glob("*.csv"))[0]
 
     rc = main(["flights", "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--json", "--quiet"])
     assert rc == 0
     before = json.loads(capsys.readouterr().out)
     before_names = {r["filename"] for r in before["included"]}
-    assert first_log.name in before_names
+    # A listed flight (not a merged duplicate export's other copy).
+    first_log = LOGS_DIR / sorted(before_names)[0]
 
     rc = main(["exclude", first_log.name, "--reason", "test: ferry flight",
                "--logs", str(LOGS_DIR), "--workspace", str(workspace), "--quiet"])
