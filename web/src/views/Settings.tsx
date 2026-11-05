@@ -154,10 +154,10 @@ export function Settings() {
     }
   }
 
-  async function assignChannel(raw: string, target: string | null) {
+  async function assignChannel(raw: string, target: string | null, ignoreValue: number | null = null) {
     setAssigning(true);
     try {
-      setLogChannels((await client.setChannelAssignment(raw, target)).channels);
+      setLogChannels((await client.setChannelAssignment(raw, target, ignoreValue)).channels);
       await refreshChangedSettings();
     } catch {
       // server unreachable
@@ -629,7 +629,7 @@ export function Settings() {
                               aria-label={`Assignment for ${row.label}`}
                               value={row.assignment?.channel ?? ""}
                               disabled={assigning || usingFixture}
-                              onChange={(e) => assignChannel(row.raw, e.target.value || null)}
+                              onChange={(e) => assignChannel(row.raw, e.target.value || null, row.assignment?.ignore_value ?? null)}
                               style={{ fontSize: 12 }}
                             >
                               <option value="">Not assigned</option>
@@ -637,6 +637,28 @@ export function Settings() {
                                 <option key={o.channel} value={o.channel}>{o.name}{o.unit && !o.name.includes(o.unit) ? ` (${o.unit})` : ""}</option>
                               ))}
                             </select>
+                            {row.assignment && (
+                              // Spec 14 v0.15 §5.3: one value that is not a reading.
+                              <label style={{ marginLeft: 8, fontSize: 11, color: "var(--text-secondary)" }}>
+                                Ignore value{" "}
+                                <input
+                                  key={`${row.raw}:${row.assignment.ignore_value ?? ""}`}
+                                  type="number"
+                                  aria-label={`Ignore value for ${row.label}`}
+                                  defaultValue={row.assignment.ignore_value ?? ""}
+                                  placeholder="none"
+                                  disabled={assigning || usingFixture}
+                                  onBlur={(e) => {
+                                    const text = e.target.value.trim();
+                                    const next = text === "" ? null : Number(text);
+                                    if (next !== null && !Number.isFinite(next)) return;
+                                    if (next !== (row.assignment?.ignore_value ?? null)) assignChannel(row.raw, row.assignment!.channel, next);
+                                  }}
+                                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                  style={{ width: 64, fontSize: 12 }}
+                                />
+                              </label>
+                            )}
                             <div style={{ marginTop: 6 }}>{changedMark(`channel_assignment:${row.raw}`)}</div>
                           </td>
                         </tr>

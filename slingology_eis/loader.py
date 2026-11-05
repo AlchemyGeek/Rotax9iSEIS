@@ -122,6 +122,7 @@ AXIS_COLUMN_MAP = {
     "gpsWgs84Altitude":                  "gps_alt_ft",
     "groundSpeed":                       "gnd_spd_kt",
     "trueGpsGroundTrack":                "track_deg",
+    "trueTrack":                         "track_deg",   # the aircraft log's name for it (v0.25)
     "pressureAltitude":                  "press_alt_ft",
     "indicatedBarometricAltitude":       "baro_alt_ft",
     "verticalSpeed":                     "vs_fpm",
@@ -148,6 +149,7 @@ AXIS_COLUMN_MAP = {
     "fuelLevel2":                        "fuel_qty_r_gal",
     "engine1FuelFlow":                   "fuel_flow_gph",
     "engine1FuelPressure":               "fuel_press_psi",
+    "engine1ThrottlePosition":           "throttle_pct",   # aircraft log (v0.25); raw, not charted by default
     "engine1ExhaustGasTemperature1":     "egt1_f",
     "engine1ExhaustGasTemperature2":     "egt2_f",
     "engine1ExhaustGasTemperature3":     "egt3_f",
@@ -169,7 +171,11 @@ AXIS_COLUMN_MAP = {
     "e1TachTime":                        "tach_time_h",
 }
 _AXIS_GP_ANALOG = re.compile(r"^engine1GeneralPurposeAnalog(\d+)$")
-AXIS_NUMERIC_COLS = ["flight_time_h", "tach_time_h"]
+AXIS_NUMERIC_COLS = ["flight_time_h", "tach_time_h", "throttle_pct"]
+# The Garmin Pilot "aircraft log" (Spec 01 v0.25 §6.5): its name carries the
+# ident, `aircraft-log-<IDENT>-<UTC start>.csv`; a renamed file has none.
+_AIRCRAFT_LOG_NAME = re.compile(r"^aircraft-log-(.+)-\d{4}-\d{2}-\d{2}T\d{6}(?:\s*\(\d+\))?\.csv$", re.IGNORECASE)
+AXIS_FORMATS = ("axis", "aircraft_log")
 # Never resampled-in by interpolation: text, booleans and annunciations.
 # AXIS CAS wording that differs from the G3X's (Spec 01 v0.24 §6.5), so a
 # CAS event, filter or Journal entry has one name per alert. Unknown tokens
@@ -214,8 +220,11 @@ class AirframeInfo:
     unit: str = ""
     airframe_hours: Optional[float] = None
     engine_hours: Optional[float] = None
+    # The hour meter at the last row, when the header records it (the
+    # aircraft log's tach1In, Spec 01 v0.26); else the end is estimated.
+    engine_hours_end: Optional[float] = None
     log_version: str = ""
-    source_format: str = "unknown"   # "g3x_direct" | "garmin_pilot" | "axis" | "unknown"
+    source_format: str = "unknown"   # "g3x_direct" | "garmin_pilot" | "axis" | "aircraft_log" | "unknown"
     # AXIS frames are put on a 1 s grid (Spec 01 §6.5); share of rows filled.
     filled_share: float = 0.0
     raw: dict = field(default_factory=dict)
@@ -257,12 +266,18 @@ def _detect_source_format(header_row: str, meta: Optional[dict] = None, third_ro
                    starts directly with 'Date (yyyy-mm-dd)'
     garmin_pilot — exported/shared via the Garmin Pilot app; header row
                    is prefixed with '#', e.g. '#Date (yyyy-mm-dd)'
-    axis         — a Garmin AXIS export: Product="AXIS", a '#' units row,
-                   then camelCase column names including localDate/localTime
+    axis         — a Garmin AXIS SD-card log: Product="AXIS", a '#' units
+                   row, then camelCase column names including localDate/localTime
+    aircraft_log — the log the AXIS hands to Garmin Pilot / flyGarmin:
+                   '#hobbsOut=…' metadata, a '#' units row, then column
+                   names beginning 'timestamp,localDate,' (Spec 01 v0.25)
     unknown      — no pattern matched (flag for manual inspection
                    rather than silently guessing)
     """
     stripped = header_row.lstrip("\ufeff")  # tolerate a UTF-8 BOM from Excel re-saves
+    if (meta or {}).get("_aircraft_log") and stripped.startswith("#") \
+            and third_row.lstrip("\ufeff").startswith("timestamp,localDate,"):
+        return "aircraft_log"
     # Garmin AXIS (Spec 01 §6.5): Product="AXIS" in the metadata, a
     # '#'-prefixed units row, then camelCase column names.
     product = ((meta or {}).get("Product") or (meta or {}).get("product") or "").strip()
@@ -329,19 +344,25 @@ def load_log_bytes(
     header_row = buf.readline()
     third_row  = buf.readline()
 
-    info = AirframeInfo.from_row(meta_row)
+    if meta_row.lstrip("\ufeff").startswith("#hobbsOut="):
+        info = _aircraft_log_info(meta_row, filename)
+    else:
+        info = AirframeInfo.from_row(meta_row)
     info.source_format = _detect_source_format(header_row, info.raw, third_row)
+    info.raw.pop("_aircraft_log", None)
 
     if info.source_format == "unknown":
         raise ValueError(
             f"{filename}: unrecognised header format — expected a G3X-direct "
             f"download ('Date (yyyy-mm-dd)...'), a Garmin Pilot export "
-            f"('#Date (yyyy-mm-dd)...') or a Garmin AXIS export (Product=\"AXIS\", "
-            f"a '#' units row, then 'localDate,...'). Got: {header_row[:60]!r}. "
+            f"('#Date (yyyy-mm-dd)...'), a Garmin AXIS SD-card log (Product=\"AXIS\", "
+            f"a '#' units row, then 'localDate,...') or a Garmin Pilot aircraft log "
+            f"('#hobbsOut=...', a '#' units row, then 'timestamp,localDate,...'). "
+            f"Got: {header_row[:60]!r}. "
             f"This file may be corrupted or from an unsupported source."
         )
 
-    if info.source_format == "axis":
+    if info.source_format in AXIS_FORMATS:
         return _load_axis(text, filename, info, max_fill_gap_s, channel_assignments)
 
     # Read data (skip metadata row, row 1 is headers)
@@ -442,13 +463,24 @@ def _load_axis(text: str, filename: str, info: AirframeInfo, max_fill_gap_s: flo
             renames[c] = f"gp_analog_{int(m.group(1))}"
             gp_ids.append(renames[c])
     df = df.rename(columns=renames)
+    # A column name mapped twice (an SD-card and an aircraft-log alias in one
+    # file) keeps its first occurrence.
+    df = df.loc[:, ~df.columns.duplicated()]
 
-    df["datetime"] = pd.to_datetime(
-        df["date"].astype(str) + " " + df["time"].astype(str),
-        format="%Y-%m-%d %H:%M:%S",
-        errors="coerce",
-    )
+    if info.source_format == "aircraft_log":
+        df["datetime"] = _aircraft_log_datetime(df)
+    else:
+        df["datetime"] = pd.to_datetime(
+            df["date"].astype(str) + " " + df["time"].astype(str),
+            format="%Y-%m-%d %H:%M:%S",
+            errors="coerce",
+        )
     df = df.dropna(subset=["datetime"]).reset_index(drop=True)
+    if info.source_format == "aircraft_log":
+        # The local columns are unreliable in this format (they lag and
+        # drift against `timestamp`); rewrite them from the clock in use.
+        df["date"] = df["datetime"].dt.strftime("%Y-%m-%d")
+        df["time"] = df["datetime"].dt.strftime("%H:%M:%S")
     for col in NUMERIC_COLS + AXIS_NUMERIC_COLS + gp_ids:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -464,8 +496,11 @@ def _load_axis(text: str, filename: str, info: AirframeInfo, max_fill_gap_s: flo
     info.filled_share = filled_share
 
     # Engine hours: the tach time at the start (the same hour meter the G3X
-    # wrote into its header); there is no airframe-hours field.
-    if "tach_time_h" in df.columns and df["tach_time_h"].notna().any():
+    # wrote into its header); there is no airframe-hours field. The aircraft
+    # log's header carries it as tach1Out (equal to its first e1TachTime).
+    if info.source_format == "aircraft_log" and info.engine_hours is not None:
+        pass
+    elif "tach_time_h" in df.columns and df["tach_time_h"].notna().any():
         info.engine_hours = float(df["tach_time_h"].dropna().iloc[0])
     info.airframe_hours = None
 
@@ -473,16 +508,87 @@ def _load_axis(text: str, filename: str, info: AirframeInfo, max_fill_gap_s: flo
     return _finish_frame(df, filename), info
 
 
+def _aircraft_log_info(meta_row: str, filename: str) -> AirframeInfo:
+    """The aircraft log's metadata row (Spec 01 v0.25 §6.5): only hour-meter
+    readings, `#hobbsOut=,hobbsIn=,tach1Out=127.3,…`. engine_hours is
+    tach1Out; the ident comes from the file name; the product is AXIS."""
+    d = {}
+    for part in meta_row.strip().lstrip("\ufeff").lstrip("#").split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            d[k.strip()] = v.strip()
+    try:
+        eng_h = float(d.get("tach1Out", ""))
+    except ValueError:
+        eng_h = None
+    try:
+        eng_h_end = float(d.get("tach1In", ""))
+    except ValueError:
+        eng_h_end = None
+    m = _AIRCRAFT_LOG_NAME.match(Path(filename).name)
+    return AirframeInfo(
+        aircraft_ident=m.group(1) if m else "",
+        product="AXIS",
+        engine_hours=eng_h,
+        engine_hours_end=eng_h_end,
+        airframe_hours=None,
+        raw={**d, "_aircraft_log": True},
+    )
+
+
+def _aircraft_log_datetime(df: pd.DataFrame) -> pd.Series:
+    """The aircraft log's clock (Spec 01 v0.25 §6.5): `timestamp` (ISO-8601
+    UTC, milliseconds), never `localDate`/`localTime`. Shifted by the log's
+    constant `utcOffset` so the frame is on the same local basis as the
+    SD-card log and the G3X, and rounded to the second; the 1 s reindexing
+    then absorbs the ±30 ms jitter."""
+    ts = pd.to_datetime(df["timestamp"], utc=True, errors="coerce", format="ISO8601")
+    offset = pd.Timedelta(0)
+    if "utc_offset" in df.columns:
+        vals = df["utc_offset"].dropna().astype(str).str.strip()
+        vals = vals[vals.str.match(r"^[+-]\d{2}:\d{2}$")]
+        if len(vals):
+            o = vals.mode().iloc[0]
+            sign = -1 if o[0] == "-" else 1
+            offset = sign * pd.Timedelta(hours=int(o[1:3]), minutes=int(o[4:6]))
+    return (ts + offset).dt.tz_localize(None).dt.round("1s")
+
+
+def assignment_target(value) -> Optional[str]:
+    """The registry channel of one channel assignment: a bare id
+    ("co_ppm") or {"channel": "co_ppm", "ignore_value": 254} (Spec 01 v0.25)."""
+    if isinstance(value, dict):
+        return value.get("channel") or None
+    return value or None
+
+
+def assignment_ignore_value(value) -> Optional[float]:
+    """The one sentinel an assignment treats as "not a reading", if any."""
+    if isinstance(value, dict) and value.get("ignore_value") is not None:
+        try:
+            return float(value["ignore_value"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def _apply_channel_assignments(df: pd.DataFrame, channel_assignments: Optional[dict]) -> None:
     """Spec 01 §6.5: a host-supplied {raw_id: registry_id} exposes a raw
     general-purpose channel under a registry id — only for a raw channel
-    this frame has, and only for a registry channel it lacks natively."""
-    for raw, target in (channel_assignments or {}).items():
+    this frame has, and only for a registry channel it lacks natively. An
+    assignment may carry one ignore value (v0.25): rows holding it are
+    missing under the assigned name; the raw channel keeps them."""
+    for raw, value in (channel_assignments or {}).items():
+        target = assignment_target(value)
         if not str(raw).startswith("gp_analog_") or raw not in df.columns:
             continue
         if not target or target in df.columns:
             continue
-        df[target] = df[raw]
+        series = df[raw]
+        ignore = assignment_ignore_value(value)
+        if ignore is not None:
+            series = series.where(series != ignore)
+        df[target] = series
 
 
 def _resample_1hz(df: pd.DataFrame, max_fill_gap_s: float) -> tuple[pd.DataFrame, float]:
@@ -692,7 +798,8 @@ def load_directory(
                 start = df["datetime"].iloc[0]
                 end   = df["datetime"].iloc[-1]
                 dur   = (end - start).total_seconds() / 60
-                fmt   = {"g3x_direct": "G3X", "garmin_pilot": "GarminPilot"}.get(
+                fmt   = {"g3x_direct": "G3X", "garmin_pilot": "GarminPilot", "axis": "AXIS",
+                         "aircraft_log": "AircraftLog"}.get(
                     info.source_format, info.source_format)
                 print(f"  ✓ {f.name}  [{start:%Y-%m-%d %H:%M}]  {dur:.0f} min  "
                       f"{len(df)} rows  {info.aircraft_ident}  ({fmt})")
@@ -821,8 +928,8 @@ def flight_fingerprint(df: pd.DataFrame, info: AirframeInfo) -> tuple:
     """
     start_minute = df["datetime"].iloc[0].floor("min") if len(df) else None
     # Source identity (Spec 01 §6.1/§6.5): the G3X system_id, or the
-    # product name for AXIS files, which carry no system id.
-    source_identity = info.product if info.source_format == "axis" else info.system_id
+    # product name ("AXIS") for both AXIS formats, which carry no system id.
+    source_identity = info.product if info.source_format in AXIS_FORMATS else info.system_id
     return (info.aircraft_ident, source_identity, start_minute)
 
 
@@ -954,8 +1061,9 @@ def deduplicate_flights(
         if prefer == "g3x_direct":
             g3x_idxs = [i for i in idxs if flights[i][1].source_format == "g3x_direct"]
             keep = g3x_idxs[0] if g3x_idxs else max(idxs, key=lambda i: len(flights[i][0]))
-        else:  # most_rows
-            keep = max(idxs, key=lambda i: len(flights[i][0]))
+        else:  # most_rows, after the source preference (Spec 01 v0.25 §6.5):
+            # an aircraft log beats the AXIS SD-card log of the same flight.
+            keep = max(idxs, key=lambda i: (flights[i][1].source_format == "aircraft_log", len(flights[i][0])))
 
         for i in idxs:
             if i != keep:

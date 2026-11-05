@@ -42,6 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+import pandas as pd
+
 from . import __version__
 from . import data_location as _data_location
 from . import exclusions as _exclusions
@@ -59,6 +61,7 @@ from .loader import (
 from .phases import detect_phases
 from .operations import (
     DEFAULT_BASELINE_CONFIG, FlightAnalysis, FleetAnalysis, analyze_flight, full_coverage_counterpart, update_fleet,
+    with_flight_id,
 )
 
 SCHEMA_VERSION = "02-v0.5"
@@ -80,8 +83,40 @@ _SOURCE_FORMAT_TO_VIA = {
     "g3x_direct": "sd_card",
     "garmin_pilot": "garmin_pilot",
     "axis": "axis",
+    "aircraft_log": "aircraft_log",
     "unknown": "unknown",
 }
+
+# Spec 01 v0.25 §6.5 decision 2 / Spec 02 v0.16 §5.7: which import of a
+# flight is analysed. The aircraft log (true clock, engine start and
+# shutdown, throttle) beats the AXIS SD-card log of the same flight; every
+# other format ranks equal, so a G3X flight keeps its latest-import rule.
+_VIA_PREFERENCE = {"aircraft_log": 0}
+_AXIS_VIAS = ("axis", "aircraft_log")
+
+
+def via_rank(via: Optional[str]) -> int:
+    """Lower is preferred."""
+    return _VIA_PREFERENCE.get(via or "", 1)
+
+
+def analysis_order(imports: list) -> list:
+    """A flight's imports in the order its analysis reads them: the
+    preferred source first, then the latest import (the order before v0.16
+    for every flight whose imports share one rank)."""
+    return sorted(reversed(imports), key=lambda imp: via_rank(imp.via))
+
+
+def analysed_import(src: Optional["FlightSources"]) -> Optional["ImportRecord"]:
+    """The import a flight's analysis comes from, when its bytes are there
+    (the first of analysis_order) — for display of name and format."""
+    return analysis_order(src.imports)[0] if src and src.imports else None
+
+
+def cross_format_pair(via_a: Optional[str], via_b: Optional[str]) -> bool:
+    """An AXIS SD-card log and an aircraft log: the one overlap case that
+    merges into one flight instead of dropping a file (Spec 02 v0.16 §5.7)."""
+    return {via_a, via_b} == set(_AXIS_VIAS)
 
 
 def via_for_source_format(source_format: Optional[str]) -> str:
@@ -257,7 +292,7 @@ class ImportRecord:
     relative_path: str
     filename: str
     imported_at: str
-    via: str = "unknown"  # "sd_card" | "garmin_pilot" | "unknown"
+    via: str = "unknown"  # "sd_card" | "garmin_pilot" | "axis" | "aircraft_log" | "unknown"
     # Spec 02 v0.19 §5.7 (D12): the file's size and modified time when it
     # was last seen, so the pending-work check can tell an unchanged file
     # without reading it. Absent until a scan has seen the file.
@@ -395,8 +430,10 @@ class WorkspaceSettings:
     trends_detail_strips: dict[str, bool] = field(default_factory=dict)
     # Spec 02 v0.15 §6.6 / Spec 01 §6.5: raw general-purpose analog id →
     # registry channel id, e.g. {"gp_analog_7": "co_ppm"}. Set by the pilot
-    # (Settings → Engine → Log channels); never pre-filled.
-    channel_assignments: dict[str, str] = field(default_factory=dict)
+    # (Settings → Engine → Log channels); never pre-filled. A value may be
+    # {"channel": "co_ppm", "ignore_value": 254} (Spec 14 v0.15 §5.3): one
+    # sentinel that is not a reading.
+    channel_assignments: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = {
@@ -1273,7 +1310,7 @@ async def read_source_bytes_async(ws_dir: Path, src: "FlightSources", sources: C
     reachable right now (src.missing already covers the common scan-time
     case; this also covers a folder that's since gone offline)."""
     manifest = None
-    for imp in reversed(src.imports):
+    for imp in analysis_order(src.imports):
         if imp.log_folder_path == UPLOADED_SOURCE:
             p = ws_dir / "flights" / src.flight_id / imp.filename
             if p.is_file():
@@ -1424,7 +1461,7 @@ async def pending_work_async(ws_dir: Path, sources: Callable = DISK) -> tuple[li
         # Readable now? From the listing, without reading the log — except
         # an import from a folder no longer in the workspace, checked as before.
         available = False
-        for imp in src.imports:
+        for imp in analysis_order(src.imports):
             if imp.log_folder_path == UPLOADED_SOURCE:
                 available = (ws_dir / "flights" / src.flight_id / imp.filename).is_file()
             elif imp.log_folder_path in folder_paths:
@@ -1505,9 +1542,11 @@ def _take_turn(ws_dir, content, folder_path, rel, filename, progress, found_by_k
     if skey in known:
         fid, imp = known[skey]
         if fid in stale_selected:
-            index = all_sources[fid].imports.index(imp)
+            imports = all_sources[fid].imports
+            index = imports.index(imp)
+            order = [imports.index(i) for i in analysis_order(imports)]
             best = fresh_by_fid.get(fid)
-            if best is None or index > best[0]:
+            if best is None or order.index(index) < order.index(best[0]):
                 progress("reanalyzing")
                 try:
                     fresh = analyze_flight(content, filename, engine_cfg, engine_model, params=params_now)
@@ -1593,8 +1632,8 @@ def _uploaded_reanalysis(ws_dir, src, best, engine_cfg, engine_model, params_now
     """The fresh analysis read_source_bytes' choice gives: the latest
     import whose bytes are available. A folder import's bytes were read on
     its turn (`best`); an uploaded import's live in the workspace."""
-    for index in range(len(src.imports) - 1, -1, -1):
-        imp = src.imports[index]
+    for imp in analysis_order(src.imports):
+        index = src.imports.index(imp)
         if best is not None and best[0] == index:
             return best[1]
         if imp.log_folder_path == UPLOADED_SOURCE:
@@ -1607,6 +1646,112 @@ def _uploaded_reanalysis(ws_dir, src, best, engine_cfg, engine_model, params_now
                 except Exception:
                     return None
     return None
+
+
+def _flight_window(fa: FlightAnalysis) -> Optional[tuple]:
+    """(start, end) of a stored flight, from its header and duration."""
+    try:
+        start = pd.Timestamp((fa.header or {}).get("start_utc"))
+        minutes = float((fa.metrics or {}).get("duration_min", {}).get("value"))
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(start):
+        return None
+    return start, start + pd.Timedelta(minutes=minutes)
+
+
+def _merged_cross_format(src: Optional["FlightSources"]) -> bool:
+    """A flight holding both an AXIS SD-card log and an aircraft log."""
+    return bool(src) and set(_AXIS_VIAS) <= {imp.via for imp in src.imports}
+
+
+def overlap_share(a: tuple, b: tuple) -> float:
+    """Time overlap of two (start, end) windows as a share of the shorter —
+    find_duplicate_flights' measure."""
+    lo, hi = max(a[0], b[0]), min(a[1], b[1])
+    shorter = min((a[1] - a[0]).total_seconds(), (b[1] - b[0]).total_seconds())
+    if shorter <= 0:
+        return 0.0
+    return max((hi - lo).total_seconds(), 0.0) / shorter
+
+
+def cross_format_partner(ident: Optional[str], window: tuple, via: str, known_windows: dict,
+                         all_sources: dict, threshold: float = 0.8) -> Optional[str]:
+    """The flight already filed that this log is the other AXIS log of
+    (Spec 02 v0.16 §5.7): same ident, the other AXIS format analysed, and
+    a time overlap of at least `threshold` of the shorter window."""
+    if not ident or via not in _AXIS_VIAS:
+        return None
+    for fid, (k_ident, k_start, k_end) in known_windows.items():
+        src = all_sources.get(fid)
+        if k_ident != ident or src is None or _merged_cross_format(src):
+            continue
+        imp = analysed_import(src)
+        if imp is None or not cross_format_pair(imp.via, via):
+            continue
+        if overlap_share(window, (k_start, k_end)) >= threshold:
+            return fid
+    return None
+
+
+def find_cross_format_flight(ws_dir: Path, ident: Optional[str], window: tuple, source_format: str) -> Optional[str]:
+    """cross_format_partner over the flights stored in a workspace — for
+    the upload path, which has no scan state to hand."""
+    via = via_for_source_format(source_format)
+    if not ident or via not in _AXIS_VIAS:
+        return None
+    known_windows, all_sources = {}, {}
+    for fid in list_flight_ids(ws_dir):
+        src, fa = load_sources(ws_dir, fid), load_flight_analysis(ws_dir, fid)
+        w = _flight_window(fa) if fa is not None else None
+        if src is None or w is None:
+            continue
+        all_sources[fid] = src
+        known_windows[fid] = ((fa.header or {}).get("aircraft", {}).get("ident"), *w)
+    return cross_format_partner(ident, window, via, known_windows, all_sources)
+
+
+def _cross_format_partner(c: dict, known_windows: dict, all_sources: dict) -> Optional[str]:
+    stub_df, info = c["stub"]
+    if len(stub_df) < 2:
+        return None
+    window = (stub_df["datetime"].iloc[0], stub_df["datetime"].iloc[-1])
+    return cross_format_partner(info.aircraft_ident, window, via_for_source_format(c["source_format"]),
+                                known_windows, all_sources)
+
+
+async def _merge_cross_format(ws_dir, c: dict, fid: str, all_sources: dict, known_windows: dict, result,
+                              sources, manifest, engine_cfg, params_now) -> None:
+    """File log `c` as one more import of flight `fid`. When it is the
+    preferred source (the aircraft log), the flight is re-analysed from it,
+    keeping its id; annotations follow the new analysis."""
+    folder_path, rel, filename = c["meta"]
+    size, mtime_ms = c["stat"] if c.get("stat") else (None, None)
+    via = via_for_source_format(c["source_format"])
+    src = all_sources[fid]
+    preferred = via_rank(via) < via_rank(analysed_import(src).via)
+    src.imports.append(ImportRecord(
+        source_key=c["skey"], log_folder_path=folder_path, relative_path=rel, filename=filename,
+        imported_at=_now(), via=via, size=size, mtime_ms=mtime_ms,
+    ))
+    if preferred:
+        if "fa" not in c:
+            await _analyse_candidate_async(ws_dir, c, sources, manifest, engine_cfg, params_now)
+        fresh = c.get("fa")
+        if fresh is not None:
+            old = load_flight_analysis(ws_dir, fid)
+            fresh = with_flight_id(fresh, fid)
+            save_flight_analysis(ws_dir, fresh)
+            if old is not None:
+                migrate_limit_annotations(ws_dir, old, fresh)
+            window = _flight_window(fresh)
+            if window is not None:
+                known_windows[fid] = ((fresh.header or {}).get("aircraft", {}).get("ident"), *window)
+            if fid not in result.new_flight_ids:
+                result.reanalyzed_flight_ids.append(fid)
+    save_sources(ws_dir, src)
+    if fid not in result.new_flight_ids:
+        result.rematched_flight_ids.append(fid)
 
 
 def _folder_by_path(manifest: "WorkspaceManifest", folder_path: str) -> "LogFolder":
@@ -1678,6 +1823,7 @@ async def scan_workspace_async(
     known: dict[str, tuple[str, ImportRecord]] = {}
     all_sources: dict[str, FlightSources] = {}
     known_idents: set[str] = set()
+    known_windows: dict[str, tuple] = {}   # fid -> (ident, start, end), for cross-format merges
     for fid in list_flight_ids(ws_dir):
         src = load_sources(ws_dir, fid)
         if src is None:
@@ -1690,6 +1836,9 @@ async def scan_workspace_async(
             ident = (fa.header or {}).get("aircraft", {}).get("ident")
             if ident:
                 known_idents.add(ident)
+            window = _flight_window(fa)
+            if window is not None:
+                known_windows[fid] = (ident, *window)
 
     primary_ident = manifest.primary_tail_number or (sorted(known_idents)[0] if known_idents else None)
 
@@ -1805,7 +1954,13 @@ async def scan_workspace_async(
     # flight_id) is deliberately kept: same flight_id means "merge into one
     # flights/<id>", which the loop below does by appending a second
     # `imports[]` entry instead of re-analyzing (§6.2's second export path).
+    #
+    # Spec 02 v0.16 §5.7: an AXIS SD-card log and the aircraft log of one
+    # flight are an overlap pair too, but they merge — the aircraft log is
+    # analysed and the SD-card file is recorded as a second import, never
+    # dropped. Within one format the drop-one rule stands.
     dup_groups_excluded: set[str] = set()
+    merge_with: dict[str, dict] = {}     # skey of a secondary file -> the candidate it merges into
     if len(parsed) > 1:
         overlap_groups = [g for g in find_duplicate_flights([c["stub"] for c in parsed]) if g.match_kind == "overlap"]
         if overlap_groups:
@@ -1814,16 +1969,39 @@ async def scan_workspace_async(
                 group_cands = [by_file[f] for f in group.files if f in by_file]
                 if len(group_cands) < 2:
                     continue
+                vias = [via_for_source_format(c["source_format"]) for c in group_cands]
+                if len(group_cands) == 2 and cross_format_pair(*vias):
+                    keep = min(group_cands, key=lambda c: via_rank(via_for_source_format(c["source_format"])))
+                    other = next(c for c in group_cands if c is not keep)
+                    if other["skey"] not in merge_with and keep["skey"] not in merge_with:
+                        merge_with[other["skey"]] = keep
+                    continue
                 keep_name = max(group_cands, key=lambda c: c["rows"])["meta"][2]
                 for c in parsed:
                     if c["meta"][2] in group.files and c["meta"][2] != keep_name:
                         dup_groups_excluded.add(c["skey"])
                         result.excluded.append({"flight_id": c["fid"], "reason": f"duplicate export ({c['meta'][2]})"})
 
+    # The preferred source of a flight is committed first, so that it is the
+    # one analysed (an exact match of an SD-card and an aircraft log, v0.16);
+    # a file merging into another comes after it. Formats of equal rank keep
+    # their listing order.
+    parsed.sort(key=lambda c: (c["skey"] in merge_with, via_rank(via_for_source_format(c["source_format"]))))
+
     for c in parsed:
         skey, filename = c["skey"], c["meta"][2]
         if skey in dup_groups_excluded:
             continue
+        if c.get("phase_error") is None:
+            # The other AXIS log of a flight already filed: one more import.
+            partner = merge_with.get(skey)
+            partner_fid = partner["fid"] if partner is not None and partner["fid"] in all_sources else None
+            if partner_fid is None and c["fid"] not in all_sources:
+                partner_fid = _cross_format_partner(c, known_windows, all_sources)
+            if partner_fid is not None:
+                await _merge_cross_format(ws_dir, c, partner_fid, all_sources, known_windows, result, sources,
+                                          manifest, engine_cfg, params_now)
+                continue
         if sender_fids is not None:
             if c["fid"] not in sender_fids and c["fid"] not in all_sources:
                 _exclusions.add_auto_exclusion(ws_dir, filename, "not_in_sender", _exclusions.NOT_IN_SENDER_REASON)
@@ -1886,6 +2064,9 @@ async def scan_workspace_async(
         save_sources(ws_dir, new_sources)
         all_sources[fa.flight_id] = new_sources
         result.new_flight_ids.append(fa.flight_id)
+        window = _flight_window(fa)
+        if window is not None:
+            known_windows[fa.flight_id] = (ident, *window)
 
     # Missing evaluation: any known flight none of whose fingerprints were
     # found this scan, and all of whose origin folders were reachable this
@@ -1921,6 +2102,8 @@ async def scan_workspace_async(
                                      on_progress)
         if fresh is None:
             continue   # nothing readable, or it failed: leave the stale analysis in place rather than lose it
+        if fresh.flight_id != fid and _merged_cross_format(src):
+            fresh = with_flight_id(fresh, fid)   # an SD-card/aircraft-log pair filed under its first id
         if fresh.flight_id != fid:
             # Source bytes changed under an unchanged path/filename (a
             # different flight now, by fingerprint) — not safely
@@ -2345,12 +2528,15 @@ def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
     """The log's real file name for display: the workspace's own copy if
     it kept one, else the last import recorded in sources.json."""
     d = ws_dir / "flights" / flight_id
+    src = load_sources(ws_dir, flight_id)
+    imp = analysed_import(src)
+    if imp is not None and imp.log_folder_path == UPLOADED_SOURCE and (d / imp.filename).is_file():
+        return imp.filename   # the analysed one of two kept copies (an AXIS pair, v0.16)
     if d.is_dir():
         others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
         if others:
             return others[0]
-    src = load_sources(ws_dir, flight_id)
-    return src.imports[-1].filename if src and src.imports else None
+    return imp.filename if imp else None
 
 
 def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, shipped_rules: Optional[dict] = None) -> None:
@@ -2382,10 +2568,10 @@ def reconcile_journal(ws_dir: Path, *, active_rules: Optional[dict] = None, ship
                 "what": metric_id, "where": {"metric_id": metric_id}, "note": ref.get("label"), "at": ref.get("set_at"),
             }
         # Spec 14 v0.14 §5.3: each channel assignment is a changed setting.
-        for raw, target in load_workspace_settings(ws_dir).channel_assignments.items():
+        for raw, value in load_workspace_settings(ws_dir).channel_assignments.items():
             ref = f"channel_assignment:{raw}"
             live[("changed_setting", ref)] = {
-                "what": channel_assignment_title(raw, target), "where": {"setting": ref, "tab": "engine"},
+                "what": channel_assignment_title(raw, value), "where": {"setting": ref, "tab": "engine"},
             }
         for d in setting_decisions(selection.baseline_config):
             live[("changed_setting", d["ref_id"])] = {
@@ -2473,13 +2659,24 @@ _PER_METRIC_SETTINGS = (
 )
 
 
-def channel_assignment_title(raw: str, target: str, sources: Optional[list] = None) -> str:
-    """"Log channels — analog 7 is CO ppm (AXIS)" (Spec 14 v0.14 §5.3)."""
+def channel_assignment_title(raw: str, target, sources: Optional[list] = None, ignore_value=None) -> str:
+    """"Log channels — analog 7 is CO ppm (AXIS)" (Spec 14 v0.14 §5.3);
+    with an ignore value, "…, 254 is not a reading" (v0.15)."""
+    if isinstance(target, dict):
+        ignore_value = target.get("ignore_value") if ignore_value is None else ignore_value
+        target = target.get("channel")
     from .channels import CHANNEL_REGISTRY
     cdef = CHANNEL_REGISTRY.get(target)
     name = target if cdef is None else (f"{cdef.label} {cdef.unit}" if cdef.unit and cdef.unit not in cdef.label else cdef.label)
     src = f" ({', '.join(sources)})" if sources else ""
-    return f"Log channels — analog {raw.rsplit('_', 1)[-1]} is {name}{src}"
+    ignore = f", {float(ignore_value):g} is not a reading" if ignore_value is not None else ""
+    return f"Log channels — analog {raw.rsplit('_', 1)[-1]} is {name}{ignore}{src}"
+
+
+def channel_assignment_value(target: str, ignore_value=None):
+    """The stored form of one assignment: the bare channel id, or with an
+    ignore value {"channel", "ignore_value"} (Spec 14 v0.15 §5.3)."""
+    return target if ignore_value is None else {"channel": target, "ignore_value": ignore_value}
 
 
 def shipped_baseline_config() -> dict:

@@ -114,6 +114,9 @@ _c("wind_dir_deg", "deg", "Wind direction", "raw", "Wind Dir", "conditions", cha
 _c("on_ground", None, "On the ground (as the AXIS reports it)", "raw", "On Ground", "flight", chartable=False)
 _c("flight_time_h", "h", "Flight time (AXIS)", "raw", "Flight Time", "flight", chartable=False)
 _c("tach_time_h", "h", "Engine tach time (AXIS)", "raw", "Tach Time", "engine", chartable=False)
+# Throttle position as the FADEC sees it (the Garmin Pilot aircraft log only,
+# Spec 01 v0.25 §6.5); raw, not on the default charts.
+_c("throttle_pct", "%", "Throttle position (AXIS aircraft log)", "raw", "Throttle", "engine", chartable=False)
 # General-purpose analog inputs: what they carry is wired per aircraft, so
 # the unit is unknown and they are never mapped by assumption. Pickable
 # under their raw ids; a channel assignment exposes one under a registry

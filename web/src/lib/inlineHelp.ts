@@ -23,7 +23,7 @@ export const INLINE_HELP = {
   "engine.overrides":
     "None means every limit is the Operator's Manual value shown here; nothing has been changed for this aircraft.",
   "engine.log_channels":
-    "What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name.",
+    "What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name, and an ignore value (on the AXIS, the 254 an analog input reads for its first seconds after power-up) is never taken as a reading.",
 
   // Topic card triggers
   "trigger.enabled": "Stops this topic reporting on every flight; past Journal entries stay.",

@@ -15,6 +15,7 @@ Test bodies call `rpc(handle, op, params)` and never know which. Tests that
 are about HTTP itself (status codes, routes) start their own server.
 """
 import base64
+from datetime import datetime, timedelta
 import json
 import threading
 import urllib.request
@@ -2137,7 +2138,7 @@ def test_log_channel_assignment_round_trip(registry_server):
     rows = {r["raw"]: r for r in rpc(registry_server, "get_log_channels", {})["result"]["channels"]}
     assert list(rows) == ["gp_analog_7"]
     a7 = rows["gp_analog_7"]
-    assert a7["assignment"] is None and a7["sources"] == ["AXIS"] and a7["flights"] == 1
+    assert a7["assignment"] is None and a7["sources"] == ["AXIS card"] and a7["flights"] == 1
     assert (a7["min"], a7["max"]) == (2.0, 6.0)
     offered = {o["channel"] for o in a7["options"]}
     assert "co_ppm" in offered and "rpm" not in offered and "ias_kt" not in offered
@@ -2153,7 +2154,7 @@ def test_log_channel_assignment_round_trip(registry_server):
     assert [c["ref_id"] for c in changed] == ["channel_assignment:gp_analog_7"]
     assert changed[0]["shipped"] == "Not assigned"
     entry, = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
-    assert entry["what"] == "Log channels — analog 7 is CO ppm (AXIS)"
+    assert entry["what"] == "Log channels — analog 7 is CO ppm (AXIS card)"
     assert entry["where"]["tab"] == "engine"
     assert entry["effect"]["text"] == "names analog 7 CO ppm on 1 flight once re-analysed"
 
@@ -2172,6 +2173,70 @@ def test_log_channel_assignment_round_trip(registry_server):
     assert rpc(registry_server, "list_changed_settings", {})["result"]["settings"] == []
     assert not [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
     assert rpc(registry_server, "scan_workspace", {"analyze": False})["result"]["pending_reanalysis_flight_ids"] == [axis_id]
+
+
+def test_log_channel_ignore_value(registry_server):
+    """Spec 14 v0.15 §5.3: an assignment may mark one value as not a
+    reading — missing under the assigned name, a changed setting naming
+    it, and the flight re-analysed with it."""
+    rpc(registry_server, "create_workspace", {"name": "AXIS", "engine_model": "916iS"})
+    axis = _axis_flying_log_bytes(lambda i: 254.0 if i < 20 else 2.0 + i % 5)
+    fid = rpc(registry_server, "import_files", {"files": [
+        {"content_base64": base64.b64encode(axis).decode(), "filename": "axis.csv"}]})["result"]["results"][0]["flight_id"]
+    bad = rpc(registry_server, "set_channel_assignment", {"raw": "gp_analog_7", "target": "co_ppm", "ignore_value": "x"})
+    assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
+    done = rpc(registry_server, "set_channel_assignment", {"raw": "gp_analog_7", "target": "co_ppm", "ignore_value": 254})
+    assert done["ok"], done
+    assert done["result"]["channels"][0]["assignment"]["ignore_value"] == 254
+    changed, = rpc(registry_server, "list_changed_settings", {})["result"]["settings"]
+    assert changed["current"] == "CO ppm, 254 is not a reading"
+    entry, = [e for e in rpc(registry_server, "get_journal", {})["result"]["entries"] if e["kind"] == "changed_setting"]
+    assert entry["what"] == "Log channels — analog 7 is CO ppm, 254 is not a reading (AXIS card)"
+    rpc(registry_server, "scan_workspace", {})
+    fa = rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["flight_analysis"]
+    assert fa["provenance"]["channel_assignments"] == {"gp_analog_7": {"channel": "co_ppm", "ignore_value": 254}}
+    series = rpc(registry_server, "get_flight_series", {"flight_id": fid, "channels": ["co_ppm", "gp_analog_7"]})["result"]
+    assert max(p[1] for p in series["co_ppm"] if p[1] is not None) == 6
+    assert max(p[1] for p in series["gp_analog_7"] if p[1] is not None) == 254
+    # Clearing the ignore value keeps the assignment.
+    again = rpc(registry_server, "set_channel_assignment", {"raw": "gp_analog_7", "target": "co_ppm", "ignore_value": None})
+    assert again["result"]["channels"][0]["assignment"]["ignore_value"] is None
+
+
+def _al_flying_log_bytes(boot_s: int = 40) -> bytes:
+    """A Garmin Pilot aircraft log of the same synthetic flight, opening
+    `boot_s` seconds before it at avionics boot (Spec 01 v0.25 §6.5)."""
+    meta = "#hobbsOut=,hobbsIn=,tach1Out=119.6,tach1In=119.9,tach2Out=,tach2In=,\n"
+    units = "#YYYY-MM-DDThh:mm:ss.sssZ,yyyy-mm-dd,hh:mm:ss,+/-hh:mm,rotations per minute,knots,feet,feet per minute,gallons per hour,hour,float\n"
+    header = ("timestamp,localDate,localTime,utcOffset,engine1RevolutionsPerMinute,indicatedAirspeed,"
+              "indicatedBarometricAltitude,verticalSpeed,engine1FuelFlow,e1TachTime,engine1GeneralPurposeAnalog7\n")
+    rows = [(0, 0, 100.0, 0)] * boot_s + _flying_rows()
+    t0 = datetime(2026, 10, 14, 12, 0, 0) - timedelta(seconds=boot_s)   # the SD-card log opens at 12:00:00
+    lines = []
+    for i, (rpm, ias, alt, vs) in enumerate(rows):
+        t = (t0 + timedelta(seconds=i)).strftime("%Y-%m-%dT%H:%M:%S")
+        lines.append(f"{t}.250Z,2026-10-14,00:00:00,+00:00,{rpm},{ias},{alt},{vs},6.5,119.6,3.0\n")
+    return (meta + units + header + "".join(lines)).encode("utf-8")
+
+
+def test_uploaded_sd_card_and_aircraft_log_merge(registry_server):
+    """Spec 02 v0.16 §5.7: the two AXIS logs of one flight, uploaded one
+    after the other, are one flight with two imports; the aircraft log is
+    the analysed source and Flights names the other as "also"."""
+    rpc(registry_server, "create_workspace", {"name": "AXIS", "engine_model": "916iS"})
+    first = rpc(registry_server, "import_files", {"files": [
+        {"content_base64": base64.b64encode(_axis_flying_log_bytes()).decode(), "filename": "sd.csv"}]})["result"]
+    fid = first["results"][0]["flight_id"]
+    second = rpc(registry_server, "import_files", {"files": [
+        {"content_base64": base64.b64encode(_al_flying_log_bytes()).decode(),
+         "filename": "aircraft-log-N999XX-2026-10-14T115920.csv"}]})["result"]
+    assert second["results"][0]["classification"] == "merged" and second["results"][0]["flight_id"] == fid
+    assert second["flight_count"] == 1
+    row, = rpc(registry_server, "list_flights_with_status", {})["result"]["rows"]
+    assert row["flight_id"] == fid and row["source_format"] == "aircraft_log"
+    assert row["also_source_formats"] == ["axis"] and row["filename"] == "aircraft-log-N999XX-2026-10-14T115920.csv"
+    fa = rpc(registry_server, "get_flight", {"flight_id": fid})["result"]["flight_analysis"]
+    assert fa["flight_id"] == fid and fa["header"]["start_utc"] == "2026-10-14T11:59:20"
 
 
 # ── The host and its transports (Spec 04 v0.4 §9.1, §9.5) ─────────────────

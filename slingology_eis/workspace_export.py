@@ -36,7 +36,9 @@ from . import __version__
 from . import exclusions as _exclusions
 from . import workspace as ws
 from .log_sources import DISK, LogUnavailable, areading, reading, run_now
-from .loader import flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes, source_key as _source_key
+from .loader import (
+    _AIRCRAFT_LOG_NAME, flight_fingerprint, flight_id as _compute_flight_id, load_log_bytes, source_key as _source_key,
+)
 from .resources import resource
 
 FORMAT = "eisworkspace"
@@ -171,7 +173,22 @@ def _meta_fields(meta_row: str) -> dict[str, str]:
     return dict(re.findall(r'(\w+)="([^"]*)"', meta_row))
 
 
-def anonymise_log(data: bytes, pseudonyms: dict[tuple[str, str], tuple[str, str]]) -> bytes:
+def _is_aircraft_log(data: bytes) -> bool:
+    """The Garmin Pilot aircraft log (Spec 01 v0.25 §6.5): no ident in the
+    file — it is in the file name."""
+    return data.lstrip(b"\xef\xbb\xbf").startswith(b"#hobbsOut=")
+
+
+def _log_identity(data: bytes, filename: str) -> tuple[str, str]:
+    """(tail, system id) of one log, for its pseudonym."""
+    if _is_aircraft_log(data):
+        m = _AIRCRAFT_LOG_NAME.match(filename)
+        return (m.group(1) if m else "", "")
+    h = _meta_fields(data.decode("utf-8-sig", errors="replace").split("\n", 1)[0])
+    return (h.get("aircraft_ident", "") or h.get("tail_number", ""), h.get("system_id", ""))
+
+
+def anonymise_log(data: bytes, pseudonyms: dict[tuple[str, str], tuple[str, str]], filename: str = "") -> bytes:
     """The copy of one log with its identity fields rewritten (§7.6):
     aircraft_ident and system_id (and Garmin Pilot's flightstream_header,
     which embeds the system ID) to the aircraft's pseudonym; the columns
@@ -182,15 +199,18 @@ def anonymise_log(data: bytes, pseudonyms: dict[tuple[str, str], tuple[str, str]
     newline = "\r\n" if "\r\n" in text[:4096] else "\n"
     lines = text.split(newline)
     meta = _meta_fields(lines[0])
-    axis = (meta.get("Product") or meta.get("product") or "").upper() == "AXIS"
+    aircraft_log = _is_aircraft_log(data)
+    axis = aircraft_log or (meta.get("Product") or meta.get("product") or "").upper() == "AXIS"
     tail_key = "tail_number" if axis else "aircraft_ident"
-    tail, system = meta.get(tail_key, ""), meta.get("system_id", "")
+    tail, system = _log_identity(data, filename) if aircraft_log else (meta.get(tail_key, ""), meta.get("system_id", ""))
     p_tail, p_system = pseudonyms[(tail, system)]
 
     def sub(field_name: str, value: str, row: str) -> str:
         return re.sub(rf'({field_name}=")[^"]*(")', lambda m: m.group(1) + value + m.group(2), row)
 
-    first = sub(tail_key, p_tail, lines[0])
+    # The aircraft log's row 1 holds hour meters only; its ident is renamed
+    # with the file (export_workspace).
+    first = lines[0] if aircraft_log else sub(tail_key, p_tail, lines[0])
     if "system_id" in meta:
         first = sub("system_id", p_system, first)
     if "flightstream_header" in meta:
@@ -430,8 +450,7 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     key_map: dict[str, str] = {}
     name_map: dict[str, str] = {}
     if anonymise:
-        heads = [_meta_fields(log[0].decode("utf-8-sig", errors="replace").split("\n", 1)[0]) for *_x, log in flights]
-        identities = [(h.get("aircraft_ident", "") or h.get("tail_number", ""), h.get("system_id", "")) for h in heads]
+        identities = [_log_identity(log[0], log[1].filename) for *_x, log in flights]
         pseudonyms = _aircraft_pseudonyms(identities, settings.aircraft_aliases)
     entries = []
     used_names: set[str] = set()
@@ -445,8 +464,14 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
             data, imp = log
             name = imp.filename
             if anonymise:
-                data = anonymise_log(data, pseudonyms)
+                identity = _log_identity(data, imp.filename)
+                data = anonymise_log(data, pseudonyms, imp.filename)
                 name = f"flight_{n:03d}.csv"
+                if _is_aircraft_log(data) and identity[0]:
+                    # Spec 01 v0.25: the ident travels in the name, so the
+                    # pseudonym does: aircraft-log-<ANON-n>-<UTC start>.csv.
+                    stamp = imp.filename[len("aircraft-log-") + len(identity[0]) + 1:]
+                    name = f"aircraft-log-{pseudonyms[identity][0]}-{stamp}"
                 df, info = load_log_bytes(data, name)
                 new_fid = _compute_flight_id(flight_fingerprint(df, info))
                 new_key = _source_key(data)

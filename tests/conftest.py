@@ -32,7 +32,7 @@ def load_golden_flights():
     are left out, so the goldens keep checking that G3X loads unchanged."""
     from slingology_eis.loader import load_directory
     return [(df, info) for df, info in load_directory(str(LOGS_DIR), verbose=False)
-            if info.source_format != "axis"]
+            if info.source_format not in ("axis", "aircraft_log")]
 
 
 def import_notebook(name: str):

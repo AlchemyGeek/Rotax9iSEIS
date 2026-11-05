@@ -296,6 +296,7 @@ export function Flights() {
       const lines = [
         count(["new"]) ? `${plural(count(["new"]), "new flight")} analyzed` : "",
         count(["duplicate"]) ? `${plural(count(["duplicate"]), "file")} skipped — already in this workspace` : "",
+        count(["merged"]) ? `${plural(count(["merged"]), "file")} added to a flight already here — the same flight's other AXIS log` : "",
         count(["ground_session", "short_flight", "corrupt_log"])
           ? `${plural(count(["ground_session", "short_flight", "corrupt_log"]), "file")} skipped — not a flight (ground session, short flight, or corrupt log; recorded in Skipped)`
           : "",
@@ -1038,7 +1039,7 @@ export function Flights() {
             </div>
             <div style={{ flexGrow: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>Drop your engine logs here</div>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Garmin G3X (SD card or Garmin Pilot) or Garmin AXIS exports</div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Garmin G3X (SD card or Garmin Pilot), Garmin AXIS SD card, or the aircraft log Garmin Pilot downloads from flyGarmin</div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                 or{" "}
                 <a href="#" onClick={(e) => { e.preventDefault(); inputRef.current?.click(); }}>choose files</a>
@@ -1329,6 +1330,12 @@ export function Flights() {
                           </span>
                         )}
                         {row.filename}
+                        {(row.also_source_formats ?? []).filter((f) => SOURCE_FORMAT_LABEL[f]).length > 0 && (
+                          // Spec 03 v0.23 §5.1: the analysed source first, the other import after.
+                          <span data-testid="also-source-format" style={{ fontFamily: "inherit", marginLeft: 6 }}>
+                            (also: {(row.also_source_formats ?? []).map((f) => SOURCE_FORMAT_LABEL[f]).filter(Boolean).join(", ")})
+                          </span>
+                        )}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         {removingId === fid ? (

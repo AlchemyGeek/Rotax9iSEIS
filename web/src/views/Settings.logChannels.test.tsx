@@ -10,9 +10,9 @@ import type { ChangedSetting, LogChannelRow } from "../types/contract";
 // changed setting with its Journal entry and Reset to shipped.
 
 const CO = { channel: "co_ppm", name: "CO", unit: "ppm" };
-const row = (raw: string, assigned: boolean): LogChannelRow => ({
-  raw, label: `analog ${raw.split("_").pop()}`, sources: ["AXIS"], flights: 1, min: 0, max: 22,
-  assignment: assigned ? CO : null, options: [CO],
+const row = (raw: string, assigned: boolean, ignoreValue: number | null = null): LogChannelRow => ({
+  raw, label: `analog ${raw.split("_").pop()}`, sources: ["AXIS card"], flights: 1, min: 0, max: 22,
+  assignment: assigned ? { ...CO, ignore_value: ignoreValue } : null, options: [CO],
 });
 const state = vi.hoisted(() => ({ channels: [] as LogChannelRow[], changed: [] as ChangedSetting[] }));
 const calls = vi.hoisted(() => ({ setChannelAssignment: vi.fn(), resetSetting: vi.fn() }));
@@ -28,9 +28,9 @@ vi.mock("../lib/engineClient", async () => ({
     getWorkspaceRules: async () => ({ rules: { version: "1", rules: {} }, card_topic_ids: [] }),
     listChangedSettings: async () => ({ settings: state.changed }),
     getLogChannels: async () => ({ channels: state.channels }),
-    setChannelAssignment: async (raw: string, target: string | null) => {
-      calls.setChannelAssignment(raw, target);
-      state.channels = state.channels.map((r) => (r.raw === raw ? row(raw, target === "co_ppm") : r));
+    setChannelAssignment: async (raw: string, target: string | null, ignoreValue: number | null = null) => {
+      calls.setChannelAssignment(raw, target, ignoreValue);
+      state.channels = state.channels.map((r) => (r.raw === raw ? row(raw, target === "co_ppm", ignoreValue) : r));
       state.changed = target
         ? [{ ref_id: `channel_assignment:${raw}`, label: "Log channels — analog 7", current: "CO (ppm)", shipped: "Not assigned", entry_id: "jnl_a7" }]
         : [];
@@ -79,7 +79,7 @@ describe("Settings → Engine → Log channels", () => {
     expect(screen.queryByText(/Changed · shipped/)).toBeNull();
 
     fireEvent.change(select, { target: { value: "co_ppm" } });
-    await waitFor(() => expect(calls.setChannelAssignment).toHaveBeenCalledWith("gp_analog_7", "co_ppm"));
+    await waitFor(() => expect(calls.setChannelAssignment).toHaveBeenCalledWith("gp_analog_7", "co_ppm", null));
     const mark = await screen.findByTestId("changed-channel_assignment:gp_analog_7");
     expect(mark.textContent).toContain("shipped: Not assigned");
     expect(within(mark).getByText("Journal entry →")).toBeTruthy();
@@ -88,5 +88,27 @@ describe("Settings → Engine → Log channels", () => {
     await waitFor(() => expect(calls.resetSetting).toHaveBeenCalledWith("channel_assignment:gp_analog_7"));
     await waitFor(() => expect(screen.queryByTestId("changed-channel_assignment:gp_analog_7")).toBeNull());
     expect((within(screen.getByTestId("log-channel-gp_analog_7")).getByLabelText("Assignment for analog 7") as HTMLSelectElement).value).toBe("");
+  });
+
+  it("an assignment may mark one value as not a reading (Spec 14 v0.15 §5.3)", async () => {
+    state.channels = [row("gp_analog_7", true)];
+    renderEngineTab();
+    const r7 = await screen.findByTestId("log-channel-gp_analog_7");
+    const input = within(r7).getByLabelText("Ignore value for analog 7") as HTMLInputElement;
+    expect(input.value).toBe("");
+    fireEvent.change(input, { target: { value: "254" } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(calls.setChannelAssignment).toHaveBeenCalledWith("gp_analog_7", "co_ppm", 254));
+    const again = within(await screen.findByTestId("log-channel-gp_analog_7")).getByLabelText("Ignore value for analog 7") as HTMLInputElement;
+    await waitFor(() => expect(again.value).toBe("254"));
+    // An unassigned channel has no ignore value to set.
+    state.channels = [row("gp_analog_7", false)];
+  });
+
+  it("no Ignore value field without an assignment", async () => {
+    state.channels = [row("gp_analog_7", false)];
+    renderEngineTab();
+    const r7 = await screen.findByTestId("log-channel-gp_analog_7");
+    expect(within(r7).queryByLabelText("Ignore value for analog 7")).toBeNull();
   });
 });

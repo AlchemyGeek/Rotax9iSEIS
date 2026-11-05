@@ -89,7 +89,13 @@ describe("Log preview", () => {
     previewExcludedLog.mockResolvedValue({ flight_analysis: casFlight, source_filename: FILE, source_format: "axis", filled_share: 0.161 });
     renderAt(`/logs/${encodeURIComponent(FILE)}`);
     const fmt = await screen.findByTestId("log-format");
-    expect(fmt.textContent).toBe("Format: AXIS · resampled to 1 s, 16% of rows filled");
+    expect(fmt.textContent).toBe("Format: AXIS card · resampled to 1 s, 16% of rows filled");
+  });
+
+  it("an aircraft log with a handful of filled rows says under 1% (Spec 03 v0.23 §5.9)", async () => {
+    previewExcludedLog.mockResolvedValue({ flight_analysis: casFlight, source_filename: FILE, source_format: "aircraft_log", filled_share: 0.001 });
+    renderAt(`/logs/${encodeURIComponent(FILE)}`);
+    expect((await screen.findByTestId("log-format")).textContent).toBe("Format: Aircraft log · resampled to 1 s, under 1% of rows filled");
   });
 
   it("a G3X log says G3X and nothing about filling", async () => {

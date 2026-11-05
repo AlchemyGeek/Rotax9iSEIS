@@ -25,7 +25,10 @@ from .cas import CAS_EVENT_CLASSES, CLASSIFIED_CAS_IDS, ECU_CLASSES, extract_eng
 from .contract import CONTRACT_VERSION, Diagnostic, Provenance, content_hash, engine_profile_ref
 from .fleet import MIN_FLIGHTS_FOR_CONFIDENCE, compute_flight_metrics
 from .limits import check_exceedances, engine_running_s, limit_catalog, per_limit_metrics
-from .loader import flight_fingerprint, flight_id as _flight_id, load_log_bytes, source_key as _source_key
+from .loader import (
+    AXIS_FORMATS, assignment_target, flight_fingerprint, flight_id as _flight_id, load_log_bytes,
+    source_key as _source_key,
+)
 from .phases import detect_phases, phase_segments
 from .channels import CHANNEL_REGISTRY
 from .registry import METRIC_REGISTRY, missing_reason
@@ -277,7 +280,8 @@ def analyze_flight(
     assignments = params.pop("channel_assignments", None) or {}
     df, info = load_log_bytes(log_bytes, filename, max_fill_gap_s=max_fill_gap_s,
                               channel_assignments=assignments)
-    applied = {raw: target for raw, target in assignments.items() if raw in df.columns and target in df.columns}
+    applied = {raw: value for raw, value in assignments.items()
+               if raw in df.columns and assignment_target(value) in df.columns}
     if applied:
         params["channel_assignments"] = applied
     if max_fill_gap_s != 2:
@@ -346,11 +350,13 @@ def analyze_flight(
             message="Airborne time was detected but no TAKEOFF_ROLL/CLIMB phase was labelled.",
             refs={"airborne_rows": airborne_rows},
         ))
-    if info.source_format == "axis":
+    if info.source_format in AXIS_FORMATS:
+        rate, share = (("about 0.83 Hz", f"{info.filled_share:.0%}") if info.source_format == "axis"
+                       else ("about 1 Hz with sub-second jitter", f"{info.filled_share:.1%}"))
         quality.append(Diagnostic(
             code="LOG_RESAMPLED_TO_1HZ", severity="info", scope="file",
-            message=f"Logged at about 0.83 Hz; put on a 1-second grid — {info.filled_share:.0%} of rows filled.",
-            refs={"source_format": "axis", "filled_share": f"{info.filled_share:.3f}"},
+            message=f"Logged at {rate}; put on a 1-second grid — {share} of rows filled.",
+            refs={"source_format": info.source_format, "filled_share": f"{info.filled_share:.3f}"},
         ))
     if "CRUISE" not in phases_present:
         quality.append(Diagnostic(
@@ -367,9 +373,12 @@ def analyze_flight(
         "date": t0.date().isoformat(),
         "start_utc": t0.isoformat(),
         "engine_hours_start": info.engine_hours,
+        # The meter's own end reading when the log has one (aircraft log
+        # tach1In, Spec 01 v0.26); otherwise start + duration.
         "engine_hours_end": (
-            round(info.engine_hours + fm.duration_min / 60, 2)
-            if info.engine_hours is not None else None
+            info.engine_hours_end if info.engine_hours_end is not None
+            else round(info.engine_hours + fm.duration_min / 60, 2) if info.engine_hours is not None
+            else None
         ),
         # Only Garmin's own log_YYYYMMDD_HHMMSS_<airport>.csv names carry an
         # airport (Spec 02 v0.12): an anonymised copy's flight_001.csv has none.
@@ -411,6 +420,24 @@ def analyze_flight(
         available_channels=available_channels,
         limits=limits,
     )
+
+
+def with_flight_id(fa: "FlightAnalysis", flight_id: str) -> "FlightAnalysis":
+    """The analysis filed under another flight's id: a flight merged from an
+    AXIS SD-card log and its aircraft log keeps the id it was first filed
+    under while its analysis comes from the aircraft log (Spec 01 v0.25
+    §6.5 decision 2). The analysis key follows the id, as analyze_flight
+    computes it."""
+    if fa.flight_id == flight_id:
+        return fa
+    fa.flight_id = flight_id
+    fa.analysis_key = content_hash({
+        "flight_id": flight_id,
+        "profile_hash": (fa.provenance.get("engine_profile") or {}).get("hash"),
+        "params_hash": fa.provenance.get("params_hash"),
+        "engine_major_minor": _engine_major_minor(fa.provenance.get("engine_version") or __version__),
+    })
+    return fa
 
 
 @dataclass

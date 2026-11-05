@@ -7,7 +7,7 @@ import { getEngineClient } from "../lib/engineClient";
 import { useTimeline } from "../lib/useTimeline";
 import { ECU_CLASS_LABEL } from "../lib/casEvent";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
-import { SOURCE_FORMAT_LABEL } from "../lib/sourceFormat";
+import { SOURCE_FORMAT_LABEL, filledShareText } from "../lib/sourceFormat";
 import type { EcuClassification, ExclusionEntry, FlightAnalysis, LogSourceFormat } from "../types/contract";
 
 const client = getEngineClient();
@@ -143,7 +143,7 @@ export function LogPreview() {
                   // Spec 03 v0.22 §5.9: the format and, if resampled, the filled share.
                   <span data-testid="log-format">
                     <span style={{ color: "var(--text-tertiary)" }}>Format:</span> {SOURCE_FORMAT_LABEL[sourceFormat]}
-                    {filledShare ? ` · resampled to 1 s, ${Math.round(filledShare * 100)}% of rows filled` : ""}
+                    {filledShare ? ` · resampled to 1 s, ${filledShareText(filledShare)}` : ""}
                   </span>
                 )}
               </div>

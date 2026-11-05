@@ -74,7 +74,8 @@ export interface UploadFile {
 }
 
 export interface IngestResult {
-  classification: "new" | "duplicate" | "ground_session" | "short_flight" | "corrupt_log";
+  // "merged": the other AXIS log of a flight already here, kept as a second import (Spec 02 v0.16 §5.7).
+  classification: "new" | "duplicate" | "merged" | "ground_session" | "short_flight" | "corrupt_log";
   filename: string;
   reason?: string; // present for ground_session/short_flight/corrupt_log
   flight_id?: string; // present for new/duplicate
@@ -189,7 +190,7 @@ export interface EngineClient {
   getCapabilities(): Promise<HostCapabilities>;
   // Spec 14 v0.16 §5.2.1 — space the data root takes, walked by the host.
   getStorageUsage(): Promise<StorageUsage>;
-  setChannelAssignment(raw: string, target: string | null): Promise<{ channels: LogChannelRow[] }>;
+  setChannelAssignment(raw: string, target: string | null, ignoreValue?: number | null): Promise<{ channels: LogChannelRow[] }>;
   getExcludedLogSeries(filename: string, channels: string[]): Promise<SeriesResult>;
 
   // Spec 02 v0.5 workspace management
@@ -560,8 +561,8 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ channels: LogChannelRow[] }>("get_log_channels", {});
   }
 
-  setChannelAssignment(raw: string, target: string | null) {
-    return this.rpc<{ channels: LogChannelRow[] }>("set_channel_assignment", { raw, target });
+  setChannelAssignment(raw: string, target: string | null, ignoreValue: number | null = null) {
+    return this.rpc<{ channels: LogChannelRow[] }>("set_channel_assignment", { raw, target, ignore_value: ignoreValue });
   }
 
   getExcludedLogSeries(filename: string, channels: string[]) {

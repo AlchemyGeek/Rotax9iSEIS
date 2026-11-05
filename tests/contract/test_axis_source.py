@@ -59,7 +59,7 @@ def test_no_g3x_frame_is_resampled():
     g3x = 0
     for p in sorted(LOGS_DIR.glob("*.csv")):
         df, info = load_log_bytes(p.read_bytes(), p.name)
-        if info.source_format == "axis":
+        if info.source_format in ("axis", "aircraft_log"):
             continue
         g3x += 1
         assert info.source_format in ("g3x_direct", "garmin_pilot") and "_filled" not in df.columns, p.name
@@ -107,3 +107,90 @@ def test_both_axis_logs_share_one_mapping():
     from slingology_eis.channels import CHANNEL_REGISTRY
     registry_cols = lambda df: set(df.columns) & set(CHANNEL_REGISTRY)
     assert registry_cols(a) == registry_cols(b)
+
+
+# ── Spec 01 v0.25 §12 criterion 13: the Garmin Pilot aircraft log ──────────
+
+AL = sorted(LOGS_DIR.glob("aircraft-log-*-2026-11-04T194056.csv")) if LOGS_DIR.is_dir() else []
+requires_aircraft_log = pytest.mark.skipif(not AL, reason="the 2026-11-04 aircraft log isn't in data/logs")
+# The SD-card log of the same flight (19:41:07–20:50:31).
+SD_1104 = sorted(LOGS_DIR.glob("6df457a1-*.csv")) if LOGS_DIR.is_dir() else []
+requires_sd_1104 = pytest.mark.skipif(not SD_1104, reason="the 2026-11-04 SD-card log isn't in data/logs")
+
+
+@requires_aircraft_log
+def test_criterion_13_ingest():
+    import pandas as pd
+    raw = AL[0].read_bytes()
+    df, info = load_log_bytes(raw, AL[0].name)
+    assert info.source_format == "aircraft_log" and info.aircraft_ident == "N117ZS"
+    assert info.engine_hours == 127.3 and info.airframe_hours is None
+    # timestamp 19:40:56.99 → 20:50:30.74, rounded to the second.
+    assert df["datetime"].iloc[0] == pd.Timestamp("2026-11-04 19:40:57")
+    assert df["datetime"].iloc[-1] == pd.Timestamp("2026-11-04 20:50:31")
+    assert df["datetime"].is_monotonic_increasing and df["datetime"].is_unique
+    assert info.filled_share < 0.01
+    stamps = pd.to_datetime(df.loc[~df["_filled"], "timestamp"], utc=True).dt.tz_localize(None).dt.round("1s")
+    assert (stamps.to_numpy() == df.loc[~df["_filled"], "datetime"].to_numpy()).all()   # never from localTime
+    assert df["throttle_pct"].min() == 14 and df["throttle_pct"].max() == 100
+    assert df["track_deg"].notna().mean() > 0.99
+
+
+@requires_aircraft_log
+def test_criterion_13_analysis():
+    raw = AL[0].read_bytes()
+    fa = analyze_flight(raw, AL[0].name, load_engine_config("916iS"), "916iS")
+    assert [q["code"] for q in fa.quality] == ["LOG_RESAMPLED_TO_1HZ"]
+    assert fa.metrics["airborne_min"]["value"] == pytest.approx(51.5, abs=1)   # spec: ≈ 50
+    assert fa.header["engine_hours_start"] == 127.3 and fa.header["engine_hours_end"] == 128.3   # tach1In
+    assert fa.metrics["max_ias_kt"]["value"] == pytest.approx(133, abs=0.5)
+    df, _ = load_log_bytes(raw, AL[0].name)
+    assert df["rpm"].max() == 5820
+    ecu = analyze_ecu([fa]).to_dict()
+    assert ecu["counts"] == {"GROUND_START": 2, "LANE_CHECK": 2, "GROUND": 0, "IN_FLIGHT": 0, "GROUND_SHUTDOWN": 1}
+    starts = [r["start_utc"][11:] for r in ecu["runs"] if r["classification"] == "GROUND_START"]
+    assert starts == ["19:40:57", "19:42:06"]                     # boot run (RPM empty), cranking run
+    lane = [r for r in ecu["runs"] if r["classification"] == "LANE_CHECK"]
+    assert [r["start_utc"][11:] for r in lane] == ["19:48:21", "19:48:33"] and all(r["lane_check_pair"] for r in lane)
+    assert [r["mean_rpm"] for r in fa.ecu_runs if r["classification"] == "LANE_CHECK"] == [4106, 3960]
+    shutdown, = [r for r in ecu["runs"] if r["classification"] == "GROUND_SHUTDOWN"]
+    assert shutdown["start_utc"][11:] == "20:45:54" and shutdown["end_utc"][11:] == "20:50:31"
+    assert fa.ecu_lane_check == "both"
+
+
+@requires_aircraft_log
+def test_criterion_13_co_assignment_with_ignore_value():
+    raw = AL[0].read_bytes()
+    plain, _ = load_log_bytes(raw, AL[0].name, channel_assignments={"gp_analog_7": "co_ppm"})
+    assert plain["co_ppm"].max() == 254                            # the boot sentinel, read as CO
+    df, _ = load_log_bytes(raw, AL[0].name,
+                           channel_assignments={"gp_analog_7": {"channel": "co_ppm", "ignore_value": 254}})
+    assert df["co_ppm"].max() < 254 and (df["gp_analog_7"] == 254).any()
+
+
+@requires_aircraft_log
+@requires_sd_1104
+def test_criterion_13_sd_card_and_aircraft_log_are_one_flight(tmp_path):
+    import shutil
+    from slingology_eis import workspace as ws
+    registry_path, root = tmp_path / "registry.json", tmp_path / "workspaces"
+    manifest = ws.create_workspace(registry_path, root, "n117zs", "916iS")
+    ws_dir = root / manifest.id
+    folder = tmp_path / "logs"
+    folder.mkdir()
+    shutil.copy(SD_1104[0], folder / SD_1104[0].name)
+    shutil.copy(AL[0], folder / AL[0].name)
+    ws.add_log_folder(ws_dir, str(folder), registry_path)
+    result = ws.scan_workspace(ws_dir, registry_path)
+    assert len(result.new_flight_ids) == 1 and result.excluded == []
+    fid, = ws.list_flight_ids(ws_dir)
+    src = ws.load_sources(ws_dir, fid)
+    assert sorted(i.via for i in src.imports) == ["aircraft_log", "axis"]
+    assert ws.analysed_import(src).filename == AL[0].name
+    assert ws.load_flight_analysis(ws_dir, fid).header["start_utc"] == "2026-11-04T19:40:57"
+
+
+@requires_aircraft_log
+def test_criterion_13_renamed_file_has_no_ident(tmp_path):
+    _df, info = load_log_bytes(AL[0].read_bytes(), "renamed.csv")
+    assert info.aircraft_ident == ""
