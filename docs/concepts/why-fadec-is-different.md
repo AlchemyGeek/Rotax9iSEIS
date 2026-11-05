@@ -18,7 +18,7 @@ So a pilot with a Rotax iS engine and a modern glass panel has been collecting a
 
 ## What is, and is not, in the log
 
-Everything the app knows comes from the engine log your Garmin avionics write — G3X, Garmin Pilot export or AXIS. That log carries RPM, manifold pressure, oil temperature and pressure, coolant temperature, four exhaust gas temperatures, fuel pressure and flow, bus voltage, the CAS alerts, and the flight data (airspeed, altitude, position, outside air temperature) that the app needs to work out what phase of flight you were in.
+Everything the app knows comes from the engine log your Garmin avionics write — G3X, Garmin Pilot export, AXIS card or aircraft log. That log carries RPM, manifold pressure, oil temperature and pressure, coolant temperature, four exhaust gas temperatures, fuel pressure and flow, bus voltage, the CAS alerts, and the flight data (airspeed, altitude, position, outside air temperature) that the app needs to work out what phase of flight you were in.
 
 Some things the engine computer knows never reach the log: throttle position, which lane is active, injector pulse width, ignition advance, wastegate position. The app does not try to guess them. Two consequences matter to how you read its output:
 

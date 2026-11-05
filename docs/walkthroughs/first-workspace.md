@@ -1,6 +1,6 @@
 # Open the app and your first workspace
 
-*About fifteen minutes, most of it the app working. You need a computer with a current browser — the app is tested on macOS Chrome and Safari — and a folder of engine logs from your Garmin G3X, Garmin Pilot or AXIS. Nothing to install.*
+*About fifteen minutes, most of it the app working. You need a computer with a current browser — the app is tested on macOS Chrome and Safari — and a folder of engine logs from your Garmin G3X or AXIS — the SD card's files, Garmin Pilot exports, or aircraft logs downloaded from flyGarmin. Nothing to install.*
 
 ## 1. Open the app
 
@@ -38,11 +38,11 @@ The app lists everything it found with *Needs analysis* beside each log, and an 
 
 Click **Analyze**. The app reads each log, decides whether it is a flight, works out the phases of flight, checks the Operators Manual limits and builds your reference. A season of logs takes a minute or two; the page shows progress per log. Leave the tab open until it finishes — the browser warns you if you try to close it mid-way.
 
-When it finishes, a notice sums up what happened — *58 new flights analyzed · 59 skipped — not a flight* — and the list fills in.
+When it finishes, a notice sums up what happened — on N117ZS's 124 logs, *61 new flights analyzed*, three exact copies skipped, one aircraft log added to the flight its AXIS card log already made, and *59 files skipped — not a flight* — and the list fills in.
 
 <figure class="screenshot" markdown>
 ![The Flights page after the first analysis](../img/flights-overview.png){ .screenshot }
-<figcaption>Every flight with its date, duration, engine hours, insights and source file.</figcaption>
+<figcaption>The summary of the first analysis, then every flight with its date, duration, engine hours, insights and source.</figcaption>
 </figure>
 
 !!! warning "This workspace lives in your browser"

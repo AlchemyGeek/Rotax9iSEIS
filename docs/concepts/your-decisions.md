@@ -50,7 +50,7 @@ Afterwards, tolerated events collapse on every Flight view into one line per lim
 
 Every topic card shows its triggers and their current values under *▸ triggers*. *Edit rules…* (or *Edit trigger ↓* on an insight) opens an editor beside the card where you can change the numbers — how many flights a comparison needs, how strong a trend must be before it is reported, a trigger's severity label — or switch the topic off. Triggers that follow an Operators Manual limit are shown as such and cannot be given a different number.
 
-As you edit, a live preview counts the effect across the workspace: *On your 58 flights: 4 changes (1 newly flagged, 3 cleared)*, with the affected flights linked. *Apply to all flights* saves it; *Reset to shipped* puts a rule back to the app's default. While any rule differs from shipped, the Journal shows the current and shipped values side by side.
+As you edit, a live preview counts the effect across the workspace: *On your 61 flights: 4 changes (1 newly flagged, 3 cleared)*, with the affected flights linked. *Apply to all flights* saves it; *Reset to shipped* puts a rule back to the app's default. While any rule differs from shipped, the Journal shows the current and shipped values side by side.
 
 <figure class="screenshot" markdown>
 ![The rule editor beside a topic card, with its fleet-wide preview](../img/rule-editor.png){ .screenshot }

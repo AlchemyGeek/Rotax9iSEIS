@@ -1,11 +1,11 @@
 # SlingologyEIS — Rotax iS Engine Analytics
 
-**Version 1.0.1** — check yours with `slingology-eis --version`.
+**Version 1.0.2** — check yours with `slingology-eis --version`.
 
 Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines
 (912iS, 915iS, 916iS), built for how these engines actually work rather than retrofitted
 from the mixture-management assumptions behind tools like Savvy Aviation and FlySto. It reads
-Garmin EIS logs (G3X, Garmin Pilot exports and Garmin AXIS) and tells you two things about every
+Garmin EIS logs (G3X, Garmin Pilot exports, and the Garmin AXIS's SD-card log and aircraft log) and tells you two things about every
 flight: did anything go outside the Rotax Operators Manual limits, and is this flight different from how *your* engine usually
 behaves. The rules come from Rotax; the expectations come from your own flight history; you decide
 what to accept.
@@ -13,15 +13,19 @@ what to accept.
 It runs in two ways over the same engine, and either way your logs stay in your own folders —
 read where they are, never copied or uploaded:
 
-- **In your browser**, from the hosted site — nothing to install. The analysis runs inside the
+- **In your browser**, from https://alchemygeek.github.io/Rotax9iSEIS/app/ — nothing to install. The analysis runs inside the
   browser (Python under Pyodide, in a Web Worker) and your workspace lives in the browser's own
   storage.
 - **As a local server on your own computer** — `pip install`, then `slingology-eis serve`, then
   open it in a browser. Nothing listens on the network.
 
-**Status:** 1.0.1 adds the in-browser mode, the pilot documentation site and the Slingology
-visual identity to the 1.0.0 web UI. Validated on one aircraft: N117ZS, a Sling TSi with a Rotax
-916iS, 58 flights from a set of 120 logs (Garmin G3X, and Garmin AXIS since October 2026). Engine
+**Status:** 1.0.2 reads the Garmin AXIS's second log — the aircraft log Garmin Pilot uploads to
+flyGarmin — and merges it with the SD-card log of the same flight; the flight chart shows full
+detail when zoomed and marks where an event reached its worst value; the app has a light theme
+and a feedback link. 1.0.1 added the in-browser mode, offline use, the pilot documentation site
+and the Slingology visual identity to the 1.0.0 web UI. Validated on one aircraft: N117ZS, a
+Sling TSi with a Rotax 916iS, 61 flights from a set of 124 logs (Garmin G3X, and since October
+2026 the Garmin AXIS). Engine
 profiles for the 912iS, 915iS and 916iS are verified against their Operators Manuals. Analytics
 topics validated on the 916iS are marked *unverified* on the other engines until data from such
 an aircraft exists.
@@ -31,23 +35,42 @@ concept by concept, with walkthroughs. This README covers getting the app runnin
 topic card explains what that topic measures. See [CHANGELOG.md](CHANGELOG.md) for what each
 release contains and [BACKLOG.md](BACKLOG.md) for what's next.
 
+**Bugs and feature requests:** https://feedback.slingology.synology.me/ — no GitHub account
+needed. The speech-bubble icon in the app's top bar opens it; quote the *This build* line from
+Settings → App → About in a bug report.
+
 ---
 
 ## What you need
 
-Engine log files in CSV format, from any of three Garmin export paths: G3X copied from the SD
-card (`log_YYYYMMDD_HHMMSS_ICAO.csv`), a Garmin Pilot export (any name ending in `.csv`), or a
-Garmin AXIS export. The format is detected from the file, and a workspace can mix them. Keep
-them in a folder of your own; the app reads from it and never changes it.
+Engine log files in CSV format, in any of four Garmin formats:
+
+| Shown as | What it is |
+|---|---|
+| *G3X* | A G3X log copied from the SD card (`log_YYYYMMDD_HHMMSS_ICAO.csv`) |
+| *Garmin Pilot* | Garmin Pilot's export of a G3X log (any name ending in `.csv`) |
+| *AXIS card* | A Garmin AXIS log copied from its SD card |
+| *Aircraft log* | The log the AXIS hands to Garmin Pilot, downloaded from flyGarmin as `aircraft-log-<IDENT>-<UTC start>.csv`. The tail number is read from this file name, so keep it |
+
+The format is detected from the file, and a workspace can mix them. The same flight in two
+formats is one flight: a G3X log and its Garmin Pilot export collapse to the more complete file;
+an AXIS card log and the aircraft log of the same flight are both kept and the aircraft log is
+analysed (it always covers the whole power-up, with the engine start, a reliable clock and the
+throttle position). Keep the logs in a folder of your own; the app reads from it and never
+changes it.
+
+No logs of your own yet? The [sample workspace](https://github.com/AlchemyGeek/Rotax9iSEIS/releases/tag/sample-workspace)
+— 19 flights of N117ZS with its owner's filters — imports from Settings → App → *Import workspace…*.
 
 Tested on macOS Chrome and macOS Safari. (The local server also works from iPad Safari; the
 in-browser mode on iPad is not a current target.)
 
 ## Running it in your browser
 
-Open the hosted site. The first visit downloads the engine (a few tens of megabytes: the
-Pyodide runtime, numpy, pandas and SlingologyEIS); after that it opens in a few seconds. It
-still needs the network to load — working fully offline is on the backlog.
+Open https://alchemygeek.github.io/Rotax9iSEIS/app/. The first visit downloads the engine (about
+30 MB: the Pyodide runtime, numpy, pandas and SlingologyEIS) and keeps it; after that the app
+opens in a few seconds and works with no network. When a new version is published, the next
+visit with a network switches to it and says *Updated to version …* once.
 
 - **Your workspace is in this browser.** It is kept in the browser's origin private file system
   and survives reloads and restarts. Settings → App → *Storage* shows the space used, whether the
@@ -65,8 +88,11 @@ still needs the network to load — working fully offline is on the backlog.
 
 Python 3.10 or later.
 
+Download the `slingology_eis-….whl` file from the latest
+[release](https://github.com/AlchemyGeek/Rotax9iSEIS/releases), then:
+
 ```bash
-pip install slingology-eis
+pip install slingology_eis-*.whl
 slingology-eis serve
 ```
 
@@ -101,11 +127,13 @@ build`, Node.js 20 or later) before `serve` — see *For developers*.
    that are not flights (a ground run, a flight shorter than 10 minutes, a log with a gap in it)
    are listed under *Skipped* with the reason, and can be included; a file the app can't read is
    listed as *Unreadable* with the reason.
-4. **Read.** Each flight has a timeline chart, an events table (Operators Manual limits and CAS
+4. **Read.** Each flight has a timeline chart (zoom to ten minutes or less for every reading; a
+   selected limit event is marked where it started and where it reached its worst value), an events table (Operators Manual limits and CAS
    alerts), and a card per analytics topic. **Trends** shows whether anything about your engine is
    changing against your own history. **Journal** lists every decision you've made in the
    workspace — a filter, a rule edit, an excluded flight, a pinned reference, a note. **Settings**
-   shows the engine's limits, the reference and model parameters, and app preferences.
+   shows the engine's limits, the reference and model parameters, and app preferences (units,
+   light or dark theme, and the build you are running).
 
 Your reference (what's normal for this engine) is learned only from this workspace's flights, so
 the first ten or so flights report *still building* on the baseline comparisons. Nothing learned
@@ -135,7 +163,8 @@ file as is and gets a new workspace with your flights and decisions.
 The browser mode is a static site: `npm run build:browser` in `web/` emits one folder —
 `index.html`, the UI, `runtime.json`, the pinned Pyodide files and the engine wheel — that any
 static web server can serve over HTTPS (GitHub Pages included; nothing depends on special
-response headers). A one-command self-hosting option for the server mode (Docker, Synology) is
+response headers). [docs/hosting.md](docs/hosting.md) describes how the project's own copy is
+published beside the documentation and how a release is tagged. A one-command self-hosting option for the server mode (Docker, Synology) is
 on the backlog.
 
 ---
@@ -180,7 +209,7 @@ a not-yet-implemented command.
 | `rules check FILE` / `rules try FILE --flight LOG` | Validate a rules file; diff the insights it would produce for one flight. |
 | `workspace list` / `workspace create NAME [--tail-number N]` | Manage registered workspaces. |
 | `data-location [set PATH]` | Show where workspaces are kept and how that was decided, or move them. |
-| `export-workspace [--include-logs] [--anonymise] [--out DIR]` | Export a workspace to share: its settings and decisions, optionally with its logs (a zip the recipient unzips). |
+| `export-workspace [--include-logs] [--anonymise] [--out DIR]` | Export a workspace to share: its settings and decisions, optionally with its logs in one zip. |
 | `import-workspace PATH [--name N] [--logs FOLDER] [--yes]` | Import an export as a new workspace, match its flights to the logs, and analyse after confirming. |
 
 ```bash
@@ -300,8 +329,9 @@ weather band; `06_phase_regression.py` is the snapshot tool above. The `notebook
 
 ## Research paper
 
-`docs/ROTAX 91XiS Engine Data Analytics.md` (Edition 0.3) records the analytical methodology,
-findings, open questions and design decisions behind the toolkit.
+`docs/ROTAX 91XiS Engine Data Analytics.md` (Edition 0.4) records the analytical methodology,
+findings, open questions and design decisions behind the toolkit. It is also published on the
+documentation site: https://alchemygeek.github.io/Rotax9iSEIS/reference/research-paper/
 
 ---
 

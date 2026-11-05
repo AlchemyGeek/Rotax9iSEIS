@@ -6,7 +6,18 @@
 
 ## Logs
 
-Your Garmin avionics record an engine log every time the system is powered up. The app reads three forms of it: a **G3X** log copied straight from the SD card (named like `log_20261005_172050_KAWO.csv`), a **Garmin Pilot** export of the same data (usually a long random file name), and a Garmin **AXIS** export. You do not need to tell the app which is which; it recognises the format from the file. A workspace can mix all three, and if you later swap a G3X for an AXIS, your engine-hours history carries straight on, because both record the same engine meter.
+Your Garmin avionics record an engine log every time the system is powered up. The app reads four forms of it, and the Flights page names each in its *Source* column:
+
+| Source | Where it comes from |
+|---|---|
+| **G3X** | A G3X log copied straight from the SD card, named like `log_20261005_172050_KAWO.csv`. |
+| **Garmin Pilot** | Garmin Pilot's export of a G3X log — usually a long random file name. |
+| **AXIS card** | A Garmin AXIS log copied from its SD card. |
+| **Aircraft log** | The log the AXIS hands to Garmin Pilot, which uploads it to flyGarmin; downloaded from there as `aircraft-log-<tail number>-<date and time>.csv`. |
+
+You do not need to tell the app which is which; it recognises the format from the file. A workspace can mix all four, and if you swap a G3X for an AXIS, your engine-hours history carries straight on, because both record the same engine meter.
+
+Two things worth knowing about the aircraft log. It is the most complete of the AXIS's two records — it always starts when the avionics power up, so it holds the engine start and shutdown, and it carries the most reliable clock and the throttle position. And it carries no tail number inside the file: the app reads the tail number from the file name, so keep the name flyGarmin gives it. A renamed aircraft log still loads, but the app will ask which aircraft it belongs to.
 
 The app never copies, moves, renames or edits a log. It reads the file, remembers what it found, and keeps a fingerprint of the content so that if you rename or reorganise your folders later, **Sync** recognises the same log in its new place.
 
@@ -26,7 +37,10 @@ Not every log is a flight. The avionics log an engine run with the aircraft neve
 | **Corrupt log** | A gap of more than five minutes inside one log, usually an avionics restart or an SD-card hiccup. |
 | **Unreadable** | Not a Garmin engine log the app can read, or a file it could not analyse. The reason is shown; other logs are unaffected. |
 
-Two export paths for the same flight — the SD card copy and a Garmin Pilot export — are recognised as one flight and shown once, using the more complete file.
+The same flight often reaches you twice, and the app recognises it as one flight and shows it once:
+
+- **A G3X log and its Garmin Pilot export** are the same data; the app uses the more complete file.
+- **An AXIS card log and the aircraft log of the same flight** are two different recordings; the app keeps both and analyses the aircraft log. The *Source* column shows the analysed one first and the other as *also: AXIS card*. It does not matter which arrives first: your notes and decisions stay attached to the flight when the second one turns up.
 
 If you think the app got one wrong, open it: a skipped log opens read-only in a **Log preview** with its chart and alerts, and **Include this log** overrides the decision and analyses it. Nothing is ever deleted.
 

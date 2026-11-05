@@ -1,7 +1,7 @@
 # SlingologyEIS — Backlog
 
-Last updated: October 19, 2026 (the 1.0.1 merge of `pyodide` into `main`)
-Toolkit version: 1.0.1 · Research paper: Edition 0.3
+Last updated: November 5, 2026 (1.0.2: the Garmin Pilot aircraft log)
+Toolkit version: 1.0.2 · Research paper: Edition 0.4 (draft for review)
 
 Open work, organised by the spec or area that owns it. Everything completed is in
 [CHANGELOG.md](CHANGELOG.md); this file no longer carries struck-through history.
@@ -13,14 +13,13 @@ program is decided when the current screen reviews finish (see §2).
 
 ## 1. Platform and hosting
 
-### P1. Browser mode — offline and polish (Spec 04 step 6)
+### P1. Browser mode — what's left after step 6
 **Type:** code · **Owner:** Spec 04 §9.5, Q10
-Shipped in 1.0.1: the app runs in the browser from a static site with a self-hosted runtime.
-Left from the plan: the service worker that precaches the runtime and wheel so a visited site
-opens and analyses with no network (closes Spec 04 S5); wire the persistent-storage request and
-the eviction notice fully; a support checklist (which browsers, what storage means); Pyodide interpreter snapshots to cut the warm
-start below "a few seconds" once the API is stable on Safari (D13); iPad as a target (deferred —
-folder access and storage on iPad still to be assessed).
+Shipped in 1.0.1: the static site, the self-hosted runtime, offline use (service worker with a
+versioned cache and a one-time update notice) and the support checklist. Left: Pyodide
+interpreter snapshots to cut the warm start below "a few seconds" once the API is stable on
+Safari (D13); iPad as a target (deferred — folder access and storage on iPad still to be
+assessed).
 
 ### P2. Easy self-hosting of the server mode
 **Type:** code · **Owner:** Spec 04 D7 (option D)
@@ -48,16 +47,18 @@ test setup or guard the call.
 
 ### P6. Documentation site — next steps
 **Type:** docs · **Owner:** Spec 13
-The first edition shipped in 1.0.1 (concept pages, walkthroughs, reference; MkDocs Material on
-GitHub Pages). Open: retake the screenshot batch after each UI change; the generated "what's new"
-page the Settings → Engine tab points at; a browser-mode walkthrough (Choose folder, Storage,
-reconnect on Safari); searchable/askable via an AI assistant, as Spec 13 first imagined.
+Live at https://alchemygeek.github.io/Rotax9iSEIS/ with the browser-first walkthrough, the
+research paper, a sample workspace (release `sample-workspace`) and header links to the app and
+the feedback board. Open: retake the screenshot batch after each UI change (last retaken for 1.0.2, in the
+browser mode on 61 flights); the generated
+"what's new" page the Settings → Engine tab points at; searchable/askable via an AI assistant, as
+Spec 13 first imagined.
 
-### P7. Feedback channel for non-technical users
-**Type:** infrastructure
-A way for pilots without a GitHub account to report bugs and suggest features. Chosen:
-self-hosted Fider on the Synology NAS (DDNS hostname, Gmail sign-in mail, DSM reverse proxy),
-doubling as the self-hosting testbed for P2. Paused until after this release.
+### P8. Try the app with the sample workspace in one click
+**Type:** code · **Owner:** Spec 03 (empty workspace)
+A *Try it with sample data* link on the empty-workspace screen that fetches the sample workspace
+and imports it. Needs the zip served from the Pages site beside the app (no cross-site fetch);
+until then the docs link to the release asset and the pilot imports it by hand.
 
 ---
 
@@ -264,14 +265,13 @@ handled. Needs a real pattern-work log to confirm before fixing.
 A log with an internal gap over 5 minutes is admitted as *corrupt log*; a mid-log POWERUP
 (the EIS restarting within one file) is not detected as such.
 
-### S4. AXIS: ENGINE ECU naming and power-up capture
-**Type:** research · **Owner:** Spec 01 Q9, Q10
-Two AXIS logs so far; neither carries an ECU alert and both start with the engine already
-running. Confirm on the first AXIS log with an engine start and lane check that AXIS names the
-alert `ENGINE ECU` (else the classifier is untested on AXIS) and that power-up is captured at all.
-The CAS alias table (Spec 01 v0.24) is where any other wording difference goes.
-Separately decide whether `onGroundState` should feed phase detection once the reference is
-AXIS-dominated — no change while G3X and AXIS flights share a reference.
+### S4. AXIS: `onGroundState` as a phase-detection input
+**Type:** research · **Owner:** Spec 01 Q10
+Resolved in 1.0.1–1.0.2: the AXIS names the alert `ENGINE ECU`, and power-up is captured — the
+aircraft log always, the SD-card log sometimes. Still open: `onGroundState` leaves the ground
+within 4–6 s of the detector's liftoff on every AXIS flight and looks like a reliable touchdown
+signal, which would close most of S1's landing-roll-while-taxiing gap. No phase-detection change
+while G3X and AXIS flights share a reference.
 
 ### S5. `log_summary()` on a log with no fuel-flow channel
 **Type:** code
@@ -289,13 +289,6 @@ real log has the channel; the synthetic test fixtures work around it.
 `cli.py` do (not byte-identical), kept as the characterization tests' independent oracle. Once
 the web UI has a release behind it: delete 01/02/04 or shrink 03/04 to plotting wrappers, and
 rework the characterization tests that run them live.
-
-### H2. Research paper — Edition 0.4
-**Type:** docs (on explicit instruction only)
-Edition 0.3 predates the web UI. Known corrections: §7's "four in-flight ENGINE ECU events" is
-superseded by the phase-based classifier's zero; the topic register (removed/Research topics,
-flight facts); the web UI, workspaces, filters, Trends change page and Journal; the AXIS source
-and its 1-second grid; 58 flights from 120 logs.
 
 ### H3. Community announcement
 **Type:** docs

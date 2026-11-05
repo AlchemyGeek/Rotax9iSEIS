@@ -13,13 +13,13 @@ On the Flights page, nearly every flight carries a *LIMIT* badge. Open one and t
 <figcaption>The insights column: a takeoff-RPM overshoot and a fuel-pressure excursion.</figcaption>
 </figure>
 
-A limit crossed once is worth a look. A limit crossed on 48 of 58 flights by about the same margin is a characteristic of this aircraft, and the question becomes: *do I understand it, and do I accept it?* In this case the fuel-pressure sender reads a few psi high, confirmed against a gauge at the annual. That is a reason — and the app wants the reason written down.
+A limit crossed once is worth a look. A limit crossed on 50 of 61 flights by about the same margin is a characteristic of this aircraft, and the question becomes: *do I understand it, and do I accept it?* In this case the fuel-pressure sender reads a few psi high, confirmed against a gauge at the annual. That is a reason — and the app wants the reason written down.
 
 ## 2. Open the filter editor
 
 Click **Filter this limit…** on the insight (or on the event's row in the Events table). The editor opens in place and starts by telling you what it knows:
 
-> *On the 48 of your flights that went past this limit, it typically went 3.3 psi past, at most 4.6 psi.*
+> *On the 50 of your flights that went past this limit, it typically went 3.3 psi past, at most 4.6 psi.*
 
 <figure class="screenshot" markdown>
 ![The filter editor with its three conditions and the note field](../img/filter-editor.png){ .screenshot }
@@ -40,7 +40,7 @@ Write the reason in **Why is this fine on your aircraft?** It appears in the Jou
 
 Click **Preview**. The app counts the effect across the whole workspace before anything changes:
 
-> *This would hide 175 events on 48 of 58 flights; no flight would show a breach.*
+> *This would hide 184 events on 50 of 61 flights; no flight would show a breach.*
 
 That last part is the check that the band is wide enough for the pattern you know, and no wider. Then **Apply to all flights** — and note the caption above it: *All flights in this workspace — this limit*. A filter is a statement about your aircraft, not about one flight.
 

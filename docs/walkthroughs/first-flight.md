@@ -21,7 +21,7 @@ Each insight offers the next step: *View evidence* jumps the chart to the moment
 
 ## The timeline: the flight as the engine saw it
 
-The chart plots a handful of channels — the **Overview** preset shows RPM, airspeed, oil temperature and EGT spread — each scaled to its own range so that shapes line up. Real values with units appear at the cursor. The coloured bands behind the traces are the **phases of flight**, and the caption below lists how long each lasted. Switch presets (*Cylinders*, *Thermal*, *Power*, *Fuel system*, *Electrical*) or add a channel to see something else; zoom with **−** and **+**.
+The chart plots a handful of channels — the **Overview** preset shows RPM, airspeed, oil temperature and EGT spread — each scaled to its own range so that shapes line up. Real values with units appear at the cursor. The coloured bands behind the traces are the **phases of flight**, and the caption below lists how long each lasted. Switch presets (*Cylinders*, *Thermal*, *Power*, *Fuel system*, *Electrical*) or add a channel to see something else; zoom with **−** and **+**. Across a whole flight each point on the chart summarises several seconds; zoom in to ten minutes or less and the chart redraws that stretch from every reading in the log, so the value at the cursor is the value the engine reported at that second.
 
 <figure class="screenshot" markdown>
 ![The timeline with phase bands](../img/flight-timeline-phases.png){ .screenshot }
@@ -32,6 +32,13 @@ The chart plots a handful of channels — the **Overview** preset shows RPM, air
 
 Below the chart, every Operators Manual limit crossed on this flight, and every unexpected engine-computer alert, as one row each: the time, the phase, which limit, how long, by how much. *Chart* jumps to the moment. A row is a fact about the flight; what to do about it is yours to decide.
 
+Two marks on the chart go with a limit event. The **triangle** is where it *started* — the first reading past the limit, the row's *Time* — so the reading there is close to the limit itself. The value the row reports, *worst 49.0 psi*, is the furthest the reading went during the event, which on a long event can be minutes later; selecting the event draws a **dashed line** at that moment, labelled with the value. An engine-computer alert has no value, so it has no worst line.
+
+<figure class="screenshot" markdown>
+![An event selected on the chart: the triangle at its start, a dashed line at its worst reading](../img/flight-event-worst.png){ .screenshot }
+<figcaption>A fuel-pressure event selected: it starts at the triangle and reaches its worst, 49.3 psi, at the dashed line.</figcaption>
+</figure>
+
 <figure class="screenshot" markdown>
 ![The Events table](../img/flight-events-table.png){ .screenshot }
 <figcaption>Two limits exceeded on this flight, listed with duration and excess.</figcaption>
@@ -41,7 +48,7 @@ Below the chart, every Operators Manual limit crossed on this flight, and every 
 
 Each topic the app watches has a card. Most are **collapsed to one line** — this flight's number, your usual, the manual's limit:
 
-> *Oil temperature peak · Peak 206°F. Your average: 200°F ± 12°F (47 flights). OM limit: 248°F.*
+> *Oil temperature peak · Peak 206°F. Your average: 200°F ± 12°F (49 flights). OM limit: 248°F.*
 
 Read across the line and you have the whole picture for that topic. A card expands only when it has something to add. The **?** on each card explains what the topic measures and what a change can point to.
 

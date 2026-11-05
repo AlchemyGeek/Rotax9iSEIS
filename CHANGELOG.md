@@ -15,6 +15,86 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
+## 1.0.2 — unreleased
+
+**The Garmin Pilot aircraft log.** The AXIS writes a second record of every power-up — the log it
+hands to Garmin Pilot, which uploads it to flyGarmin — and SlingologyEIS now reads it and merges
+it with the SD-card log of the same flight. Also: full chart detail when zoomed, an event's worst
+moment on the chart, a light theme, the build shown in Settings, and a feedback link.
+
+**Existing workspaces:** the engine version moves to 1.0.2, so the next Sync offers to re-analyse
+every stored flight. Say yes once. Of the 124 test logs only the aircraft log's result changes
+(it failed to load before); the 115 G3X logs and 8 AXIS SD-card logs analyse exactly as in
+1.0.1.
+
+### The aircraft log (Spec 01 v0.25–0.26, Spec 02 v0.20, Spec 03 v0.28)
+
+- **A fourth source format, *Aircraft log*.** Files downloaded from flyGarmin as
+  `aircraft-log-<IDENT>-<UTC start>.csv` are recognised from their header. The clock is the
+  file's UTC `timestamp` plus its constant UTC offset, rounded to the second (`localDate` and
+  `localTime` are never used); engine hours come from the header's `tach1Out` and the
+  end-of-flight hours from `tach1In`; `trueTrack` maps to track; `engine1ThrottlePosition` becomes
+  a new channel, *throttle*. The file has no tail number, so the ident is read from the file
+  name — a renamed file loads with an empty ident and the mixed-aircraft notice asks.
+- **One flight, two records.** An AXIS SD-card log and the aircraft log of the same flight merge
+  into one flight with two imports, whether they arrive in the same Sync, in different ones, or
+  by upload — matched exactly or, when the SD-card log starts after the engine is running, by
+  overlap. The aircraft log is analysed (it always covers the whole power-up, with the engine
+  start and shutdown), and the merged flight keeps the id it was first filed under, so notes,
+  filters and Journal entries stay attached. Two overlapping files of the same format are still
+  resolved as before, keeping the more complete one.
+- **Labels.** The Source column, Log preview, Log channels and the Journal name the four formats
+  *G3X*, *Garmin Pilot*, *AXIS card* and *Aircraft log*; a merged flight's row shows the analysed
+  file first and the other as *also: AXIS card*. The drop zone names the aircraft log.
+- **ENGINE ECU classification on AXIS.** An SD-card log may open at boot (with the engine start)
+  or with the engine already running; both are handled without a diagnostic, and the aircraft
+  log's boot and cranking runs classify as ground start.
+- **Anonymised exports** rename an aircraft log to `aircraft-log-ANON-n-<UTC start>.csv`.
+
+### Log channels (Spec 14 v0.18)
+
+- A channel assignment may name one **Ignore value** — a number the input sends while its sensor
+  isn't reporting (the AXIS analog inputs read 254 for the first seconds after boot). Readings
+  with that value are treated as missing under the assigned name; the raw channel keeps them.
+  The Journal entry states it.
+
+### Flight chart (Spec 07 v0.3)
+
+- **Detail on zoom.** Zoomed to ten minutes or less, the chart fetches the visible stretch at full
+  resolution and draws it in place of the whole-flight envelope, so the reading at the cursor is
+  the log's own. `get_flight_series` takes optional `start_s`/`end_s`.
+- **An event's worst moment.** The triangle still marks where a limit event started; selecting
+  the event now adds a dashed line where it reached the value it reports, labelled
+  *worst 49.0 psi*. Found from the log, not stored — no analysis change.
+- Fixed: zooming out after opening an event no longer jumps back to the event's window.
+
+### App (Spec 15 v0.6–v0.8)
+
+- **Light theme.** A dark/light setting (dark by default) with a sun/moon toggle in the top bar;
+  every colour, chart palette and severity colour has a light value checked for contrast.
+- **Top bar:** *Feedback* (opens https://feedback.slingology.synology.me/ in a new tab) and *Docs*
+  on the left of a divider, theme and Settings on the right; the mark is larger.
+- **Settings → App → About:** *This build* — version, build commit and date, *· modified* for a
+  build from uncommitted changes — and *Report a bug or request a feature*. The offline-cache
+  update notice names the same build.
+- **Offline updates:** a new release that the browser had already begun installing when the page
+  loaded is now taken up at once, instead of waiting for every tab of the site to close.
+- Flights: the date and folder groups share one set of column widths; long file names are cut
+  with an ellipsis, whole on hover.
+
+### CLI
+
+- `slingology-eis flights` lists a flight exported twice (SD card and Garmin Pilot) once, says
+  *N duplicate exports merged*, and lists the merged copies with `--show-excluded`. Listing only.
+
+### Documentation
+
+- The pilot documentation site gains the research paper (Edition 0.4), a sample workspace
+  (release `sample-workspace`), header links to the app and the feedback board, and pages updated
+  for the browser-first app and the four log formats.
+
+---
+
 ## 1.0.1 — October 19, 2026
 
 **The in-browser release.** The merge of the `pyodide` branch into `main`. SlingologyEIS now

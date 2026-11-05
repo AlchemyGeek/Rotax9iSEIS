@@ -23,7 +23,7 @@ Everything you can change, where it lives, its shipped default, and what changin
 | **Engine profile** | chosen at workspace creation | workspace | Which Operators Manual the limits come from. Cannot be changed afterwards; make a new workspace. |
 | **OM limits** | per engine | read-only | The full table; see [Operators Manual limits by engine](om-limits.md). The *Suppression* column says when a limit is checked — only in some flight phases, or only once it has been exceeded for a set time — so expected moments such as takeoff power are not reported as exceedances. |
 | **Engine overrides** | none | read-only | *None* means every limit is the Operators Manual value shown; nothing has been changed for this aircraft. |
-| **Log channels** | not assigned | workspace | What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name. Assigning one (for example *CO ppm*) is recorded in the Journal and triggers re-analysis. |
+| **Log channels** | not assigned | workspace | What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name. Assigning one (for example *CO ppm*) is recorded in the Journal and triggers re-analysis. An optional **Ignore value** marks one number the input sends when its sensor isn't reporting — the AXIS analog inputs read 254 for the first seconds after power-up — so it is treated as no reading rather than as a real one. |
 
 ## Topic card → Edit rules…
 
@@ -40,6 +40,8 @@ Triggers that follow an Operators Manual limit are shown as such and have no num
 
 ## Settings → App
 
+The **sun / moon** button in the top bar switches between the dark theme (the default) and the light one; the choice is remembered. It changes display only.
+
 | Setting | Default | Scope | What it does |
 |---|---|---|---|
 | **Units** | Imperial | app | °F / psi / inHg / gal, or °C / bar / hPa / L. Changes display only. |
@@ -47,6 +49,7 @@ Triggers that follow an Operators Manual limit are shown as such and have no num
 | **Share a workspace** — Include logs / Anonymise logs | on / off | — | See [Sharing a workspace](../concepts/sharing-a-workspace.md). |
 | **Storage** | — | app | Shown when the app runs in your browser. Space used by each workspace; whether the browser has agreed to keep the data (if not, *export a copy to be safe*); **Export all workspaces…**; **Delete all data** on this device. Logs are never stored here. |
 | **Data location** | `~/SlingologyEIS` | app | Shown instead of *Storage* when the app runs as a program on your computer. Where workspaces, their results and app settings are kept. Log folders stay where they are. *Change…* moves the data or adopts data already there. |
+| **About** | — | app | *This build* — the version, build and date of the app you are running; quote it in a bug report. *Report a bug or request a feature* opens the [feedback board](https://feedback.slingology.synology.me/) in a new tab. |
 | **Chart presets** | six shipped | app | The channel sets offered above the Flight view chart. Make your own from the chart's *Save as preset…*; rename, reorder, duplicate or delete here. |
 
 ## Journal

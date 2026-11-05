@@ -25,7 +25,7 @@ A reading past a limit for a single second is not an event. Three rules keep the
 
 **Nearby excursions are one event.** Once a reading has gone past a limit, the event does not end until the reading has been back inside for 30 s. A value that bounces across the line for two minutes is one two-minute event, not forty tiny ones.
 
-What remains is listed in the **Events** table: time, phase, which limit, duration, how far past, and a link that jumps the chart to that moment. Each limit appears at most once per flight.
+What remains is listed in the **Events** table: time, phase, which limit, duration, how far past, and a link that jumps the chart to that moment — a triangle where the event started and a dashed line where it reached its worst value. Each limit appears at most once per flight.
 
 <figure class="screenshot" markdown>
 ![The Events table on a Flight view with two limit events](../img/flight-events-table.png){ .screenshot }

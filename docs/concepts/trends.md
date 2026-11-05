@@ -17,7 +17,7 @@ A single unusual flight can be weather, a long taxi, a short hop. A metric that 
 
 The top of the page is a plain-language list, one row per metric that has moved, ranked by how far it moved:
 
-> **Cylinder balance · cylinder 4** — cylinder 4 is about 5.4 °F running hotter than it used to (relative to the other cylinders) — last 12 flights (10.3 h) vs. 46 earlier flights — *and the rate of change has shifted*
+> **Cylinder balance · cylinder 4** — cylinder 4 is about 6.1 °F running hotter than it used to (relative to the other cylinders) — last 11 flights (10.6 h) vs. 50 earlier flights — *and the rate of change has shifted*
 
 Each row names the area and metric, states the change in the metric's own units and direction, says which flights were compared, and adds qualifiers where they apply: the rate of change has shifted (a *bend* — the metric was drifting slowly and now drifts faster, or has started to); the recent average is *within 25 % of the OM limit*; it has reached *the edge of your filter band*; or, for a pinned reference, *since <your label>*. There are no severity colours here; the ranking is the message.
 

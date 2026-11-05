@@ -36,7 +36,7 @@ The *Cylinder balance* panel combines everything:
 - **Usual hottest** in the header — *Cyl 4 (100 %, 57 flights, learned)* — once one cylinder has won at least 70 % of ten or more flights by a clear margin. Until then the engine's expected cylinder is shown as a prior.
 - **The spread strip** below, with the OM limit drawn on it.
 
-In the change summary at the top of Trends, the four deviations collapse to a single row naming the cylinder that moved most — *cylinder 4 is about 5 °F running hotter than it used to (relative to the other cylinders)* — and the spread ranks separately.
+In the change summary at the top of Trends, the four deviations collapse to a single row naming the cylinder that moved most — *cylinder 4 is about 6 °F running hotter than it used to (relative to the other cylinders)* — and the spread ranks separately.
 
 <figure class="screenshot" markdown>
 ![The Cylinder balance panel on the Trends page](../img/trends-cylinder-balance.png){ .screenshot }

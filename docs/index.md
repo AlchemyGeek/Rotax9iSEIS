@@ -50,7 +50,7 @@ The limits come from Rotax. The idea of "usual" comes from your own flight histo
 
 ## Found a problem? Have an idea?
 
-Tell us on the **[SlingologyEIS feedback board](https://feedback.slingology.synology.me/)** — no GitHub account needed. Report something that looks wrong, suggest a feature, or vote for the ideas other pilots have posted; the votes help decide what gets built next. When reporting a problem, say which page you were on, what you expected, what you saw and which browser you use; a screenshot helps. If the problem is in the analysis of a flight, a [workspace export](walkthroughs/export-import.md) lets it be seen exactly as you see it — say in the report that you can share one.
+Tell us on the **[SlingologyEIS feedback board](https://feedback.slingology.synology.me/)** — no GitHub account needed. In the app, the speech-bubble icon in the top bar opens it from any page. Report something that looks wrong, suggest a feature, or vote for the ideas other pilots have posted; the votes help decide what gets built next. When reporting a problem, say which page you were on, what you expected, what you saw and which browser you use, plus the *This build* line from *Settings → App → About*; a screenshot helps. If the problem is in the analysis of a flight, a [workspace export](walkthroughs/export-import.md) lets it be seen exactly as you see it — say in the report that you can share one.
 
 ## What this app is, and isn't
 
@@ -62,7 +62,7 @@ Rotax **912iS**, **915iS** and **916iS**. The Operators Manual limits for all th
 
 ## Which logs
 
-Garmin **G3X** logs copied from the SD card, **Garmin Pilot** exports, and Garmin **AXIS** exports. The app recognises the format from the file itself, and a workspace can mix them.
+Four kinds of Garmin engine log: a **G3X** log copied from the SD card, a **Garmin Pilot** export of a G3X log, a Garmin **AXIS** log copied from its SD card, and the **aircraft log** the AXIS hands to Garmin Pilot, downloaded from flyGarmin. The app recognises the format from the file itself, a workspace can mix them, and the same flight found in two of them is shown once. [More on logs](concepts/logs-flights-workspaces.md#logs).
 
 ---
 

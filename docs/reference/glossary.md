@@ -1,5 +1,7 @@
 # Glossary
 
+**Aircraft log** — The log a Garmin AXIS hands to Garmin Pilot, downloaded from flyGarmin as `aircraft-log-<tail number>-<date and time>.csv`. Always covers the whole power-up. When the same flight's AXIS card log is also present, the app keeps both and analyses this one.
+
 **Analysis line** — The first line of every topic card: this flight's number, your usual, and the Operators Manual limit. Always present; never a judgement.
 
 **Blip** — An engine-computer alert shorter than three seconds. Counted, never an event.
@@ -42,7 +44,7 @@
 
 **Limit** — An Operators Manual operating limit for your engine model.
 
-**Log** — A file your Garmin avionics wrote during one power-up: G3X, Garmin Pilot export or AXIS.
+**Log** — A file your Garmin avionics wrote during one power-up: a G3X log, its Garmin Pilot export, an AXIS card log or an aircraft log.
 
 **n_min** — How many other flights the reference needs before a comparison is made. Default 10.
 

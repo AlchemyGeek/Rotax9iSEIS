@@ -32,7 +32,7 @@ The limits the app checks come from the Operators Manual for each engine model; 
 
 ## Reporting a problem or suggesting a feature
 
-The [feedback board](https://feedback.slingology.synology.me/) is where bugs are reported and features are suggested and voted on. It needs no GitHub account. For a problem with the analysis of a flight, the most useful thing you can offer is a [workspace export](../concepts/sharing-a-workspace.md) — anonymised if you prefer.
+The [feedback board](https://feedback.slingology.synology.me/) is where bugs are reported and features are suggested and voted on. It needs no GitHub account, and the app opens it from the speech-bubble icon in its top bar or from *Settings → App → About*, beside the build line worth quoting in a report. For a problem with the analysis of a flight, the most useful thing you can offer is a [workspace export](../concepts/sharing-a-workspace.md) — anonymised if you prefer.
 
 ## Asking an assistant
 
