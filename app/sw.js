@@ -1,11 +1,11 @@
 self.__EIS_MANIFEST = {
- "release": "7801711e5996f518",
- "version": "1.0.1",
- "commit": "9026517",
+ "release": "8048227f79696ecc",
+ "version": "1.0.2",
+ "commit": "ae497a6",
  "files": {
   "Silingology-EIS-logo.png": "1b55c3a3c38dab6c",
   "SlingologyEIS_logo_transparent.png": "664ebca64925799c",
-  "assets/browserClient-DB-vbU7M.js": "320326337fe3e305",
+  "assets/browserClient-DDo1rOHH.js": "465e11aa85b27a53",
   "assets/engine.worker-DH7J8_d6.js": "9ce92d315e46323f",
   "assets/ibm-plex-mono-latin-400-normal-Dm_PoFIZ.woff2": "3c5a451f9ec27a35",
   "assets/ibm-plex-mono-latin-400-normal-O6-GRVqx.woff": "d3d6fff8a9eaa4bf",
@@ -21,17 +21,17 @@ self.__EIS_MANIFEST = {
   "assets/ibm-plex-sans-latin-600-normal-CuJfVYMP.woff2": "8960851d691c054e",
   "assets/ibm-plex-sans-latin-700-normal-Bth3BMcD.woff": "973b42f17d4dbb83",
   "assets/ibm-plex-sans-latin-700-normal-Bxkt5Cjx.woff2": "42e7b0c143c19df9",
-  "assets/index-BKY_eal7.js": "5dfb565f2f5ccbb5",
   "assets/index-CzmXDInl.css": "d9b2aaaa1d92bc2f",
+  "assets/index-D_zDMqEd.js": "986b2210a0867087",
   "eis-mark.png": "458def2bf9afd4cd",
   "eis_icon_square.png": "2ab227ef14a1453e",
-  "engine/slingology_eis-1.0.1-py3-none-any.whl": "85962eb22c2cb16f",
+  "engine/slingology_eis-1.0.2-py3-none-any.whl": "8b1352563c51fcb4",
   "favicon-16.png": "0f9370e4b7acc27d",
   "favicon-180.png": "b0e59135daf5cef7",
   "favicon-32.png": "70d6375315536da2",
   "favicon-512.png": "a6a1b84026eef632",
   "icons.svg": "b45fa506195cfcde",
-  "index.html": "3b38cc28c4b1d664",
+  "index.html": "217b04b89212cc2e",
   "pyodide/MANIFEST.json": "96a8ea32e11f484b",
   "pyodide/numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl": "467a88e8c79f9e10",
   "pyodide/pandas-2.3.0-cp313-cp313-pyodide_2025_0_wasm32.whl": "921a819fd1d60b69",
@@ -43,7 +43,7 @@ self.__EIS_MANIFEST = {
   "pyodide/python_stdlib.zip": "1cc90fccf52e5145",
   "pyodide/pytz-2025.2-py2.py3-none-any.whl": "4a449e011aa4eacf",
   "pyodide/six-1.17.0-py2.py3-none-any.whl": "f213e36bbaae4640",
-  "runtime.json": "aded423d380ec74e"
+  "runtime.json": "21400c666de92a72"
  }
 };
 

@@ -1471,7 +1471,35 @@
 <p><strong>In brief.</strong> A <strong>log</strong> is a file your avionics wrote. A <strong>flight</strong> is a log the app has decided actually left the ground. A <strong>workspace</strong> is the app's view of one aircraft: the folders its logs live in, plus everything the app has learned and every decision you have made. Your logs stay where they are — the app only reads them — and you can have as many workspaces as you like, one active at a time. You meet all three on the <strong>Flights</strong> page.</p>
 </div>
 <h2 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h2>
-<p>Your Garmin avionics record an engine log every time the system is powered up. The app reads three forms of it: a <strong>G3X</strong> log copied straight from the SD card (named like <code>log_20261005_172050_KAWO.csv</code>), a <strong>Garmin Pilot</strong> export of the same data (usually a long random file name), and a Garmin <strong>AXIS</strong> export. You do not need to tell the app which is which; it recognises the format from the file. A workspace can mix all three, and if you later swap a G3X for an AXIS, your engine-hours history carries straight on, because both record the same engine meter.</p>
+<p>Your Garmin avionics record an engine log every time the system is powered up. The app reads four forms of it, and the Flights page names each in its <em>Source</em> column:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>G3X</strong></td>
+<td>A G3X log copied straight from the SD card, named like <code>log_20261005_172050_KAWO.csv</code>.</td>
+</tr>
+<tr>
+<td><strong>Garmin Pilot</strong></td>
+<td>Garmin Pilot's export of a G3X log — usually a long random file name.</td>
+</tr>
+<tr>
+<td><strong>AXIS card</strong></td>
+<td>A Garmin AXIS log copied from its SD card.</td>
+</tr>
+<tr>
+<td><strong>Aircraft log</strong></td>
+<td>The log the AXIS hands to Garmin Pilot, which uploads it to flyGarmin; downloaded from there as <code>aircraft-log-&lt;tail number&gt;-&lt;date and time&gt;.csv</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>You do not need to tell the app which is which; it recognises the format from the file. A workspace can mix all four, and if you swap a G3X for an AXIS, your engine-hours history carries straight on, because both record the same engine meter.</p>
+<p>Two things worth knowing about the aircraft log. It is the most complete of the AXIS's two records — it always starts when the avionics power up, so it holds the engine start and shutdown, and it carries the most reliable clock and the throttle position. And it carries no tail number inside the file: the app reads the tail number from the file name, so keep the name flyGarmin gives it. A renamed aircraft log still loads, but the app will ask which aircraft it belongs to.</p>
 <p>The app never copies, moves, renames or edits a log. It reads the file, remembers what it found, and keeps a fingerprint of the content so that if you rename or reorganise your folders later, <strong>Sync</strong> recognises the same log in its new place.</p>
 <figure class="screenshot">
 <p><img alt="A new, empty workspace inviting you to add a log folder" class="screenshot" src="../../img/workspace-empty.png" /></p>
@@ -1505,7 +1533,11 @@
 </tr>
 </tbody>
 </table>
-<p>Two export paths for the same flight — the SD card copy and a Garmin Pilot export — are recognised as one flight and shown once, using the more complete file.</p>
+<p>The same flight often reaches you twice, and the app recognises it as one flight and shows it once:</p>
+<ul>
+<li><strong>A G3X log and its Garmin Pilot export</strong> are the same data; the app uses the more complete file.</li>
+<li><strong>An AXIS card log and the aircraft log of the same flight</strong> are two different recordings; the app keeps both and analyses the aircraft log. The <em>Source</em> column shows the analysed one first and the other as <em>also: AXIS card</em>. It does not matter which arrives first: your notes and decisions stay attached to the flight when the second one turns up.</li>
+</ul>
 <p>If you think the app got one wrong, open it: a skipped log opens read-only in a <strong>Log preview</strong> with its chart and alerts, and <strong>Include this log</strong> overrides the decision and analyses it. Nothing is ever deleted.</p>
 <figure class="screenshot">
 <p><img alt="The Skipped panel listing logs that did not become flights, with reasons" class="screenshot" src="../../img/flights-skipped.png" /></p>

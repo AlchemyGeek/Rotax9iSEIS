@@ -1612,7 +1612,7 @@
 <td><strong>Log channels</strong></td>
 <td>not assigned</td>
 <td>workspace</td>
-<td>What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name. Assigning one (for example <em>CO ppm</em>) is recorded in the Journal and triggers re-analysis.</td>
+<td>What a general-purpose input carries depends on how your aircraft's EIS is configured, so the app never guesses — an unassigned channel stays viewable under its raw name. Assigning one (for example <em>CO ppm</em>) is recorded in the Journal and triggers re-analysis. An optional <strong>Ignore value</strong> marks one number the input sends when its sensor isn't reporting — the AXIS analog inputs read 254 for the first seconds after power-up — so it is treated as no reading rather than as a real one.</td>
 </tr>
 </tbody>
 </table>
@@ -1678,6 +1678,12 @@
 </thead>
 <tbody>
 <tr>
+<td><strong>Theme</strong></td>
+<td>Dark</td>
+<td>app</td>
+<td>Dark or light. Also the sun / moon button in the top bar. Changes display only.</td>
+</tr>
+<tr>
 <td><strong>Units</strong></td>
 <td>Imperial</td>
 <td>app</td>
@@ -1706,6 +1712,12 @@
 <td><code>~/SlingologyEIS</code></td>
 <td>app</td>
 <td>Shown instead of <em>Storage</em> when the app runs as a program on your computer. Where workspaces, their results and app settings are kept. Log folders stay where they are. <em>Change…</em> moves the data or adopts data already there.</td>
+</tr>
+<tr>
+<td><strong>About</strong></td>
+<td>—</td>
+<td>app</td>
+<td><em>This build</em> — the version, build and date of the app you are running; quote it in a bug report. <em>Report a bug or request a feature</em> opens the <a href="https://feedback.slingology.synology.me/">feedback board</a> in a new tab.</td>
 </tr>
 <tr>
 <td><strong>Chart presets</strong></td>
