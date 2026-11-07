@@ -1,7 +1,7 @@
 # Spec 06 — Research
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.3 — Session A (engine, studies, CLI) built on branch `research`; Session B (web) next. Decisions D1–D7 in §3 and Q1–Q8 in §16 taken in the Oct 30 – Nov 7 2026 discussion; Q9–Q10 resolved and the functional decisions of Session A recorded in v0.3 (§3.2, §16). Q11–Q13 (§16.1) are proposed revisions to acceptance items 1, 2 and 5, for the owner.
+**Status:** Draft v0.4 — Session A (engine, studies, CLI) built on branch `research`; Session B (web) in progress. Decisions D1–D7 in §3 and Q1–Q13 in §16 all closed; functional decisions of Session A recorded in §3.2.
 **Suggested repo path:** `docs/specs/06-research.md`
 **Builds on:** Spec 01 (§7 operations envelope, §8.7 series, §9 extension model, §10 privacy), Spec 02 (§5.3 workspace layout, §7 export/import), Spec 03 (principle 6: the Explore → operational path; §4 navigation shell), Spec 10 (§4 admission criteria, §8 lifecycle, §10 proposals; D2/D7 items parked as "Research"), Spec 12 (§13 deferred change-point detection), Spec 14 (§4, Q3)
 **Revises:** Spec 03 §4 and §5 (Research becomes a destination; new view), Spec 02 §5.3 and §7.1 (a `studies/` document set, carried by export), Spec 01 §7 (Research operations), Spec 14 Q3 (closes: Research is designed)
@@ -11,6 +11,7 @@
 
 | Version | Change |
 |---|---|
+| 0.4 | **Q11–Q13 decided by the owner** (Nov 7 2026): acceptance 1 is pinned to flights dated through 2026-10-28; acceptance 2 states the period the app measures, **3.8 s (IQR 3.5–4.1)**, with the write-up's 4.4 s kept in Appendix A as the investigation's own figure from a different count; acceptance 5 asserts the two clean high-DA takeoffs stand out on rpm swing, and §7.4's ranking improvements (count of descriptors standing out, combined robust distance, ranking within the study's channels) are recorded as v2 work the §14.1 scan depends on. The two expected failures become passing tests. `docs/research/` is exempted from the repo's per-flight-detail rule by the owner (CLAUDE.md). Session B scope unchanged. |
 | 0.3 | After Session A. Preset values **measured** over the acceptance set and recorded with the measurement (§5.2): full-power and governed-climb unchanged; stable cruise ≥ 300 s (was 120); idle confined to TAXI (was "on ground"); warm-up as a rule (rpm ≥ 1000, oil below the profile's takeoff minimum, within the ground phases, ≥ 60 s). §7.0 multipliers chosen (Q9): window 2.5 *P*, lag ±1.5 *P*, fallback 0.2 / 0.1 of the median slice duration. Q10: the small-group caution reuses `n_min` = 10. Functional decisions made in Session A recorded (§3.2). §11 lists the operations as built (adds `run_study`, `run_study_on_my_flights`, `get_research_progress`). Browser-mode build time measured (§5.5). Acceptance items 2 and 5 do not hold on the data as written; items 1's set needs pinning — proposed revisions Q11–Q13 (§16.1). |
 | 0.2 | Q1–Q8 resolved (§16). Preset values are **measured in Session A** and recorded here (§5.2). Studies cache **per-slice descriptors** as derived data keyed by fingerprint and engine version; samples are never cached (§5.5, §10.1). Spec 10's Research-status items become **named v2 studies** once the condition-dependence test exists (§14.6); v1 only points at them. Hand slices are v1 via the Flight view's current zoom (§5.4). A study imports **read-only** when none of its flights are present, with *Run this on my flights* (§10.2). Test windows are **proposed from the data** — two-pass: dominant period first, then window and lag range from it, duration-scaled fallback (§7.0). The investigation write-up moves to `docs/research/` (Appendix A). Branch `research` (§17). |
 | 0.1 | Initial draft. Research is the home of the third kind of analysis beside OM limits and trends: within-flight *signal shape* — what the oscillation investigation needed and neither existing lens could provide (§1). Seven decisions recorded (§3). Slice as the unit of analysis, condition rules with presets, four v1 tests, a fixed result contract, saved and shareable studies, API-first, nav placement with contextual entry points. Investigations (AI) and symptom detectors designed as future scope only (§14). |
@@ -21,7 +22,7 @@
 
 ## 1. Problem
 
-On 2026-10-24 the pilot of N117ZS felt a fore-aft surge in a calm-air climb after a touch-and-go. An investigation over 121 logs found that engine rpm under the Airmaster controller's Take-Off mode had been cycling ±90 rpm with a 4.4 s period, in lockstep with manifold pressure (±2.5 inHg), on **94 of 98 takeoffs since delivery** — 145 engine hours, unnoticed by a test pilot, a CFI and the owner. The mechanism was a limit cycle between the 916iS boost schedule and the electric governor; Airmaster recognised it from one email and a plot, and a firmware update followed. Appendix A summarises the case.
+On 2026-10-24 the pilot of N117ZS felt a fore-aft surge in a calm-air climb after a touch-and-go. An investigation over 121 logs found that engine rpm under the Airmaster controller's Take-Off mode had been cycling ±90 rpm with a period of about 4 s (3.8 s by the app's estimators; 4.4 s in the original write-up), in lockstep with manifold pressure (±2.5 inHg), on **94 of 98 takeoffs since delivery** — 145 engine hours, unnoticed by a test pilot, a CFI and the owner. The mechanism was a limit cycle between the 916iS boost schedule and the electric governor; Airmaster recognised it from one email and a plot, and a firmware update followed. Appendix A summarises the case.
 
 The app could not have found it, by construction:
 
@@ -199,7 +200,7 @@ No test carries a static window. Two passes:
 1. **Period first.** The dominant period and its prominence (§6) are estimated on the whole detrended slice — they need no window. The period search is bounded above by a fraction of the slice duration so a trend is never read as half a cycle, and below by the sampling floor (§5.6).
 2. **Derive from it.** When the slice set has a prominent median period *P*: peak-to-peak window ≈ 2–3 *P* (whole cycles, so it measures swing rather than noise); lag range ≈ ±1.5 *P*. When no prominent period exists (steady cruise, thermal channels): window = a fraction of the median slice duration, lag range likewise, both bounded below by the floors.
 
-Floors are fixed at the acceptance case's values — 12 s window, ±10 s lag — so that case reproduces exactly (4.4 s × 2.5 ≈ 11 s; ±1.5 × 4.4 ≈ ±7 s, both at or near the floors). The **resolved values are printed on every result card** as part of the Magnitude/Caveats (§8) and are overridable per study. Code chooses the exact multipliers within these bands and records them in this section.
+Floors are fixed at the acceptance case's values — 12 s window, ±10 s lag — so that case reproduces exactly (3.8 s × 2.5 ≈ 9.5 s; ±1.5 × 3.8 ≈ ±6 s, both below the floors, so the floors apply). The **resolved values are printed on every result card** as part of the Magnitude/Caveats (§8) and are overridable per study. Code chooses the exact multipliers within these bands and records them in this section.
 
 **Chosen (Q9, Session A).** Window = 2.5 *P*, lag range = ±1.5 *P*, both rounded to whole seconds and floored at 12 s / ±10 s. *P* is the median period over the set's slices with a prominent period, used when at least half the slices have one; otherwise window = 0.2 × and lag range = 0.1 × the median slice duration, with the same floors. The period search runs from 2 s up to a third of the slice; a period below 3 s is never counted prominent (§5.6); prominence is half the ACF's peak-to-trough height, prominent at ≥ 0.2 with the Lomb–Scargle peak within 20 %. On the acceptance case the windows resolve to the floors (12 s / ±10 s); on the stable-cruise set to 142 s / ±71 s. 2.5 *P* is the middle of the band — two whole cycles plus margin for the period's spread across slices; 1.5 *P* lets the lag search see a full half-cycle either side without folding onto the next cycle. The fractions keep the window well inside the shortest slices of a duration-scaled set. The resolved values and their basis (period, duration, or override) are in every result's block and caveats.
 
@@ -207,7 +208,7 @@ Floors are fixed at the acceptance case's values — 12 s window, ±10 s lag —
 
 - **Inputs:** slice set, one channel. Parameters: peak-to-peak window (proposed per §7.0), minimum prominence for a period to count.
 - **Method:** per slice, detrend; compute peak-to-peak, dominant period and prominence (§6). Summarise over the set: median and IQR of period and swing; the count of slices with a prominent period ("recurrence").
-- **Finding:** "RPM cycles every 4.4 s (IQR 4.1–4.8), swing 180 rpm (140–240), in 94 of 98 full-power slices."
+- **Finding:** "RPM cycles every 3.8 s (IQR 3.5–4.1), swing 180 rpm (170–190), in 93 of 98 full-power slices."
 - **Reference:** the OM limit for the channel if one exists (rpm 5,800 shown on the chart as headroom from the swing's top); the swing distribution across the set; user reference (e.g. "governing band ±100 rpm", typed in with its source).
 - **Caveats:** period floor from sampling (§5.6); per-source split.
 - **Acceptance case:** reproduces Appendix A's headline.
@@ -234,7 +235,7 @@ Floors are fixed at the acceptance case's values — 12 s window, ±10 s lag —
 - **Method:** compute the standard descriptor set per slice; robust-z each descriptor against the set; rank slices by their largest |z| and list the descriptor responsible. Cap the list.
 - **Finding:** "2 of 98 slices stand out: 2026-07-17 18:19 and 2026-07-23 18:12 — swing far below the rest (70–80 rpm vs 180) and MAP flat at 51.4 inHg."
 - **Caveats, stated on the card:** this finds *difference*, not *wrongness* — on the acceptance case the outliers are the two **clean** high-altitude takeoffs, because the oscillation was the norm. Scanning many descriptors guarantees some spurious hits; the list is ranked, capped, and never called a defect.
-- **Acceptance case:** ranks the KBIL/KHLN slices first.
+- **Acceptance case:** lists the KBIL/KHLN slices among those standing out, on rpm swing (Q12). As written they rank 19th and 22nd: with twelve channels, 51 of 98 slices stand out on *something*. **v2 (Q12):** rank by the number of descriptors standing out and their combined robust distance rather than a single largest |z|, and rank within the channels the study's other tests use — on the acceptance case the two clean takeoffs are odd in two dimensions (swing and MAP ceiling) and would then rank first. The §14.1 scan depends on this.
 
 ### 7.5 Catalogue for later versions (designed, not built)
 
@@ -364,11 +365,11 @@ Once the condition-dependence test (§7.5) exists, three studies ship as **examp
 
 ## 15. Acceptance criteria (tested against the project log set)
 
-1. The *Full-power segment* preset over all admitted N117ZS logs produces the Appendix A slice set: 98 slices (duplicates removed by fingerprint), with the two extended Phase-1 blocks included.
-2. Test 7.1 on rpm reports median period 4.4 s (IQR within 4.1–4.8) and median swing 180 rpm, with ≥ 90 of 98 slices showing a prominent period; the finding sentence carries the count.
+1. The *Full-power segment* preset over the admitted N117ZS flights dated through 2026-10-28 (the investigation's logs; later flights don't move these numbers) produces the Appendix A slice set: 98 slices (duplicates removed by fingerprint), with the two extended Phase-1 blocks included.
+2. Test 7.1 on rpm reports median period 3.8 s (IQR within 3.5–4.1) and median swing 180 rpm, with ≥ 90 of 98 slices showing a prominent period; the finding sentence carries the count.
 3. Test 7.2 rpm vs MAP reports median zero-lag correlation ≥ 0.85 on AXIS slices and ≤ 0.35 on G3X slices, stated per source with the damping caveat; fuel flow lag 1 s.
 4. Test 7.3 split by DA band shows the swing falling above 3,500 ft DA with the small-group caution on the 6,000 ft band.
-5. Test 7.4 ranks the 2026-07-17 18:19 and 2026-07-23 18:12 slices as the two most unusual.
+5. Test 7.4 lists the 2026-07-17 18:19 and 2026-07-23 18:12 slices among those standing out, on rpm swing, below the set's median.
 6. A study holding 1–5 is saved, exported as `.eisstudy`, deleted, re-imported, and reproduces the same results on the same logs; imported into a workspace lacking some logs, it reports them and runs on the rest.
 7. Every operation in §11 runs from the CLI with byte-identical JSON to the page (Spec 04 parity rule), in server and browser modes.
 8. The browser mode completes a full-workspace slice build on the 120-log set with progress shown; the measured time is recorded in the spec.
@@ -398,17 +399,17 @@ Resolved in v0.3 (Session A):
 | Q9 | Multipliers inside §7.0's bands | Window 2.5 *P*, lag ±1.5 *P*; fallback 0.2 / 0.1 × median slice duration; floors 12 s / ±10 s (§7.0). |
 | Q10 | Minimum group size for the small-n caution | `n_min` = 10, reused (§7.3). The data didn't argue otherwise: the DA groups are 92, 4 and 2. |
 
-### 16.1 Open — proposed revisions to §15, for the owner
+### 16.1 Resolved in v0.4 — revisions to §15
 
-| # | Question | What Session A found | Proposed |
+| # | Question | What Session A found | Decided (owner, Nov 7 2026) |
 |---|---|---|---|
-| Q11 | Acceptance 2: period 4.4 s (IQR 4.1–4.8) | Over the 98 slices the period is median 3.76 s (IQR 3.55–3.94) — by autocorrelation, by Lomb–Scargle, and by counting peaks in the raw 1 Hz rpm, on G3X and AXIS alike. Swing (180 rpm) and recurrence (93 of 98) hold. | Item 2: "median period 3.8 s (IQR within 3.5–4.1)"; §1 and §7.1's examples likewise; Appendix A notes that the write-up's 4.4 s came from a different estimator. Tested today as an expected failure, with the measured range guarded. |
-| Q12 | Acceptance 5: 7.4 ranks the two clean high-DA takeoffs first | Under §7.4 as written (twelve standard channels, robust z per descriptor within source, ranked by the largest \|z\|) they rank 19th and 22nd; 51 of 98 slices pass \|z\| ≥ 3.5, spread over coolant temperature, rpm, EGT, volts and fuel flow. With rpm, MAP and fuel flow only they rank 3rd and 4th, behind a slice with one sharp rpm step and one with a large MAP swing. Both are listed as standing out on rpm swing in every configuration. | Item 5: "lists the 2026-07-17 18:19 and 2026-07-23 18:12 slices among those standing out, on rpm swing". Or, if the ranking is what matters: rank by the number of descriptors beyond the threshold rather than the largest \|z\| — a method change to §7.4, which Session A did not make. |
-| Q13 | Acceptance 1: "all admitted logs" | The set grows: with the 2026-11-04 flight admitted, the rule gives 99. | Item 1: "over the flights dated through 2026-10-28 (the investigation's logs)"; the tests pin that set. |
+| Q11 | Acceptance 2: period 4.4 s (IQR 4.1–4.8) | Over the 98 slices the period is median 3.76 s (IQR 3.55–3.94) — by autocorrelation, by Lomb–Scargle, and by counting peaks in the raw 1 Hz rpm, on G3X and AXIS alike. Swing (180 rpm) and recurrence (93 of 98) hold. | **Accepted.** Item 2 reads 3.8 s (IQR within 3.5–4.1); §1 and §7.1 updated; Appendix A keeps 4.4 s as the write-up's figure with a note. The before/after firmware comparison uses the app's estimator on both sides, so the discrepancy doesn't affect it. |
+| Q12 | Acceptance 5: 7.4 ranks the two clean high-DA takeoffs first | Under §7.4 as written (twelve standard channels, robust z per descriptor within source, ranked by the largest \|z\|) they rank 19th and 22nd; 51 of 98 slices pass \|z\| ≥ 3.5, spread over coolant temperature, rpm, EGT, volts and fuel flow. With rpm, MAP and fuel flow only they rank 3rd and 4th, behind a slice with one sharp rpm step and one with a large MAP swing. Both are listed as standing out on rpm swing in every configuration. | **Reworded now, method change recorded as v2** (§7.4): count-based and combined-distance ranking, within the study's channels. Not worth reopening Session A; not to be forgotten — the §14.1 scan needs it. |
+| Q13 | Acceptance 1: "all admitted logs" | The set grows: with the 2026-11-04 flight admitted, the rule gives 99. | **Accepted.** Items 1–5 run over the flights dated through 2026-10-28; Appendix A's Data line carries the date. |
 
 ## 17. Implementation plan
 
-**Status (v0.3):** Session A done on `research` — acceptance 1, 3, 4, 6, 7, 9, 11, 12, 13 pass on the real logs (`tests/contract/test_research_acceptance.py`); 2 and 5 are expected failures pending Q11–Q12; the investigation write-up awaits the owner's file. Session B next.
+**Status (v0.4):** Session A done on `research` — acceptance 1–7, 9, 11, 12, 13 pass on the real logs (`tests/contract/test_research_acceptance.py`) after Q11–Q13. Session B in progress on the same branch.
 
 Two Claude Code sessions on branch **`research`** off `main` (merged back when both are done), prompts delivered separately.
 
@@ -421,8 +422,8 @@ Two Claude Code sessions on branch **`research`** off `main` (merged back when b
 
 Source: *N117ZS — Takeoff RPM/MAP Oscillation Investigation*, rev 3, 2026-10-29 — in the repo at `docs/research/2026-10-takeoff-rpm-oscillation.md` (Q8), with the Airmaster correspondence section and the scratch-script path removed; the analysis is reproducible with the full-power preset once Session A lands.
 
-- **Data:** 121 CSV logs, G3X (2026-04-08 → 10-05) and AXIS (2026-10-14 → 10-28); 98 distinct segments with rpm ≥ 5550 for ≥ 15 s.
-- **Headline:** 94 of 98 takeoffs oscillate; median swing 180 rpm (140–240), period 4.4 s (IQR 4.1–4.8); unchanged from 28 to 145 engine hours and across the two log sources.
+- **Data:** 121 CSV logs, G3X (2026-04-08 → 10-05) and AXIS (2026-10-14 → 10-28) — the admitted flights dated through 2026-10-28 (Q13); 98 distinct segments with rpm ≥ 5550 for ≥ 15 s.
+- **Headline:** 94 of 98 takeoffs oscillate; median swing 180 rpm (140–240), period 4.4 s (IQR 4.1–4.8) in the write-up's peak count — the app's estimators (autocorrelation, periodogram and peak counting on the detrended 1 Hz slices) give 3.8 s (IQR 3.5–4.1) and 93 of 98 (Q11); unchanged from 28 to 145 engine hours and across the two log sources.
 - **Coupling:** rpm–MAP zero-lag correlation 0.89–0.97 (AXIS), 0.1–0.3 (G3X, damped MAP channel); fuel flow lags 1 s.
 - **Conditions:** swing vs density altitude r = −0.50; < 3,000 ft DA 180 rpm (92 slices); 3,500–4,900 ft 125–140 rpm (3); 6,000–6,350 ft 70–80 rpm (2), with MAP flat at the 1,750 mbar boost-control ceiling. No dependence on OAT or turbulence.
 - **Mechanism:** limit cycle between the 916iS boost schedule (OM-916 Ch. 5 engine deck: 1484 → 1722 mbar between 5500 and 5800 rpm) and the electric governor's response; absent in Climb mode where the boost target is flat with rpm.

@@ -69,6 +69,9 @@ Rules for the data:
   fixtures, workspace caches, phase snapshots, per-run ECU lists), to this repo.
   They contain the tail number, times and airports. Aggregate counts in a commit
   message are fine; per-flight detail goes in the session report.
+  **One exception, granted by the owner (Nov 2026):** `docs/research/` holds the
+  owner's own investigation write-ups, which may carry per-flight tables for
+  N117ZS. Nothing else is exempt, and the exemption is the owner's to extend.
 - Treat `EIS-Test-Data` as read-only; the owner adds new flights to it.
 - The characterization goldens (`tests/characterization/golden/`, gitignored) are
   regenerated per `tests/characterization/README.md` only when new output is

@@ -7,11 +7,11 @@ through 2026-10-28 (Appendix A — the logs the investigation read; flights
 the owner adds later don't move these numbers). Nothing per-flight is
 asserted beyond what Spec 06 itself states.
 
-Two items disagree with the data and are written as strict expected
-failures stating what the data shows (session report, proposed revision):
-item 2's 4.4 s period (the 1 Hz logs give ~3.8 s by every estimator) and
-item 5's ranking (other slices rank above the two clean high-altitude
-takeoffs under §7.4's method as written).
+Items 1, 2 and 5 were revised in Spec 06 v0.4 (Q11–Q13) to what the
+data shows: the set is pinned to the investigation's date, the period is
+3.8 s (the 1 Hz logs give that by every estimator; the write-up's 4.4 s
+came from a different count), and the two clean high-altitude takeoffs
+are asserted to stand out on rpm swing rather than to rank first.
 """
 import base64
 import json
@@ -127,18 +127,10 @@ def test_2_cycling_swing_and_recurrence(results):
     assert f"in {sm['prominent']} of 98 slices" in r["finding"]
 
 
-@pytest.mark.xfail(strict=True, reason="Spec 06 §15 item 2 / Appendix A: 4.4 s (IQR 4.1–4.8). The 1 Hz logs give "
-                                       "a median of ~3.8 s (IQR ~3.6–3.9) by autocorrelation and by periodogram, "
-                                       "on G3X and AXIS alike — proposed revision in the Session A report.")
 def test_2_cycling_period_as_the_spec_states(results):
+    """Spec 06 §15 item 2 (v0.4, Q11): median 3.8 s, IQR within 3.5–4.1."""
     p25, p50, p75 = results["cycling"]["block"]["summary"]["period_s"]
-    assert round(p50, 1) == 4.4 and 4.1 <= p25 and p75 <= 4.8
-
-
-def test_2_cycling_period_is_stable(results):
-    """What the data gives (the guard until the spec's number is settled)."""
-    p25, p50, p75 = results["cycling"]["block"]["summary"]["period_s"]
-    assert 3.5 <= p25 <= p50 <= p75 <= 4.1
+    assert round(p50, 1) == 3.8 and 3.5 <= p25 <= p50 <= p75 <= 4.1
 
 
 # ── 3. 7.2 rpm vs MAP, fuel flow ───────────────────────────────────────────
@@ -165,20 +157,8 @@ def test_4_groups_by_density_altitude(results):
 
 # ── 5. 7.4 ─────────────────────────────────────────────────────────────────
 
-def _top(r, n):
-    return [row["start_time"][:16] for row in r["block"]["per_slice"][:n]]
-
-
-@pytest.mark.xfail(strict=True, reason="Spec 06 §15 item 5: under §7.4 as written (standard descriptors, robust z "
-                                       "within source, ranked by largest |z|) other slices — an EGT/MAP transient, an "
-                                       "rpm step — rank above the two clean high-DA takeoffs; proposed revision in "
-                                       "the Session A report.")
-def test_5_unusual_ranks_the_clean_takeoffs_first(results):
-    assert set(_top(results["unusual"], 2)) == {"2026-07-17 18:19", "2026-07-23 18:12"}
-
-
 def test_5_unusual_lists_the_clean_takeoffs(results):
-    """What holds today: both are listed as standing out, on rpm swing."""
+    """Spec 06 §15 item 5 (v0.4, Q12): both are listed among the slices standing out, on rpm swing."""
     rows = {row["start_time"][:16]: row for row in results["unusual"]["block"]["per_slice"]}
     for t in ("2026-07-17 18:19", "2026-07-23 18:12"):
         assert rows[t]["stands_out"] and rows[t]["descriptor"] == "rpm.swing" and rows[t]["value"] < rows[t]["set_median"]

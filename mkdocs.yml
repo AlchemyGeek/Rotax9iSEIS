@@ -61,9 +61,11 @@ plugins:
 extra_css:
   - stylesheets/extra.css
 
-# Specs are kept in docs/specs for developers but are not part of the site nav.
+# Specs are kept in docs/specs for developers, and docs/research holds the owner's
+# investigation write-ups; neither is part of the site nav.
 exclude_docs: |
   specs/
+  research/
   overrides/
   ROTAX 91XiS Engine Data Analytics.md
 
