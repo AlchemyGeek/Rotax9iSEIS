@@ -85,6 +85,7 @@ nav:
   - Deciding what matters:
       - Your decisions: concepts/your-decisions.md
       - "Trends: is my engine changing?": concepts/trends.md
+      - "Research: looking at the shape of a flight": concepts/research.md
       - The Journal: concepts/the-journal.md
   - Working with others:
       - Sharing a workspace: concepts/sharing-a-workspace.md
@@ -93,6 +94,7 @@ nav:
       - Reading your first flight: walkthroughs/first-flight.md
       - From an insight to a decision: walkthroughs/insight-to-decision.md
       - Export and import: walkthroughs/export-import.md
+      - Reproducing a takeoff investigation: walkthroughs/research-takeoff.md
   - Reference:
       - Operators Manual limits by engine: reference/om-limits.md
       - Settings and their defaults: reference/settings.md
