@@ -800,7 +800,8 @@ export interface ChangedSetting {
 // Spec 14 §6.1 — the kinds of decision the Journal register holds.
 export type JournalEntryKind =
   | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit" | "changed_setting"
-  | "exclusion" | "reference_pin" | "annotation";
+  | "exclusion" | "reference_pin" | "annotation"
+  | "study_finding"; // Spec 06 §10.3 — a Research finding noted in the Journal
 
 // Spec 14 §7.1 — the Flight view header's "Contributes to reference /
 // Excluded from reference (reason)" state, and an open "reference
@@ -1036,6 +1037,7 @@ export interface HostCapabilities {
     persistent_storage_status: boolean;
     download_url: boolean;
     folder_watching: boolean;
+    research?: boolean; // Spec 06 §11 — absent on a host older than Research
   };
 }
 
@@ -1339,4 +1341,228 @@ export interface FilterHealth {
 export interface CopyFiltersResult {
   copied: { filter: LimitFilter; valid: boolean; diagnostics: Diagnostic[] }[];
   skipped: { target: FilterTarget; reason: string }[];
+}
+
+// ── Spec 06 — Research ──────────────────────────────────────────────────────
+// The research operations (Spec 06 §11), as the host returns them. Slices are
+// derived and never stored; a study stores definitions plus a descriptor cache.
+
+export type SliceCondition =
+  | { channel: string; op: ">=" | ">" | "<=" | "<" | "="; value: number }
+  | { channel: string; op: "between"; min: number; max: number };
+
+export interface SliceRule {
+  rule_id: string;
+  name: string;
+  from_preset?: string;
+  conditions: SliceCondition[];
+  min_duration_s: number;
+  merge_gap_s: number;
+  pad_s: number;
+  phase: { mode: "within" | "overlap"; phases: string[] } | null;
+  // list_slice_presets adds these:
+  description?: string;
+  question?: string;
+  isolates?: string;
+  status?: "measured" | "unverified";
+  value_sources?: Record<string, string>;
+}
+
+export interface HandSlice {
+  flight: string;
+  start_s: number;
+  end_s: number;
+  label: string;
+  offset_s: number;
+}
+
+export interface SlicePresets {
+  engine: string;
+  status: "measured" | "unverified";
+  note: string | null;
+  presets: SliceRule[];
+  phase_rules: SliceRule[];
+}
+
+export interface StudySelection {
+  mode: "all" | "flights";
+  flights?: string[];
+  split?: StudySplit | null;
+}
+
+export type StudySplit =
+  | { by: "da_band" | "oat_band" | "engine_hours"; edges?: number[] }
+  | { by: "source" | "rule" }
+  | { by: "date"; date: string }
+  | { by: "flights"; groups: { label: string; flights: string[] }[] };
+
+export interface SliceContext {
+  source?: string;
+  phases?: string[];
+  start_time?: string;
+  da_ft?: number | null;
+  oat_c?: number | null;
+  pressure_alt_ft?: number | null;
+  engine_hours?: number | null;
+  [k: string]: unknown;
+}
+
+export interface SliceInfo {
+  slice_id: string;
+  flight: string;
+  source_key: string;
+  kind: "rule" | "hand";
+  rule_id: string | null;
+  label: string;
+  start_s: number;
+  end_s: number;
+  anchor_s: number;
+  offset_s?: number;
+  context: SliceContext;
+  quality: { duration_s?: number; filled_share?: number; samples?: number; [k: string]: unknown };
+  descriptors: Record<string, Record<string, number | boolean | null>>;
+}
+
+export interface SliceSetResult {
+  slices: SliceInfo[];
+  count: number;
+  by_source: Record<string, number>;
+  flights_with_slices: number;
+  flights_selected: number;
+  rules: SliceRule[];
+  hand_slices: HandSlice[];
+  channels: string[];
+  reference: string;
+  windows: Record<string, { window_s: number; lag_s: number; basis: string; median_period_s?: number; median_duration_s?: number }>;
+  missing_flights: string[];
+  unreachable_flights: string[];
+  missing_channels: Record<string, string[]>;
+  parsed_flights: number;
+  cached_flights: number;
+  engine_version: string;
+  selection: StudySelection;
+}
+
+export interface SliceSamples {
+  anchor: string;
+  channels: string[];
+  slices: {
+    slice_id: string;
+    flight: string;
+    label: string;
+    context: SliceContext;
+    anchor_offset_s: number;
+    t: number[];
+    channels: Record<string, (number | null)[]>;
+  }[];
+}
+
+export type ResearchTestId = "cycling" | "coupling" | "groups" | "unusual";
+
+export interface ResearchReference {
+  kind: "om" | "set" | "user";
+  label: string;
+  value: number | [number, number] | null;
+  unit?: string;
+  source?: string;
+  text?: string;
+  id?: string;
+  ref_kind?: string;
+}
+
+export interface ResearchMagnitude {
+  label: string;
+  value: number | null;
+  unit?: string;
+  spread?: [number, number] | null;
+  references: ResearchReference[];
+  text: string;
+}
+
+export interface ResearchChart {
+  kind: "aligned_slices" | "multi_channel_stack" | "distributions" | "ranked";
+  channels?: string[];
+  anchor?: string;
+  distribution?: { descriptor: string; channel: string };
+  descriptor?: string;
+  group_by?: string;
+  descriptor_column?: string;
+  highlight?: string[];
+}
+
+export interface ResearchTestResult {
+  test_id: ResearchTestId;
+  version: number;
+  question: string;
+  finding: string;
+  evidence: {
+    chart: ResearchChart;
+    table: { columns: { key: string; label: string; unit?: string }[]; rows: Record<string, unknown>[] };
+  };
+  magnitude: ResearchMagnitude[];
+  caveats: string[];
+  block: Record<string, unknown>;
+}
+
+export interface StudyTest {
+  test_id: ResearchTestId;
+  version?: number;
+  params: Record<string, unknown>;
+  channels: string[];
+  result?: ResearchTestResult | null;
+  error?: string;
+}
+
+export interface UserReference {
+  label: string;
+  channel: string;
+  value: number;
+  kind: "value" | "band";
+  source?: string;
+}
+
+export interface Study {
+  study_id: string;
+  name: string;
+  created: string | null;
+  updated: string | null;
+  selection: StudySelection;
+  slice_rules: SliceRule[];
+  hand_slices: HandSlice[];
+  references: UserReference[];
+  tests: StudyTest[];
+  windows: Record<string, unknown>;
+  view: { anchor?: string; channels?: string[] };
+  notes: string;
+  provenance: Record<string, unknown>;
+  cache?: unknown;
+  read_only?: { label: string; sender: Record<string, unknown> } | null;
+  imported?: { at: string; sender: Record<string, unknown>; name: string; matched: string[]; missing: string[] } | null;
+  flights?: string[];
+  last_run?: { slices: number; by_source: Record<string, number>; missing_flights: string[]; unreachable_flights: string[]; engine: string } | null;
+}
+
+export interface StudySummary {
+  study_id: string;
+  name: string;
+  updated: string | null;
+  created: string | null;
+  finding: string | null;
+  tests: number;
+  read_only: boolean;
+  flights: number;
+}
+
+export interface StudyImportResult {
+  study: Study;
+  matched: string[];
+  missing: string[];
+  read_only: boolean;
+}
+
+export interface ResearchProgress {
+  active: boolean;
+  phase?: "starting" | "slicing";
+  done?: number;
+  total?: number;
 }

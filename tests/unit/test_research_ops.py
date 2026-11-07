@@ -187,3 +187,34 @@ def test_cli_json_is_the_operation_json(research_ws, capsys, monkeypatch):
     presets = _ok(rpc(h, "list_slice_presets", {}))
     assert cli.main(["research", "presets", "--json", "--quiet"]) == 0
     assert capsys.readouterr().out.strip() == serialize.dumps(presets)
+
+
+def test_research_changes_no_flight_fleet_or_insight_result(research_ws):
+    """Spec 06 §15 acceptance 10: Research adds nothing to Flight view,
+    Trends or Journal except through its explicit paths out (§10.3). The
+    flights' analyses and insights, the fleet analysis and the Journal read
+    the same before and after a study is built, run, noted and exported;
+    only the study-finding entry the user asked for appears."""
+    h, ids = research_ws
+    def snapshot():
+        flights = {fid: _ok(rpc(h, "get_flight", {"flight_id": fid})) for fid in ids}
+        fleet = _ok(rpc(h, "get_fleet", {}))
+        journal = [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]]
+        return json.dumps(flights, sort_keys=True), json.dumps(fleet, sort_keys=True), journal
+    before = snapshot()
+    saved = _ok(rpc(h, "save_study", {"study": {"name": "Untouched", "slice_rules": [FULL_POWER],
+                                                "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))
+    sid = saved["study_id"]
+    _ok(rpc(h, "run_study", {"study_id": sid}))
+    _ok(rpc(h, "export_study", {"study_id": sid}))
+    after = snapshot()
+    assert after[0] == before[0] and after[1] == before[1] and after[2] == before[2]
+    # §10.3: the one explicit path into the Journal, and its removal.
+    entry = _ok(rpc(h, "note_study_finding", {"study_id": sid, "test_index": 0}))["entry"]
+    assert entry["kind"] == "study_finding" and entry["ref_id"] == f"{sid}:0" and entry["what"].startswith("RPM cycles")
+    assert entry["where"]["study_id"] == sid
+    kinds = [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]]
+    assert kinds == before[2] + [("study_finding", f"{sid}:0")]
+    assert _ok(rpc(h, "forget_study_finding", {"ref_id": f"{sid}:0"}))["removed"] is True
+    assert [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]] == before[2]
+    assert rpc(h, "note_study_finding", {"study_id": sid, "test_index": 5})["error"]["code"] == "BAD_PARAMS"

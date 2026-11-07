@@ -1,0 +1,61 @@
+{
+  "study_id": "st-0000f1x7ure",
+  "name": "Full-power slices — sample",
+  "created": "2026-01-01T00:00:00Z",
+  "updated": "2026-01-02T00:00:00Z",
+  "selection": { "mode": "all", "split": null },
+  "slice_rules": [
+    { "rule_id": "full_power", "name": "Full-power segment", "from_preset": "full_power",
+      "conditions": [{ "channel": "rpm", "op": ">=", "value": 5550 }], "min_duration_s": 15, "merge_gap_s": 3, "pad_s": 0, "phase": null }
+  ],
+  "hand_slices": [],
+  "references": [{ "label": "governing band", "channel": "rpm", "value": 100, "kind": "band", "source": "a propeller manual" }],
+  "tests": [
+    {
+      "test_id": "cycling", "version": 1, "params": {}, "channels": ["rpm"],
+      "result": {
+        "test_id": "cycling", "version": 1, "question": "Is this signal steady, or is it cycling?",
+        "finding": "RPM cycles every 3.8 s (IQR 3.6–4.0), swing 180 rpm (170–190), in 5 of 6 full-power slices.",
+        "evidence": {
+          "chart": { "kind": "aligned_slices", "channels": ["rpm"], "anchor": "crossing", "distribution": { "descriptor": "swing", "channel": "rpm" } },
+          "table": {
+            "columns": [
+              { "key": "start_time", "label": "Start (local)" }, { "key": "source", "label": "Source" }, { "key": "duration_s", "label": "Duration", "unit": "s" },
+              { "key": "swing", "label": "Swing", "unit": "rpm" }, { "key": "period_s", "label": "Period", "unit": "s" }
+            ],
+            "rows": [
+              { "slice_id": "fa:r:10-60", "flight": "fa", "label": "Day 1 00:10", "start_time": "2026-01-01 10:10", "source": "G3X", "duration_s": 50, "swing": 180, "period_s": 3.8 },
+              { "slice_id": "fb:r:12-66", "flight": "fb", "label": "Day 2 00:12", "start_time": "2026-01-02 10:12", "source": "G3X", "duration_s": 54, "swing": 190, "period_s": 3.6 },
+              { "slice_id": "fc:r:9-70", "flight": "fc", "label": "Day 3 00:09", "start_time": "2026-01-03 10:09", "source": "AXIS", "duration_s": 61, "swing": 170, "period_s": 4.0 },
+              { "slice_id": "fd:r:11-63", "flight": "fd", "label": "Day 4 00:11", "start_time": "2026-01-04 10:11", "source": "AXIS", "duration_s": 52, "swing": 180, "period_s": 3.9 },
+              { "slice_id": "fe:r:14-70", "flight": "fe", "label": "Day 5 00:14", "start_time": "2026-01-05 10:14", "source": "AXIS", "duration_s": 56, "swing": 70, "period_s": null },
+              { "slice_id": "ff:r:10-58", "flight": "ff", "label": "Day 6 00:10", "start_time": "2026-01-06 10:10", "source": "G3X", "duration_s": 48, "swing": 180, "period_s": 3.7 }
+            ]
+          }
+        },
+        "magnitude": [
+          { "label": "RPM swing (median of slices)", "value": 180, "unit": "rpm", "spread": [170, 190], "text": "180 rpm peak-to-peak over 12 s windows",
+            "references": [
+              { "kind": "om", "id": "rpm_takeoff_max", "label": "RPM takeoff maximum", "value": 5800, "unit": "rpm", "text": "OM limit 5,800 rpm" },
+              { "kind": "set", "label": "spread of swing across the set (IQR)", "value": [170, 190], "unit": "rpm", "text": "170–190 rpm across the set" },
+              { "kind": "user", "label": "governing band", "value": 100, "unit": "rpm", "ref_kind": "band", "source": "a propeller manual", "text": "your reference: governing band ±100 rpm" }
+            ] },
+          { "label": "RPM period (median of slices with a prominent period)", "value": 3.8, "unit": "s", "spread": [3.6, 4.0], "text": "3.8 s",
+            "references": [{ "kind": "set", "label": "recurrence", "value": [5, 6], "text": "prominent in 5 of 6 slices (prominence ≥ 0.2)" }] }
+        ],
+        "caveats": [
+          "Logs are 1 Hz: periods below about 3 s are unreliable and faster oscillations alias, so they are never counted as a prominent period.",
+          "RPM: swing window 12 s, lag range ±10 s — from the set's median period 3.8 s (at the floors).",
+          "A repeating period describes the signal's shape; it does not say whether the engine or its installation is at fault."
+        ],
+        "block": { "test_id": "cycling", "version": 1, "params": { "channel": "rpm" }, "summary": { "slices": 6, "prominent": 5, "period_s": [3.6, 3.8, 4.0], "swing": [170, 180, 190] }, "references": [], "engine_version": "1.0.2" }
+      }
+    }
+  ],
+  "windows": {},
+  "view": { "anchor": "crossing", "channels": ["rpm", "map_inhg"] },
+  "notes": "A sample study.",
+  "provenance": { "app": "fixture" },
+  "last_run": { "slices": 6, "by_source": { "G3X": 3, "AXIS": 3 }, "missing_flights": [], "unreachable_flights": [], "engine": "1.0.2" },
+  "flights": ["fa", "fb", "fc", "fd", "fe", "ff"]
+}

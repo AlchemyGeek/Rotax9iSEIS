@@ -13,6 +13,8 @@ import { metricLabel, panelLabel, unitFor } from "../lib/trendsUnits";
 import { computeTiers, panelHasDetailStrips } from "../lib/trendsTiers";
 import { fleetAnalysis as fixtureFleet, flightAnalysis as fixtureFlight, trendsPanels as fixturePanels } from "../lib/fixtures";
 import { getEngineClient } from "../lib/engineClient";
+import { seedFromTrend, stashStudySeed } from "../lib/research";
+import { useCapabilities } from "../lib/capabilities";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import type { FleetAnalysis, TrendsPanel } from "../types/contract";
 
@@ -30,6 +32,9 @@ export function Trends() {
   const [panels, setPanels] = useState<TrendsPanel[]>(fixturePanels);
   const [engineId, setEngineId] = useState(fixtureFlight.provenance.engine_profile.id);
   const [usingFixture, setUsingFixture] = useState(true);
+  // Spec 06 §12: "Research this" on a card needs the host's research capability and real data.
+  const caps = useCapabilities();
+  const researchAvailable = caps?.features.research === true && !usingFixture;
   // A reachable server with a workspace that has no flights yet: an empty
   // state, never the sample data (that is only for when no server answers).
   const [emptyWorkspace, setEmptyWorkspace] = useState(false);
@@ -409,6 +414,11 @@ export function Trends() {
                       onUnpinReference={shift?.reference.kind === "pinned" ? () => unpinReference(m.metric_id) : undefined}
                       onPreviewUnpin={() => client.previewClearReference(m.metric_id)}
                       pinBusy={pinBusy === m.metric_id}
+                      onResearch={researchAvailable && shift ? (recent) => {
+                        stashStudySeed(seedFromTrend({ metricId: m.metric_id, label: metricLabel(m.metric_id), recentFlightIds: recent,
+                          allFlightIds: metric.points.map((p) => p.flight_id) }));
+                        navigate("/research/new");
+                      } : undefined}
                     />
                     )}
                     {panel.panel === "boost_power" && m.metric_id === "takeoff_map_residual_inhg" && takeoffMapModel && (

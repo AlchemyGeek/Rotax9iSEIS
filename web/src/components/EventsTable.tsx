@@ -46,6 +46,9 @@ export interface EventsTableProps {
   ecuRuns: EcuRunRecord[];
   casEvents: CasEvent[];
   onOpen: (row: EventRow) => void;
+  // Spec 06 §12 — "Research this": a new study with this event's window
+  // and the limit's condition across every flight. Limit events only.
+  onResearch?: (row: EventRow) => void;
   onSaveNote: (ref: AnnotationRef, text: string) => void;
   onDeleteNote: (annotationId: string) => void;
   onFilterSaved: () => void;
@@ -168,6 +171,9 @@ function Row({ row, muted, expanded, onToggle, ...props }: EventsTableProps & { 
             )}
             {canFilter && (
               <button type="button" style={ACTION} title={SCOPE_CAPTION[scope]} onClick={() => setFilterOpen((v) => !v)}>{filterLabel}</button>
+            )}
+            {props.onResearch && lim && (
+              <button type="button" style={ACTION} title="Open a study with this event's window, and the same limit's moments across every flight" onClick={() => props.onResearch!(row)}>Research this</button>
             )}
           </span>
         </td>

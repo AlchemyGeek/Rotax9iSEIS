@@ -7,6 +7,7 @@ import { useFilterAttention } from "../lib/filterAttention";
 import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
 import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
 import { setTheme, useTheme } from "../lib/theme";
+import { useCapabilities } from "../lib/capabilities";
 
 const client = getEngineClient();
 
@@ -323,6 +324,11 @@ function WorkspaceSwitcher() {
 export function NavShell({ right, children }: { right?: ReactNode; children: ReactNode }) {
   const filterAttention = useFilterAttention();
   const shiftHistoryAttention = useShiftHistoryAttention();
+  // Spec 06 §12 / Spec 03 §4: Research is shown when the host offers it
+  // (features.research), hidden on an older host — a feature gate, never a
+  // host-kind check.
+  const caps = useCapabilities();
+  const research = caps?.features.research === true;
   return (
     <div
       style={{
@@ -375,6 +381,11 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
                 </span>
               )}
             </NavLink>
+            {research && (
+              <NavLink to="/research" style={NAV_LINK_STYLE} data-testid="nav-research">
+                Research
+              </NavLink>
+            )}
             <NavLink to="/journal" style={NAV_LINK_STYLE}>
               Journal
               {filterAttention > 0 && (

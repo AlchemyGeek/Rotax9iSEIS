@@ -92,6 +92,9 @@ interface Props {
   // (the full history is in view).
   zoomRange?: { start: number; end: number } | null;
   onZoomChange?: (start: number, end: number) => void;
+  // Spec 06 §12 — "Research this": a new study comparing the metric's recent
+  // flights with the rest, on the metric's channel. Shown when a shift exists.
+  onResearch?: (recentFlightIds: string[]) => void;
 }
 
 export function TrendsPanelStrip({
@@ -111,6 +114,7 @@ export function TrendsPanelStrip({
   showDetailStrips,
   zoomRange,
   onZoomChange,
+  onResearch,
 }: Props) {
   const [stratified, setStratified] = useState(false);
   const [dialog, setDialog] = useState<"pin" | "unpin" | null>(null);
@@ -460,6 +464,14 @@ export function TrendsPanelStrip({
               {level?.filter_edge && <span style={{ color: "var(--severity-watch)" }}>⚠ at the edge of your filter band</span>}
               {pinned && <span>📌 since {shift.reference.label ?? (shift.reference.set_at ? formatPinDate(shift.reference.set_at) : "pinned reference")}</span>}
             </div>
+            {onResearch && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" onClick={() => onResearch(shift.recent.flight_ids)} style={pinButtonStyle} data-testid="trend-research-this"
+                  title="Open a study comparing these recent flights with the rest, on this metric's channel">
+                  Research this
+                </button>
+              </div>
+            )}
             {(onPinReference || onUnpinReference) && (
               <div style={{ marginTop: 10 }}>
                 {pinned ? (

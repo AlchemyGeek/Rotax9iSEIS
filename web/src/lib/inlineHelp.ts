@@ -47,6 +47,22 @@ export const INLINE_HELP = {
   // Flight view header
   "flight.excluded_from_reference":
     "This flight is still analysed, but it no longer shapes what normal looks like for your other flights.",
+
+  // Research (Spec 06 §12) — each test's question, and the reference.
+  "research.test.cycling":
+    "Looks for a repeating up-and-down in one channel across the slices and reports how often it repeats and how far it swings — a shape, not a judgement of the engine.",
+  "research.test.coupling":
+    "Measures how closely two channels rise and fall together and which one moves first; moving together does not say which one causes the other.",
+  "research.test.groups":
+    "Compares one measurement between two groups of slices (before and after a date, two altitude bands, two log sources) and shows how far apart they sit; small groups are flagged.",
+  "research.test.unusual":
+    "Ranks the slices by how far each one sits from the others on many measurements — it finds slices that differ, which is not the same as slices that are wrong.",
+  "research.reference":
+    "A number to read a result against: the Operators Manual value where one applies, the spread across your own slices, or a value you type in with its source. Research never adds a verdict of its own.",
+  "research.slice_rule":
+    "A rule picks the stretches of every selected flight where its conditions hold for long enough — the slices every question is then asked about.",
+  "research.selection":
+    "Which flights the slices come from; a split names two groups so the groups question can compare them.",
 } as const;
 
 export type InlineHelpId = keyof typeof INLINE_HELP;

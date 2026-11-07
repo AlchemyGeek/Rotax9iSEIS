@@ -52,6 +52,19 @@ import type {
   WorkspaceRegistryEntry,
   WorkspaceRulesResult,
   WorkspaceSettings,
+  HandSlice,
+  ResearchProgress,
+  ResearchTestId,
+  ResearchTestResult,
+  SlicePresets,
+  SliceRule,
+  SliceSamples,
+  SliceSetResult,
+  Study,
+  StudyImportResult,
+  StudySelection,
+  StudySummary,
+  UserReference,
 } from "../types/contract";
 import { targetLabel } from "../types/contract";
 
@@ -247,6 +260,35 @@ export interface EngineClient {
   // Spec 12 R3.3 (Session A) — Trends panel layout, built by the engine
   // from the topic register, not a frontend metric list (D3).
   getTrendsPanels(): Promise<{ panels: TrendsPanel[] }>;
+
+  // Spec 06 §11 — Research. Gated by get_capabilities().features.research.
+  // A slice rule may be given as a preset id ("full_power") or "phase:<PHASE>".
+  listSlicePresets(): Promise<SlicePresets>;
+  buildSlices(args: SliceBuildArgs): Promise<SliceSetResult>;
+  getSliceSamples(args: SliceBuildArgs & { slice_ids?: string[]; channels: string[]; anchor?: string }): Promise<SliceSamples>;
+  runTest(args: SliceBuildArgs & { test_id: ResearchTestId; channels?: string[]; params?: Record<string, unknown>; references?: UserReference[] }): Promise<ResearchTestResult>;
+  saveStudy(study: Omit<Partial<Study>, "slice_rules"> & { slice_rules?: (SliceRule | string)[] }): Promise<Study>;
+  loadStudy(studyId: string): Promise<Study>;
+  listStudies(): Promise<{ studies: StudySummary[] }>;
+  deleteStudy(studyId: string): Promise<{ deleted: string }>;
+  runStudy(studyId: string): Promise<Study>;
+  exportStudy(studyId: string): Promise<{ filename: string; size: number; download_url: string }>;
+  importStudy(file: File): Promise<StudyImportResult>;
+  runStudyOnMyFlights(studyId: string): Promise<Study>;
+  getResearchProgress(): Promise<ResearchProgress>;
+  // Spec 06 §10.3 — a study's finding as a Journal entry, and its removal.
+  noteStudyFinding(studyId: string, testIndex: number, note?: string): Promise<{ entry: JournalEntry }>;
+  forgetStudyFinding(refId: string): Promise<{ removed: boolean }>;
+}
+
+export interface SliceBuildArgs {
+  study_id?: string;
+  selection?: StudySelection;
+  slice_rules?: (SliceRule | string)[];
+  hand_slices?: HandSlice[];
+  channels?: string[];
+  reference?: string;
+  windows?: Record<string, unknown>;
 }
 
 export class EngineRpcError extends Error {
@@ -701,6 +743,54 @@ export class LocalServerClient implements EngineClient {
 
   getTrendsPanels() {
     return this.rpc<{ panels: TrendsPanel[] }>("get_trends_panels", {});
+  }
+
+  // Spec 06 §11 — Research.
+  listSlicePresets() {
+    return this.rpc<SlicePresets>("list_slice_presets", {});
+  }
+  buildSlices(args: SliceBuildArgs) {
+    return this.rpc<SliceSetResult>("build_slices", args);
+  }
+  getSliceSamples(args: SliceBuildArgs & { slice_ids?: string[]; channels: string[]; anchor?: string }) {
+    return this.rpc<SliceSamples>("get_slice_samples", args);
+  }
+  runTest(args: SliceBuildArgs & { test_id: ResearchTestId; channels?: string[]; params?: Record<string, unknown>; references?: UserReference[] }) {
+    return this.rpc<ResearchTestResult>("run_test", args);
+  }
+  saveStudy(study: Omit<Partial<Study>, "slice_rules"> & { slice_rules?: (SliceRule | string)[] }) {
+    return this.rpc<Study>("save_study", { study });
+  }
+  loadStudy(studyId: string) {
+    return this.rpc<Study>("load_study", { study_id: studyId });
+  }
+  listStudies() {
+    return this.rpc<{ studies: StudySummary[] }>("list_studies", {});
+  }
+  deleteStudy(studyId: string) {
+    return this.rpc<{ deleted: string }>("delete_study", { study_id: studyId });
+  }
+  runStudy(studyId: string) {
+    return this.rpc<Study>("run_study", { study_id: studyId });
+  }
+  exportStudy(studyId: string) {
+    return this.rpc<{ filename: string; size: number; download_url: string }>("export_study", { study_id: studyId });
+  }
+  async importStudy(file: File) {
+    const up = await this.uploadFile(file);
+    return this.rpc<StudyImportResult>("import_study", { upload_id: up.upload_id });
+  }
+  runStudyOnMyFlights(studyId: string) {
+    return this.rpc<Study>("run_study_on_my_flights", { study_id: studyId });
+  }
+  getResearchProgress() {
+    return this.rpc<ResearchProgress>("get_research_progress", {});
+  }
+  noteStudyFinding(studyId: string, testIndex: number, note?: string) {
+    return this.rpc<{ entry: JournalEntry }>("note_study_finding", { study_id: studyId, test_index: testIndex, note });
+  }
+  forgetStudyFinding(refId: string) {
+    return this.rpc<{ removed: boolean }>("forget_study_finding", { ref_id: refId });
   }
 }
 

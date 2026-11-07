@@ -42,7 +42,7 @@ function settingsTab(e: JournalEntry): string {
 // the taxonomy reads as complete.
 const KIND_ORDER: JournalEntryKind[] = [
   "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit", "changed_setting",
-  "exclusion", "reference_pin", "annotation",
+  "exclusion", "reference_pin", "annotation", "study_finding",
 ];
 const KIND_LABELS: Record<JournalEntryKind, string> = {
   acknowledged_insight: "Acknowledged insight",
@@ -53,6 +53,7 @@ const KIND_LABELS: Record<JournalEntryKind, string> = {
   exclusion: "Excluded from reference",
   reference_pin: "Reference pinned",
   annotation: "Annotation",
+  study_finding: "Research finding", // Spec 06 §10.3 — noted from a study
 };
 
 // §6.1 "Removed by" — the action that ends each decision.
@@ -65,6 +66,7 @@ const REMOVE_LABEL: Record<JournalEntryKind, string> = {
   exclusion: "Include again",
   reference_pin: "Unpin",
   annotation: "Delete",
+  study_finding: "Remove from Journal",
 };
 
 function formatDate(iso: string): string {
@@ -89,6 +91,8 @@ function removalPreview(e: JournalEntry): string {
       return "The metric goes back to its automatic reference.";
     case "annotation":
       return "The note is deleted.";
+    case "study_finding":
+      return "The finding leaves the Journal; the study keeps it.";
     default:
       return "";
   }
@@ -236,6 +240,7 @@ export function Journal() {
     else if (e.kind === "limit_filter") setActiveTab("filters");
     else if (e.kind === "reference_pin") navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
     else if (e.kind === "changed_setting") navigate(`/settings?tab=${settingsTab(e)}`);
+    else if (e.kind === "study_finding") navigate(`/research/${encodeURIComponent(String((e.where as { study_id?: string } | null)?.study_id ?? ""))}`);
   }
 
   async function act(fn: () => Promise<unknown>) {
@@ -255,6 +260,7 @@ export function Journal() {
   function remove(e: JournalEntry) {
     void act(async () => {
       if (e.kind === "annotation") await client.deleteAnnotation(e.ref_id);
+      else if (e.kind === "study_finding") await client.forgetStudyFinding(e.ref_id);
       else if (e.kind === "limit_filter") {
         await client.deleteFilter(e.ref_id);
         notifyFiltersChanged();

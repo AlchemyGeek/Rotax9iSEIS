@@ -2693,7 +2693,18 @@ async def op_get_slice_samples(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     channels = params.get("channels") or ["rpm"]
     ids = set(params.get("slice_ids") or [])
-    ss = await _build(ctx, {**params, "channels": channels}, keep_samples=True, only_slices=ids or None)
+    build = {**params, "channels": channels}
+    if ids:
+        # Session B: the view asks for a few slices at a time; read only
+        # their flights (a slice id starts with its flight_id, §3.2) rather
+        # than the whole selection — the aligned view would otherwise pay a
+        # full workspace pass on every anchor or channel change.
+        flights = sorted({i.split(":", 1)[0] for i in ids})
+        sel = dict(params.get("selection") or {"mode": "all"})
+        if sel.get("mode") == "flights":
+            flights = [f for f in flights if f in set(sel.get("flights") or [])]
+        build["selection"] = {"mode": "flights", "flights": flights, "split": sel.get("split")}
+    ss = await _build(ctx, build, keep_samples=True, only_slices=ids or None)
     anchor = params.get("anchor") or "crossing"
     out = []
     for s in ss.slices:
@@ -2837,6 +2848,33 @@ def op_get_research_progress(params: dict, ctx: dict) -> Any:
     return ctx.get("research_progress", {"active": False})
 
 
+def op_note_study_finding(params: dict, ctx: dict) -> Any:
+    """Spec 06 §10.3: a study's finding becomes a Journal entry "from study
+    …" carrying the finding and a link back (kind `study_finding`, one entry
+    per study and test). The study itself is unchanged."""
+    from .research import studies as rs
+    _require_active(ctx)
+    doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
+    i = int(params.get("test_index", 0))
+    tests = doc.get("tests") or []
+    if not 0 <= i < len(tests) or not tests[i].get("result"):
+        raise RpcError("BAD_PARAMS", "that question has no result to note")
+    finding = tests[i]["result"]["finding"]
+    entry = ws.upsert_journal_entry(
+        ctx["workspace_dir"], kind="study_finding", ref_id=f"{doc['study_id']}:{i}",
+        what=finding, where={"study_id": doc["study_id"], "test_index": i, "study_name": doc["name"]},
+        note=params.get("note"))
+    return {"entry": entry}
+
+
+def op_forget_study_finding(params: dict, ctx: dict) -> Any:
+    """Remove a `study_finding` Journal entry (the Journal's "Remove" for
+    this kind). The study keeps its result."""
+    _require_active(ctx)
+    removed = ws.remove_journal_entry(ctx["workspace_dir"], kind="study_finding", ref_id=str(params.get("ref_id")))
+    return {"removed": removed is not None}
+
+
 # Spec 04 v0.4 §9.5: what this host can do, by host kind. The UI gates on
 # `features`, never on `host`.
 _FEATURES = {
@@ -2968,6 +3006,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "import_study": _research_call(op_import_study),
     "run_study_on_my_flights": _research_call(op_run_study_on_my_flights),
     "get_research_progress": op_get_research_progress,
+    "note_study_finding": _research_call(op_note_study_finding),
+    "forget_study_finding": op_forget_study_finding,
 }
 
 

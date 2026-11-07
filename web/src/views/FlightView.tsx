@@ -20,6 +20,8 @@ import { EventsTable } from "../components/EventsTable";
 import { TopicCards } from "../components/TopicCards";
 import { RuleEditorPanel } from "../components/RuleEditorPanel";
 import { useTimeline } from "../lib/useTimeline";
+import { seedFromEvent, seedFromFlight, stashStudySeed } from "../lib/research";
+import { useCapabilities } from "../lib/capabilities";
 import { flightFacts } from "../lib/flightFacts";
 import { buildEventRows, insightEventId, type EventRow } from "../lib/flightEvents";
 import { REFERENCE_DERIVED_TOPICS, topicCardModel } from "../lib/topicRoster";
@@ -276,6 +278,40 @@ export function FlightView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editParam, resolvedRules, shippedRules, insightSet, usingFixture]);
 
+  // Spec 06 §9: a Research slice opens the flight at its window
+  // (?window=<start>-<end>, seconds into the log), once the timeline is up.
+  const windowParam = searchParams.get("window");
+  useEffect(() => {
+    if (!windowParam || !tl.hasTimeline || !tl.fullEnd) return;
+    const m = /^(\d+)-(\d+)$/.exec(windowParam);
+    if (m) tl.navigateTo(Number(m[1]), Number(m[2]));
+    const next = new URLSearchParams(searchParams);
+    next.delete("window");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowParam, tl.hasTimeline, tl.fullEnd]);
+
+  // Spec 06 §12 "Research this": the chart's current zoom becomes a hand
+  // slice in a new study (§5.4, Q4); a zoom that covers the takeoff roll
+  // suggests the full-power preset as the comparison set.
+  const caps = useCapabilities();
+  const researchAvailable = caps?.features.research === true && !usingFixture;
+  function researchThis() {
+    if (!flightId) return;
+    const [s0, s1] = tl.visibleWindow;
+    const coversTakeoff = flightAnalysis.phases.some((p) => p.phase === "TAKEOFF_ROLL" && p.start_s < s1 && p.end_s > s0);
+    stashStudySeed(seedFromFlight({ flightId, date: flightAnalysis.header.date, start_s: s0, end_s: s1, coversTakeoff,
+      channels: tl.activeSlots.flatMap((id) => { const sg = tl.slotGroups.find((g) => g.id === id); return sg ? sg.members : [id]; }) }));
+    navigate("/research/new");
+  }
+  function researchEvent(row: EventRow) {
+    if (!flightId || row.source !== "limit") return;
+    const ev = row.event as ExceedanceEvent;
+    stashStudySeed(seedFromEvent({ flightId, date: flightAnalysis.header.date, label: ev.label, channel: ev.param, limitType: ev.limit_type, limitValue: ev.limit_value,
+      start_s: ev.elapsed_s, duration_s: ev.duration_s }));
+    navigate("/research/new");
+  }
+
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);
     void reloadInsights();
@@ -501,6 +537,12 @@ export function FlightView() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--text-secondary)" }}>{filename}</span>
+            {researchAvailable && (
+              <button type="button" onClick={researchThis} data-testid="research-this" title="Open a new study with the chart's current window as a hand slice"
+                style={{ fontSize: 11, padding: "2px 9px", borderRadius: 6, background: "var(--panel-control)", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}>
+                Research this window
+              </button>
+            )}
             {!usingFixture && referenceState && (
               referenceState.excluded ? (
                 <span style={{ fontSize: 11 }}>
@@ -650,6 +692,7 @@ export function FlightView() {
                 onSaveNote={handleSaveNote}
                 onDeleteNote={handleDeleteNote}
                 onFilterSaved={afterFilterSaved}
+                onResearch={researchAvailable ? researchEvent : undefined}
               />
             </section>
 

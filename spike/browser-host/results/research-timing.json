@@ -1,0 +1,24 @@
+{
+  "logs_copied": 122,
+  "through": "2026-10-28",
+  "cold_ready_s": 5.4,
+  "files_given": 122,
+  "scan_ms": 132525.69999999972,
+  "flights": 60,
+  "build_cold_ms": 14451.200000000186,
+  "slices": 98,
+  "by_source": {
+    "G3X": 84,
+    "AXIS": 14
+  },
+  "flights_with_slices": 59,
+  "run_study_ms": 13698,
+  "finding": "RPM cycles every 3.8 s (IQR 3.6\u20133.9), swing 180 rpm (170\u2013190), in 93 of 98 slices (AXIS 13 of 14, G3X 80 of 84).",
+  "run_study_cached_ms": 160.29999999981374,
+  "samples_12_slices_ms": 14065.400000000373,
+  "samples_returned": 12,
+  "heap_end": 290848768,
+  "browser_version": "153.0.8010.12",
+  "page_errors": [],
+  "at": "2026-11-07T21:57:38+00:00"
+}
