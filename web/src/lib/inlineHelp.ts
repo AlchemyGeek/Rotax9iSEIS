@@ -58,7 +58,7 @@ export const INLINE_HELP = {
   "research.test.unusual":
     "Ranks the slices by how far each one sits from the others on many measurements — it finds slices that differ, which is not the same as slices that are wrong.",
   "research.reference":
-    "A number to read a result against: the Operators Manual value where one applies, the spread across your own slices, or a value you type in with its source. Research never adds a verdict of its own.",
+    "A number to read a result against — the Operators Manual value where one applies, the spread across your own slices, or a value you type in with its source — because Research never adds a verdict of its own.",
   "research.slice_rule":
     "A rule picks the stretches of every selected flight where its conditions hold for long enough — the slices every question is then asked about.",
   "research.selection":

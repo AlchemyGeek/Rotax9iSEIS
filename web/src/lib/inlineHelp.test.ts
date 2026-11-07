@@ -3,7 +3,8 @@ import { INLINE_HELP } from "./inlineHelp";
 
 // Spec 14 §9 criterion 15: every item in §7.4's "Gets help" column has
 // help, each one sentence, all of it in this one registry, and nothing
-// else. margin_min_f / consecutive_flights are in §7.4's list but have no
+// else. Spec 06 §12 adds the Research items (each test's question, the
+// reference, the slice rule and the selection) under the same rules. margin_min_f / consecutive_flights are in §7.4's list but have no
 // field on any topic card (engine constants; cylinder_rank ships with no
 // triggers), so there is nothing to attach their help to.
 const EXPECTED = [
@@ -14,6 +15,8 @@ const EXPECTED = [
   "preview.counts",
   "journal.live_effect", "journal.change_notices",
   "flight.excluded_from_reference",
+  "research.test.cycling", "research.test.coupling", "research.test.groups", "research.test.unusual",
+  "research.reference", "research.slice_rule", "research.selection",
 ];
 
 // Every app source file, as text (Vite inlines these at test time).
@@ -36,7 +39,12 @@ describe("inline help registry", () => {
 
   it("is used for every item, and from nowhere but the registry", () => {
     const uses = Object.values(SOURCES)
-      .flatMap((s) => [...s.matchAll(/<InlineHelp id="([^"]+)"/g)].map((m) => m[1]));
+      .flatMap((s) => [
+        ...[...s.matchAll(/<InlineHelp id="([^"]+)"/g)].map((m) => m[1]),
+        // A card that picks its help by test id (Research's TestResultCard)
+        // names the ids in a typed map; a quoted "research.…" string is one.
+        ...[...s.matchAll(/"(research\.[a-z_.]+)"/g)].map((m) => m[1]),
+      ]);
     expect(new Set(uses)).toEqual(new Set(EXPECTED));
   });
 });
