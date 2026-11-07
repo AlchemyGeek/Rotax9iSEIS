@@ -27,7 +27,7 @@ First noticed by the pilot on 2026-10-24 during a touch-and-go at KBLI, as a for
 ## 2. Data
 
 ### 2.1 Sources
-- 121 CSV logs from `~/src/Rotax9iSEIS/data/logs`: Garmin G3X Touch (GDU 460, 1 Hz) from 2026-04-08 (28 engine hours, Phase 1 at KTOA) through 2026-10-05, and Garmin AXIS (1 Hz) from 2026-10-14 through 2026-10-28.
+- 121 CSV logs from the owner’s log set (the flights dated through 2026-10-28): Garmin G3X Touch (GDU 460, 1 Hz) from 2026-04-08 (28 engine hours, Phase 1 at KTOA) through 2026-10-05, and Garmin AXIS (1 Hz) from 2026-10-14 through 2026-10-28.
 - Every segment with rpm ≥ 5550 for ≥ 15 s was extracted (98 distinct segments after removing duplicate files). Metrics per segment: rpm and MAP min/max, median 12-second rpm peak-to-peak ("swing"), period (peak counting), rpm–MAP correlation, OAT, pressure and density altitude, wind, vertical-g scatter.
 - 46 logs contained no full-power segment (taxi/ground runs, partial exports); 14 were startup-only fragments.
 
