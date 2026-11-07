@@ -1,7 +1,7 @@
 # Spec 06 — Research
 
 **Project:** SlingologyEIS
-**Status:** Draft v0.4 — Session A (engine, studies, CLI) built on branch `research`; Session B (web) in progress. Decisions D1–D7 in §3 and Q1–Q13 in §16 all closed; functional decisions of Session A recorded in §3.2.
+**Status:** v0.5 — Sessions A (engine, studies, CLI) and B (web UI, docs) built on branch `research`; v1 complete, awaiting the owner's review and merge. Decisions D1–D7 in §3 and Q1–Q13 in §16 all closed; functional decisions of Sessions A and B recorded in §3.2–§3.3.
 **Suggested repo path:** `docs/specs/06-research.md`
 **Builds on:** Spec 01 (§7 operations envelope, §8.7 series, §9 extension model, §10 privacy), Spec 02 (§5.3 workspace layout, §7 export/import), Spec 03 (principle 6: the Explore → operational path; §4 navigation shell), Spec 10 (§4 admission criteria, §8 lifecycle, §10 proposals; D2/D7 items parked as "Research"), Spec 12 (§13 deferred change-point detection), Spec 14 (§4, Q3)
 **Revises:** Spec 03 §4 and §5 (Research becomes a destination; new view), Spec 02 §5.3 and §7.1 (a `studies/` document set, carried by export), Spec 01 §7 (Research operations), Spec 14 Q3 (closes: Research is designed)
@@ -11,6 +11,7 @@
 
 | Version | Change |
 |---|---|
+| 0.5 | **After Session B** (2026-11-07). Research is in the nav, gated by the `research` capability (Spec 03 v0.29 §4, §5.10; Spec 14 v0.19 Q3 closed). Research home, study page, aligned view, read-only studies with *Run this on my flights*, the three *Research this* entry points, inline help, and the Journal's `study_finding` entry (§10.3) are built; §11 gains `note_study_finding` and `forget_study_finding`, and `get_slice_samples` reads only the slices' flights. Acceptance 8 measured in-page (§5.5); 10 and 12 pass. Functional decisions of Session B in §3.3. Docs: concept page and walkthrough (§12). |
 | 0.4 | **Q11–Q13 decided by the owner** (Nov 7 2026): acceptance 1 is pinned to flights dated through 2026-10-28; acceptance 2 states the period the app measures, **3.8 s (IQR 3.5–4.1)**, with the write-up's 4.4 s kept in Appendix A as the investigation's own figure from a different count; acceptance 5 asserts the two clean high-DA takeoffs stand out on rpm swing, and §7.4's ranking improvements (count of descriptors standing out, combined robust distance, ranking within the study's channels) are recorded as v2 work the §14.1 scan depends on. The two expected failures become passing tests. `docs/research/` is exempted from the repo's per-flight-detail rule by the owner (CLAUDE.md). Session B scope unchanged. |
 | 0.3 | After Session A. Preset values **measured** over the acceptance set and recorded with the measurement (§5.2): full-power and governed-climb unchanged; stable cruise ≥ 300 s (was 120); idle confined to TAXI (was "on ground"); warm-up as a rule (rpm ≥ 1000, oil below the profile's takeoff minimum, within the ground phases, ≥ 60 s). §7.0 multipliers chosen (Q9): window 2.5 *P*, lag ±1.5 *P*, fallback 0.2 / 0.1 of the median slice duration. Q10: the small-group caution reuses `n_min` = 10. Functional decisions made in Session A recorded (§3.2). §11 lists the operations as built (adds `run_study`, `run_study_on_my_flights`, `get_research_progress`). Browser-mode build time measured (§5.5). Acceptance items 2 and 5 do not hold on the data as written; items 1's set needs pinning — proposed revisions Q11–Q13 (§16.1). |
 | 0.2 | Q1–Q8 resolved (§16). Preset values are **measured in Session A** and recorded here (§5.2). Studies cache **per-slice descriptors** as derived data keyed by fingerprint and engine version; samples are never cached (§5.5, §10.1). Spec 10's Research-status items become **named v2 studies** once the condition-dependence test exists (§14.6); v1 only points at them. Hand slices are v1 via the Flight view's current zoom (§5.4). A study imports **read-only** when none of its flights are present, with *Run this on my flights* (§10.2). Test windows are **proposed from the data** — two-pass: dominant period first, then window and lag range from it, duration-scaled fallback (§7.0). The investigation write-up moves to `docs/research/` (Appendix A). Branch `research` (§17). |
@@ -89,6 +90,20 @@ Two further facts shaped the design. The analysis took real understanding of con
 | `time to reach a level` (§6) | Not computed in v1: no v1 test uses it and its level is a test parameter. Kept in §6 for §7.5. |
 | Periodogram | Lomb–Scargle in numpy (the browser runtime has numpy and pandas only); used as the cross-check of §6, not as the estimate. |
 
+### 3.3 Functional decisions made in Session B
+
+| Topic | Decision |
+|---|---|
+| Journal path out (§10.3) | Two operations, `note_study_finding(study_id, test_index, note?)` and `forget_study_finding(ref_id)`. The entry (kind `study_finding`, ref `<study_id>:<test_index>`) carries the finding verbatim and links to the study; one entry per study and question, re-noting after a re-run replaces it. Removing the entry never touches the study. Recorded in Spec 14 §6.1. |
+| Aligned view reads only its slices' flights | `get_slice_samples` narrows the build to the flights named by the requested slice ids (a slice id starts with its `flight_id`, §3.2) instead of the study's whole selection, so changing anchor or channels costs the slices' flights, not a workspace pass. Samples are still never cached. |
+| Evidence package (§10.3) | One Markdown file: per question the finding, magnitude and reference, caveats, and the per-slice table as CSV inside a code block; downloaded from the page. The per-slice CSV alone is also downloadable from each card. The `.eisstudy` zip (§3.2) stays the machine-readable export. |
+| "Research this" seeds (§12) | A seed is stashed in session storage and consumed by `/research/new`, never by URL, so a seed carrying flight ids is not shareable or bookmarkable. Flight view: the chart's current zoom as a hand slice with the first visible channel's cycling question; the full-power preset is *suggested*, not added, when the window covers a takeoff. Trends: the metric's recent flights vs the rest as a two-group split (`split.by = "flights"`, the one split kind that names explicit groups) on the metric's channel, in the metric's natural slice rule. Events: the event's window by hand (±10 s) plus a rule `channel ≥/≤ limit` with 10 s pad across every flight. |
+| Trends and Events entry points need data | *Research this* on a Trends card appears only on a card with a shift (nothing to compare otherwise) and only when the host offers the research capability; on an Events row always, when the capability exists. |
+| Research home pointer (§14.6) | Plain text naming the three open questions with a link to Spec 10 on GitHub; no study is created. |
+| Read-only study (§10.2) | The label *Sender's results — none of these flights are in this workspace* sits above the results; every editing control is disabled rather than hidden, so the page reads the same; the one enabled action is *Run this on my flights* (`run_study_on_my_flights`), which navigates to the new study. Export of a read-only study exports the sender's file unchanged. |
+| Inline help (Spec 14 §7.4) | Seven Research items join the registry: the four questions, reference, slice rule and selection; one sentence each, aircraft-neutral, verdict-free (acceptance 9 has a UI test over the page's own strings). |
+| Small-multiples threshold | Overlay up to 10 slices, small multiples above; the user can toggle either way. The scrubbing cursor is ECharts' linked axisPointer. |
+
 ## 4. Concepts
 
 **Slice.** A contiguous time window of one flight: `flight_id`, source fingerprint, start/end offsets, every channel's samples in the window, and context — source (G3X/AXIS), phase(s) covered, pressure and density altitude, OAT, engine hours, start time. Slices are derived data: recomputed from the logs, never stored (only their *definitions* are).
@@ -163,7 +178,7 @@ A hand slice is `flight fingerprint + start/end offsets`, named. v1 (Q4): on Fli
 
 ### 5.5 Computation
 
-Slicing needs raw channel data, which Spec 01 discards after `analyze_flight`. Research re-parses logs on demand through the `LogSource` abstraction (Spec 04), streaming flight by flight with progress, and keeps only the slices' samples. A rule over the whole workspace is therefore a full pass over the logs; on the 120-log N117ZS set this is the same cost as the Spec 04 parity run and is acceptable with progress shown. Measured in Session A on the 60-flight acceptance set (full-power rule plus test 7.1): about 6 s in server mode and 12 s in the browser's engine (Pyodide under Node.js, the same wheel the page loads); a re-run from a study's descriptor cache, 0.1 s. Acceptance 8's in-page figure is Session B's.
+Slicing needs raw channel data, which Spec 01 discards after `analyze_flight`. Research re-parses logs on demand through the `LogSource` abstraction (Spec 04), streaming flight by flight with progress, and keeps only the slices' samples. A rule over the whole workspace is therefore a full pass over the logs; on the 120-log N117ZS set this is the same cost as the Spec 04 parity run and is acceptable with progress shown. Measured in Session A on the 60-flight acceptance set (full-power rule plus test 7.1): about 6 s in server mode and 12 s in the browser's engine (Pyodide under Node.js, the same wheel the page loads); a re-run from a study's descriptor cache, 0.1 s. **Acceptance 8 (Session B, in-page):** headless Chromium against the static build, 122 logs picked as a folder, the acceptance set (60 flights through 2026-10-28): engine ready 5.4 s; first scan 133 s (the Spec 04 import path, once); full-power slice build cold **14.5 s** with progress shown; `run_study` (slices + cycling) 13.7 s; from the descriptor cache 0.16 s; samples for 12 slices 14.1 s (the slices' 12 flights re-read); heap 291 MB; no page errors (`spike/browser-host/run_research_timing.py`, results in `spike/browser-host/results/research-timing.json`, aggregates only).
 
 **Descriptor cache (Q2).** A study stores its slices' **descriptors** (§6 — a few KB per slice) as derived data, keyed by each slice's log fingerprint and the engine version. Opening a study shows tests and tables at once; only the aligned view, which needs samples, re-parses — and only the slices' flights, not the workspace. A cached entry whose fingerprint or engine version no longer matches is discarded and recomputed, never trusted. Samples are never cached. The study file is valid without the cache.
 
@@ -322,6 +337,7 @@ API-first (Goal 6): each UI action is one operation on the standard envelope; pr
 | `run_study` | study id | the study with each test's result, the cache and a last-run summary |
 | `run_study_on_my_flights` | study id (read-only import) | a new study over the recipient's flights (§10.2) |
 | `get_research_progress` | — | progress of a running build (`research` stream) |
+| `note_study_finding` / `forget_study_finding` | study id + test index (+ note) / `ref_id` | the Journal entry (§10.3, kind `study_finding`) / `{removed}` — Session B, §3.3 |
 
 All are gated in the UI by the `research` capability (`get_capabilities().features.research`). Errors: a malformed rule or unknown preset is `BAD_PARAMS`; running a read-only study is `READ_ONLY`.
 
@@ -329,11 +345,11 @@ CLI: `slingology-eis research presets | slices | samples | test | study {list,sh
 
 ## 12. UI (Spec 03 §4, §5 — new view)
 
-- **Nav:** `Flights Trends Research Journal ⚙` — Research becomes the fourth everyday destination (D7; closes Spec 14 Q3). Spec 03 §4 text to be revised accordingly.
+- **Nav:** `Flights Trends Research Journal ⚙` — Research is the fourth everyday destination (D7; Spec 14 Q3 closed), shown when `get_capabilities().features.research` is true (Spec 03 v0.29 §4). Built: Spec 03 §5.10 describes the views as they are.
 - **Research home:** the workspace's studies (name, finding of its first test, updated date), the presets with a one-line question each, *New study*. Empty state: the presets, and a sentence on what Research is for.
 - **Study page**, top to bottom: selection (all flights / pick / split by) → slice rules and hand slices, with the slice count live → aligned view → tests (add a question; each renders the §8 contract) → references and notes → actions (Journal entry, evidence package, export).
 - **Entry points** ("Research this"): on Flight view (opens a study with that flight selected and the full-power preset suggested for a takeoff, or a hand slice at the current zoom); on a Trends card (study pre-split before/after the card's shift); on an event (study with a slice at the event's window across all flights with the same limit).
-- **Help:** inline help on each test's question and on the reference, per Spec 14's inline-help practice; the docs site gets a Research concept page and one walkthrough (reproducing the acceptance case).
+- **Help:** inline help on each test's question, the reference, the slice rule and the selection (Spec 14 §7.4 registry); the docs site has a Research concept page (`docs/concepts/research.md`) and one walkthrough (`docs/walkthroughs/research-takeoff.md`) reproducing the acceptance case; screenshots to be taken in the docs' screenshot pass (Spec 13).
 
 ## 13. Relationship to other specs
 
@@ -409,7 +425,7 @@ Resolved in v0.3 (Session A):
 
 ## 17. Implementation plan
 
-**Status (v0.4):** Session A done on `research` — acceptance 1–7, 9, 11, 12, 13 pass on the real logs (`tests/contract/test_research_acceptance.py`) after Q11–Q13. Session B in progress on the same branch.
+**Status (v0.5):** Sessions A and B done on `research`. Acceptance 1–7, 9, 11–13 pass on the real logs (`tests/contract/test_research_acceptance.py`); 8 measured in-page (§5.5); 10 is a host test (`tests/unit/test_research_ops.py`) plus the UI walkthrough (`spike/browser-host/run_research_walkthrough.py`, 19 checks in server mode); 12's UI side is a vitest (`web/src/views/Research.test.tsx`). Branch ready for the owner's review and merge into `main`.
 
 Two Claude Code sessions on branch **`research`** off `main` (merged back when both are done), prompts delivered separately.
 
