@@ -418,3 +418,26 @@ def test_the_export_file_inside_an_unzipped_folder_links_its_logs_too(registry_s
     up = rpc(url, "import_workspace", {"content_base64": base64.b64encode((folder / "Sender.eisworkspace").read_bytes()).decode(),
                                         "filename": "Sender.eisworkspace", "name": "Empty"})["result"]
     assert up["logs_linked"] is False and up["manifest"]["log_folders"] == []
+
+
+def test_a_study_is_carried_without_its_derived_results(registry_server, tmp_path):
+    """Spec 02 §7.1 (Spec 06 §10): studies/ is carried; results, the
+    descriptor cache and last run are derived and stay behind."""
+    url = registry_server
+    _sender(url, tmp_path)
+    study = {"name": "Taxi idle", "slice_rules": ["phase:TAXI"], "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}
+    sid = rpc(url, "save_study", {"study": study})["result"]["study_id"]
+    ran = rpc(url, "run_study", {"study_id": sid})["result"]
+    assert ran["last_run"] and ran["tests"][0].get("result")
+    _res, data = _export(url, include_logs=True)
+    z = zipfile.ZipFile(io.BytesIO(data))
+    carried = json.loads(zipfile.ZipFile(io.BytesIO(z.read("Sender/Sender.eisworkspace"))).read(f"studies/{sid}.json"))
+    assert carried["name"] == "Taxi idle" and carried["slice_rules"][0]["rule_id"] == "phase:TAXI"
+    assert not carried.get("cache") and not carried.get("last_run") and "result" not in carried["tests"][0]
+    up = _upload(url, data, "Sender.zip")
+    rpc(url, "import_workspace", {"upload_id": up})
+    rpc(url, "scan_workspace", {})
+    got = rpc(url, "list_studies", {})["result"]["studies"]
+    assert [s["name"] for s in got] == ["Taxi idle"]
+    again = rpc(url, "run_study", {"study_id": got[0]["study_id"]})["result"]
+    assert again["tests"][0]["result"]["finding"] == ran["tests"][0]["result"]["finding"]

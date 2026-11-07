@@ -2248,7 +2248,8 @@ def test_get_capabilities(server):
     from slingology_eis import __version__
     assert caps["host"] == "server" and caps["engine_version"] == __version__ and caps["host_version"] == __version__
     assert caps["features"] == {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
-                                "persistent_storage_status": False, "download_url": True, "folder_watching": False}
+                                "persistent_storage_status": False, "download_url": True, "folder_watching": False,
+                                "research": True}
 
 
 def test_dispatcher_errors_have_distinct_codes(registry_server):

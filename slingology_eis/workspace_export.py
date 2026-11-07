@@ -64,6 +64,9 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("filters.json", "carried", "Filters (Spec 09 §9)"),
     ("journal.json", "carried", "Journal entries and their records (Spec 14 §6)"),
     ("annotations.json", "carried", "Annotations, including acknowledged insights"),
+    # Spec 06 §10.2: studies travel; their tests' results and descriptor
+    # cache are derived, and are recomputed when the recipient runs them.
+    ("studies/*.json", "carried", "Research studies (Spec 06 §10)"),
     ("exclusions.json", "carried", "Log admission record, re-keyed by source_key (§7.5)"),
     ("manifest.json", "manifest", "Workspace name and engine model go into provenance; log_folders are local"),
     ("flights/*/sources.json", "manifest", "Per-flight sources: the flight manifest"),
@@ -151,6 +154,18 @@ def _version_tuple(v: str) -> tuple:
 # ── Remapping (anonymisation) ────────────────────────────────────────────────
 
 _HEX16 = re.compile(r"\b[0-9a-f]{16}\b")
+
+
+def _study_for_export(study: Any) -> Any:
+    """A study travels as configuration (§7.1): its tests' results and
+    descriptor cache are derived and recomputed by the recipient — except
+    in a read-only study, whose whole content is the sender's results
+    (Spec 06 §10.2)."""
+    if not isinstance(study, dict) or study.get("read_only"):
+        return study
+    out = {k: v for k, v in study.items() if k not in ("cache", "last_run")}
+    out["tests"] = [{k: v for k, v in t.items() if k != "result"} for t in study.get("tests") or []]
+    return out
 
 
 def _remap(obj: Any, ids: dict[str, str], names: dict[str, str]) -> Any:
@@ -440,6 +455,8 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
             docs[d["path"]] = _read_json(ws_dir / d["path"])
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
+    for rel in [r for r in docs if r.startswith("studies/")]:
+        docs[rel] = _study_for_export(docs[rel])
     admission, dropped = await _admission_by_key_async(ws_dir, sources)
     if dropped:
         notes.append(f"{dropped} log admission entries left out: their files aren't in the workspace's folders.")
@@ -747,7 +764,7 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
     ws.save_workspace_settings(ws_dir, settings)
     carried = {p for p, c, _n in DOCUMENTS if c == "carried"} - {"settings.json", "exclusions.json"}
     for rel, obj in docs.items():
-        if rel not in carried:
+        if not any(fnmatch.fnmatchcase(rel, pattern) for pattern in carried):
             continue   # only documents the export format carries
         target = ws_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)

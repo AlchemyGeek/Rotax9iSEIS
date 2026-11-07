@@ -104,6 +104,9 @@ ERROR_CODES = {
     # support it. Reserved; nothing produces it yet.
     "UNSUPPORTED_IN_HOST": "the operation isn't available in this host",
     "INTERNAL_ERROR": "an unexpected error inside an operation",
+    # Spec 06 §10.2: a study imported without any of its flights holds the
+    # sender's results and can't be run or edited (Run this on my flights).
+    "READ_ONLY": "the study is read-only",
 }
 
 
@@ -2551,13 +2554,298 @@ def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
     return settings.to_dict()
 
 
+# ── Research (Spec 06 §11) ────────────────────────────────────────────────
+# Every Research action is one operation (goal 6): the page, the CLI and a
+# future agent call the same ones. Slices are built over the workspace's
+# LogSources as a resumable coroutine (Spec 04 D11) with progress on the
+# "research" stream; nothing is computed only in the page.
+
+def _research_call(fn):
+    """Map the research package's errors onto the envelope."""
+    from .research.rules import RuleError
+    from .research.studies import StudyError
+
+    async def wrapped(params: dict, ctx: dict) -> Any:
+        try:
+            out = fn(params, ctx)
+            if inspect.iscoroutine(out):
+                out = await out
+            return out
+        except RuleError as e:
+            raise RpcError("BAD_PARAMS", str(e))
+        except StudyError as e:
+            raise RpcError(e.code, e.message)
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+def _research_rules(ctx: dict, rules: Optional[list]) -> list[dict]:
+    """Slice rules as given, a preset named by its id standing for the
+    preset's rule (e.g. "full_power")."""
+    from .research import presets as rp
+    from .research.rules import RuleError
+    engine_cfg, engine_name = _current_engine(ctx)
+    out = []
+    for r in rules or []:
+        if isinstance(r, str):
+            if r.startswith("phase:"):
+                from .research.rules import phase_rule
+                out.append(phase_rule(r.split(":", 1)[1]))
+                continue
+            p = rp.preset(r, engine_name, engine_cfg)
+            if p is None:
+                raise RuleError(f"no preset {r!r} for {engine_name}")
+            out.append(p)
+        else:
+            out.append(r)
+    return out
+
+
+def _research_progress(ctx: dict):
+    def on_progress(update: dict) -> None:
+        _emit(ctx, "research", {"active": True, **update})
+    return on_progress
+
+
+async def _build(ctx: dict, params: dict, *, cache=None, keep_samples: bool = False, only_slices=None):
+    from .research.slices import build_slice_set
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        return await build_slice_set(
+            ctx["workspace_dir"], _sources(ctx), selection=params.get("selection"),
+            rules=_research_rules(ctx, params.get("slice_rules")), hand_slices=params.get("hand_slices"),
+            channels=params.get("channels"), reference=params.get("reference") or "rpm",
+            windows=params.get("windows"), prominence_min=float(params.get("prominence_min", 0.2)),
+            assignments=_assignments(ctx), cache=cache, keep_samples=keep_samples,
+            on_progress=_research_progress(ctx), only_slices=only_slices)
+    finally:
+        _emit(ctx, "research", {"active": False})
+
+
+def _study_cache(ctx: dict, study_id: Optional[str]):
+    from .research import studies as rs
+    from .research.slices import Cache
+    if not study_id:
+        return None, None
+    doc = rs.load(ctx["workspace_dir"], study_id)
+    return doc, Cache(doc.get("cache"))
+
+
+def _keep_cache(ctx: dict, doc: Optional[dict], cache) -> None:
+    from .research import studies as rs
+    if doc is not None and cache is not None and not doc.get("read_only"):
+        doc["cache"] = cache.to_dict()
+        rs.studies_dir(ctx["workspace_dir"]).mkdir(parents=True, exist_ok=True)
+        (rs.studies_dir(ctx["workspace_dir"]) / f"{doc['study_id']}.json").write_text(json.dumps(doc, indent=2))
+
+
+def op_list_slice_presets(params: dict, ctx: dict) -> Any:
+    """§5.2/§5.3: the shipped slice rules for an engine profile (default:
+    the active workspace's), and the phase rules."""
+    from .research import presets as rp
+    if params.get("engine"):
+        name = _resolve_engine_name(params["engine"])
+        cfg = load_engine_config(name)
+    else:
+        cfg, name = _current_engine(ctx)
+    return rp.list_presets(name, cfg)
+
+
+async def op_build_slices(params: dict, ctx: dict) -> Any:
+    """§5.5: the slices a selection, slice rules and hand slices make, with
+    each slice's context and §6 descriptors and the resolved §7.0 windows.
+    With `study_id`, the study's descriptor cache is used and refreshed."""
+    _require_active(ctx)
+    doc, cache = _study_cache(ctx, params.get("study_id"))
+    ss = await _build(ctx, params, cache=cache)
+    _keep_cache(ctx, doc, cache)
+    out = ss.to_dict()
+    out["selection"] = params.get("selection") or {"mode": "all"}
+    return out
+
+
+def _anchor_index(s, anchor: str, samples: dict) -> int:
+    """D6 anchors, as seconds into the slice: the rule's crossing (default;
+    a hand slice's start), slice start, slice end, a channel's peak, or a
+    phase boundary ("phase:CLIMB")."""
+    if anchor in (None, "", "crossing"):
+        return s.anchor_s - s.start_s
+    if anchor == "start":
+        return 0
+    if anchor == "end":
+        return s.end_s - s.start_s
+    if anchor.startswith("peak:"):
+        y = samples.get(anchor.split(":", 1)[1])
+        if y is None or not np.isfinite(y).any():
+            return 0
+        return int(np.nanargmax(y))
+    if anchor.startswith("phase:"):
+        # The first phase boundary into the named phase inside the slice.
+        return 0
+    from .research.rules import RuleError
+    raise RuleError(f"unknown anchor {anchor!r}; one of crossing, start, end, peak:<channel>, phase:<PHASE>")
+
+
+async def op_get_slice_samples(params: dict, ctx: dict) -> Any:
+    """§11: aligned samples of chosen slices for the views — x in seconds
+    from the anchor (D6), plus each hand slice's stored offset."""
+    _require_active(ctx)
+    channels = params.get("channels") or ["rpm"]
+    ids = set(params.get("slice_ids") or [])
+    ss = await _build(ctx, {**params, "channels": channels}, keep_samples=True, only_slices=ids or None)
+    anchor = params.get("anchor") or "crossing"
+    out = []
+    for s in ss.slices:
+        samples = s.samples or {}
+        a = _anchor_index(s, anchor, samples)
+        if anchor.startswith("phase:"):
+            want = anchor.split(":", 1)[1].upper()
+            fa = ws.load_flight_analysis(ctx["workspace_dir"], s.flight)
+            starts = [int(p["start_s"]) for p in (fa.phases if fa else []) if p["phase"] == want
+                      and s.start_s <= p["start_s"] < s.end_s]
+            a = (starts[0] - s.start_s) if starts else 0
+        n = s.end_s - s.start_s
+        x = [round(float(i - a + s.offset_s), 1) for i in range(n)]
+        out.append({"slice_id": s.slice_id, "flight": s.flight, "label": s.label, "context": s.context,
+                    "anchor_offset_s": a, "t": x,
+                    "channels": {ch: [None if not np.isfinite(v) else round(float(v), 2) for v in samples.get(ch, [])]
+                                 for ch in channels if ch in samples}})
+    return {"anchor": anchor, "channels": channels, "slices": out}
+
+
+async def op_run_test(params: dict, ctx: dict) -> Any:
+    """§11: one test (§7.1–7.4) on a slice set, returning the §8 result.
+    The set is given as selection + slice_rules + hand_slices (or a
+    study_id whose definition and cache are used)."""
+    from .research import questions as rq
+    from .research import studies as rs
+    _require_active(ctx)
+    test_id = params.get("test_id")
+    doc, cache = _study_cache(ctx, params.get("study_id"))
+    base = {}
+    if doc is not None:
+        base = {"selection": doc["selection"], "slice_rules": doc["slice_rules"], "hand_slices": doc["hand_slices"],
+                "windows": doc.get("windows"), "references": doc.get("references")}
+    merged = {**base, **{k: v for k, v in params.items() if v is not None}}
+    t = {"test_id": test_id, "params": dict(params.get("params") or {}), "channels": list(params.get("channels") or [])}
+    chans, ref = rs._channels_for(rs._test(t))
+    ss = await _build(ctx, {**merged, "channels": chans, "reference": ref}, cache=cache)
+    _keep_cache(ctx, doc, cache)
+    d = ss.to_dict()
+    d["selection"] = merged.get("selection") or {"mode": "all"}
+    engine_cfg, _ = _current_engine(ctx)
+    return rq.run(test_id, d, channels=t["channels"] or None, params=t["params"],
+                  references=merged.get("references"), engine_cfg=engine_cfg)
+
+
+def _engine_model(ctx: dict) -> str:
+    try:
+        return ws.load_manifest(ctx["workspace_dir"]).engine_model
+    except (FileNotFoundError, OSError, ValueError):
+        return ""
+
+
+def op_save_study(params: dict, ctx: dict) -> Any:
+    """Create (no study_id) or replace a study; tests' results and the
+    cache are derived and may be sent or left out."""
+    from .research import studies as rs
+    _require_active(ctx)
+    study = dict(params.get("study") or {})
+    # A preset named by id is stored as its full rule: the study travels
+    # to workspaces (and engine versions) whose presets may differ.
+    study["slice_rules"] = _research_rules(ctx, study.get("slice_rules"))
+    return rs.save(ctx["workspace_dir"], study, engine_model=_engine_model(ctx))
+
+
+def op_load_study(params: dict, ctx: dict) -> Any:
+    from .research import studies as rs
+    _require_active(ctx)
+    return rs.load(ctx["workspace_dir"], params.get("study_id"))
+
+
+def op_list_studies(params: dict, ctx: dict) -> Any:
+    from .research import studies as rs
+    _require_active(ctx)
+    return {"studies": rs.list_all(ctx["workspace_dir"])}
+
+
+def op_delete_study(params: dict, ctx: dict) -> Any:
+    from .research import studies as rs
+    _require_active(ctx)
+    if not rs.delete(ctx["workspace_dir"], params.get("study_id")):
+        raise RpcError("NOT_FOUND", f"no study {params.get('study_id')}")
+    return {"deleted": params.get("study_id")}
+
+
+async def op_run_study(params: dict, ctx: dict) -> Any:
+    """Run every test of a saved study and save the results and cache."""
+    from .research import studies as rs
+    _require_active(ctx)
+    doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
+    engine_cfg, _ = _current_engine(ctx)
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        doc = await rs.run(ctx["workspace_dir"], _sources(ctx), doc, engine_cfg=engine_cfg,
+                           assignments=_assignments(ctx), on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+    return rs.save(ctx["workspace_dir"], doc, engine_model=_engine_model(ctx))
+
+
+def op_export_study(params: dict, ctx: dict) -> Any:
+    """§10.2: the study as `<name>.eisstudy` (its results, descriptor cache,
+    evidence CSVs and charts), handed to the transport like a workspace
+    export."""
+    from .research import studies as rs
+    _require_active(ctx)
+    doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
+    data = rs.export_bytes(doc)
+    out = _export_dir(ctx) / uuid.uuid4().hex
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{rs.safe_name(doc['name'])}{rs.SUFFIX}"
+    path.write_bytes(data)
+    return {"filename": path.name, "size": len(data), "download_url": ctx["deliver_file"](path, path.name)}
+
+
+def op_import_study(params: dict, ctx: dict) -> Any:
+    """§10.2: a `.eisstudy` (content or upload_id) becomes a new study in
+    the active workspace; flights matched by flight_id. Read-only when
+    none of its flights are here (Q5)."""
+    from .research import studies as rs
+    _require_active(ctx)
+    if params.get("upload_id"):
+        data, _name = _log_content(params, ctx)
+    elif isinstance(params.get("content"), (bytes, bytearray)):
+        data = bytes(params["content"])
+    else:
+        raise RpcError("BAD_PARAMS", "choose a .eisstudy file")
+    return rs.import_bytes(ctx["workspace_dir"], data, engine_model=_engine_model(ctx))
+
+
+async def op_run_study_on_my_flights(params: dict, ctx: dict) -> Any:
+    """Q5 *Run this on my flights*: a new study with the same rules,
+    references and tests over this workspace's flights, run and saved."""
+    from .research import studies as rs
+    _require_active(ctx)
+    src = rs.load(ctx["workspace_dir"], params.get("study_id"))
+    doc = rs.save(ctx["workspace_dir"], rs.for_my_flights(src), engine_model=_engine_model(ctx))
+    return await op_run_study({"study_id": doc["study_id"]}, ctx)
+
+
+def op_get_research_progress(params: dict, ctx: dict) -> Any:
+    return ctx.get("research_progress", {"active": False})
+
+
 # Spec 04 v0.4 §9.5: what this host can do, by host kind. The UI gates on
 # `features`, never on `host`.
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
-               "persistent_storage_status": False, "download_url": True, "folder_watching": False},
+               "persistent_storage_status": False, "download_url": True, "folder_watching": False,
+               "research": True},
     "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
-                "persistent_storage_status": True, "download_url": False, "folder_watching": False},
+                "persistent_storage_status": True, "download_url": False, "folder_watching": False,
+                "research": True},
 }
 
 
@@ -2666,6 +2954,20 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "update_exclusion_reason": op_update_exclusion_reason,
     "get_topic_help": op_get_topic_help,
     "get_aircraft_summary": op_get_aircraft_summary,
+    # Research (Spec 06 §11)
+    "list_slice_presets": _research_call(op_list_slice_presets),
+    "build_slices": _research_call(op_build_slices),
+    "get_slice_samples": _research_call(op_get_slice_samples),
+    "run_test": _research_call(op_run_test),
+    "save_study": _research_call(op_save_study),
+    "load_study": _research_call(op_load_study),
+    "list_studies": _research_call(op_list_studies),
+    "delete_study": _research_call(op_delete_study),
+    "run_study": _research_call(op_run_study),
+    "export_study": _research_call(op_export_study),
+    "import_study": _research_call(op_import_study),
+    "run_study_on_my_flights": _research_call(op_run_study_on_my_flights),
+    "get_research_progress": op_get_research_progress,
 }
 
 
