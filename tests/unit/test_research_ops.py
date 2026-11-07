@@ -218,3 +218,18 @@ def test_research_changes_no_flight_fleet_or_insight_result(research_ws):
     assert _ok(rpc(h, "forget_study_finding", {"ref_id": f"{sid}:0"}))["removed"] is True
     assert [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]] == before[2]
     assert rpc(h, "note_study_finding", {"study_id": sid, "test_index": 5})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_run_study_after_a_wider_build_reuses_the_cache(research_ws):
+    """The study page builds slices for the view's channels, then runs a
+    test on fewer: the cache holds more channels than the run asks for."""
+    h, _ids = research_ws
+    view = ["rpm", "map_inhg", "fuel_flow_gph"]
+    sid = _ok(rpc(h, "save_study", {"study": {"name": "S", "selection": {"mode": "all"}, "slice_rules": ["full_power"],
+                                              "tests": [{"test_id": "cycling", "params": {}, "channels": ["rpm"]}],
+                                              "view": {"anchor": "crossing", "channels": view}}}))["study_id"]
+    _ok(rpc(h, "build_slices", {"study_id": sid, "selection": {"mode": "all"}, "slice_rules": ["full_power"],
+                                "channels": view}))
+    for _ in range(2):
+        ran = _ok(rpc(h, "run_study", {"study_id": sid}))
+        assert ran["tests"][0]["result"]["finding"].endswith("in 6 of 6 slices.")

@@ -387,7 +387,8 @@ async def build_slice_set(ws_dir: Path, sources, *, selection: Optional[dict] = 
     def from_cache(s: Slice) -> bool:
         entry = cache.slices.get(s.slice_id) or {}
         vals = entry.get("values") or {}
-        have = {ch for ch in s._pass1}
+        # A cached slice may hold more channels than this build asks for.
+        have = [ch for ch in channels if ch in s._pass1]
         if not all(keys[ch] in (vals.get(ch) or {}) for ch in have):
             return False
         s.descriptors = {ch: vals[ch][keys[ch]] for ch in have}
