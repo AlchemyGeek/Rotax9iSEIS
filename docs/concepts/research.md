@@ -1,68 +1,56 @@
-# Research: looking at the shape of a flight
+# Research: the third question
 
 <div class="in-brief" markdown>
-**In brief.** Limits ask whether a value crossed an Operators Manual line. Trends ask whether a value has been drifting over months. **Research** asks a third question: *does a signal behave the way it should, within a flight, and does it do so on every flight?* You pick pieces of flights — all takeoffs, all climbs, one odd window — and ask plain questions of them: is this steady or cycling, do these two move together, are these groups different, which of these pieces is unusual. Every answer is a sentence, a chart, a number next to something to compare it with, and the caveats. Research never tells you something is wrong; it shows you what the data does and lets you judge.
+**In brief.** The app asks three questions of your engine. *Did a value cross an Operators Manual line?* — that is **Limits and events**. *Has a value been drifting over the months?* — that is **Trends**. **Research** asks the third: *within a flight, does each signal behave the way it should — and does it do so on every flight?* You choose pieces of flights, ask plain questions of them, and get back a sentence, a chart, a number beside something to compare it with, and the caveats. Research never tells you something is wrong. It shows you what the data does, across all your flights at once, and leaves the judgement to you.
 </div>
 
-## Why a third question
+## Three questions, three blind spots
 
-Some things an engine does are invisible to both of the other views. The case that led to this page: an rpm that cycled up and down by about 180 rpm every four seconds on nearly every takeoff of one aircraft, for 145 hours, inside every limit and without ever changing — so no limit fired and no trend moved. It was felt once, in calm air, and found by lining up every full-power segment of every flight and looking at them together. That is what Research does for you, without scripts.
+Each question sees what the other two cannot.
 
-<!-- screenshot: research-home.png — the Research page with the presets and a saved study -->
+<!-- diagram: research-three-questions.svg — three panels over the same rpm trace: a limit line (level), a slow drift across months (drift), a repeating wobble inside one flight (shape) -->
 
-## Slices
+- A **limit** is a line. A signal that stays under it is invisible to the limit checker, however oddly it moves.
+- A **trend** compares your engine with its own past. A behaviour your engine has had since the first flight is, to Trends, normal.
+- **Research** looks at the *shape* of a signal within a flight — steady or cycling, leading or lagging, like the others or not — and asks the same of every flight you have.
 
-The unit of Research is a **slice**: a stretch of one flight. There are three ways to make slices, and they all produce the same thing:
+The case that made this page necessary: one aircraft's rpm cycled up and down by about 180 rpm every four seconds on nearly every takeoff, for 145 engine hours. It stayed inside every limit, so no event fired. It never changed, so no trend moved. A test pilot, an instructor and the owner all flew behind it without noticing; it was felt once, in calm air, and found by lining up every full-power segment of every flight and looking at them together. The owner did that with scripts. Research does it in the app.
 
-- **by rule** — a condition on channels that must hold for long enough: *rpm at or above 5,550 for at least 15 seconds*, with short dips bridged. The app ships a few of these as **presets** (full-power segment, governed climb, stable cruise, idle, warm-up), measured against real logs; you can copy and edit any of them;
-- **by phase** — every climb, every takeoff roll, as the app already identifies them;
-- **by hand** — the window you are looking at on a flight's chart, via *Research this window*.
+## What Research is made of
 
-A slice carries every channel, so you choose what to look at when you ask a question, not when you make the slices. A rule applied to all your flights gives a **slice set** — ninety-odd takeoffs, say — and that set is what every question is asked about.
+Four ideas, each with its own page.
 
-## The questions
-
-Four in this version. Each is phrased as you would ask it, with the method behind a help icon.
-
-| Question | What it tells you | What it does not tell you |
+| Idea | In one line | Page |
 |---|---|---|
-| **Is this signal steady, or is it cycling?** | Whether one channel repeats an up-and-down, how often, by how much, and in how many of the slices | Whether cycling is bad: it is a shape, read against the Operators Manual limit or a value you supply |
-| **Do these two move together, and who leads?** | How closely two channels rise and fall together, and the delay between them | Which one causes the other |
-| **Are these two groups different?** | How far apart a measurement sits between two groups of slices — before and after a date, two altitude bands, two log sources | Why; and with a small group, the answer says so |
-| **Which of these slices is unusual?** | Which slices sit far from the rest on many measurements, and on which one | That an unusual slice is a bad one — on the takeoff case above the two *unusual* slices were the two clean takeoffs |
+| **Slice** | A piece of one flight — all takeoffs, all climbs, or one window you mark — and the unit everything else works on | [Slices: pieces of flights](research-slices.md) |
+| **Aligned view** | Many slices on one time axis, lined up at the moment that matters, so your eye can compare them | [Seeing slices together](research-aligned-view.md) |
+| **Question** | One of four things you can ask of a set of slices, phrased as you would ask it | [Is it steady, or cycling?](research-cycling.md) · [Do these move together?](research-together.md) · [Are these two groups different?](research-groups.md) · [Which slices are unusual?](research-unusual.md) |
+| **Study** | Your selection, slices, questions, references and notes, saved and shareable | [Studies: saving and sharing](research-studies.md) |
 
-Windows and lag ranges are not fixed numbers: the app estimates the dominant period first and sizes them from it, falling back to a fraction of the slice length when there is no period, and prints the values it used on every result.
+Every answer comes in the same shape — [Reading a result](research-results.md) — and every answer has somewhere to go afterwards — [From a finding to action](research-action.md).
 
-## Reading a result
+<!-- screenshot: research-home.png — the Research page: presets with their questions, saved studies with their first finding -->
 
-Every result has the same five parts, in this order:
+## What Research does not do
 
-1. **Finding** — one sentence, always with a count: *RPM cycles every 3.8 s (IQR 3.6–3.9), swing 180 rpm (170–190), in 93 of 98 slices.*
-2. **Evidence** — the chart, and the per-slice table one click away (every slice, every measurement, and the conditions it flew in), downloadable as CSV.
-3. **Magnitude** — the size of what was found, beside its **reference**: the Operators Manual value where one applies, the spread across your own slices, or a value you typed in with its source (*Airmaster governing band ±100 rpm*).
-4. **Caveats** — sampling limits (logs are once a second, so periods under about three seconds are unreliable), differences between log sources, small groups, and what the result does not mean.
-5. The **block** the study saves, for the next time and for anyone you share it with.
+It brings no rules of its own. The only numbers the app contributes to a result are Operators Manual values already in your engine profile; everything else is measured from your own flights or typed in by you, with its source. It declares nothing *abnormal*, *faulty* or *detected*. It changes nothing elsewhere in the app until you take a finding somewhere — into the Journal, into an evidence package, or to another owner.
 
-<!-- screenshot: research-result.png — one question's result in its five parts -->
-
-## Studies
-
-A Research session is a **study**: your selection of flights, your slice rules and hand slices, your questions, your references and notes. Studies are saved in the workspace and listed on the Research page with their first finding. They refer to flights by fingerprint, never by file, so one travels: export it as a `.eisstudy`, and another owner of the same engine imports it and runs *your* rule on *their* flights. Opened without any of its flights, a study shows the sender's results read-only under a clear label — never to be confused with your own — with one action, *Run this on my flights*.
-
-## What comes out
-
-Research is upstream of everything else and changes nothing by itself. A finding leaves it only when you take it somewhere:
-
-- **Note in Journal** — the finding, verbatim, as a *Research finding* entry that links back to the study;
-- **Evidence package** — the findings, magnitudes, caveats and per-slice table in one file: what a manufacturer or mechanic can act on;
-- **Export** — the `.eisstudy` for another pilot.
+That restraint is deliberate. A repeating shape in a signal may be a problem, a characteristic of the installation, or nothing. Research gives you the evidence to ask the right person; it does not pretend to be that person.
 
 ## Getting there
 
-From the **Research** item in the top bar, or from the thing that made you wonder: *Research this window* on a flight's chart, *Research this* on a Trends card that shows a change, or on an event's row in the Events table. Each opens a new study already pointed at that window, that metric, or that limit — across all your flights.
+From **Research** in the top bar, or from the thing that made you wonder:
+
+- *Research this window* on a flight's chart — the window you are zoomed into becomes a slice, compared with every flight;
+- *Research this* on a Trends card that shows a change — a study split into before and after;
+- *Research this* on a row of the Events table — the event's window, across every flight with that limit.
+
+## What to do with this
+
+If something felt odd on a flight, start with the walkthrough [“This flight felt odd”](../walkthroughs/research-odd-flight.md). If you want to see the whole method on a real case, [Reproducing a takeoff investigation](../walkthroughs/research-takeoff.md) repeats the oscillation case step by step on any season of flights.
 
 ## How it works
 
-The engine re-reads your logs to cut the slices (the app's normal analysis keeps only per-flight results), so the first build of a study over a whole workspace takes some seconds with progress shown; a study keeps its per-slice measurements and reopens at once. Measurements are robust (medians, median absolute deviations) because one-second engine data is quantised and has outliers; periods come from the autocorrelation with a periodogram cross-check; group differences are shown as a median difference and an effect size, never as a bare *p*-value. The only numbers the app brings to a result are Operators Manual values already in your engine profile.
+Research runs on the same engine as the rest of the app and reads your logs again to cut slices — the normal analysis keeps only per-flight results — so the first build of a study over a whole workspace takes some seconds, with progress shown; a saved study keeps its measurements and reopens at once. Everything the page does is an operation the command line can also run, so a study is reproducible outside the browser, and a future assistant could drive the same questions.
 
-The full design is [Spec 06 — Research](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/06-research.md); the case that shaped it is the [takeoff RPM/MAP oscillation investigation](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/research/2026-10-takeoff-rpm-oscillation.md), which the walkthrough [Reproducing a takeoff investigation](../walkthroughs/research-takeoff.md) repeats in the app.
+The design is [Spec 06 — Research](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/06-research.md). The case that shaped it is the owner's [takeoff RPM/MAP oscillation investigation](../research/2026-10-takeoff-rpm-oscillation.md).

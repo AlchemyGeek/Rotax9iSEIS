@@ -1,0 +1,20 @@
+# mkdocs.yml — replace the Research line under "Deciding what matters" with this group,
+# placed between "Deciding what matters" and "Working with others".
+# The Walkthroughs and Reference additions follow in Phase 1, part 2.
+
+  - Deciding what matters:
+      - Your decisions: concepts/your-decisions.md
+      - "Trends: is my engine changing?": concepts/trends.md
+      - The Journal: concepts/the-journal.md
+  - Investigating your engine:
+      - "Research: the third question": concepts/research.md
+      - "Slices: pieces of flights": concepts/research-slices.md
+      - Seeing slices together: concepts/research-aligned-view.md
+      - "Is it steady, or cycling?": concepts/research-cycling.md
+      - "Do these move together?": concepts/research-together.md
+      - "Are these two groups different?": concepts/research-groups.md
+      - Which slices are unusual?: concepts/research-unusual.md
+      - Reading a result: concepts/research-results.md
+      - "Studies: saving and sharing": concepts/research-studies.md
+      - From a finding to action: concepts/research-action.md
+      - Questions Research will ask next: concepts/research-next.md

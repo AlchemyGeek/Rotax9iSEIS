@@ -1,0 +1,42 @@
+# mkdocs.yml — Phase 1, part 2 additions.
+
+# 1. Walkthroughs: replace the existing Research line with these three.
+  - Walkthroughs:
+      - Open the app and your first workspace: walkthroughs/first-workspace.md
+      - Reading your first flight: walkthroughs/first-flight.md
+      - From an insight to a decision: walkthroughs/insight-to-decision.md
+      - Export and import: walkthroughs/export-import.md
+      - Reproducing a takeoff investigation: walkthroughs/research-takeoff.md
+      - "“This flight felt odd”": walkthroughs/research-odd-flight.md
+      - Sharing a study: walkthroughs/research-sharing.md
+
+# 2. Reference: three new pages, plus the owner's investigation write-up (decision F).
+  - Reference:
+      - Operators Manual limits by engine: reference/om-limits.md
+      - Settings and their defaults: reference/settings.md
+      - Research presets: reference/research-presets.md
+      - Research questions and parameters: reference/research-questions.md
+      - The study file: reference/research-study-file.md
+      - Glossary: reference/glossary.md
+      - The research paper: reference/research-paper.md
+      - Further reading: reference/further-reading.md
+      - Investigations:
+          - "Takeoff RPM/MAP oscillation (Oct 2026)": research/2026-10-takeoff-rpm-oscillation.md
+
+# 3. exclude_docs: remove the `research/` line so the write-up is built (specs stay excluded).
+exclude_docs: |
+  specs/
+
+# 4. Further reading (docs/reference/further-reading.md): add to the specifications table
+#    | 06 | Research | Slices, the four questions, the result contract, studies and sharing |
+#    and a short section after "The specifications":
+#
+#    ## Investigations
+#
+#    Owner's write-ups of investigations done with the app's data, kept as the worked cases behind
+#    Research. The first — the takeoff RPM/MAP oscillation of October 2026 — is the acceptance case
+#    for Spec 06 and the story the walkthrough *Reproducing a takeoff investigation* retells.
+#
+#    → [Takeoff RPM/MAP oscillation (Oct 2026)](../research/2026-10-takeoff-rpm-oscillation.md); `docs/research/` in the repository.
+
+# 5. Glossary: merge docs/reference/glossary-research-additions.md into glossary.md alphabetically, then delete the additions file.
