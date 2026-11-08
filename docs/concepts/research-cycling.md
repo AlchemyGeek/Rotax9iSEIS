@@ -27,7 +27,7 @@ Under the sentence: a chart of every slice's swing, by source; the **magnitude**
 
 ## Reading the magnitude
 
-A 180-rpm swing means little on its own. Beside the Operators Manual's 5,800-rpm limit it shows how much headroom the top of the swing leaves. Beside the spread of swing across your own slices it shows whether some slices are different from the rest. Beside a reference you type in — *Airmaster governing band ±100 rpm, from the controller manual* — it becomes a comparison you can make yourself. The app brings only the Operators Manual value; the rest is yours. See [Reading a result](research-results.md).
+A 180-rpm swing means little on its own. Beside the Operators Manual's rpm limit it shows how the swing relates to the line the engine must respect. Beside the spread of swing across your own slices it shows whether some slices are different from the rest. Beside a reference you type in — *Airmaster governing band ±100 rpm, from the controller manual* — it becomes a comparison you can make yourself. The app brings only the Operators Manual value; the rest is yours. See [Reading a result](research-results.md).
 
 ## What it does not tell you
 

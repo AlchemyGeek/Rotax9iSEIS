@@ -25,7 +25,7 @@ The count is the part to read first. *In 93 of 98* is a characteristic; *in 4 of
 
 | Reference | Where it comes from | Example |
 |---|---|---|
-| **Operators Manual value** | your engine profile — the only number the app brings | the 5,800-rpm limit, as headroom above the top of the swing |
+| **Operators Manual value** | your engine profile — the only number the app brings | the rpm limit, drawn on the swing chart |
 | **Your own slices** | the spread of the same measurement across the set | this slice's swing against the middle half of all slices |
 | **A value you typed in** | your study, with a label and a source | *Airmaster governing band ±100 rpm — AP3/4/5 manual* |
 

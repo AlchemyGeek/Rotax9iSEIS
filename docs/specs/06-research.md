@@ -27,7 +27,7 @@ On 2026-10-24 the pilot of N117ZS felt a fore-aft surge in a calm-air climb afte
 
 The app could not have found it, by construction:
 
-1. **Limits** ask *did a value cross an OM line?* The only trace was sampled rpm peaks of 5810–5850, and Spec 09 v0.12 / Spec 10 D16–17 deliberately classified those as jitter at the 5,800 ceiling, to be handled by a user magnitude filter. The system saw the symptom and we designed it to be silenced.
+1. **Limits** ask *did a value cross an OM line?* The cycle is a swing about a setpoint 100 rpm below the limit; whatever brief trace it left at the ceiling, Spec 09 v0.12 / Spec 10 D16–17 had deliberately classified takeoff rpm jitter at the 5,800 ceiling as something for a user magnitude filter. The system was designed to look past exactly this.
 2. **Trends** ask *is my engine changing?* The swing was 180 rpm at 28 hours and 180 rpm at 145 hours. A self-referenced baseline would have called the oscillation normal. (A fleet of other 916iS aircraft would have shown it — none is available.)
 
 The oscillation was visible only through physics (a governor holding a setpoint should not cycle) and through the *shape* of signals within a flight — periodicity, cross-channel correlation, lag. That is a third kind of analysis: not level, not drift, but **behaviour within a slice of a flight, compared across many slices**. The investigation did it with scratch scripts outside the app (`~/osc/` — Appendix A). This spec puts it in the app.

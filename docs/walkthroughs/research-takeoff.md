@@ -34,7 +34,7 @@ The preset study already carries **Is this signal steady, or is it cycling?** on
 
 > RPM cycles every 3.8 s (IQR 3.6–3.9), swing 180 rpm (170–190), in 93 of 98 slices (AXIS 13 of 14, G3X 80 of 84).
 
-Read the count first: 93 of 98 is a characteristic, not an incident. Below the sentence: every slice's swing by log source; the magnitude beside the Operators Manual's 5,800-rpm limit, as the headroom left above the top of the swing; and the caveats, including the window the app chose (12 s — the floor for once-a-second logs) and the reminder that a repeating shape is not a judgement.
+Read the count first: 93 of 98 is a characteristic, not an incident. Below the sentence: every slice's swing by log source; the magnitude beside the Operators Manual's rpm limit, drawn on the chart; and the caveats, including the window the app chose (12 s — the floor for once-a-second logs) and the reminder that a repeating shape is not a judgement.
 
 <!-- screenshot: wt-takeoff-04-cycling.png — the cycling result in its five parts -->
 
@@ -44,7 +44,7 @@ Read the count first: 93 of 98 is a characteristic, not an incident. Below the s
 
 ## 6. Add a reference
 
-In **Your references**, add one — label *Airmaster governing band*, channel RPM, kind band, value 100, source *AP3/4/5 Operator's Manual V5-1A*. **Save**, then **Run** again. The magnitude now also reads against ±100 rpm, and a 180-rpm swing beside a ±100-rpm band is a comparison you can make yourself. The app brought the 5,800; you brought the 100.
+In **Your references**, add one — label *Airmaster governing band*, channel RPM, kind band, value 100, source *AP3/4/5 Operator's Manual V5-1A*. **Save**, then **Run** again. The magnitude now also reads against ±100 rpm, and a 180-rpm swing beside a ±100-rpm band is a comparison you can make yourself. The app brought the Operators Manual line; you brought the 100.
 
 ## 7. Who leads?
 

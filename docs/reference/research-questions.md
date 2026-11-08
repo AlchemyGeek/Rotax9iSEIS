@@ -46,7 +46,7 @@ Values are rounded to whole seconds. The resolved values and what they were deri
 | Settings | swing window (proposed); minimum prominence for a period to count (0.2) |
 | Reports | median and interquartile range of period and swing across the set; the count of slices with a clear period (recurrence), per source |
 | Chart | every slice's swing, by source |
-| References | the Operators Manual limit for the channel where one exists (as headroom above the top of the swing); the set's own spread; your references for that channel |
+| References | the Operators Manual limit for the channel where one exists (drawn on the chart); the set's own spread; your references for that channel |
 | Does not mean | that cycling is bad; periods under 3 s cannot be seen |
 
 ## Do these two move together, and who leads?
