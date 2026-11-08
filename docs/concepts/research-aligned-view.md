@@ -8,7 +8,10 @@
 
 Stacked flights are not comparable until they are **aligned** on something meaningful. A takeoff slice may begin after twenty seconds of ground roll or, on a touch-and-go, two seconds after the throttle went in. Draw both from their first sample and the shapes smear; draw both from the moment rpm passed 5,550 and they sit on top of each other.
 
-<!-- diagram: research-alignment.svg — the same three slices drawn twice: aligned on slice start (smeared) and on the rule's crossing (coincident) -->
+<figure class="diagram">
+--8<-- "diagrams/research-alignment.svg"
+<figcaption>The same three takeoffs aligned on slice start (smeared) and on the rule's crossing (coincident).</figcaption>
+</figure>
 
 The app offers a few **anchors**, each a rule the study can store, so the view is reproducible:
 

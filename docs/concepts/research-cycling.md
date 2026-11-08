@@ -8,7 +8,10 @@
 
 Many engine signals are *supposed* to hold still for a while: rpm under a governor, manifold pressure at a set throttle, fuel flow in cruise, oil pressure once warm. When one of them wobbles rhythmically instead, two control systems are usually arguing — a governor and a boost controller, a regulator and a pump — or something mechanical is loose. The wobble can be well inside every limit and perfectly consistent from the first flight, which is why neither the limit checker nor Trends will show it. Your body may: the oscillation case was first noticed as a fore-aft surge, in calm air, after 145 hours.
 
-<!-- diagram: research-period-swing.svg — an rpm trace with the period marked between two peaks and the swing marked bottom-to-top -->
+<figure class="diagram">
+--8<-- "diagrams/research-period-swing.svg"
+<figcaption>Period and swing on a cycling rpm trace.</figcaption>
+</figure>
 
 ## What you get back
 

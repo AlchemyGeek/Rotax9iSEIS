@@ -8,7 +8,10 @@
 
 The other three questions need a hypothesis: you name the channel, or the pair, or the split. This one needs none. It looks at everything the slices carry and points at the slices that do not fit the others. It is the question to ask when something felt wrong and you cannot say what, and the question to ask routinely of a season of cruises when nothing felt wrong at all.
 
-<!-- diagram: research-unusual.svg — slices as points on two measurements, the cloud of ordinary ones and two standing apart, each labelled with the measurement it stands out on -->
+<figure class="diagram">
+--8<-- "diagrams/research-unusual.svg"
+<figcaption>Unusual means far from the other slices — here, the two clean high-altitude takeoffs.</figcaption>
+</figure>
 
 ## What you get back
 

@@ -10,7 +10,10 @@ A flight is too big a thing to compare. Two flights differ in length, route, wea
 
 That is the whole idea. The oscillation case was found by cutting *every stretch of every flight where rpm sat at or above 5,550 for at least 15 seconds* — 98 slices from 60 flights — and looking at them side by side. The slice is what made ninety takeoffs comparable.
 
-<!-- diagram: research-slice-anatomy.svg — one slice: a time window on a flight with all channels inside it and its context (source, phases, altitude, OAT, engine hours) attached -->
+<figure class="diagram">
+--8<-- "diagrams/research-slice-anatomy.svg"
+<figcaption>A slice: a window of one flight carrying every channel and its context.</figcaption>
+</figure>
 
 ## Three ways to cut
 

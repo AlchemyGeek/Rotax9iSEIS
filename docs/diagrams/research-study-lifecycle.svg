@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 225" role="img" aria-label="A left-to-right flow: cut slices, ask questions, save the study, export a study file, send. Another owner imports it; with none of the sender's flights present it opens read-only with the sender's results, and one action, Run this on my flights, makes a new study of theirs with the same rule." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<rect x="20" y="40" width="120" height="64" rx="6" fill="currentColor" opacity="0.06"/>
+<text x="80" y="62" text-anchor="middle" font-weight="600">cut slices</text>
+<text x="80" y="80" text-anchor="middle" opacity="0.7" font-size="10">a rule, phases,</text>
+<text x="80" y="93" text-anchor="middle" opacity="0.7" font-size="10">hand slices</text>
+<line x1="142" y1="72" x2="178" y2="72" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+<rect x="160" y="40" width="120" height="64" rx="6" fill="currentColor" opacity="0.06"/>
+<text x="220" y="62" text-anchor="middle" font-weight="600">ask questions</text>
+<text x="220" y="80" text-anchor="middle" opacity="0.7" font-size="10">four, in your</text>
+<text x="220" y="93" text-anchor="middle" opacity="0.7" font-size="10">words</text>
+<line x1="282" y1="72" x2="318" y2="72" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+<rect x="300" y="40" width="120" height="64" rx="6" fill="currentColor" opacity="0.06"/>
+<text x="360" y="62" text-anchor="middle" font-weight="600">save the study</text>
+<text x="360" y="80" text-anchor="middle" opacity="0.7" font-size="10">definitions +</text>
+<text x="360" y="93" text-anchor="middle" opacity="0.7" font-size="10">measurements</text>
+<line x1="422" y1="72" x2="458" y2="72" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+<rect x="440" y="40" width="120" height="64" rx="6" fill="currentColor" opacity="0.06"/>
+<text x="500" y="62" text-anchor="middle" font-weight="600">export .eisstudy</text>
+<text x="500" y="80" text-anchor="middle" opacity="0.7" font-size="10">no logs, flights</text>
+<text x="500" y="93" text-anchor="middle" opacity="0.7" font-size="10">by fingerprint</text>
+<line x1="560" y1="72" x2="598" y2="72" stroke="#14b8a6" stroke-width="1.5" marker-end="url(#ar)"/>
+<text x="579" y="64" text-anchor="middle" fill="#14b8a6" font-size="10">send</text>
+<rect x="600" y="40" width="140" height="64" rx="6" fill="#14b8a6" opacity="0.12"/>
+<text x="670" y="62" text-anchor="middle" fill="#14b8a6" font-weight="600">another owner imports</text>
+<text x="670" y="80" text-anchor="middle" opacity="0.8" font-size="10">none of your flights there →</text>
+<text x="670" y="93" text-anchor="middle" opacity="0.8" font-size="10">read-only: sender's results</text>
+<line x1="670" y1="106" x2="670" y2="140" stroke="#14b8a6" stroke-width="1.5" marker-end="url(#ar)"/>
+<rect x="560" y="142" width="180" height="50" rx="6" fill="none" stroke="#14b8a6" stroke-width="1.5"/>
+<text x="650" y="162" text-anchor="middle" fill="#14b8a6" font-weight="600">Run this on my flights</text>
+<text x="650" y="178" text-anchor="middle" opacity="0.8" font-size="10">a new study, your rule on their engine</text>
+<line x1="558" y1="167" x2="420" y2="167" stroke="#14b8a6" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+<text x="548" y="160" text-anchor="end" opacity="0.8" font-size="10">the same finding sentence — now about their aircraft</text>
+<text x="20" y="215" opacity="0.7">a study stores definitions, never logs or samples; the recipient's data never leaves their machine, and yours never had to</text>
+</svg>

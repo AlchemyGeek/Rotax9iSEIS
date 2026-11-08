@@ -8,7 +8,10 @@
 
 *So what do I do with this?* was the question that shaped Research. A pilot who is handed *RPM cycles every 3.8 s in 93 of 98 takeoffs* and nothing else has been given a worry, not help. A finding is useful when it comes with its evidence, in a form that lets the right person recognise it. In the oscillation case the right person was the propeller controller's manufacturer, who identified a known behaviour from one email containing a plot and the per-takeoff table, and offered a firmware update the same day. The owner had spent an evening with scripts to produce that table. Research produces it in a click.
 
-<!-- diagram: research-paths-out.svg — a finding with three arrows: Journal entry, evidence package (to mechanic / manufacturer), shared study (to another owner); a dashed fourth arrow labelled "future: detector" -->
+<figure class="diagram">
+--8<-- "diagrams/research-paths-out.svg"
+<figcaption>Where a finding goes: the Journal, an evidence package, a shared study — and, in time, a shared detector.</figcaption>
+</figure>
 
 ## Three ways out
 

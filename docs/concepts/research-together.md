@@ -8,7 +8,10 @@
 
 A wobble in one signal is a symptom. The same wobble in a second signal, at the same instant or a fixed moment later, is a mechanism. In the oscillation case rpm cycled and so did manifold pressure, in lockstep, with fuel flow a second behind — which pointed straight at the loop between the engine's boost control and the propeller governor, and ruled out the governor hunting alone (then manifold pressure would have held still) and the engine computer's speed limiter (then fuel flow would have led, not followed).
 
-<!-- diagram: research-lag.svg — two traces cycling together, the second shifted right by one second, the lag marked -->
+<figure class="diagram">
+--8<-- "diagrams/research-lag.svg"
+<figcaption>Moving together, and who leads: manifold pressure with rpm at lag zero, fuel flow one second behind.</figcaption>
+</figure>
 
 ## What you get back
 

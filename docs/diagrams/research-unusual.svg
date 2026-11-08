@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 222" role="img" aria-label="Slices as points on two measurements, rpm swing and peak manifold pressure. A dashed outline encloses the cloud of ordinary slices; two slices sit apart with low swing and manifold pressure at its ceiling, labelled as the two high-altitude takeoffs that stand out." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="70" y1="190" x2="690" y2="190" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<line x1="70" y1="190" x2="70" y2="40" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="690" y="206" text-anchor="end" opacity="0.7">rpm swing →</text>
+<text x="14" y="46" opacity="0.7">MAP</text>
+<text x="14" y="58" opacity="0.7">max</text>
+<circle cx="389.8" cy="137.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="391.0" cy="125.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="362.8" cy="127.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="444.5" cy="135.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="441.5" cy="133.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="415.8" cy="132.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="333.4" cy="142.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.3" cy="137.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="332.3" cy="105.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="364.4" cy="123.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="412.2" cy="129.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.8" cy="121.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="412.3" cy="135.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="373.6" cy="154.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.3" cy="146.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="375.2" cy="119.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="386.2" cy="128.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="425.3" cy="133.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="382.1" cy="116.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="379.2" cy="147.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="367.7" cy="133.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="417.1" cy="109.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="401.9" cy="148.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="319.4" cy="125.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="395.8" cy="118.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="419.9" cy="129.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="341.4" cy="141.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="426.8" cy="143.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="457.6" cy="135.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="404.8" cy="111.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="424.6" cy="121.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="381.9" cy="112.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="361.3" cy="122.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="451.6" cy="101.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="341.7" cy="133.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="457.7" cy="138.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="324.0" cy="94.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="414.3" cy="119.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="355.2" cy="143.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="444.1" cy="132.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="409.8" cy="136.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="463.8" cy="138.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.7" cy="137.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="337.3" cy="147.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="438.2" cy="137.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="321.0" cy="121.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="433.7" cy="104.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="392.6" cy="144.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="347.6" cy="152.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.1" cy="127.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="413.0" cy="139.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="404.8" cy="146.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="373.5" cy="124.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="441.7" cy="130.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="364.8" cy="143.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="458.6" cy="123.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="344.8" cy="128.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="394.0" cy="125.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="456.2" cy="115.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="450.4" cy="112.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="368.5" cy="138.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="445.1" cy="142.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="413.8" cy="132.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="406.1" cy="138.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="393.0" cy="133.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.9" cy="130.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="430.6" cy="137.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="480.4" cy="134.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="382.9" cy="124.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="399.5" cy="142.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<ellipse cx="400" cy="130" rx="110" ry="42" fill="none" stroke="currentColor" stroke-dasharray="4 4" opacity="0.5"/>
+<text x="400" y="182" text-anchor="middle" opacity="0.8">most slices: swing ≈ 180, MAP peak ≈ 50 inHg</text>
+<circle cx="160" cy="62" r="5" fill="#14b8a6"/>
+<circle cx="160" cy="62" r="9" fill="none" stroke="#14b8a6"/>
+<circle cx="174" cy="54" r="5" fill="#14b8a6"/>
+<circle cx="174" cy="54" r="9" fill="none" stroke="#14b8a6"/>
+<text x="195" y="50" fill="#14b8a6" font-weight="600">two slices stand out: swing far below the rest,</text>
+<text x="195" y="64" fill="#14b8a6">MAP flat at its ceiling — the two high-altitude takeoffs</text>
+<text x="195" y="78" fill="#14b8a6" font-size="10">different from the others. On this aircraft they were the healthy ones.</text>
+<text x="70" y="212" opacity="0.7">unusual = far from your other slices on some measurement. It is a place to look, never a verdict.</text>
+</svg>

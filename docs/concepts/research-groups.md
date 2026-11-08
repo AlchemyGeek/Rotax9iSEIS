@@ -12,7 +12,10 @@
 
 **Always or recently.** Split by engine hours or by date into early and late and compare. A behaviour that is the same in both halves is a characteristic, not a development; Trends looks for the opposite.
 
-<!-- diagram: research-two-groups.svg — two distributions of a measurement side by side, their medians marked and the gap between them labelled -->
+<figure class="diagram">
+--8<-- "diagrams/research-two-groups.svg"
+<figcaption>Two groups on one measurement: the gap between the medians and how many slices stand behind each.</figcaption>
+</figure>
 
 ## What you get back
 

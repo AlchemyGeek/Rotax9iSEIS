@@ -8,7 +8,10 @@
 
 Each question sees what the other two cannot.
 
-<!-- diagram: research-three-questions.svg — three panels over the same rpm trace: a limit line (level), a slow drift across months (drift), a repeating wobble inside one flight (shape) -->
+<figure class="diagram">
+--8<-- "diagrams/research-three-questions.svg"
+<figcaption>Three questions, three blind spots: a limit sees level, a trend sees drift, Research sees shape.</figcaption>
+</figure>
 
 - A **limit** is a line. A signal that stays under it is invisible to the limit checker, however oddly it moves.
 - A **trend** compares your engine with its own past. A behaviour your engine has had since the first flight is, to Trends, normal.

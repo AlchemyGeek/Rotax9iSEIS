@@ -6,7 +6,10 @@
 
 ## The five parts
 
-<!-- diagram: research-result-anatomy.svg — a result card with its five parts labelled -->
+<figure class="diagram">
+--8<-- "diagrams/research-result-anatomy.svg"
+<figcaption>The five parts of every result.</figcaption>
+</figure>
 
 **1. Finding.** One sentence, in plain words, always with a recurrence count and, where both log sources are present, a per-source split:
 

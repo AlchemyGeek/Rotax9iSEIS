@@ -17,6 +17,7 @@ Each part of the app is described in a numbered specification, kept up to date a
 | 01 | Engine contract | Flight admission, phase detection, limit detection, CAS classification, the reference |
 | 02 | Workspace | Log folders, skipped logs, export and import |
 | 03 | User interface | Every page and what is on it |
+| 06 | Research | Slices, the four questions, the result contract, studies and sharing |
 | 07 | Flight chart | Channels and presets |
 | 08 | Cylinder balance | The composite panel |
 | 09 | Limit filters | Filters, their conditions, the change monitor |
@@ -25,6 +26,12 @@ Each part of the app is described in a numbered specification, kept up to date a
 | 14 | Settings, Journal and rule editing | What each setting does; the Journal as a register |
 
 → `docs/specs/` in the repository.
+
+## Investigations
+
+Owner's write-ups of investigations done with the app's data, kept as the worked cases behind Research. The first — the takeoff RPM/MAP oscillation of October 2026 — is the acceptance case for Spec 06 and the story the walkthrough *Reproducing a takeoff investigation* retells.
+
+→ [Takeoff RPM/MAP oscillation (Oct 2026)](../research/2026-10-takeoff-rpm-oscillation.md); `docs/research/` in the repository.
 
 ## The Rotax Operators Manuals
 

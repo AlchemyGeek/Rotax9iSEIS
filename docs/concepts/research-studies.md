@@ -17,7 +17,10 @@ Definitions, not data. A study stores:
 
 It does not store the logs or the second-by-second samples. The aligned view reads the slices' flights again when you open it; everything else is already there.
 
-<!-- diagram: research-study-lifecycle.svg — build slices → ask questions → save → export → another owner imports → read-only → Run this on my flights → their own study -->
+<figure class="diagram">
+--8<-- "diagrams/research-study-lifecycle.svg"
+<figcaption>A study's life: cut, ask, save, export, import read-only, run on my flights.</figcaption>
+</figure>
 
 ## Saving
 
