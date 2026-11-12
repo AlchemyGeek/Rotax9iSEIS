@@ -359,3 +359,14 @@ def test_study_keeps_signal_compare_and_derived_rule(research_ws):
     mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": ro["study"]["study_id"]}))
     assert mine["signal"]["flight"] is None and mine["signal"]["channels"] == ["rpm", "map_inhg"]
     assert mine["compare"]["pinned"] is None and mine["slice_rules"][0]["derived_from"]["flight"] == ids[0]
+
+
+def test_analyze_signal_window_only(research_ws):
+    """Compare's diagnostics panel asks for one row's window without the
+    whole flight's strips or values."""
+    h, ids = research_ws
+    win = {"start_s": FP_START, "end_s": FP_START + FP_LEN}
+    full = _signal(h, ids[0], window=win)
+    lean = _signal(h, ids[0], window=win, include_strips=False, include_values=False)
+    assert lean["strips"] == {} and lean["strip_windows"] == {} and "values" not in lean
+    assert lean["window"] == full["window"]

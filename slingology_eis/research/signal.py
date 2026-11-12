@@ -192,7 +192,7 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
                          rule_channel: Optional[str] = None, windows: Optional[dict] = None,
                          prominence_min: float = D.PROMINENCE_MIN, references: Optional[list] = None,
                          engine_cfg: Optional[dict] = None, assignments: Optional[dict] = None,
-                         include_values: bool = True,
+                         include_values: bool = True, include_strips: bool = True,
                          on_progress: Optional[Callable[[dict], None]] = None) -> dict:
     """§9.1 / §11 `analyze_signal`."""
     fa = ws.load_flight_analysis(ws_dir, flight_id)
@@ -216,7 +216,7 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
         raise RuleError("none of these channels is in this flight's log: " + ", ".join(Q.label(c) for c in channels))
 
     out_strips, strip_windows = {}, {}
-    for k, ch in enumerate(present):
+    for k, ch in enumerate(present if include_strips else []):
         if on_progress:
             on_progress({"phase": "strips", "done": k, "total": len(present)})
         st = strips(values[ch], filled, D.WINDOW_FLOOR_S, prominence_min)
