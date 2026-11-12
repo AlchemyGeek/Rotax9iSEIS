@@ -1,7 +1,7 @@
 # Spec 06 — Research
 
 **Project:** SlingologyEIS
-**Status:** v0.6 — v1 (Sessions A and B) built on branch `research`; **v1.1 adds the per-flight levels — Signal view and Compare (§9, D8–D12) — Session C, to be built.** Decisions D1–D12 in §3 and Q1–Q13 in §16 closed.
+**Status:** v0.7 — v1 (Sessions A and B) and v1.1 (Session C: Signal view and Compare, §9, D8–D12) built on branch `research`. Decisions D1–D12 in §3 and Q1–Q13 in §16 closed; Session C's functional decisions in §3.4, four marked for the owner. Acceptance 15's period clause is an expected failure with proposed revision text (§17).
 **Suggested repo path:** `docs/specs/06-research.md`
 **Builds on:** Spec 01 (§7 operations envelope, §8.7 series, §9 extension model, §10 privacy), Spec 02 (§5.3 workspace layout, §7 export/import), Spec 03 (principle 6: the Explore → operational path; §4 navigation shell), Spec 10 (§4 admission criteria, §8 lifecycle, §10 proposals; D2/D7 items parked as "Research"), Spec 12 (§13 deferred change-point detection), Spec 14 (§4, Q3)
 **Revises:** Spec 03 §4 and §5 (Research becomes a destination; new view), Spec 02 §5.3 and §7.1 (a `studies/` document set, carried by export), Spec 01 §7 (Research operations), Spec 14 Q3 (closes: Research is designed)
@@ -11,6 +11,7 @@
 
 | Version | Change |
 |---|---|
+| 0.7 | **After Session C** (2026-11-12). `analyze_signal` and `compare_rows` built (§11), with CLI `research signal` and `research compare` (`--json` parity, `--csv`); the study format gains `signal`, `compare` and a rule's `derived_from` (§10.1). The study page is Signal → Compare → Questions (§12; Spec 03 §5.10); Flight view's *Research this window* opens Signal mode. Functional decisions of Session C in §3.4. Two descriptor guards were added for byte parity under Pyodide (a flat window has no period; the autocorrelation is rounded to 1e-10 before its peak search); Session A/B acceptance numbers are unchanged. Acceptance 14, 16, 17, 18 pass; 15 passes except its period clause, which the segment does not meet (3.4 s); revision text proposed in §17. Docs: Signal and Compare concept pages, the walkthrough's step 3, glossary. |
 | 0.6 | **Per-flight analysis (D8–D12, Nov 12 2026).** Research presented only the set level: one sentence, one chart, per-flight detail in a table. Two levels are added beneath it — **Signal view** (one flight, one or more channels, rolling swing and period strips over the whole flight to find *where* a signal cycles, click to set a window, window diagnostics: detrended trace, autocorrelation, spectrum, correlation-vs-lag) and **Compare** (the same analysis per flight over a selection, one row per slice grouped by flight, a chart of the values against date / engine hours / DA / OAT, a pinnable reference row, diagnostics on demand). The existing questions become summaries over Compare's rows. §9 rewritten; §11 gains `analyze_signal` and `compare_rows`; §12 study page restructured as Signal → Compare → Questions; the Flight view's *Research this window* lands on Signal mode; acceptance 14–18; §17 Session C. |
 | 0.5 | **After Session B** (2026-11-07). Research is in the nav, gated by the `research` capability (Spec 03 v0.29 §4, §5.10; Spec 14 v0.19 Q3 closed). Research home, study page, aligned view, read-only studies with *Run this on my flights*, the three *Research this* entry points, inline help, and the Journal's `study_finding` entry (§10.3) are built; §11 gains `note_study_finding` and `forget_study_finding`, and `get_slice_samples` reads only the slices' flights. Acceptance 8 measured in-page (§5.5); 10 and 12 pass. Functional decisions of Session B in §3.3. Docs: concept page and walkthrough (§12). |
 | 0.4 | **Q11–Q13 decided by the owner** (Nov 7 2026): acceptance 1 is pinned to flights dated through 2026-10-28; acceptance 2 states the period the app measures, **3.8 s (IQR 3.5–4.1)**, with the write-up's 4.4 s kept in Appendix A as the investigation's own figure from a different count; acceptance 5 asserts the two clean high-DA takeoffs stand out on rpm swing, and §7.4's ranking improvements (count of descriptors standing out, combined robust distance, ranking within the study's channels) are recorded as v2 work the §14.1 scan depends on. The two expected failures become passing tests. `docs/research/` is exempted from the repo's per-flight-detail rule by the owner (CLAUDE.md). Session B scope unchanged. |
@@ -109,6 +110,28 @@ Two further facts shaped the design. The analysis took real understanding of con
 | Read-only study (§10.2) | The label *Sender's results — none of these flights are in this workspace* sits above the results; every editing control is disabled rather than hidden, so the page reads the same; the one enabled action is *Run this on my flights* (`run_study_on_my_flights`), which navigates to the new study. Export of a read-only study exports the sender's file unchanged. |
 | Inline help (Spec 14 §7.4) | Seven Research items join the registry: the four questions, reference, slice rule and selection; one sentence each, aircraft-neutral, verdict-free (acceptance 9 has a UI test over the page's own strings). |
 | Small-multiples threshold | Overlay up to 10 slices, small multiples above; the user can toggle either way. The scrubbing cursor is ECharts' linked axisPointer. |
+
+### 3.4 Functional decisions made in Session C
+
+Items marked **(owner to confirm)** are choices the spec left open whose values shape what a pilot sees.
+
+| Topic | Decision |
+|---|---|
+| Strip definition (§9.1) | A strip value at second *i* is the descriptor of the window of width *W* centred on *i*, clamped to lie inside the flight (`start = clamp(i − W/2, 0, n − W)`): swing is §6's swing over that window; period and prominence are `dominant_period` over it; *prominent* is prominence ≥ the §7 threshold (0.2). A unit test asserts a strip value equals the descriptor of a hand slice over the same seconds. |
+| Strip window *W* **(owner to confirm)** | §7.0 is applied per flight: a first pass at the 12 s floor; *W* = max(12, ⌈2.5 × median period of the lit seconds⌉), recomputed when it differs from the floor; with no lit second, the floor. No duration-scaled fallback (a flight is not a slice). On the acceptance flight *W* resolves to the 12 s floor; wider windows (16–30 s) were tried and separate the segments from cruise less well. The result prints *W*, its basis and the lit share per channel. |
+| "Dark" in acceptance 14 **(owner to confirm)** | Quantified for the test as: over a cruise or taxi phase, ≤ 20 % of seconds lit and no lit run ≥ 15 s; a full-power segment counts as lit at ≥ 50 % of its seconds. Short lit runs in cruise (≤ 13 s on the acceptance flight) are the descriptor responding to brief real rhythms and are kept, not suppressed. |
+| Derived rule (§9.1) **(owner to confirm)** | From the chosen channel (default the reference) over the window: `between [floor(min), ceil(max + range/2)]`, rounded to the channel's reading step (≥ 1 → integers; else 0.1); `min_duration_s` = round(½ × window duration); `merge_gap_s` 3; no phase, no pad. The band is widened upward only, by half the window's range, so a full-power rule tolerates a slightly larger swing elsewhere; the half-duration admits shorter versions of the same moment. Name: *“RPM 5,550–5,960, like ⟨date⟩ a–b s”*. On the acceptance flight it recovers all three segments exactly. The rule carries `derived_from {flight, start_s, end_s, channel}` (provenance, not part of the rule's identity). |
+| Signal's numbers (§9.1, §8 Magnitude) | Per channel: swing, period (with its prominence against the threshold as the reference), level; for non-reference channels, correlation at zero lag and the best lag. Swing and level are read beside the nearest MAX/MIN OM limit (headroom text) and the user's references; no threshold is applied. |
+| Window bounds | Integer seconds: `floor(start)`–`ceil(end)` clamped to the flight; fewer than two seconds is `BAD_PARAMS`. A drag shorter than 4 s is ignored as a click. |
+| `analyze_signal` payload | `include_strips` and `include_values` (both default true): the page reads the flight once for strips and traces, then re-reads only the window (`include_strips: false, include_values: false`) as the window moves, and Compare's diagnostics read each row's window that way. |
+| Compare rows (§9.2) | Rows are `build_slices`' slices with their descriptors and context copied, never recomputed (acceptance 16). Group summary rows take the median of each value; `period_prominent` becomes the count of slices with a prominent period; `lag_s` the rounded median. |
+| Pinning | `pinned` names a row: a slice id, or a flight id. Not collapsed, a flight id pins that flight's first slice; collapsed, a slice id pins its flight's row. Δ columns are period, swing, level, correlation at zero lag and lag. A pin naming nothing in the comparison is `BAD_PARAMS`; the page then drops the pin. |
+| Compare chart | Any value of any study channel against date, engine hours, DA or OAT; colour by flight or source; the pinned row drawn as an outlined diamond. The OM line is drawn only for a channel's **level** (swing, period and correlation have no OM value). |
+| Compare diagnostics | The pinned row and up to three ticked rows (four columns) as small multiples on shared axes per channel: detrended trace from slice start, autocorrelation (y −1…1), periodogram (shared power axis). Diagnostics are per slice, so with one row per flight the panel asks the user to expand. The D6 anchors apply in the Aligned view tab. |
+| Study fields (§10.1) | `signal {flight, channels, reference, window}` and `compare {pinned, collapse, channels, reference, chart {x, y, colour}}`, both optional. On import, a Signal flight or pinned flight absent from the workspace is cleared (the window with it); *Run this on my flights* clears both. |
+| Starting section (§12) | Opened from a flight's *Research this window*: Signal open and scrolled to, Compare open beneath it (the hand slice and the suggested preset are there). Opened from a preset, Trends or an event: Compare, with Signal collapsed. A saved study reopens at Signal when it has a Signal flight and no rule or hand slice, else at Compare. |
+| Pyodide parity guards | `dominant_period` returns no period for a window whose values are all equal (noise in an ACF of zeros produced platform-dependent peaks), and the autocorrelation is rounded to 1e-10 before its peak search (an exact tie resolved differently under Pyodide). Neither changes any Session A/B number. |
+| Inline help (Spec 14 §7.4) | Four items join the registry: the strips, the window, rule derivation and pinning — one sentence each, aircraft-neutral, verdict-free. |
 
 ## 4. Concepts
 
@@ -346,13 +369,17 @@ Research works at three levels on the same per-slice descriptors (§6). v1 built
   "references": [ { "label": "Airmaster governing band", "channel": "rpm", "value": 100, "kind": "band", "source": "AP3/4/5 Operator's Manual V5-1A" } ],
   "tests": [ { "test_id": "cycling", "version": 1, "params": { … }, "channels": ["rpm"], "result": { /* §8 block, derived */ } } ],
   "view": { "anchor": "crossing", "channels": ["rpm", "map", "fuel_flow"] },
+  // v1.1 (§9, §3.4): what Signal and Compare reopen on; both optional.
+  "signal": { "flight": "<fingerprint>", "channels": ["rpm", "map_inhg"], "reference": null, "window": { "start_s": 616, "end_s": 662 } },
+  "compare": { "pinned": "<slice id or flight id>", "collapse": false, "channels": ["rpm", "map_inhg"], "reference": null,
+               "chart": { "x": "da_ft", "y": "rpm.swing", "colour": "flight" } },
   "notes": "…",
   "cache": { "engine": "…", "descriptors": [ { "flight": "<fingerprint>", "slice": "…", "values": { … } } ] },
   "provenance": { "app": "…", "engine": "…" }
 }
 ```
 
-`tests[].result` and `cache` are derived (§5.5) and may be dropped; everything else is the study. Terminology (Q6): the destination is **Research**, the saved object is a **study**; "Research" is never used as a noun for a saved thing.
+A rule made by Signal's *Make this a rule* carries `"derived_from": { "flight": "<fingerprint>", "start_s": …, "end_s": …, "channel": "rpm" }` — provenance only, not part of the rule's identity. `tests[].result` and `cache` are derived (§5.5) and may be dropped; everything else is the study. Terminology (Q6): the destination is **Research**, the saved object is a **study**; "Research" is never used as a noun for a saved thing.
 
 ### 10.2 Storage and export
 
@@ -378,8 +405,8 @@ API-first (Goal 6): each UI action is one operation on the standard envelope; pr
 | `build_slices` | selection, slice rules, hand slices | slice set (definitions + descriptors + context; samples on request) |
 | `get_slice_samples` | slice ids, channels, anchor | aligned sample arrays for the views |
 | `run_test` | test id, slice set (or two), channels, params, references | §8 result |
-| `analyze_signal` | flight id, channels, optional window, optional reference channel | rolling strips (swing, period, prominence per sample), window diagnostics (detrended trace, autocorrelation, periodogram, correlation-vs-lag), the window's descriptors with resolved §7.0 windows, and a derived rule (§9.1) — v1.1 |
-| `compare_rows` | selection, rule or hand slices, channels, optional reference channel, optional pinned row | rows per slice grouped by flight with analysis values, conditions and differences from the pinned row; flights without a match — v1.1 |
+| `analyze_signal` | `flight_id`; `channels` (default rpm, MAP); optional `window {start_s, end_s}`, `reference` (default rpm if present), `rule_channel`, `windows` (§7.0 overrides), `references`; `include_strips`, `include_values` (default true) | `duration_s`, `source`, `date`, `phases`, `channels` / `missing_channels`, `reference`; per channel `strips {swing, period_s, prominence, prominent}` per second and `strip_windows {window_s, basis, flight_period_s, lit_seconds, lit_share}`; `values` (the 1 Hz traces); `om_limits`; and with a window: `window {start_s, end_s, duration_s, context, descriptors, windows, diagnostics {detrended, acf, periodogram, period_s, period_ls_s, lag_curve, best_lag_s}, numbers (§8 Magnitude items), derived_rule}` — v1.1, §3.4 |
+| `compare_rows` | the `build_slices` inputs (or `study_id`), `channels`, optional `reference`, `pinned` (slice or flight id), `collapse` | `rows` (one per slice, or per flight when collapsed: conditions, `values` per channel, and with a pin `pinned` and `delta`), `groups` (per flight: row ids, count, median `summary`), `row_count`, `slice_count`, `flight_count`, `flights_without`, `pinned`, `chart_x`, `om_limits`, and the build's rules, sources and missing/unreachable flights — v1.1, §3.4 |
 | `save_study` / `load_study` / `list_studies` / `delete_study` | study document | — |
 | `export_study` / `import_study` | study id / file | `.eisstudy` / new study |
 | `run_study` | study id | the study with each test's result, the cache and a last-run summary |
@@ -483,6 +510,8 @@ Resolved in v0.3 (Session A):
 | Q13 | Acceptance 1: "all admitted logs" | The set grows: with the 2026-11-04 flight admitted, the rule gives 99. | **Accepted.** Items 1–5 run over the flights dated through 2026-10-28; Appendix A's Data line carries the date. |
 
 ## 17. Implementation plan
+
+**Status (v0.7):** Session C done on `research`. Acceptance 14, 16, 17 and 18 pass on the real logs (`tests/contract/test_research_acceptance.py`, skipping without them; 18's page side is a vitest, `web/src/views/ResearchSignalCompare.test.tsx`, and the server-mode walkthrough's Signal and Compare checks). Acceptance 15 passes except its period clause: the KAWO segment's own period is **3.39 s** (prominence 0.48), the same for `analyze_signal`'s window, a hand slice and the full-power slice over those seconds — 15 asks 3.5–4.1 s, the set's IQR from acceptance 2, which this one segment sits just below. It is a strict expected failure until the owner decides. **Proposed text for 15:** *“…the diagnostics report period 3.2–4.1 s (the segment measures 3.4 s; the set's IQR is acceptance 2's 3.5–4.1), swing 150–210 rpm, …”*. Strip time for one flight (rpm + MAP, 5,754 s): 2.0 s in server mode (2.3 s from opening the page to strips drawn), 3.8 s in-page in browser mode (headless Chrome 157, `spike/browser-host/run_research_timing.py`); moving the window costs 0.2 s in-page.
 
 **Status (v0.5):** Sessions A and B done on `research`. Acceptance 1–7, 9, 11–13 pass on the real logs (`tests/contract/test_research_acceptance.py`); 8 measured in-page (§5.5); 10 is a host test (`tests/unit/test_research_ops.py`) plus the UI walkthrough (`spike/browser-host/run_research_walkthrough.py`, 19 checks in server mode); 12's UI side is a vitest (`web/src/views/Research.test.tsx`). Branch ready for the owner's review and merge into `main`.
 

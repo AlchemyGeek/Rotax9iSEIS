@@ -1,24 +1,27 @@
 {
-  "logs_copied": 122,
+  "logs_copied": 123,
   "through": "2026-10-28",
-  "cold_ready_s": 5.4,
-  "files_given": 122,
-  "scan_ms": 132525.69999999972,
-  "flights": 60,
-  "build_cold_ms": 14451.200000000186,
-  "slices": 98,
+  "cold_ready_s": 2.7,
+  "files_given": 123,
+  "scan_ms": 89366,
+  "flights": 61,
+  "build_cold_ms": 9093.700000047684,
+  "slices": 99,
   "by_source": {
     "G3X": 84,
-    "AXIS": 14
+    "AXIS": 15
   },
-  "flights_with_slices": 59,
-  "run_study_ms": 13698,
-  "finding": "RPM cycles every 3.8 s (IQR 3.6\u20133.9), swing 180 rpm (170\u2013190), in 93 of 98 slices (AXIS 13 of 14, G3X 80 of 84).",
-  "run_study_cached_ms": 160.29999999981374,
-  "samples_12_slices_ms": 14065.400000000373,
+  "flights_with_slices": 60,
+  "run_study_ms": 8623.100000023842,
+  "finding": "RPM cycles every 3.8 s (IQR 3.6\u20133.9), swing 180 rpm (170\u2013190), in 94 of 99 slices (AXIS 14 of 15, G3X 80 of 84).",
+  "run_study_cached_ms": 67.89999997615814,
+  "samples_12_slices_ms": 1520.3999999761581,
   "samples_returned": 12,
-  "heap_end": 290848768,
-  "browser_version": "153.0.8010.12",
+  "signal_strips_ms": 3824.1999999284744,
+  "signal_duration_s": 5754,
+  "signal_window_ms": 196.70000004768372,
+  "heap_end": 349044736,
+  "browser_version": "157.0.8103.51",
   "page_errors": [],
-  "at": "2026-11-07T21:57:38+00:00"
+  "at": "2026-11-12T17:37:21+00:00"
 }

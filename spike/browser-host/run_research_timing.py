@@ -7,7 +7,9 @@ web/dist (built with `npm run build:browser`) is served as a static folder
 and opened in headless Chromium (Playwright). A workspace is created, the
 logs registered through <input webkitdirectory>, Sync run, then the
 full-power preset is built over every flight twice — cold, then from the
-study's descriptor cache — and a one-question study is run. Timings go to
+study's descriptor cache — and a one-question study is run. Session C adds
+Signal view's cost on the 2026-10-24 flight (acceptance 14): the strips for
+rpm and MAP over the whole flight, then one window without them. Timings go to
 spike/browser-host/results/research-timing.json. Only CSVs are copied to a
 temporary folder; nothing is written to the repo's data/.
 """
@@ -74,6 +76,18 @@ RUN = """async () => {
                                                  slice_ids: cold.slices.slice(0, 12).map(s => s.slice_id), channels: ['rpm', 'map_inhg'], anchor: 'crossing' });
   out.samples_12_slices_ms = performance.now() - t0;
   out.samples_returned = samples.slices.length;
+  // Spec 06 §9.1 (Session C): one flight's strips, then a window alone.
+  const flights = await client.listFlights();
+  const f = flights.find(x => x.header && x.header.date === '2026-10-24');
+  if (f) {
+    t0 = performance.now();
+    const sig = await client.analyzeSignal({ flight_id: f.flight_id, channels: ['rpm', 'map_inhg'] });
+    out.signal_strips_ms = performance.now() - t0;
+    out.signal_duration_s = sig.duration_s;
+    t0 = performance.now();
+    await client.analyzeSignal({ flight_id: f.flight_id, channels: ['rpm', 'map_inhg'], window: { start_s: 600, end_s: 680 }, include_strips: false, include_values: false });
+    out.signal_window_ms = performance.now() - t0;
+  }
   out.heap_end = await client.engineMemory();
   return out;
 }"""
@@ -83,10 +97,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--logs", default=str(ROOT / "data" / "logs"))
     ap.add_argument("--through", default="2026-10-28", help="only logs whose date in the name is on or before this (the acceptance set)")
+    ap.add_argument("--dist", default=str(ROOT / "web" / "dist"), help="a static build made with build_site.py --e2e")
     args = ap.parse_args()
     from playwright.sync_api import sync_playwright
-    dist = ROOT / "web" / "dist"
-    assert (dist / "runtime.json").is_file(), "build first: (cd web && npm run build:browser)"
+    dist = Path(args.dist)
+    assert (dist / "runtime.json").is_file(), "build first: python scripts/build_site.py --e2e --out DIR"
     work = Path(tempfile.mkdtemp(prefix="eis-research-timing-"))
     folder = work / "logs"
     folder.mkdir()
@@ -103,7 +118,7 @@ def main() -> int:
     result: dict = {"logs_copied": len(list(folder.glob("*.csv"))), "through": args.through}
     try:
         with sync_playwright() as p:
-            ctx = p.chromium.launch_persistent_context(profile, headless=True)
+            ctx = p.chromium.launch_persistent_context(profile, channel="chrome", headless=True)
             page = ctx.pages[0]
             errors: list[str] = []
             page.on("pageerror", lambda e: errors.append(str(e)))
