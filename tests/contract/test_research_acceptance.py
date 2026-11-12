@@ -1,6 +1,7 @@
 """
 Spec 06 §15 — the acceptance case, reproduced from the app alone
-(Session A: items 1–7, 9, 11–13), against the private log set.
+(Session A: items 1–7, 9, 11–13; Session C: 14–18), against the private
+log set.
 
 The acceptance set is the investigation's: every admitted flight dated
 through 2026-10-28 (Appendix A — the logs the investigation read; flights
@@ -268,6 +269,17 @@ def test_7_browser_host_gives_the_same_json(app, tmp_path_factory, request):
         # Values, not bytes: the Node bridge's JSON writes 1674.0 as 1674.
         assert reply["result"] == json.loads(serialize.dumps(expected))
         print(f"\n[browser host] full-power slice build + test over {len(app.flights)} flights: {elapsed:.1f} s")
+        # v1.1: one flight's strips in the browser's engine, against server mode.
+        sig = {"flight_id": _oct24(app), "channels": ["rpm", "map_inhg"]}
+        t0 = time.time()
+        reply = node.call("analyze_signal", sig, "n")
+        in_page = time.time() - t0
+        t0 = time.time()
+        expected = app.call("analyze_signal", **sig)
+        server = time.time() - t0
+        assert reply["ok"], reply
+        assert reply["result"] == json.loads(serialize.dumps(expected))
+        print(f"[signal strips] one flight, rpm + MAP: server {server:.1f} s, browser engine {in_page:.1f} s")
     finally:
         node.close()
 
@@ -317,3 +329,171 @@ def test_13_preset_measurement(app, preset):
     median = durations[mid] if len(durations) % 2 else (durations[mid - 1] + durations[mid]) / 2
     got = (ss["count"], len(per), max(per.values()), round(median))
     assert got == PRESET_MEASUREMENT[preset]
+
+
+# ── v1.1 (Session C): Signal view and Compare, items 14–18 ────────────────
+
+OCT24 = "2026-10-24"          # the KAWO–KPAE–KBLI–KAWO flight: three full-power segments
+STRIP_LIT_MIN = 0.5           # a segment is "lit" when its period strip is prominent over half its seconds
+STRIP_DARK_MAX = 0.2          # cruise and taxi are "dark": lit over at most a fifth of their seconds …
+DARK_RUN_MAX_S = 15           # … and never for as long as the full-power preset's minimum duration
+
+
+def _oct24(app) -> str:
+    from slingology_eis import workspace as ws
+    d = app.ctx["workspace_dir"]
+    got = [f for f in app.flights if ws.load_flight_analysis(d, f).header.get("date") == OCT24]
+    assert len(got) == 1
+    return got[0]
+
+
+@pytest.fixture(scope="module")
+def oct24(app):
+    fid = _oct24(app)
+    segs = [s for s in app.call("build_slices", selection={"mode": "flights", "flights": [fid]},
+                                slice_rules=[FULL_POWER], channels=["rpm"])["slices"]]
+    return fid, segs
+
+
+def _mask(n, phases, names):
+    m = [False] * n
+    for p in phases:
+        if p["phase"] in names:
+            for i in range(int(p["start_s"]), min(n, int(p["end_s"]))):
+                m[i] = True
+    return m
+
+
+def _longest(flags):
+    best = cur = 0
+    for f in flags:
+        cur = cur + 1 if f else 0
+        best = max(best, cur)
+    return best
+
+
+def test_14_period_strip_lit_over_full_power_dark_elsewhere(app, oct24):
+    fid, segs = oct24
+    assert len(segs) == 3
+    r = app.call("analyze_signal", flight_id=fid, channels=["rpm", "map_inhg"])
+    n = r["duration_s"]
+    for ch in ("rpm", "map_inhg"):
+        st = r["strips"][ch]
+        lit, per, sw = st["prominent"], st["period_s"], st["swing"]
+        seg_swings = []
+        for s in segs:
+            a, b = s["start_s"], s["end_s"]
+            assert sum(lit[a:b]) >= STRIP_LIT_MIN * (b - a), (ch, a, b)
+            lit_periods = sorted(p for p, x in zip(per[a:b], lit[a:b]) if x)
+            assert 3 <= lit_periods[len(lit_periods) // 2] <= 5
+            seg_swings += [x for x in sw[a:b] if x is not None]
+        for names in (["CRUISE"], ["TAXI"]):
+            m = _mask(n, r["phases"], names)
+            in_phase = [x for x, k in zip(lit, m) if k]
+            assert sum(in_phase) <= STRIP_DARK_MAX * len(in_phase), (ch, names)
+            assert _longest([x and k for x, k in zip(lit, m)]) < DARK_RUN_MAX_S, (ch, names)
+            quiet = sorted(x for x, k in zip(sw, m) if k and x is not None)
+            assert sorted(seg_swings)[len(seg_swings) // 2] >= 3 * quiet[len(quiet) // 2], (ch, names)
+
+
+def _first_window(app, oct24):
+    fid, segs = oct24
+    a, b = segs[0]["start_s"], segs[0]["end_s"]
+    return app.call("analyze_signal", flight_id=fid, channels=["rpm", "map_inhg", "fuel_flow_gph"],
+                    window={"start_s": a, "end_s": b})["window"]
+
+
+def test_15_window_on_the_first_full_power_segment(app, oct24):
+    w = _first_window(app, oct24)
+    rpm, mp, ff = (w["descriptors"][c] for c in ("rpm", "map_inhg", "fuel_flow_gph"))
+    assert 150 <= rpm["swing"] <= 210
+    assert mp["corr0"] >= 0.85 and mp["lag_s"] == 0
+    assert ff["lag_s"] == 1 and w["diagnostics"]["fuel_flow_gph"]["best_lag_s"] == 1
+    assert rpm["period_prominent"]
+    # Same code path as the slice set: the window's numbers are the slice's.
+    fid, segs = oct24
+    assert {k: rpm[k] for k in ("swing", "period_s", "period_prominence")} == \
+        {k: segs[0]["descriptors"]["rpm"][k] for k in ("swing", "period_s", "period_prominence")}
+
+
+@pytest.mark.xfail(strict=True, reason="Spec 06 §15 item 15: period 3.5–4.1 s is the set's IQR (item 2); this "
+                                       "segment's own period is 3.4 s by the same estimator that gives the set "
+                                       "3.8 s — proposed revision in the Session C report.")
+def test_15_window_period_as_the_spec_states(app, oct24):
+    assert 3.5 <= _first_window(app, oct24)["descriptors"]["rpm"]["period_s"] <= 4.1
+
+
+def test_15_derived_rule_recovers_the_segment(app, oct24):
+    fid, segs = oct24
+    rule = _first_window(app, oct24)["derived_rule"]
+    got = app.call("build_slices", selection={"mode": "flights", "flights": [fid]}, slice_rules=[rule],
+                   channels=["rpm"])["slices"]
+    a, b = segs[0]["start_s"], segs[0]["end_s"]
+    match = [s for s in got if s["start_s"] < b and s["end_s"] > a]
+    assert len(match) == 1 and abs(match[0]["start_s"] - a) <= 3 and abs(match[0]["end_s"] - b) <= 3
+
+
+@pytest.fixture(scope="module")
+def compare(app):
+    return app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"])
+
+
+def test_16_compare_rows_are_the_slice_descriptors(app, compare, slice_set):
+    assert compare["row_count"] == 98 and compare["flight_count"] == 59
+    assert len(compare["flights_without"]) == len(app.flights) - 59
+    assert [r["slice_id"] for r in compare["rows"]] == [s["slice_id"] for s in slice_set["slices"]]
+    for r, s in zip(compare["rows"], slice_set["slices"]):
+        for ch in ("rpm", "map_inhg"):
+            assert r["values"][ch] == {k: s["descriptors"][ch][k] for k in r["values"][ch]}
+    col = app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"],
+                   collapse=True)
+    assert col["row_count"] == 59 and sum(r["count"] for r in col["rows"]) == 98
+
+
+def test_17_pinned_kawo_row_and_swing_against_da(app, compare, oct24, results):
+    fid, segs = oct24
+    p = app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"],
+                 pinned=segs[0]["slice_id"])
+    rows = p["rows"]
+    assert sum(1 for r in rows if r["pinned"]) == 1
+    assert all("swing" in r["delta"]["rpm"] and "period_s" in r["delta"]["rpm"] for r in rows)
+    high = [r for r in rows if (r["da_ft"] or 0) >= 6000]
+    assert len(high) == 2 and all(r["delta"]["rpm"]["swing"] <= -90 for r in high)
+    # The chart's data, swing against DA, banded as acceptance 4 bands it.
+    def med(xs):
+        xs = sorted(xs)
+        k = len(xs) // 2
+        return xs[k] if len(xs) % 2 else (xs[k - 1] + xs[k]) / 2
+    bands = {"below 3,500 ft DA": [], "at 3,500–6,000 ft DA": [], "at 6,000 ft DA and above": []}
+    for r in rows:
+        da = r["da_ft"]
+        key = ("below 3,500 ft DA" if da < 3500 else "at 3,500–6,000 ft DA" if da < 6000 else "at 6,000 ft DA and above")
+        bands[key].append(r["values"]["rpm"]["swing"])
+    g = results["groups"]["block"]["summary"]["groups"]
+    for k, xs in bands.items():
+        assert len(xs) == g[k]["n"] and med(xs) == g[k]["median"]
+
+
+def test_18_study_with_signal_rule_pin_and_question_round_trips(app, oct24):
+    fid, segs = oct24
+    w = _first_window(app, oct24)
+    study = {"name": "Oct 24 takeoff", "selection": app.selection, "slice_rules": [w["derived_rule"]],
+             "signal": {"flight": fid, "channels": ["rpm", "map_inhg", "fuel_flow_gph"], "reference": "rpm",
+                        "window": {"start_s": segs[0]["start_s"], "end_s": segs[0]["end_s"]}},
+             "compare": {"pinned": segs[0]["slice_id"], "channels": ["rpm", "map_inhg"],
+                         "chart": {"x": "da_ft", "y": "rpm.swing", "colour": "source"}},
+             "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}
+    sid = app.call("save_study", study=study)["study_id"]
+    ran = app.call("run_study", study_id=sid)
+    for doc in (app.call("load_study", study_id=sid), ran):
+        assert doc["signal"]["flight"] == fid and doc["signal"]["window"]["start_s"] == segs[0]["start_s"]
+        assert doc["slice_rules"][0]["derived_from"]["flight"] == fid
+        assert doc["compare"]["pinned"] == segs[0]["slice_id"] and len(doc["tests"]) == 1
+    data = app.files[app.call("export_study", study_id=sid)["filename"]]
+    imp = json.loads(serialize.dumps(host.reply({"op": "import_study", "request_id": "t",
+                                                  "params": {"content": data}}, app.ctx)))["result"]
+    st = imp["study"]
+    assert st["signal"] == ran["signal"] and st["compare"] == ran["compare"]
+    assert st["slice_rules"] == ran["slice_rules"] and [t["test_id"] for t in st["tests"]] == ["cycling"]
+    again = app.call("run_study", study_id=st["study_id"])
+    assert again["tests"][0]["result"]["finding"] == ran["tests"][0]["result"]["finding"]

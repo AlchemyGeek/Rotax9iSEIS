@@ -95,6 +95,41 @@ def _references(refs) -> list[dict]:
     return refs
 
 
+def _signal(sig) -> Optional[dict]:
+    """Signal view's state (§9.1, §10.1): the flight, its channels and
+    reference, and the window — what the study reopens on."""
+    if not sig:
+        return None
+    if not isinstance(sig, dict):
+        raise RuleError("signal is an object")
+    win = sig.get("window")
+    if win is not None:
+        if not isinstance(win, dict):
+            raise RuleError("signal.window is {start_s, end_s}")
+        a, b = float(win.get("start_s", 0)), float(win.get("end_s", 0))
+        if b <= a:
+            raise RuleError(f"signal.window end_s {b:g} must be after start_s {a:g}")
+        win = {"start_s": a, "end_s": b}
+    return {"flight": str(sig["flight"]) if sig.get("flight") else None,
+            "channels": [str(c) for c in (sig.get("channels") or [])],
+            "reference": str(sig["reference"]) if sig.get("reference") else None, "window": win}
+
+
+def _compare(cmp) -> Optional[dict]:
+    """Compare's state (§9.2, §10.1): the pinned row (a slice id, or a
+    flight id when collapsed), collapse, the chart's axes and colouring,
+    and the channels. Pinning survives save (D12)."""
+    if not cmp:
+        return None
+    if not isinstance(cmp, dict):
+        raise RuleError("compare is an object")
+    chart = dict(cmp.get("chart") or {})
+    return {"pinned": str(cmp["pinned"]) if cmp.get("pinned") else None, "collapse": bool(cmp.get("collapse")),
+            "channels": [str(c) for c in (cmp.get("channels") or [])],
+            "reference": str(cmp["reference"]) if cmp.get("reference") else None,
+            "chart": {k: chart[k] for k in ("x", "y", "colour") if chart.get(k)}}
+
+
 def normalise(doc: dict) -> dict:
     """A study document with every field validated (RuleError otherwise)."""
     if not isinstance(doc, dict):
@@ -112,6 +147,10 @@ def normalise(doc: dict) -> dict:
         "notes": str(doc.get("notes") or ""),
         "provenance": dict(doc.get("provenance") or {}),
     }
+    for k, fn in (("signal", _signal), ("compare", _compare)):
+        v = fn(doc.get(k))
+        if v is not None:
+            out[k] = v
     for k in ("cache", "read_only", "imported", "flights", "last_run"):
         if doc.get(k) is not None:
             out[k] = doc[k]
@@ -279,6 +318,8 @@ def referenced_flights(doc: dict) -> list[str]:
     slices', and those its last run read."""
     out = list((doc.get("selection") or {}).get("flights") or [])
     out += [h["flight"] for h in doc.get("hand_slices") or []]
+    if (doc.get("signal") or {}).get("flight"):
+        out.append(doc["signal"]["flight"])
     out += list(doc.get("flights") or [])
     return list(dict.fromkeys(out))
 
@@ -311,6 +352,7 @@ def import_bytes(ws_dir: Path, data: bytes, *, engine_model: str = "") -> dict:
         elif (sent.get("selection") or {}).get("mode") == "flights":
             sent["selection"]["flights"] = [f for f in sent["selection"]["flights"] if f in present]
         sent["hand_slices"] = [h for h in sent.get("hand_slices") or [] if h["flight"] in present]
+        _forget_absent(sent, present)
     sent["imported"] = imported
     sent["flights"] = flights
     studies_dir(ws_dir).mkdir(parents=True, exist_ok=True)
@@ -320,6 +362,22 @@ def import_bytes(ws_dir: Path, data: bytes, *, engine_model: str = "") -> dict:
     doc["provenance"] = {**(doc.get("provenance") or {}), "engine_model": doc["provenance"].get("engine_model") or engine_model}
     _path(ws_dir, doc["study_id"]).write_text(json.dumps(doc, indent=2))
     return {"study": doc, "matched": matched, "missing": missing, "read_only": read_only}
+
+
+def _pinned_flight(pinned: Optional[str]) -> Optional[str]:
+    """A pinned row names a slice (`<flight_id>:…`) or a flight."""
+    return pinned.split(":", 1)[0] if pinned else None
+
+
+def _forget_absent(doc: dict, present: set) -> None:
+    """Signal's flight and Compare's pinned row name the sender's flights;
+    where this workspace lacks them they are cleared, the rest kept."""
+    sig = doc.get("signal")
+    if sig and sig.get("flight") and sig["flight"] not in present:
+        doc["signal"] = {**sig, "flight": None, "window": None}
+    cmp = doc.get("compare")
+    if cmp and cmp.get("pinned") and _pinned_flight(cmp["pinned"]) not in present:
+        doc["compare"] = {**cmp, "pinned": None}
 
 
 def for_my_flights(doc: dict) -> dict:
@@ -332,5 +390,9 @@ def for_my_flights(doc: dict) -> dict:
         "slice_rules": doc.get("slice_rules"), "hand_slices": [], "references": doc.get("references"),
         "tests": [{k: v for k, v in t.items() if k != "result"} for t in doc.get("tests") or []],
         "windows": doc.get("windows"), "view": doc.get("view"), "notes": doc.get("notes"),
+        # Signal's flight and the pinned row are the sender's; the channels,
+        # the chart and the derived rule (in slice_rules) carry over.
+        "signal": {**doc["signal"], "flight": None, "window": None} if doc.get("signal") else None,
+        "compare": {**doc["compare"], "pinned": None} if doc.get("compare") else None,
         "provenance": {"from_study": (doc.get("imported") or {}).get("name") or doc.get("name")},
     })

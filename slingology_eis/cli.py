@@ -1028,6 +1028,77 @@ def cmd_research_test(args) -> int:
     return _research_print(args, r, render_text(r))
 
 
+def _runs(flags: list) -> list[tuple[int, int]]:
+    out, start = [], None
+    for i, f in enumerate(list(flags) + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            out.append((start, i))
+            start = None
+    return out
+
+
+def cmd_research_signal(args) -> int:
+    from .research.questions import fmt, label
+    params: dict = {"flight_id": args.flight_id}
+    if args.channel:
+        params["channels"] = list(args.channel)
+    if args.window:
+        a, _, b = args.window.partition(":")
+        params["window"] = {"start_s": float(a), "end_s": float(b)}
+    if args.reference_channel:
+        params["reference"] = args.reference_channel
+    if args.rule_channel:
+        params["rule_channel"] = args.rule_channel
+    if args.references:
+        params["references"] = json.loads(Path(args.references).read_text())
+    r = _research_op(args, "analyze_signal", params)
+    lines = [f"Flight {r['flight_id']} ({r.get('date')}, {r.get('source')}), {r['duration_s']} s"]
+    for ch in r["channels"]:
+        w = r["strip_windows"][ch]
+        lit = [(a, b) for a, b in _runs(r["strips"][ch]["prominent"]) if b - a >= w["window_s"]]
+        lines.append(f"  {label(ch)}: strips on {w['window_s']} s windows ({w['basis']}); period prominent over "
+                     f"{w['lit_seconds']} s ({fmt(100 * w['lit_share'], nd=1)} %)")
+        for a, b in lit:
+            sw = [x for x in r["strips"][ch]["swing"][a:b] if x is not None]
+            lines.append(f"    {a}–{b} s: swing up to {fmt(max(sw) if sw else None)}")
+    win = r.get("window")
+    if win:
+        lines.append(f"Window {win['start_s']}–{win['end_s']} s:")
+        for ch in r["channels"]:
+            for m in win["numbers"][ch]:
+                refs = "; ".join(x.get("text") or "" for x in m["references"] if x.get("text"))
+                lines.append(f"  {m['label']}: {m['text']}" + (f" — beside: {refs}" if refs else ""))
+        lines.append(f"Derived rule: {win['derived_rule']['description']}")
+    return _research_print(args, r, "\n".join(lines))
+
+
+def cmd_research_compare(args) -> int:
+    from .research.compare import rows_csv
+    from .research.questions import fmt
+    params = _research_set_params(args)
+    if args.pin:
+        params["pinned"] = args.pin
+    if args.collapse:
+        params["collapse"] = True
+    r = _research_op(args, "compare_rows", params)
+    if args.csv and not args.json:
+        sys.stdout.write(rows_csv(r))
+        return 0
+    ch = r["channels"][0] if r["channels"] else None
+    lines = [f"{r['row_count']} rows, {r['flight_count']} flights" + (" (collapsed)" if r["collapsed"] else "")
+             + (f"; {len(r['flights_without'])} flights without a match" if r["flights_without"] else "")]
+    for row in r["rows"]:
+        v = row["values"].get(ch) or {}
+        d = (row.get("delta") or {}).get(ch) or {}
+        pin = " *" if row.get("pinned") else ""
+        lines.append(f"  {row.get('start_time')}  {row.get('source') or '':<4} DA {fmt(row.get('da_ft')):>6}  "
+                     f"swing {fmt(v.get('swing')):>5}  period {fmt(v.get('period_s'), nd=1):>4}"
+                     + (f"  Δswing {fmt(d.get('swing')):>5}" if d else "") + pin)
+    return _research_print(args, r, "\n".join(lines))
+
+
 def cmd_research_study(args) -> int:
     from .research.render import render_text
     action = args.action
@@ -1099,6 +1170,22 @@ def _add_research_parser(sub, common) -> None:
     p.add_argument("--date", help="--split-by date: the date (YYYY-MM-DD)")
     p.add_argument("--references", metavar="FILE", help="JSON list of user references")
     p.set_defaults(func=cmd_research_test)
+
+    p = rs.add_parser("signal", parents=[common], help="One flight's rolling strips and window diagnostics (analyze_signal)")
+    p.add_argument("flight_id", metavar="FLIGHT_ID")
+    p.add_argument("--channel", action="append", metavar="CHANNEL", help="Channel(s); repeatable (default rpm, map_inhg)")
+    p.add_argument("--window", metavar="START:END", help="The window, in seconds from the log's start")
+    p.add_argument("--reference-channel", metavar="CHANNEL", help="Reference channel for correlation (default rpm)")
+    p.add_argument("--rule-channel", metavar="CHANNEL", help="Channel the derived rule is made from (default: the reference)")
+    p.add_argument("--references", metavar="FILE", help="JSON list of user references")
+    p.set_defaults(func=cmd_research_signal)
+
+    p = rs.add_parser("compare", parents=[common], help="One row per slice, grouped by flight (compare_rows)")
+    set_args(p)
+    p.add_argument("--pin", metavar="ROW_ID", help="Pin this row (a slice id, or a flight id) as the reference")
+    p.add_argument("--collapse", action="store_true", help="One row per flight (median, count)")
+    p.add_argument("--csv", action="store_true", help="Print the rows as CSV")
+    p.set_defaults(func=cmd_research_compare)
 
     p = rs.add_parser("study", parents=[common], help="Studies: list, show, save, run, delete, export, import, fork")
     p.add_argument("action", choices=["list", "show", "save", "run", "delete", "export", "import", "fork"])

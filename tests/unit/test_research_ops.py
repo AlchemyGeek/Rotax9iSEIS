@@ -184,6 +184,12 @@ def test_cli_json_is_the_operation_json(research_ws, capsys, monkeypatch):
     assert rc == 0
     out = capsys.readouterr().out.strip()
     assert out == serialize.dumps(expected)
+    sig = _ok(rpc(h, "analyze_signal", {"flight_id": _ids[0], "window": {"start_s": FP_START, "end_s": FP_START + 30}}))
+    assert cli.main(["research", "signal", _ids[0], "--window", f"{FP_START}:{FP_START + 30}", "--json", "--quiet"]) == 0
+    assert capsys.readouterr().out.strip() == serialize.dumps(sig)
+    cmp = _ok(rpc(h, "compare_rows", {"slice_rules": ["full_power"], "collapse": True}))
+    assert cli.main(["research", "compare", "--rule", "full_power", "--collapse", "--json", "--quiet"]) == 0
+    assert capsys.readouterr().out.strip() == serialize.dumps(cmp)
     presets = _ok(rpc(h, "list_slice_presets", {}))
     assert cli.main(["research", "presets", "--json", "--quiet"]) == 0
     assert capsys.readouterr().out.strip() == serialize.dumps(presets)
@@ -233,3 +239,123 @@ def test_run_study_after_a_wider_build_reuses_the_cache(research_ws):
     for _ in range(2):
         ran = _ok(rpc(h, "run_study", {"study_id": sid}))
         assert ran["tests"][0]["result"]["finding"].endswith("in 6 of 6 slices.")
+
+
+# ── v1.1: Signal view and Compare (Spec 06 §9.1–9.2) ───────────────────────
+
+def _signal(h, fid, **params):
+    return _ok(rpc(h, "analyze_signal", {"flight_id": fid, "channels": ["rpm", "map_inhg"], **params}))
+
+
+def test_analyze_signal_strips_light_over_the_oscillation(research_ws):
+    h, ids = research_ws
+    r = _signal(h, ids[0])
+    assert r["channels"] == ["rpm", "map_inhg"] and r["reference"] == "rpm"
+    w = r["strip_windows"]["rpm"]
+    assert w["window_s"] == 12 and w["basis"] == "period" and abs(w["flight_period_s"] - 4.4) < 0.5
+    lit = r["strips"]["rpm"]["prominent"]
+    inner = range(FP_START + 6, FP_START + FP_LEN - 6)
+    assert sum(lit[i] for i in inner) >= 0.8 * len(inner)
+    assert not any(lit[:FP_START - 6]) and not any(lit[FP_START + FP_LEN + 6:])
+    assert len(r["values"]["rpm"]) == r["duration_s"] and r["phases"]
+
+
+def test_a_strip_value_is_the_descriptor_of_that_window(research_ws):
+    """D10: the strip at second i is what a slice of the strip's window
+    centred there carries."""
+    h, ids = research_ws
+    r = _signal(h, ids[0])
+    i = FP_START + 30
+    a = i - 6
+    hand = _ok(rpc(h, "build_slices", {"slice_rules": [], "channels": ["rpm"],
+                                       "hand_slices": [{"flight": ids[0], "start_s": a, "end_s": a + 12}]}))
+    d = hand["slices"][0]["descriptors"]["rpm"]
+    st = r["strips"]["rpm"]
+    assert (st["swing"][i], st["period_s"][i], st["prominence"][i], st["prominent"][i]) == \
+        (d["swing"], d["period_s"], d["period_prominence"], d["period_prominent"])
+
+
+def test_signal_window_numbers_diagnostics_and_derived_rule(research_ws):
+    h, ids = research_ws
+    win = {"start_s": FP_START, "end_s": FP_START + FP_LEN}
+    r = _signal(h, ids[0], window=win)["window"]
+    hand = _ok(rpc(h, "build_slices", {"slice_rules": [], "channels": ["rpm", "map_inhg"],
+                                       "hand_slices": [{"flight": ids[0], **win}]}))["slices"][0]
+    assert r["descriptors"] == hand["descriptors"]          # the same §6 code path as a hand slice
+    assert r["windows"]["rpm"]["window_s"] == 12
+    dg = r["diagnostics"]
+    assert len(dg["rpm"]["detrended"]) == FP_LEN and dg["rpm"]["acf"] and dg["rpm"]["periodogram"]["period_s"]
+    assert dg["map_inhg"]["best_lag_s"] == 0 and any(p["lag_s"] == 0 for p in dg["map_inhg"]["lag_curve"])
+    assert all("references" in m for m in r["numbers"]["rpm"])
+    rule = r["derived_rule"]
+    assert rule["derived_from"] == {"flight": ids[0], "start_s": FP_START, "end_s": FP_START + FP_LEN, "channel": "rpm"}
+    got = _ok(rpc(h, "build_slices", {"slice_rules": [rule], "channels": ["rpm"],
+                                      "selection": {"mode": "flights", "flights": [ids[0]]}}))["slices"]
+    assert len(got) == 1 and abs(got[0]["start_s"] - FP_START) <= 3 and abs(got[0]["end_s"] - FP_START - FP_LEN) <= 3
+
+
+def test_analyze_signal_errors(research_ws):
+    h, _ids = research_ws
+    assert rpc(h, "analyze_signal", {"flight_id": "0000000000000000"})["error"]["code"] == "BAD_PARAMS"
+    assert rpc(h, "analyze_signal", {})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_compare_rows_group_collapse_and_pin(research_ws):
+    h, ids = research_ws
+    base = {"slice_rules": ["full_power"], "channels": ["rpm", "map_inhg"]}
+    c = _ok(rpc(h, "compare_rows", base))
+    b = _ok(rpc(h, "build_slices", base))
+    assert c["row_count"] == 6 and c["flight_count"] == 6 and c["flights_without"] == []
+    assert [r["slice_id"] for r in c["rows"]] == [s["slice_id"] for s in b["slices"]]
+    for r, s in zip(c["rows"], b["slices"]):
+        for ch in ("rpm", "map_inhg"):
+            assert r["values"][ch] == {k: s["descriptors"][ch][k] for k in r["values"][ch]}
+    col = _ok(rpc(h, "compare_rows", {**base, "collapse": True}))
+    assert col["collapsed"] and col["row_count"] == 6 and sum(r["count"] for r in col["rows"]) == 6
+    low = next(r for r in c["rows"] if r["flight"] == ids[-1])
+    p = _ok(rpc(h, "compare_rows", {**base, "pinned": low["row_id"]}))
+    assert p["pinned"] == low["row_id"]
+    others = [r for r in p["rows"] if not r["pinned"]]
+    assert len(others) == 5 and all(r["delta"]["rpm"]["swing"] > 0 for r in others)
+    assert rpc(h, "compare_rows", {**base, "pinned": "nope"})["error"]["code"] == "BAD_PARAMS"
+    # A flight the rule finds nothing in is listed.
+    _import(h, "2026-01-07", swing_rpm=90)
+    hand = _ok(rpc(h, "compare_rows", {"slice_rules": [], "channels": ["rpm"],
+                                       "hand_slices": [{"flight": ids[0], "start_s": FP_START, "end_s": FP_START + 20}],
+                                       "selection": {"mode": "flights", "flights": [ids[0], ids[1]]}}))
+    assert hand["row_count"] == 1 and [w["flight"] for w in hand["flights_without"]] == [ids[1]]
+
+
+def test_study_keeps_signal_compare_and_derived_rule(research_ws):
+    """Acceptance 18, engine side: a study with a Signal flight and window,
+    a derived rule, a pinned row and one question reopens with all four,
+    and the .eisstudy carries them."""
+    h, ids = research_ws
+    win = {"start_s": FP_START, "end_s": FP_START + FP_LEN}
+    rule = _signal(h, ids[0], window=win)["window"]["derived_rule"]
+    rows = _ok(rpc(h, "compare_rows", {"slice_rules": [rule], "channels": ["rpm"]}))["rows"]
+    study = {"name": "Signal study", "slice_rules": [rule],
+             "signal": {"flight": ids[0], "channels": ["rpm", "map_inhg"], "reference": "rpm", "window": win},
+             "compare": {"pinned": rows[0]["row_id"], "collapse": False, "channels": ["rpm"],
+                         "chart": {"x": "da_ft", "y": "rpm.swing", "colour": "source"}},
+             "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}
+    sid = _ok(rpc(h, "save_study", {"study": study}))["study_id"]
+    back = _ok(rpc(h, "load_study", {"study_id": sid}))
+    assert back["signal"] == {**study["signal"], "window": {"start_s": float(FP_START), "end_s": float(FP_START + FP_LEN)}}
+    assert back["compare"] == {**study["compare"], "reference": None}
+    assert back["slice_rules"][0]["derived_from"] == rule["derived_from"] and len(back["tests"]) == 1
+    exp = _ok(rpc(h, "export_study", {"study_id": sid}))
+    data = h.download(exp["download_url"]) if isinstance(h, (InProcess, NodeHost)) else _http_download(h, exp["download_url"])
+    imp = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": exp["filename"]}))
+    st = imp["study"]
+    assert st["signal"] == back["signal"] and st["compare"] == back["compare"]
+    assert st["slice_rules"][0]["derived_from"] == rule["derived_from"]
+    # Into a workspace without the flights: read-only, then Run this on my flights
+    # keeps the channels and the derived rule, drops the sender's flight and pin.
+    _ok(rpc(h, "create_workspace", {"name": "Other", "engine_model": "916iS"}))
+    _import(h, "2026-02-01")
+    ro = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": exp["filename"]}))
+    assert ro["read_only"] and ro["study"]["signal"]["flight"] == ids[0]
+    mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": ro["study"]["study_id"]}))
+    assert mine["signal"]["flight"] is None and mine["signal"]["channels"] == ["rpm", "map_inhg"]
+    assert mine["compare"]["pinned"] is None and mine["slice_rules"][0]["derived_from"]["flight"] == ids[0]

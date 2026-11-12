@@ -345,3 +345,35 @@ def test_eisstudy_is_a_zip_with_evidence(tmp_path):
         assert json.loads(z.read("study.json"))["format"] == "eisstudy"
     with pytest.raises(S.StudyError):
         S.parse_export(b"not a zip")
+
+
+def test_a_flat_window_has_no_period():
+    """A constant series detrends to rounding noise; it has no period on
+    any numpy build (Spec 04 parity for Signal view's strips)."""
+    from slingology_eis.research.descriptors import dominant_period
+    out = dominant_period(np.full(12, 4990.0))
+    assert out["period_s"] is None and out["period_prominent"] is False
+
+
+def test_derived_rule_band_and_duration():
+    from slingology_eis.research.signal import derive_rule
+    y = np.array([5560, 5700, 5820, 5690, 5580, 5710, 5830, 5700] * 5, dtype=float)
+    r = derive_rule("rpm", y, np.zeros(len(y), bool), 100, 140, "f" * 16)
+    c = r["conditions"][0]
+    assert (c["op"], c["min"], c["max"]) == ("between", 5560, 5970)
+    assert r["min_duration_s"] == 20 and r["merge_gap_s"] == 3
+    assert r["derived_from"] == {"flight": "f" * 16, "start_s": 100, "end_s": 140, "channel": "rpm"}
+
+
+def test_strip_value_is_the_window_descriptor():
+    from slingology_eis.research import descriptors as D
+    from slingology_eis.research.signal import strips
+    t = np.arange(200)
+    y = np.where((t > 60) & (t < 140), 5700 + 90 * np.sin(2 * np.pi * t / 4.4), 5000.0).round(-1)
+    f = np.zeros(200, bool)
+    st = strips(y, f, 12)
+    for i in (5, 100, 195):
+        a = max(0, min(i - 6, 200 - 12))
+        p = D.dominant_period(y[a:a + 12], f[a:a + 12])
+        assert (st["period_s"][i], st["prominent"][i], st["swing"][i]) == \
+            (p["period_s"], p["period_prominent"], D._r(D.swing(y[a:a + 12], 12), 3))

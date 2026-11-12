@@ -83,24 +83,35 @@ def _acf(y: np.ndarray, max_lag: int) -> np.ndarray:
     return np.array([float(np.dot(v[:n - k], v[k:])) / denom for k in range(max_lag + 1)])
 
 
-def lomb_scargle_peak(y: np.ndarray, p_min: float, p_max: float) -> tuple[Optional[float], float]:
-    """Period of the Lomb–Scargle periodogram's peak between p_min and
-    p_max (seconds), tolerant of gaps; and its normalised power."""
+def lomb_scargle(y: np.ndarray, p_min: float, p_max: float) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """The Lomb–Scargle periodogram between p_min and p_max (seconds),
+    tolerant of gaps: (periods, normalised power), or (None, None) when
+    the series is too short or flat. Signal view's window diagnostics
+    draw this curve; `lomb_scargle_peak` reads its peak."""
     t = np.flatnonzero(np.isfinite(y)).astype(float)
     if len(t) < 8 or p_max <= p_min:
-        return None, 0.0
+        return None, None
     v = y[np.isfinite(y)]
     v = v - v.mean()
     var = float(np.dot(v, v))
     if var <= 0:
-        return None, 0.0
+        return None, None
     f = np.linspace(1.0 / p_max, 1.0 / p_min, _LS_GRID)
     w = 2 * np.pi * f[:, None]
     tau = np.arctan2(np.sin(2 * w * t).sum(axis=1), np.cos(2 * w * t).sum(axis=1))[:, None] / (2 * w)
     c, s = np.cos(w * (t - tau)), np.sin(w * (t - tau))
     power = ((c @ v) ** 2 / (c * c).sum(axis=1) + (s @ v) ** 2 / (s * s).sum(axis=1)) / var
+    return 1.0 / f, power
+
+
+def lomb_scargle_peak(y: np.ndarray, p_min: float, p_max: float) -> tuple[Optional[float], float]:
+    """Period of the Lomb–Scargle periodogram's peak between p_min and
+    p_max (seconds); and its normalised power."""
+    periods, power = lomb_scargle(y, p_min, p_max)
+    if periods is None:
+        return None, 0.0
     k = int(np.argmax(power))
-    return float(1.0 / f[k]), float(power[k])
+    return float(periods[k]), float(power[k])
 
 
 def dominant_period(y: np.ndarray, filled: Optional[np.ndarray] = None,
@@ -119,8 +130,14 @@ def dominant_period(y: np.ndarray, filled: Optional[np.ndarray] = None,
     max_lag = int(n * PERIOD_MAX_FRACTION)
     if max_lag < PERIOD_SEARCH_MIN_S + 1 or np.isfinite(y).sum() < 8:
         return out
+    if np.nanmax(y) == np.nanmin(y):
+        # A flat window has no period. Detrended, it is rounding noise whose
+        # "peaks" differ between numpy builds (Spec 04 parity), so say none.
+        return out
     yd = detrend(y)
-    r = _acf(yd, max_lag + 1)
+    # Rounded so that a tie between neighbouring lags is a tie on every
+    # numpy build (Spec 04 parity); 1e-10 is far below any real difference.
+    r = np.round(_acf(yd, max_lag + 1), 10)
     peak = None
     for k in range(PERIOD_SEARCH_MIN_S, max_lag + 1):
         if r[k] >= r[k - 1] and r[k] >= r[k + 1] and r[k] > 0:
@@ -168,23 +185,42 @@ def _pearson(a: np.ndarray, b: np.ndarray) -> Optional[float]:
     return float(np.dot(x, y)) / d if d > 0 else None
 
 
+def _lag_pairs(ref: np.ndarray, y: np.ndarray, filled: Optional[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    a, b = np.array(ref, dtype=float), np.array(y, dtype=float)
+    if filled is not None:
+        a[filled] = np.nan
+        b[filled] = np.nan
+    return detrend(a), detrend(b)
+
+
+def _corr_at(a: np.ndarray, b: np.ndarray, k: int) -> Optional[float]:
+    n = len(a)
+    return _pearson(a[:n - k], b[k:]) if k >= 0 else _pearson(a[-k:], b[:n + k])
+
+
+def lag_curve(ref: np.ndarray, y: np.ndarray, lag_s: int, filled: Optional[np.ndarray] = None) -> list[dict]:
+    """Correlation against lag over ±lag_s, the curve `coupling` searches
+    (Signal view's window diagnostics draw it): [{lag_s, corr}] in lag
+    order; corr is None where too few pairs overlap."""
+    a, b = _lag_pairs(ref, y, filled)
+    n = len(a)
+    return [{"lag_s": k, "corr": _r(_corr_at(a, b, k)) if abs(k) < n - 6 else None}
+            for k in range(-int(lag_s), int(lag_s) + 1)]
+
+
 def coupling(ref: np.ndarray, y: np.ndarray, lag_s: int, filled: Optional[np.ndarray] = None) -> dict:
     """§6 coupling with a reference channel over ±lag_s: zero-lag
     correlation, the lag of maximum correlation (positive: this channel
     follows the reference by that many seconds) and the correlation there.
     Both detrended; filled rows excluded."""
-    a, b = np.array(ref, dtype=float), np.array(y, dtype=float)
-    if filled is not None:
-        a[filled] = np.nan
-        b[filled] = np.nan
-    a, b = detrend(a), detrend(b)
+    a, b = _lag_pairs(ref, y, filled)
     n = len(a)
     best_k, best = None, None
     corr0 = _pearson(a, b)
     for k in sorted(range(-int(lag_s), int(lag_s) + 1), key=abs):
         if abs(k) >= n - 6:
             continue
-        c = _pearson(a[:n - k], b[k:]) if k >= 0 else _pearson(a[-k:], b[:n + k])
+        c = _corr_at(a, b, k)
         if c is not None and (best is None or c > best + 1e-12):
             best_k, best = k, c
     return {"corr0": _r(corr0), "lag_s": best_k, "corr_at_lag": _r(best)}

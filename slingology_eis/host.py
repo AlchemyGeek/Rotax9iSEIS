@@ -2750,6 +2750,62 @@ async def op_run_test(params: dict, ctx: dict) -> Any:
                   references=merged.get("references"), engine_cfg=engine_cfg)
 
 
+async def op_analyze_signal(params: dict, ctx: dict) -> Any:
+    """§9.1 Signal view: one flight's rolling swing and period strips per
+    channel, and for an optional window its diagnostics, descriptors and
+    derived rule. Reads the flight's log through its LogSource."""
+    from .research.signal import analyze_signal
+    _require_active(ctx)
+    flight_id = params.get("flight_id")
+    if not flight_id:
+        raise RpcError("BAD_PARAMS", "analyze_signal needs a flight_id")
+    engine_cfg, _ = _current_engine(ctx)
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        return await analyze_signal(
+            ctx["workspace_dir"], _sources(ctx), flight_id, channels=params.get("channels"),
+            window=params.get("window"), reference=params.get("reference"), rule_channel=params.get("rule_channel"),
+            windows=params.get("windows"), prominence_min=float(params.get("prominence_min", 0.2)),
+            references=params.get("references"), engine_cfg=engine_cfg, assignments=_assignments(ctx),
+            include_values=params.get("include_values", True) is not False, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+
+
+async def op_compare_rows(params: dict, ctx: dict) -> Any:
+    """§9.2 Compare: one row per slice, grouped by flight, from the same
+    slice build as build_slices (study cache used with `study_id`);
+    `collapse` gives one row per flight; `pinned` names the reference row.
+    Flights of the selection with no matching slice are listed."""
+    from .research.compare import compare_rows
+    _require_active(ctx)
+    doc, cache = _study_cache(ctx, params.get("study_id"))
+    base = {}
+    if doc is not None:
+        base = {"selection": doc["selection"], "slice_rules": doc["slice_rules"], "hand_slices": doc["hand_slices"],
+                "windows": doc.get("windows")}
+    merged = {**base, **{k: v for k, v in params.items() if v is not None}}
+    merged.setdefault("channels", ["rpm", "map_inhg"])
+    ss = await _build(ctx, merged, cache=cache)
+    _keep_cache(ctx, doc, cache)
+    d = ss.to_dict()
+    from .research.slices import _selected_flights
+    selected, _missing = _selected_flights(ctx["workspace_dir"], merged.get("selection") or {"mode": "all"})
+    selected = list(dict.fromkeys(selected + [h["flight"] for h in ss.hand_slices]))
+    meta = {}
+    for fid in selected:
+        if fid in set(d["unreachable_flights"]):
+            continue
+        fa = ws.load_flight_analysis(ctx["workspace_dir"], fid)
+        if fa is not None:
+            meta[fid] = {"date": fa.header.get("date"), "start_utc": fa.header.get("start_utc")}
+    engine_cfg, _ = _current_engine(ctx)
+    out = compare_rows(d, channels=ss.channels, pinned=params.get("pinned"), collapse=bool(params.get("collapse")),
+                       flights=meta, engine_cfg=engine_cfg)
+    out["selection"] = merged.get("selection") or {"mode": "all"}
+    return out
+
+
 def _engine_model(ctx: dict) -> str:
     try:
         return ws.load_manifest(ctx["workspace_dir"]).engine_model
@@ -3005,6 +3061,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "export_study": _research_call(op_export_study),
     "import_study": _research_call(op_import_study),
     "run_study_on_my_flights": _research_call(op_run_study_on_my_flights),
+    "analyze_signal": _research_call(op_analyze_signal),
+    "compare_rows": _research_call(op_compare_rows),
     "get_research_progress": op_get_research_progress,
     "note_study_finding": _research_call(op_note_study_finding),
     "forget_study_finding": op_forget_study_finding,

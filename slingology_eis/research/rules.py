@@ -120,8 +120,22 @@ def normalise_rule(rule: dict) -> dict:
     out["name"] = str(rule.get("name") or out["rule_id"])
     if rule.get("from_preset"):
         out["from_preset"] = str(rule["from_preset"])
+    derived = _derived_from(rule.get("derived_from"))
     return {"rule_id": out.pop("rule_id"), "name": out.pop("name"),
-            **({"from_preset": out.pop("from_preset")} if "from_preset" in out else {}), **out}
+            **({"from_preset": out.pop("from_preset")} if "from_preset" in out else {}),
+            **({"derived_from": derived} if derived else {}), **out}
+
+
+def _derived_from(d) -> Optional[dict]:
+    """Where a rule made by Signal view's *Make this a rule* came from
+    (§9.1): flight, window and channel. Provenance only — not part of the
+    rule's body or hash."""
+    if not d:
+        return None
+    if not isinstance(d, dict) or not d.get("flight"):
+        raise RuleError("derived_from needs the flight the window came from")
+    return {"flight": str(d["flight"]), "start_s": int(_number(d.get("start_s", 0), "derived_from start_s")),
+            "end_s": int(_number(d.get("end_s", 0), "derived_from end_s")), "channel": str(d.get("channel") or "")}
 
 
 def phase_rule(phase: str) -> dict:
