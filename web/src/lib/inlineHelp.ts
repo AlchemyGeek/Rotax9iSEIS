@@ -63,6 +63,15 @@ export const INLINE_HELP = {
     "A rule picks the stretches of every selected flight where its conditions hold for long enough — the slices every question is then asked about.",
   "research.selection":
     "Which flights the slices come from; a split names two groups so the groups question can compare them.",
+  // Research v1.1 (Spec 06 §9) — Signal view and Compare.
+  "research.strips":
+    "Each strip reads the channel through a short sliding window: the upper one how far it swings, the lower one how often it repeats — coloured only where a repeat stands out clearly, so a bright stretch shows where to look, not whether anything is wrong.",
+  "research.window":
+    "The seconds the numbers below describe — drag across the chart or a strip to change them; they are the same numbers a slice over those seconds carries everywhere else in Research.",
+  "research.derived_rule":
+    "Turns this window into a rule — the channel held within the band it covered here, for about as long — so Compare can find the same kind of moment in your other flights; you can adjust the band before adding it.",
+  "research.pinning":
+    "Pinning a row makes it the one every other row is measured from: the table adds each row's difference from it and the chart marks it.",
 } as const;
 
 export type InlineHelpId = keyof typeof INLINE_HELP;

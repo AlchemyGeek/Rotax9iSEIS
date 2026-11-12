@@ -1,4 +1,4 @@
-import type { HandSlice, ResearchTestId, ResearchTestResult, SliceRule, StudySelection, StudyTest, UserReference } from "../types/contract";
+import type { HandSlice, ResearchTestId, ResearchTestResult, SliceRule, StudySelection, StudySignal, StudyTest, UserReference } from "../types/contract";
 
 // Spec 06 — the web's Research helpers. Nothing here computes a result:
 // every number comes from the host (§11, API-first). This file holds the
@@ -75,7 +75,7 @@ export function presetForMetric(metricId: string): string {
 
 export interface StudySeed {
   name: string;
-  from: "flight" | "trends" | "event";
+  from: "flight" | "trends" | "event" | "preset";
   selection: StudySelection;
   slice_rules: (SliceRule | string)[];
   hand_slices: HandSlice[];
@@ -86,6 +86,9 @@ export interface StudySeed {
   // A preset the entry point suggests but does not add (Flight view: the
   // zoom covers a takeoff). The study page offers it as one click.
   suggested_preset?: string;
+  // Spec 06 v0.6 §12: Flight view opens the study in Signal mode on that
+  // flight, with the chart's channels and zoom as the window.
+  signal?: StudySignal;
 }
 
 const SEED_KEY = "slingology-eis.research.seed";
@@ -120,6 +123,8 @@ export function seedFromFlight(args: { flightId: string; date: string; start_s: 
     tests: [{ test_id: "cycling", params: {}, channels: [args.channels[0] ?? "rpm"] }],
     view: { anchor: "start", channels: args.channels.length ? args.channels.slice(0, 3) : ["rpm", "map_inhg", "fuel_flow_gph"] },
     suggested_preset: args.coversTakeoff ? "full_power" : undefined,
+    signal: { flight: args.flightId, channels: args.channels.length ? args.channels.slice(0, 4) : ["rpm", "map_inhg"], reference: null,
+      window: { start_s: start, end_s: end } },
   };
 }
 

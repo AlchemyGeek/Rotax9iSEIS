@@ -53,7 +53,7 @@ export function Research() {
   useEffect(() => { void load(); }, []);
 
   function newFromPreset(ruleId: string, name: string) {
-    stashStudySeed({ name, from: "flight", selection: { mode: "all", split: null }, slice_rules: [ruleId], hand_slices: [],
+    stashStudySeed({ name, from: "preset", selection: { mode: "all", split: null }, slice_rules: [ruleId], hand_slices: [],
       tests: [{ test_id: "cycling", params: {}, channels: ["rpm"] }] });
     navigate("/research/new");
   }

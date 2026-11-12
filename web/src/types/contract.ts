@@ -1355,6 +1355,9 @@ export interface SliceRule {
   rule_id: string;
   name: string;
   from_preset?: string;
+  // Spec 06 §9.1: a rule made by Signal view's "Make this a rule" — where
+  // its window came from (provenance only, not part of the rule's body).
+  derived_from?: { flight: string; start_s: number; end_s: number; channel: string };
   conditions: SliceCondition[];
   min_duration_s: number;
   merge_gap_s: number;
@@ -1540,6 +1543,154 @@ export interface Study {
   imported?: { at: string; sender: Record<string, unknown>; name: string; matched: string[]; missing: string[] } | null;
   flights?: string[];
   last_run?: { slices: number; by_source: Record<string, number>; missing_flights: string[]; unreachable_flights: string[]; engine: string } | null;
+  // Spec 06 v0.6 §10.1 (Session C): what Signal and Compare reopen on.
+  signal?: StudySignal | null;
+  compare?: StudyCompare | null;
+}
+
+export interface StudySignal {
+  flight: string | null;
+  channels: string[];
+  reference: string | null;
+  window: { start_s: number; end_s: number } | null;
+}
+
+export interface StudyCompare {
+  pinned: string | null;          // a slice id, or a flight id when collapsed
+  collapse: boolean;
+  channels: string[];
+  reference: string | null;
+  chart: { x?: CompareChartX; y?: string; colour?: "flight" | "source" };
+}
+
+export type CompareChartX = "date" | "engine_hours" | "da_ft" | "oat_c";
+
+// ── Spec 06 §9.1 Signal view: analyze_signal ────────────────────────────────
+
+export interface SignalStrips {
+  swing: (number | null)[];
+  period_s: (number | null)[];
+  prominence: (number | null)[];
+  prominent: boolean[];
+}
+
+export interface SignalMagnitude {
+  label: string;
+  value: number | null;
+  unit: string;
+  text: string;
+  references: { kind: string; label: string; value?: unknown; text?: string; source?: string | null }[];
+}
+
+export interface SignalDiagnostics {
+  detrended: (number | null)[];
+  acf: (number | null)[];
+  periodogram: { period_s: number[]; power: number[] };
+  period_s: number | null;
+  period_ls_s: number | null;
+  lag_curve?: { lag_s: number; corr: number | null }[];
+  best_lag_s?: number | null;
+}
+
+export interface SignalWindow {
+  start_s: number;
+  end_s: number;
+  duration_s: number;
+  context: SliceContext;
+  descriptors: Record<string, Record<string, number | boolean | null>>;
+  windows: Record<string, { window_s: number; lag_s: number; basis: string; median_period_s?: number | null }>;
+  diagnostics: Record<string, SignalDiagnostics>;
+  numbers: Record<string, SignalMagnitude[]>;
+  derived_rule: SliceRule & { derived_from: NonNullable<SliceRule["derived_from"]> };
+}
+
+export interface SignalResult {
+  flight_id: string;
+  duration_s: number;
+  source: string | null;
+  start_time: string | null;
+  date: string | null;
+  channels: string[];
+  missing_channels: string[];
+  reference: string | null;
+  phases: { phase: string; start_s: number; end_s: number }[];
+  filled: number[];
+  strip_windows: Record<string, { window_s: number; basis: string; flight_period_s: number | null; lit_seconds: number; lit_share: number }>;
+  strips: Record<string, SignalStrips>;
+  prominence_min: number;
+  om_limits: Record<string, OmLimitRef[]>;
+  values?: Record<string, (number | null)[]>;
+  window: SignalWindow | null;
+}
+
+export interface OmLimitRef {
+  kind: "om";
+  id: string;
+  label: string;
+  value: number;
+  limit_type: string;
+  unit: string;
+  source?: string | null;
+}
+
+// ── Spec 06 §9.2 Compare: compare_rows ──────────────────────────────────────
+
+export interface CompareValues {
+  period_s?: number | null;
+  period_prominence?: number | null;
+  period_prominent?: boolean | number | null;
+  swing?: number | null;
+  median?: number | null;
+  corr0?: number | null;
+  lag_s?: number | null;
+}
+
+export interface CompareRow {
+  row_id: string;
+  slice_id: string | null;
+  flight: string;
+  kind: "rule" | "hand" | "flight";
+  label: string;
+  start_s: number;
+  end_s: number;
+  start_time: string | null;
+  date: string | null;
+  duration_s: number | null;
+  count?: number;
+  source: string | null;
+  da_ft: number | null;
+  oat_c: number | null;
+  pa_ft: number | null;
+  engine_hours: number | null;
+  phases: string[] | string | null;
+  values: Record<string, CompareValues>;
+  pinned?: boolean;
+  delta?: Record<string, CompareValues>;
+}
+
+export interface CompareResult {
+  rows: CompareRow[];
+  groups: { flight: string; date: string | null; start_time: string | null; source: string | null; count: number; row_ids: string[]; summary: CompareRow }[];
+  collapsed: boolean;
+  row_count: number;
+  slice_count: number;
+  flight_count: number;
+  flights_without: { flight: string; date: string | null; start_utc: string | null }[];
+  pinned: string | null;
+  channels: string[];
+  reference: string | null;
+  windows: SliceSetResult["windows"];
+  chart_x: CompareChartX[];
+  values: string[];
+  deltas: string[];
+  om_limits: Record<string, OmLimitRef[]>;
+  rules: SliceRule[];
+  hand_slices: HandSlice[];
+  by_source: Record<string, number>;
+  missing_flights: string[];
+  unreachable_flights: string[];
+  engine_version: string;
+  selection: StudySelection;
 }
 
 export interface StudySummary {

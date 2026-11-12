@@ -4,7 +4,8 @@ import { INLINE_HELP } from "./inlineHelp";
 // Spec 14 §9 criterion 15: every item in §7.4's "Gets help" column has
 // help, each one sentence, all of it in this one registry, and nothing
 // else. Spec 06 §12 adds the Research items (each test's question, the
-// reference, the slice rule and the selection) under the same rules. margin_min_f / consecutive_flights are in §7.4's list but have no
+// reference, the slice rule and the selection) under the same rules, and
+// v0.6 (Session C) the strips, the window, rule derivation and pinning. margin_min_f / consecutive_flights are in §7.4's list but have no
 // field on any topic card (engine constants; cylinder_rank ships with no
 // triggers), so there is nothing to attach their help to.
 const EXPECTED = [
@@ -17,6 +18,7 @@ const EXPECTED = [
   "flight.excluded_from_reference",
   "research.test.cycling", "research.test.coupling", "research.test.groups", "research.test.unusual",
   "research.reference", "research.slice_rule", "research.selection",
+  "research.strips", "research.window", "research.derived_rule", "research.pinning",
 ];
 
 // Every app source file, as text (Vite inlines these at test time).

@@ -53,9 +53,11 @@ import type {
   WorkspaceRulesResult,
   WorkspaceSettings,
   HandSlice,
+  CompareResult,
   ResearchProgress,
   ResearchTestId,
   ResearchTestResult,
+  SignalResult,
   SlicePresets,
   SliceRule,
   SliceSamples,
@@ -276,9 +278,23 @@ export interface EngineClient {
   importStudy(file: File): Promise<StudyImportResult>;
   runStudyOnMyFlights(studyId: string): Promise<Study>;
   getResearchProgress(): Promise<ResearchProgress>;
+  // Spec 06 v0.6 §9 (Session C): Signal view and Compare.
+  analyzeSignal(args: SignalArgs): Promise<SignalResult>;
+  compareRows(args: SliceBuildArgs & { pinned?: string | null; collapse?: boolean }): Promise<CompareResult>;
   // Spec 06 §10.3 — a study's finding as a Journal entry, and its removal.
   noteStudyFinding(studyId: string, testIndex: number, note?: string): Promise<{ entry: JournalEntry }>;
   forgetStudyFinding(refId: string): Promise<{ removed: boolean }>;
+}
+
+export interface SignalArgs {
+  flight_id: string;
+  channels?: string[];
+  window?: { start_s: number; end_s: number } | null;
+  reference?: string | null;
+  rule_channel?: string;
+  references?: UserReference[];
+  include_strips?: boolean;
+  include_values?: boolean;
 }
 
 export interface SliceBuildArgs {
@@ -785,6 +801,12 @@ export class LocalServerClient implements EngineClient {
   }
   getResearchProgress() {
     return this.rpc<ResearchProgress>("get_research_progress", {});
+  }
+  analyzeSignal(args: SignalArgs) {
+    return this.rpc<SignalResult>("analyze_signal", args);
+  }
+  compareRows(args: SliceBuildArgs & { pinned?: string | null; collapse?: boolean }) {
+    return this.rpc<CompareResult>("compare_rows", args);
   }
   noteStudyFinding(studyId: string, testIndex: number, note?: string) {
     return this.rpc<{ entry: JournalEntry }>("note_study_finding", { study_id: studyId, test_index: testIndex, note });

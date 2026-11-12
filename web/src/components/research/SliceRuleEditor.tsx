@@ -41,6 +41,7 @@ export function SliceRuleEditor({ initial, onSave, onCancel }: { initial: SliceR
       rule_id: initial.rule_id,
       name: name.trim(),
       ...(initial.from_preset ? { from_preset: initial.from_preset } : {}),
+      ...(initial.derived_from ? { derived_from: initial.derived_from } : {}),
       conditions,
       min_duration_s: Number(minDuration) || 0,
       merge_gap_s: Number(mergeGap) || 0,

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { EngineRpcError, getEngineClient, type FlightSummary, type SliceBuildArgs } from "../lib/engineClient";
 import type {
-  HandSlice, ResearchProgress, ResearchTestId, SliceInfo, SlicePresets, SliceRule, SliceSetResult, Study as StudyDoc, StudySelection,
-  StudySplit, StudyTest, UserReference,
+  CompareRow, HandSlice, ResearchProgress, ResearchTestId, SliceInfo, SlicePresets, SliceRule, SliceSetResult, Study as StudyDoc,
+  StudySelection, StudySplit, StudyTest, UserReference,
 } from "../types/contract";
 import { AlignedView } from "../components/research/AlignedView";
+import { SignalSection } from "../components/research/SignalSection";
+import { CompareSection } from "../components/research/CompareSection";
 import { SliceRuleEditor, describeRule } from "../components/research/SliceRuleEditor";
 import { TestResultCard } from "../components/research/TestResultCard";
 import { BODY, BUTTON, CHIP, INPUT, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY, SELECT } from "../components/research/ui";
@@ -18,11 +20,17 @@ import {
 
 const client = getEngineClient();
 
-// Spec 06 §12 — the study page, top to bottom: selection → slice rules and
-// hand slices (slice count live) → aligned view → tests (each in the §8
-// contract) → references and notes → actions. Every number comes from the
-// host (§11). A read-only study (§10.2, Q5) shows the sender's results
-// under an unmistakable label, with one action: Run this on my flights.
+// Spec 06 §12 (v1.1) — the study page, top to bottom: Signal (one flight,
+// strips, window, diagnostics, Make this a rule) → Compare (selection, slice
+// rules and hand slices with the count live, rows grouped by flight, chart,
+// pinned row, diagnostics; the v1 aligned view as a tab) → Questions (each
+// in the §8 contract) → references and notes. Each section collapses; a
+// study opened from a flight starts at Signal, any other at Compare. Every
+// number comes from the host (§11). A read-only study (§10.2, Q5) shows the
+// sender's results under an unmistakable label, with one action: Run this
+// on my flights.
+
+type SectionId = "signal" | "compare" | "questions";
 
 type Draft = Omit<StudyDoc, "study_id" | "created" | "updated"> & { study_id: string | null; slice_rules: SliceRule[] };
 
@@ -30,13 +38,14 @@ function blankDraft(): Draft {
   return {
     study_id: null, name: "New study", selection: { mode: "all", split: null }, slice_rules: [], hand_slices: [],
     references: [], tests: [], windows: {}, view: { anchor: "crossing", channels: ["rpm", "map_inhg", "fuel_flow_gph"] },
-    notes: "", provenance: {},
+    notes: "", provenance: {}, signal: null, compare: null,
   };
 }
 
 function fromDoc(d: StudyDoc): Draft {
   return { ...d, slice_rules: d.slice_rules ?? [], hand_slices: d.hand_slices ?? [], references: d.references ?? [], tests: d.tests ?? [],
-    view: d.view ?? { anchor: "crossing", channels: ["rpm", "map_inhg", "fuel_flow_gph"] }, notes: d.notes ?? "", windows: d.windows ?? {} };
+    view: d.view ?? { anchor: "crossing", channels: ["rpm", "map_inhg", "fuel_flow_gph"] }, notes: d.notes ?? "", windows: d.windows ?? {},
+    signal: d.signal ?? null, compare: d.compare ?? null };
 }
 
 function toSave(d: Draft, presetIds: string[] = []): Omit<Partial<StudyDoc>, "slice_rules"> & { slice_rules: (SliceRule | string)[] } {
@@ -45,6 +54,7 @@ function toSave(d: Draft, presetIds: string[] = []): Omit<Partial<StudyDoc>, "sl
     name: d.name, selection: d.selection, slice_rules: [...d.slice_rules, ...presetIds], hand_slices: d.hand_slices,
     references: d.references, tests: d.tests.map((t) => ({ test_id: t.test_id, params: t.params, channels: t.channels })),
     windows: d.windows, view: d.view, notes: d.notes, provenance: d.provenance,
+    ...(d.signal ? { signal: d.signal } : {}), ...(d.compare ? { compare: d.compare } : {}),
   };
 }
 
@@ -75,6 +85,9 @@ export function Study() {
   const [editingTest, setEditingTest] = useState<number | null>(null);
   const [highlightSlice, setHighlightSlice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [open, setOpen] = useState<Record<SectionId, boolean>>({ signal: true, compare: true, questions: true });
+  const [startAt, setStartAt] = useState<SectionId | null>(null);
+  const sectionRefs = useRef<Partial<Record<SectionId, HTMLElement | null>>>({});
   const buildSeq = useRef(0);
 
   const readOnly = !!draft?.read_only;
@@ -90,7 +103,9 @@ export function Study() {
         setFlights(fl);
         if (isNew) {
           const seed = takeStudySeed();
-          setDraft(seed ? applySeed(seed) : blankDraft());
+          const d = seed ? applySeed(seed) : blankDraft();
+          setDraft(d);
+          goTo(seed?.from === "flight" && seed.signal ? "signal" : "compare");
           setPendingPresets(seed ? seed.slice_rules.filter((r): r is string => typeof r === "string") : []);
           setSuggestedPreset(seed?.suggested_preset ?? null);
           setDirty(true);
@@ -98,6 +113,7 @@ export function Study() {
           const doc = await client.loadStudy(studyId!);
           if (!live) return;
           setDraft(fromDoc(doc));
+          goTo(doc.signal?.flight && !(doc.slice_rules?.length || doc.hand_slices?.length) ? "signal" : "compare");
         }
       } catch (e) {
         if (!live) return;
@@ -108,6 +124,20 @@ export function Study() {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studyId]);
+
+  // The section a study starts at is open and scrolled to; when it is
+  // Compare, Signal starts collapsed (it has no flight yet, or is not where
+  // the pilot came in).
+  function goTo(id: SectionId) {
+    setOpen((o) => ({ ...o, [id]: true, ...(id === "compare" ? { signal: false } : {}) }));
+    setStartAt(id);
+  }
+  useEffect(() => {
+    if (!startAt) return;
+    const el = sectionRefs.current[startAt];
+    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "start" });
+    setStartAt(null);
+  }, [startAt, draft !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Progress polling while a build or run is in flight.
   useEffect(() => {
@@ -267,6 +297,17 @@ export function Study() {
     }
   }
 
+  function openRow(r: CompareRow) {
+    navigate(`/flights/${encodeURIComponent(r.flight)}${r.kind === "flight" ? "" : `?window=${r.start_s}-${r.end_s}`}`);
+  }
+  // Signal's "Make this a rule": the derived rule opens in the rule form
+  // under Compare, where saving it adds it to the study's rules.
+  function makeRule(rule: SliceRule) {
+    setEditingRule(rule);
+    goTo("compare");
+    setOpen((o) => ({ ...o, signal: true, compare: true }));
+  }
+
   function openSlice(s: SliceInfo) {
     navigate(`/flights/${encodeURIComponent(s.flight)}?window=${s.start_s}-${s.end_s}`);
   }
@@ -284,6 +325,8 @@ export function Study() {
   }
 
   const slices = sliceSet?.slices ?? [];
+  const toggle = (id: SectionId) => setOpen((o) => ({ ...o, [id]: !o[id] }));
+  const sectionRef = (id: SectionId, el: HTMLElement | null) => { sectionRefs.current[id] = el; };
   const canRun = !readOnly && (draft.slice_rules.length + pendingPresets.length + draft.hand_slices.length) > 0 && draft.tests.length > 0 && !running;
 
   return (
@@ -326,115 +369,123 @@ export function Study() {
         {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error} <button type="button" onClick={() => setError(null)} style={LINK}>dismiss</button></div>}
         {notice && <div style={NOTICE}>{notice} <button type="button" onClick={() => setNotice(null)} style={LINK}>ok</button></div>}
 
-        {/* Selection */}
-        <section style={PANEL}>
-          <div style={PANEL_TITLE}>Flights <InlineHelp id="research.selection" /><span style={MUTED}>{describeSelection(draft.selection, flights.length)}</span></div>
-          <SelectionEditor selection={draft.selection} flights={flights} readOnly={readOnly} onChange={(selection) => update({ selection })} />
-        </section>
+        <Section id="signal" title="Signal" hint="one flight: where each channel swings and repeats" open={open.signal} onToggle={toggle} onRef={sectionRef}>
+          <SignalSection flights={flights} signal={draft.signal ?? null} readOnly={readOnly} references={draft.references}
+            defaultChannels={signalDefaults(draft)} onChange={(signal) => update({ signal })} onMakeRule={makeRule} />
+        </Section>
 
-        {/* Slice rules and hand slices */}
-        <section style={PANEL}>
-          <div style={PANEL_TITLE}>
-            Slices <InlineHelp id="research.slice_rule" />
-            <span style={MUTED} data-testid="slice-count">
-              {building ? "counting…" : sliceSet ? `${sliceSet.count} slice${sliceSet.count === 1 ? "" : "s"} from ${sliceSet.flights_with_slices} of ${sliceSet.flights_selected} flights`
-                + (Object.keys(sliceSet.by_source).length > 1 ? ` (${Object.entries(sliceSet.by_source).map(([k, v]) => `${v} ${k}`).join(", ")})` : "")
-                : readOnly && draft.last_run ? `${draft.last_run.slices} slices in the sender's run` : "no rule yet"}
-            </span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {draft.slice_rules.map((r) => (
-              <div key={r.rule_id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }} data-testid="slice-rule">
-                <span style={{ fontWeight: 600 }}>{r.name}</span>
-                <span style={BODY}>{describeRule(r)}</span>
-                {r.from_preset && <span style={CHIP}>from preset</span>}
-                <span style={{ flexGrow: 1 }} />
-                {!readOnly && <button type="button" onClick={() => setEditingRule(r)} style={LINK}>Edit…</button>}
-                {!readOnly && <button type="button" onClick={() => update((d) => ({ slice_rules: d.slice_rules.filter((x) => x.rule_id !== r.rule_id) }))} style={LINK}>Remove</button>}
+        <Section id="compare" title="Compare" hint="every selected flight: one row per slice" open={open.compare} onToggle={toggle} onRef={sectionRef}>
+            {/* Selection */}
+            <section style={SUBPANEL}>
+              <div style={PANEL_TITLE}>Flights <InlineHelp id="research.selection" /><span style={MUTED}>{describeSelection(draft.selection, flights.length)}</span></div>
+              <SelectionEditor selection={draft.selection} flights={flights} readOnly={readOnly} onChange={(selection) => update({ selection })} />
+            </section>
+
+            {/* Slice rules and hand slices */}
+            <section style={SUBPANEL}>
+              <div style={PANEL_TITLE}>
+                Slices <InlineHelp id="research.slice_rule" />
+                <span style={MUTED} data-testid="slice-count">
+                  {building ? "counting…" : sliceSet ? `${sliceSet.count} slice${sliceSet.count === 1 ? "" : "s"} from ${sliceSet.flights_with_slices} of ${sliceSet.flights_selected} flights`
+                    + (Object.keys(sliceSet.by_source).length > 1 ? ` (${Object.entries(sliceSet.by_source).map(([k, v]) => `${v} ${k}`).join(", ")})` : "")
+                    : readOnly && draft.last_run ? `${draft.last_run.slices} slices in the sender's run` : "no rule yet"}
+                </span>
               </div>
-            ))}
-            {pendingPresets.map((p) => <div key={p} style={BODY} data-testid="slice-rule">preset {p} (resolving…)</div>)}
-            {draft.hand_slices.map((h, i) => (
-              <div key={`${h.flight}-${h.start_s}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }} data-testid="hand-slice">
-                <span style={{ fontWeight: 600 }}>{h.label}</span>
-                <span style={BODY}>{flightLabel(h.flight)} · {fmtClock(h.start_s)}–{fmtClock(h.end_s)} by hand</span>
-                <span style={{ flexGrow: 1 }} />
-                <button type="button" onClick={() => setHighlightSlice(`${h.flight}:hand:${h.start_s}-${h.end_s}`)} style={LINK}>Highlight</button>
-                {!readOnly && <button type="button" onClick={() => update((d) => ({ hand_slices: d.hand_slices.filter((_, j) => j !== i) }))} style={LINK}>Remove</button>}
-              </div>
-            ))}
-          </div>
-          {suggestedPreset && !readOnly && !draft.slice_rules.some((r) => r.from_preset === suggestedPreset) && (
-            <div style={{ ...NOTICE, marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
-              <span>This window covers a takeoff. Compare it with every takeoff?</span>
-              <button type="button" onClick={() => { setPendingPresets((p) => [...p, suggestedPreset]); setSuggestedPreset(null); setDirty(true); }} style={BUTTON} data-testid="add-suggested-preset">Add the full-power rule</button>
-              <button type="button" onClick={() => setSuggestedPreset(null)} style={LINK}>No</button>
-            </div>
-          )}
-          {!readOnly && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-              <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setPendingPresets((p) => [...p, id]); setDirty(true); }} style={SELECT} aria-label="Add a preset" data-testid="add-preset">
-                <option value="">+ preset…</option>
-                {presets?.presets.map((p) => <option key={p.rule_id} value={p.rule_id}>{p.name}</option>)}
-              </select>
-              <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setPendingPresets((p) => [...p, id]); setDirty(true); }} style={SELECT} aria-label="Add a phase slice">
-                <option value="">+ phase…</option>
-                {presets?.phase_rules.map((p) => <option key={p.rule_id} value={p.rule_id}>{p.name}</option>)}
-              </select>
-              <button type="button" onClick={() => setEditingRule({ rule_id: `r-${Date.now().toString(36)}`, name: "New rule", conditions: [{ channel: "rpm", op: ">=", value: 5000 }], min_duration_s: 10, merge_gap_s: 2, pad_s: 0, phase: null })} style={BUTTON}>+ Rule…</button>
-              <HandSliceAdder flights={flights} onAdd={(h) => update((d) => ({ hand_slices: [...d.hand_slices, h] }))} />
-            </div>
-          )}
-          {editingRule && (
-            <div style={{ marginTop: 10 }}>
-              <SliceRuleEditor initial={editingRule} onCancel={() => setEditingRule(null)}
-                onSave={(rule) => { update((d) => ({ slice_rules: d.slice_rules.some((x) => x.rule_id === rule.rule_id) ? d.slice_rules.map((x) => (x.rule_id === rule.rule_id ? rule : x)) : [...d.slice_rules, rule] })); setEditingRule(null); }} />
-            </div>
-          )}
-          {sliceSet && sliceSet.missing_flights.length > 0 && <div style={{ ...MUTED, marginTop: 6 }}>{sliceSet.missing_flights.length} selected flight{sliceSet.missing_flights.length === 1 ? " is" : "s are"} not in this workspace and contribute{sliceSet.missing_flights.length === 1 ? "s" : ""} no slices.</div>}
-          {sliceSet && sliceSet.unreachable_flights.length > 0 && <div style={{ ...MUTED, marginTop: 6 }}>{sliceSet.unreachable_flights.length} flight log{sliceSet.unreachable_flights.length === 1 ? "" : "s"} could not be read right now.</div>}
-          {presets?.note && <div style={{ ...MUTED, marginTop: 6 }}>{presets.note}</div>}
-        </section>
-
-        {/* Aligned view */}
-        <section style={PANEL}>
-          <div style={PANEL_TITLE}>Aligned view</div>
-          <AlignedView build={buildArgs(draft, pendingPresets)} slices={slices} channels={draft.view.channels ?? ["rpm"]} anchor={draft.view.anchor ?? "crossing"}
-            onChannels={(channels) => update((d) => ({ view: { ...d.view, channels } }))} onAnchor={(anchor) => update((d) => ({ view: { ...d.view, anchor } }))}
-            highlight={highlightSlice} onOpenSlice={openSlice} readOnly={readOnly} />
-        </section>
-
-        {/* Tests */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Questions</span>
-          {!readOnly && !addingTest && (
-            <select value="" onChange={(e) => { const id = e.target.value as ResearchTestId; if (id) setAddingTest(defaultTest(id, draft)); }} style={SELECT} aria-label="Add a question" data-testid="add-question">
-              <option value="">+ ask a question…</option>
-              {RESEARCH_TESTS.map((t) => <option key={t.id} value={t.id}>{t.question}</option>)}
-            </select>
-          )}
-        </div>
-        {addingTest && (
-          <TestEditor test={addingTest} selection={draft.selection} onCancel={() => setAddingTest(null)}
-            onSave={(t) => { update((d) => ({ tests: [...d.tests, t] })); setAddingTest(null); }} />
-        )}
-        {draft.tests.map((t, i) => (
-          editingTest === i
-            ? <TestEditor key={i} test={t} selection={draft.selection} onCancel={() => setEditingTest(null)}
-                onSave={(nt) => { update((d) => ({ tests: d.tests.map((x, j) => (j === i ? { ...nt, result: undefined, error: undefined } : x)) })); setEditingTest(null); }} />
-            : (
-              <div key={i}>
-                <TestResultCard test={t} index={i} readOnly={readOnly} onOpenSlice={openSliceById}
-                  onEdit={() => setEditingTest(i)} onRemove={() => update((d) => ({ tests: d.tests.filter((_, j) => j !== i) }))} />
-                {t.result && draft.study_id && !readOnly && (
-                  <div style={{ marginTop: 4, textAlign: "right" }}>
-                    <button type="button" onClick={() => void noteInJournal(i)} style={LINK}>Note this finding in the Journal</button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {draft.slice_rules.map((r) => (
+                  <div key={r.rule_id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }} data-testid="slice-rule">
+                    <span style={{ fontWeight: 600 }}>{r.name}</span>
+                    <span style={BODY}>{describeRule(r)}</span>
+                    {r.from_preset && <span style={CHIP}>from preset</span>}
+                    <span style={{ flexGrow: 1 }} />
+                    {!readOnly && <button type="button" onClick={() => setEditingRule(r)} style={LINK}>Edit…</button>}
+                    {!readOnly && <button type="button" onClick={() => update((d) => ({ slice_rules: d.slice_rules.filter((x) => x.rule_id !== r.rule_id) }))} style={LINK}>Remove</button>}
                   </div>
-                )}
+                ))}
+                {pendingPresets.map((p) => <div key={p} style={BODY} data-testid="slice-rule">preset {p} (resolving…)</div>)}
+                {draft.hand_slices.map((h, i) => (
+                  <div key={`${h.flight}-${h.start_s}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }} data-testid="hand-slice">
+                    <span style={{ fontWeight: 600 }}>{h.label}</span>
+                    <span style={BODY}>{flightLabel(h.flight)} · {fmtClock(h.start_s)}–{fmtClock(h.end_s)} by hand</span>
+                    <span style={{ flexGrow: 1 }} />
+                    <button type="button" onClick={() => setHighlightSlice(`${h.flight}:hand:${h.start_s}-${h.end_s}`)} style={LINK}>Highlight</button>
+                    {!readOnly && <button type="button" onClick={() => update((d) => ({ hand_slices: d.hand_slices.filter((_, j) => j !== i) }))} style={LINK}>Remove</button>}
+                  </div>
+                ))}
               </div>
-            )
-        ))}
-        {draft.tests.length === 0 && !addingTest && <div style={{ ...PANEL, ...BODY }}>No question yet. Add one above, then Run.</div>}
+              {suggestedPreset && !readOnly && !draft.slice_rules.some((r) => r.from_preset === suggestedPreset) && (
+                <div style={{ ...NOTICE, marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+                  <span>This window covers a takeoff. Compare it with every takeoff?</span>
+                  <button type="button" onClick={() => { setPendingPresets((p) => [...p, suggestedPreset]); setSuggestedPreset(null); setDirty(true); }} style={BUTTON} data-testid="add-suggested-preset">Add the full-power rule</button>
+                  <button type="button" onClick={() => setSuggestedPreset(null)} style={LINK}>No</button>
+                </div>
+              )}
+              {!readOnly && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                  <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setPendingPresets((p) => [...p, id]); setDirty(true); }} style={SELECT} aria-label="Add a preset" data-testid="add-preset">
+                    <option value="">+ preset…</option>
+                    {presets?.presets.map((p) => <option key={p.rule_id} value={p.rule_id}>{p.name}</option>)}
+                  </select>
+                  <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setPendingPresets((p) => [...p, id]); setDirty(true); }} style={SELECT} aria-label="Add a phase slice">
+                    <option value="">+ phase…</option>
+                    {presets?.phase_rules.map((p) => <option key={p.rule_id} value={p.rule_id}>{p.name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setEditingRule({ rule_id: `r-${Date.now().toString(36)}`, name: "New rule", conditions: [{ channel: "rpm", op: ">=", value: 5000 }], min_duration_s: 10, merge_gap_s: 2, pad_s: 0, phase: null })} style={BUTTON}>+ Rule…</button>
+                  <HandSliceAdder flights={flights} onAdd={(h) => update((d) => ({ hand_slices: [...d.hand_slices, h] }))} />
+                </div>
+              )}
+              {editingRule && (
+                <div style={{ marginTop: 10 }}>
+                  <SliceRuleEditor initial={editingRule} onCancel={() => setEditingRule(null)}
+                    onSave={(rule) => { update((d) => ({ slice_rules: d.slice_rules.some((x) => x.rule_id === rule.rule_id) ? d.slice_rules.map((x) => (x.rule_id === rule.rule_id ? rule : x)) : [...d.slice_rules, rule] })); setEditingRule(null); }} />
+                </div>
+              )}
+              {sliceSet && sliceSet.missing_flights.length > 0 && <div style={{ ...MUTED, marginTop: 6 }}>{sliceSet.missing_flights.length} selected flight{sliceSet.missing_flights.length === 1 ? " is" : "s are"} not in this workspace and contribute{sliceSet.missing_flights.length === 1 ? "s" : ""} no slices.</div>}
+              {sliceSet && sliceSet.unreachable_flights.length > 0 && <div style={{ ...MUTED, marginTop: 6 }}>{sliceSet.unreachable_flights.length} flight log{sliceSet.unreachable_flights.length === 1 ? "" : "s"} could not be read right now.</div>}
+              {presets?.note && <div style={{ ...MUTED, marginTop: 6 }}>{presets.note}</div>}
+            </section>
+
+
+            <CompareSection build={buildArgs(draft, pendingPresets)} ready={!readOnly && (draft.slice_rules.length + pendingPresets.length + draft.hand_slices.length) > 0}
+              compare={draft.compare ?? null} readOnly={readOnly} onChange={(compare) => update({ compare })} onOpenRow={openRow}
+              aligned={<AlignedView build={buildArgs(draft, pendingPresets)} slices={slices} channels={draft.view.channels ?? ["rpm"]} anchor={draft.view.anchor ?? "crossing"}
+                onChannels={(channels) => update((d) => ({ view: { ...d.view, channels } }))} onAnchor={(anchor) => update((d) => ({ view: { ...d.view, anchor } }))}
+                highlight={highlightSlice} onOpenSlice={openSlice} readOnly={readOnly} />} />
+        </Section>
+
+        <Section id="questions" title="Questions" hint="what is true of the slice set as a whole" open={open.questions} onToggle={toggle} onRef={sectionRef}>
+            {/* Tests */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {!readOnly && !addingTest && (
+                <select value="" onChange={(e) => { const id = e.target.value as ResearchTestId; if (id) setAddingTest(defaultTest(id, draft)); }} style={SELECT} aria-label="Add a question" data-testid="add-question">
+                  <option value="">+ ask a question…</option>
+                  {RESEARCH_TESTS.map((t) => <option key={t.id} value={t.id}>{t.question}</option>)}
+                </select>
+              )}
+            </div>
+            {addingTest && (
+              <TestEditor test={addingTest} selection={draft.selection} onCancel={() => setAddingTest(null)}
+                onSave={(t) => { update((d) => ({ tests: [...d.tests, t] })); setAddingTest(null); }} />
+            )}
+            {draft.tests.map((t, i) => (
+              editingTest === i
+                ? <TestEditor key={i} test={t} selection={draft.selection} onCancel={() => setEditingTest(null)}
+                    onSave={(nt) => { update((d) => ({ tests: d.tests.map((x, j) => (j === i ? { ...nt, result: undefined, error: undefined } : x)) })); setEditingTest(null); }} />
+                : (
+                  <div key={i}>
+                    <TestResultCard test={t} index={i} readOnly={readOnly} onOpenSlice={openSliceById}
+                      onEdit={() => setEditingTest(i)} onRemove={() => update((d) => ({ tests: d.tests.filter((_, j) => j !== i) }))} />
+                    {t.result && draft.study_id && !readOnly && (
+                      <div style={{ marginTop: 4, textAlign: "right" }}>
+                        <button type="button" onClick={() => void noteInJournal(i)} style={LINK}>Note this finding in the Journal</button>
+                      </div>
+                    )}
+                  </div>
+                )
+            ))}
+            {draft.tests.length === 0 && !addingTest && <div style={{ ...PANEL, ...BODY }}>No question yet. Add one above, then Run.</div>}
+
+        </Section>
 
         {/* References and notes */}
         <section style={PANEL}>
@@ -452,10 +503,35 @@ export function Study() {
   );
 }
 
+const SUBPANEL = { border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px" } as const;
+
+function Section({ id, title, hint, open, onToggle, onRef, children }: {
+  id: SectionId; title: string; hint: string; open: boolean; onToggle: (id: SectionId) => void;
+  onRef: (id: SectionId, el: HTMLElement | null) => void; children: ReactNode;
+}) {
+  return (
+    <section style={PANEL} ref={(el) => onRef(id, el)} data-testid={`section-${id}`} data-open={open ? "true" : "false"}>
+      <button type="button" onClick={() => onToggle(id)} aria-expanded={open}
+        style={{ ...PANEL_TITLE, marginBottom: open ? 12 : 0, background: "none", border: "none", padding: 0, color: "var(--text-primary)", cursor: "pointer", fontSize: 15 }}>
+        <span style={{ width: 12 }}>{open ? "▾" : "▸"}</span>{title}<span style={{ ...MUTED, fontWeight: 400 }}>{hint}</span>
+      </button>
+      {open && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>}
+    </section>
+  );
+}
+
+// §9.1: Signal's channels default to the ones the study's last question
+// used, else RPM and manifold pressure.
+function signalDefaults(d: Draft): string[] {
+  const last = d.tests[d.tests.length - 1];
+  const chans = last?.channels?.filter(Boolean) ?? [];
+  return chans.length ? chans : ["rpm", "map_inhg"];
+}
+
 function applySeed(seed: StudySeed): Draft {
   return { ...blankDraft(), name: seed.name, selection: seed.selection, slice_rules: seed.slice_rules.filter((r): r is SliceRule => typeof r !== "string"),
     hand_slices: seed.hand_slices, tests: seed.tests, references: seed.references ?? [], notes: seed.notes ?? "",
-    view: { ...blankDraft().view, ...(seed.view ?? {}) }, provenance: { started_from: seed.from } };
+    view: { ...blankDraft().view, ...(seed.view ?? {}) }, provenance: { started_from: seed.from }, signal: seed.signal ?? null };
 }
 
 function defaultTest(id: ResearchTestId, d: Draft): StudyTest {
