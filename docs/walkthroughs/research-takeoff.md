@@ -24,7 +24,17 @@ Why 98 from 60? Touch-and-go sessions: one flight contributed nine takeoffs. The
 
 ## 3. Look before you ask
 
-The **Aligned view** draws every slice from the moment rpm passed 5,550 — *Align on: crossing* — so takeoffs coincide whatever the ground roll before them. With 98 slices it shows small multiples; set **Channels** to rpm and manifold pressure and move the cursor. In nearly every panel the two traces rise and fall together, about every four seconds. You have seen the finding; the questions put numbers on it.
+Start with one flight. Open **Signal** at the top of the study and choose the flight the pilot first felt it on: the three-takeoff AXIS flight of 2026-10-24 in the [write-up](../research/2026-10-takeoff-rpm-oscillation.md) (§2.3). Rpm and manifold pressure stack with the phases shaded. Under each, the **swing** and **period** strips light up over the three full-power segments and stay dark through taxi and cruise. The period strip is coloured only where a repeat stands out, and over the takeoffs it reads three to four seconds.
+
+Drag across the first takeoff. The window's numbers give a swing of about 170 rpm, shown beside the Operators Manual's rpm limit as headroom. Manifold pressure moves in step with rpm: the correlation at zero lag is high, and the best lag is zero. The diagnostics show the autocorrelation peaking at the period, and the periodogram agrees. **Make this a rule** proposes rpm held within the band that takeoff covered, for at least half as long. Use it, and the rule finds the same three segments on this flight.
+
+<!-- screenshot: wt-takeoff-03a-signal.png — Signal view on the 2026-10-24 flight, strips lit over three takeoffs, the first takeoff windowed -->
+
+Now the set. Under **Compare**, the full-power preset already gives one row per takeoff, grouped by flight. Pin the 2026-10-24 first takeoff, and every other row shows its difference from it. The ones that swing least sit at high density altitude, which step 8 measures.
+
+<!-- screenshot: wt-takeoff-03b-compare.png — Compare rows with the 2026-10-24 takeoff pinned, swing against density altitude -->
+
+Switch Compare to its **Aligned view** tab. The aligned view draws every slice from the moment rpm passed 5,550 — *Align on: crossing* — so takeoffs coincide whatever the ground roll before them. With 98 slices it shows small multiples; set **Channels** to rpm and manifold pressure and move the cursor. In nearly every panel the two traces rise and fall together, about every four seconds. You have seen the finding; the questions put numbers on it.
 
 <!-- screenshot: wt-takeoff-03-aligned.png — small multiples of the full-power set, rpm and MAP stacked -->
 

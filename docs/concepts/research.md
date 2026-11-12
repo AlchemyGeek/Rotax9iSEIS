@@ -21,12 +21,14 @@ The case that made this page necessary: one aircraft's rpm cycled up and down by
 
 ## What Research is made of
 
-Four ideas, each with its own page.
+Six ideas, each with its own page. Research works at three levels: one flight (**Signal**), every flight (**Compare**), and the set as a whole (**Questions**).
 
 | Idea | In one line | Page |
 |---|---|---|
 | **Slice** | A piece of one flight — all takeoffs, all climbs, or one window you mark — and the unit everything else works on | [Slices: pieces of flights](research-slices.md) |
 | **Aligned view** | Many slices on one time axis, lined up at the moment that matters, so your eye can compare them | [Seeing slices together](research-aligned-view.md) |
+| **Signal view** | One flight with a swing strip and a period strip under each channel: where it swings and repeats, a window's numbers, and *Make this a rule* | [Signal view: one flight, looked at closely](research-signal.md) |
+| **Compare** | The same measurement on every flight, one row per slice grouped by flight, a pinned reference row, and a chart against conditions | [Compare: the same moment on every flight](research-compare.md) |
 | **Question** | One of four things you can ask of a set of slices, phrased as you would ask it | [Is it steady, or cycling?](research-cycling.md) · [Do these move together?](research-together.md) · [Are these two groups different?](research-groups.md) · [Which slices are unusual?](research-unusual.md) |
 | **Study** | Your selection, slices, questions, references and notes, saved and shareable | [Studies: saving and sharing](research-studies.md) |
 
@@ -44,7 +46,7 @@ That restraint is deliberate. A repeating shape in a signal may be a problem, a 
 
 From **Research** in the top bar, or from the thing that made you wonder:
 
-- *Research this window* on a flight's chart — the window you are zoomed into becomes a slice, compared with every flight;
+- *Research this window* on a flight's chart — the study opens in Signal view on that flight, with the window you were zoomed into;
 - *Research this* on a Trends card that shows a change — a study split into before and after;
 - *Research this* on a row of the Events table — the event's window, across every flight with that limit.
 

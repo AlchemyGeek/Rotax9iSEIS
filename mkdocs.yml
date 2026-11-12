@@ -88,6 +88,8 @@ nav:
       - "Research: the third question": concepts/research.md
       - "Slices: pieces of flights": concepts/research-slices.md
       - Seeing slices together: concepts/research-aligned-view.md
+      - "Signal view: one flight, looked at closely": concepts/research-signal.md
+      - "Compare: the same moment on every flight": concepts/research-compare.md
       - "Is it steady, or cycling?": concepts/research-cycling.md
       - "Do these move together?": concepts/research-together.md
       - "Are these two groups different?": concepts/research-groups.md

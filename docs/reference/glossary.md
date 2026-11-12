@@ -100,6 +100,8 @@
 
 **Skipped** — A log that did not become a flight, listed with its reason. Can be included.
 
+**Reference row** — In Compare, the row you pin. Every other row then shows its difference from it (Δ period, Δ swing, Δ correlation), and the chart marks it. Saved with the study.
+
 **Slice rule** — Conditions on channels, a minimum duration, a merge gap and an optional phase, which together cut slices from every flight.
 
 **Slice set** — All the slices a rule produces over a selection of flights. What every question is asked of.
@@ -114,6 +116,8 @@
 
 **Storage** — Where the app keeps your workspaces when it runs in your browser: the browser's private storage for the site, on this device. Shown under *Settings → App*. Logs are never kept there.
 
+**Strip** — In Signal view, a band under a channel coloured second by second: the **swing** strip shows how far the channel moved within a short sliding window, and the **period** strip shows how often it repeated, coloured only where a repeat stands out. A strip's value is what a slice of that window would carry.
+
 **Study** — A saved Research session: selection, slice rules and hand slices, questions and settings, references, notes, and cached measurements. Lives in the workspace; travels as a `.eisstudy`.
 
 **Swing** — Bottom-to-top of a channel within a short window, as a median over the slice; the size of a cycle.
@@ -127,6 +131,8 @@
 **Trigger** — A condition on a topic that, when met, produces an insight: baseline deviation, trend or threshold.
 
 **Unverified / not yet validated** — The topic runs on this engine model but no data from such an aircraft has yet confirmed it behaves sensibly.
+
+**Window (Signal view)** — The seconds of one flight that Signal view's numbers and diagnostics describe, set by dragging across the chart or a strip, or by the chart's zoom through *Research this window*. *Make this a rule* turns it into a slice rule.
 
 **Workspace** — The app's view of one aircraft: its log folders plus everything derived and every decision made. Lives in the browser it was made in (or, when the app runs as a program, in its data folder); moves by export and import.
 

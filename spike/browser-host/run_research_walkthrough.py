@@ -1,5 +1,5 @@
 """
-Server-mode walk-through of Research (Spec 06 Session B) through the UI:
+Server-mode walk-through of Research (Spec 06 Sessions B and C) through the UI:
 a running `slingology-eis serve` on a throwaway data root, opened in headless
 Chromium (Playwright).
 
@@ -10,7 +10,11 @@ the nav, start a study from the full-power preset, ask the cycling question,
 Run, read the finding and its references, show the per-slice table; export
 the .eisstudy; note the finding in the Journal and see it there; open a
 flight and use Research this window; check the Trends card and an event
-row offer Research this. Screenshots go to --shots when given.
+row offer Research this. Session C: the preset study starts at Compare
+(rows grouped by flight, pin → Δ columns, one row per flight, CSV, the
+aligned view as a tab); Research this window starts at Signal (strips, the
+window's numbers and diagnostics, Make this a rule → a rule under Compare
+and its rows). Screenshots go to --shots when given.
 """
 from __future__ import annotations
 
@@ -48,7 +52,7 @@ def main() -> int:
             page.screenshot(path=str(shots / f"{name}.png"), full_page=True)
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(str(work / "profile"), headless=True, accept_downloads=True, viewport={"width": 1400, "height": 1000})
+        ctx = p.chromium.launch_persistent_context(str(work / "profile"), channel="chrome", headless=True, accept_downloads=True, viewport={"width": 1400, "height": 1000})
         page = ctx.pages[0]
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
@@ -94,9 +98,40 @@ def main() -> int:
         page.get_by_test_id("slice-count").filter(has_text=re.compile(r"\d+ slices? from")).wait_for(timeout=120000)
         count_text = page.get_by_test_id("slice-count").inner_text()
         ok("live slice count from the preset", "slice" in count_text, text=count_text, seconds=round(time.time() - t0, 1))
+        ok("a preset study starts at Compare, Signal collapsed",
+           page.get_by_test_id("section-compare").get_attribute("data-open") == "true"
+           and page.get_by_test_id("section-signal").get_attribute("data-open") == "false")
+        page.get_by_test_id("compare-row").first.wait_for(timeout=300000)
+        groups = page.get_by_test_id("compare-group").count()
+        crow = page.get_by_test_id("compare-row").count()
+        ok("Compare: one row per slice, grouped by flight", crow > 0 and 0 < groups <= crow, rows=crow, groups=groups,
+           counts=page.get_by_test_id("compare-counts").inner_text(), seconds=round(time.time() - t0, 1))
+        shot("02a-compare-rows")
+        page.get_by_test_id("pin-row").first.click()
+        page.get_by_test_id("compare-table").get_by_text(re.compile("^Δ RPM swing$")).wait_for(timeout=300000)
+        ok("pinning a row adds Δ columns", True)
+        page.get_by_test_id("compare-diagnostics-toggle").click()
+        page.get_by_test_id("compare-diagnostics").locator("canvas").first.wait_for(timeout=120000)
+        ok("diagnostics panel draws the pinned row", page.get_by_test_id("compare-diagnostics").locator("canvas").count() >= 3)
+        shot("02b-compare-pinned")
+        with page.expect_download(timeout=60000) as dl:
+            page.get_by_test_id("compare-csv").click()
+        csv_text = Path(dl.value.path()).read_text()
+        ok("Compare CSV downloads with the Δ columns", "rpm.delta_swing" in csv_text.splitlines()[0] and len(csv_text.splitlines()) == crow + 1,
+           lines=len(csv_text.splitlines()))
+        page.get_by_test_id("compare-collapse").click()
+        t1 = time.time()
+        while time.time() - t1 < 300 and page.get_by_test_id("compare-group").count():
+            time.sleep(0.5)
+        page.get_by_test_id("compare-row").first.wait_for(timeout=300000)
+        ok("one row per flight", page.get_by_test_id("compare-row").count() == groups, rows=page.get_by_test_id("compare-row").count())
+        page.get_by_test_id("compare-collapse").click()
+        page.get_by_test_id("compare-tab-aligned").click()
         page.get_by_text("Reading the slices' samples…").wait_for(state="hidden", timeout=120000)
-        ok("aligned view drew", page.get_by_test_id("aligned-view").locator("canvas").count() > 0)
+        page.get_by_test_id("aligned-view").locator("canvas").first.wait_for(timeout=120000)
+        ok("aligned view drew (Compare tab)", page.get_by_test_id("aligned-view").locator("canvas").count() > 0)
         shot("02-study-slices")
+        page.get_by_test_id("compare-tab-rows").click()
 
         # The seeded cycling question is there; Run.
         ok("the preset study starts with the cycling question", page.get_by_test_id("test-result").count() == 1)
@@ -149,9 +184,28 @@ def main() -> int:
         ok("Events rows offer Research this", page.get_by_role("button", name="Research this", exact=True).count() >= 0)
         page.get_by_test_id("research-this").click()
         page.get_by_test_id("study-page").wait_for(timeout=30000)
+        t0 = time.time()
         page.get_by_test_id("hand-slice").wait_for(timeout=30000)
         ok("a hand slice from the chart window", "by hand" in page.get_by_test_id("hand-slice").inner_text())
+        ok("a study from a flight starts at Signal", page.get_by_test_id("section-signal").get_attribute("data-open") == "true")
+        page.get_by_test_id("strip-swing-rpm").wait_for(timeout=120000)
+        ok("Signal draws the strips", page.get_by_test_id("strip-period-rpm").count() == 1, seconds_to_strips=round(time.time() - t0, 1))
+        page.get_by_test_id("signal-window-result").wait_for(timeout=120000)
+        nums = page.get_by_test_id("signal-number")
+        ok("the window's numbers", nums.count() >= 3 and "peak-to-peak" in nums.first.inner_text(), first=nums.first.inner_text())
+        ok("the window's diagnostics", page.get_by_test_id("diagnostics-rpm").locator("canvas").count() >= 3)
         shot("05-study-from-flight")
+        before = page.get_by_test_id("slice-rule").count()
+        page.get_by_test_id("make-rule").click()
+        editor = page.get_by_test_id("slice-rule-editor")
+        editor.wait_for(timeout=10000)
+        editor.get_by_role("button", name="Use this rule").click()
+        page.wait_for_function(f"document.querySelectorAll('[data-testid=slice-rule]').length > {before}", timeout=30000)
+        ok("Make this a rule adds the derived rule", "like" in page.get_by_test_id("slice-rule").last.inner_text(), rule=page.get_by_test_id("slice-rule").last.inner_text())
+        page.get_by_test_id("compare-row").first.wait_for(timeout=300000)
+        ok("Compare finds the derived rule's slices", page.get_by_test_id("compare-row").count() >= 1,
+           counts=page.get_by_test_id("compare-counts").inner_text())
+        shot("06-derived-rule-compare")
 
         # Trends card entry point
         page.goto(url + "#/trends")
