@@ -44,8 +44,20 @@ def _save(ctx: dict, doc: dict) -> dict:
 
 
 def _mpl_dir(ctx: dict) -> Path:
-    root = Path(ctx.get("registry_path") or ctx["workspace_dir"]).parent
-    return root / "cache" / "matplotlib"
+    """matplotlib's config and font cache: about this machine's fonts, not
+    the user's data, so one per user (the first figure ever builds it,
+    ~10 s), not one per data root."""
+    import os
+    import sys
+    if os.environ.get("XDG_CACHE_HOME"):
+        base = Path(os.environ["XDG_CACHE_HOME"])
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    elif sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
+        base = Path(os.environ["LOCALAPPDATA"])
+    else:
+        base = Path.home() / ".cache"
+    return base / "SlingologyEIS" / "matplotlib"
 
 
 # ── The bench (D3) ─────────────────────────────────────────────────────────

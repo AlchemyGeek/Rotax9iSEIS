@@ -78,6 +78,8 @@ def _cell(c: dict, n_tests: int) -> dict:
         if not isinstance(i, int) or not 0 <= i < n_tests:
             raise RuleError(f"cell {cid}: test_index names one of the study's {n_tests} questions")
         out["test_index"] = i
+        if c.get("read_only"):
+            out["read_only"] = True
     elif kind in ("figure", "table"):
         ref = str(c.get("ref") or "")
         if not _REF.match(ref) or ".." in ref:
@@ -217,7 +219,18 @@ def mark_imported(doc: dict, present: set) -> None:
     """A notebook that arrives from elsewhere: every code cell's outputs
     are the sender's (*ran elsewhere*, D8); a cell none of whose flights
     are here is read-only — re-running it here has nothing to read."""
+    tests = doc.get("tests") or []
     for c in cells_of(doc):
+        if c["kind"] == "question":
+            # A question's flights are those its stored result read.
+            t = tests[c["test_index"]] if 0 <= c.get("test_index", -1) < len(tests) else {}
+            read = [r.get("flight") for r in (((t.get("result") or {}).get("block") or {}).get("per_slice") or [])]
+            read = [f for f in read if f]
+            if read and not any(f in present for f in read):
+                c["read_only"] = True
+            else:
+                c.pop("read_only", None)
+            continue
         if c["kind"] != "code":
             continue
         c["pending_outputs"] = None

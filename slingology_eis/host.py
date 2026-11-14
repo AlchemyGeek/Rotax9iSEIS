@@ -29,6 +29,7 @@ All analysis logic stays in operations.py.
 from __future__ import annotations
 
 import inspect
+import sys
 import json
 import uuid
 from datetime import datetime, timezone
@@ -712,14 +713,34 @@ def _source_filename(workspace_dir: Path, flight_id: str) -> Optional[str]:
     return ws.source_filename(workspace_dir, flight_id)
 
 
+def _flight_summary(workspace_dir: Path, fa: FlightAnalysis) -> dict:
+    """Spec 16 §4.2 flights_list: the flight facts and phase summary (minutes
+    per phase, from the stored phases) and which source it was analysed from."""
+    phases: dict = {}
+    for p in fa.phases or []:
+        phases[p["phase"]] = round(phases.get(p["phase"], 0.0) + (p["end_s"] - p["start_s"]) / 60.0, 1)
+    src = ws.load_sources(workspace_dir, fa.flight_id)
+    analysed = ws.source_filename(workspace_dir, fa.flight_id)
+    via = next((i.via for i in (src.imports if src else []) if i.filename == analysed), None)
+    m = fa.metrics or {}
+    return {
+        "source": "AXIS" if via in ("axis", "aircraft_log") else "G3X",
+        "facts": {k: (m.get(k) or {}).get("value")
+                  for k in ("duration_min", "airborne_min", "max_altitude_ft", "max_ias_kt")},
+        "phase_min": phases,
+        "events": len(fa.exceedances or []),
+    }
+
+
 def op_list_flights(params: dict, ctx: dict) -> Any:
-    return [
-        {
-            "flight_id": fa.flight_id, "header": fa.header, "quality": fa.quality,
-            "source_filename": _source_filename(ctx["workspace_dir"], fa.flight_id),
-        }
-        for fa in _load_workspace_flights(ctx["workspace_dir"])
-    ]
+    out = []
+    for fa in _load_workspace_flights(ctx["workspace_dir"]):
+        row = {"flight_id": fa.flight_id, "header": fa.header, "quality": fa.quality,
+               "source_filename": _source_filename(ctx["workspace_dir"], fa.flight_id)}
+        if params.get("summary"):
+            row["summary"] = _flight_summary(ctx["workspace_dir"], fa)
+        out.append(row)
+    return out
 
 
 def op_get_flight(params: dict, ctx: dict) -> Any:
@@ -2978,6 +2999,9 @@ def op_get_capabilities(params: dict, ctx: dict) -> Any:
     if factory is not None:
         features["add_folder_by_path"] = bool(getattr(factory, "add_folder_by_path", False))
         features["choose_folder"] = bool(getattr(factory, "choose_folder", False))
+    if features.get("bench"):
+        # A server host under Pyodide (the Node conformance run) has no worker processes.
+        features["bench"] = sys.platform not in ("emscripten", "wasi")
     return {"host": host, "engine_version": __version__, "host_version": __version__, "features": features}
 
 

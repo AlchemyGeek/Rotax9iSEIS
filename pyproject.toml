@@ -21,6 +21,14 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.0",
+    "slingology-eis[investigations]",
+]
+# Spec 16: the bench's scientific stack (code_run) and the PDF pager
+# (document_read). The engine and the browser runtime need none of it.
+investigations = [
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "pypdf>=4",
 ]
 notebooks = [
     "jupytext>=1.14",

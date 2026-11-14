@@ -884,6 +884,36 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_mcp(args) -> int:
+    """Spec 16 §4: the MCP server over stdio; `tools` lists the surface,
+    `call TOOL JSON` runs one tool and prints its result (the CLI parity
+    of acceptance 8: the same façade, the same JSON)."""
+    from .investigations import mcp_server, mcp_tools
+    if args.mcp_action in (None, "serve"):
+        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), serve=args.serve, port=args.port)
+    if args.mcp_action == "tools":
+        if args.json:
+            print(json.dumps([t.definition() for t in mcp_tools.TOOLS], indent=2, ensure_ascii=False))
+        else:
+            for t in mcp_tools.TOOLS:
+                mark = " ✎" if t.writes else ""
+                print(f"  {t.name + mark:<18} {', '.join(t.ops):<22} {t.description.split('. ')[0]}")
+        return 0
+    if not args.tool:
+        raise CliUsageError("mcp call TOOL [JSON_ARGUMENTS]")
+    try:
+        tool_args = json.loads(args.arguments) if args.arguments else {}
+    except ValueError as e:
+        raise CliUsageError(f"arguments are a JSON object: {e}")
+    server = mcp_server.Server(workspace_arg=getattr(args, "workspace", None))
+    out = server.call_tool(args.tool, tool_args)
+    if out.get("isError"):
+        print(out["content"][0]["text"], file=sys.stderr)
+        return 1
+    print(out["content"][0]["text"])   # the tool's text block, byte for byte
+    return 0
+
+
 # ── argument parsing ──────────────────────────────────────────────────────
 
 # ── research (Spec 06 §11): the same operations as the page ─────────────
@@ -1308,6 +1338,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", parents=[common], help="Start the local server + UI (Spec 04 §9.2 adapter)")
     p.add_argument("--port", type=int, default=8420, help="Port to bind on 127.0.0.1 (default: 8420)")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("mcp", parents=[common], help="The MCP server for Claude (Spec 16 §4): stdio; tools; call")
+    p.add_argument("mcp_action", nargs="?", choices=["serve", "tools", "call"], default="serve",
+                   help="serve (default): the stdio server; tools: list the tools; call: run one tool")
+    p.add_argument("tool", nargs="?", help="call: the tool's name")
+    p.add_argument("arguments", nargs="?", help="call: the tool's arguments as a JSON object")
+    p.add_argument("--serve", action="store_true", help="Also start the web server in the same process")
+    p.add_argument("--port", type=int, default=8420, help="--serve: port on 127.0.0.1 (default: 8420)")
+    p.set_defaults(func=cmd_mcp)
 
     return parser
 

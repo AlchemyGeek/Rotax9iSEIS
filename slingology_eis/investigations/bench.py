@@ -50,6 +50,43 @@ class BenchError(Exception):
         self.code, self.message = code, message
 
 
+# The kernel's layer under the worker's audit hook (§4.5): on macOS the
+# worker starts under sandbox-exec with a profile that denies the network,
+# new processes and writes outside files/ (and the bench's own scratch and
+# matplotlib cache). The hook alone is not a boundary — code in the same
+# interpreter can reach its state; the profile is enforced by the kernel.
+# sandbox-exec is deprecated by Apple but present and working; elsewhere
+# (Linux, Windows) only the hook applies.
+_SANDBOX_EXEC = "/usr/bin/sandbox-exec" if sys.platform == "darwin" else None
+
+
+def _sb_quote(p) -> str:
+    return '"' + os.path.realpath(str(p)).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _sandbox_profile(writable: list) -> str:
+    exe = os.path.realpath(sys.executable)
+    base = os.path.realpath(sys.base_prefix)
+    allow_w = " ".join(f"(subpath {_sb_quote(p)})" for p in writable)
+    return "\n".join([
+        "(version 1)",
+        "(allow default)",
+        "(deny network*)",
+        "(deny process-fork)",
+        "(deny process-exec)",
+        # The interpreter itself (a framework build re-execs into Python.app).
+        f"(allow process-exec (literal {_sb_quote(exe)}) (literal {_sb_quote(sys.executable)}) (subpath {_sb_quote(base)}))",
+        "(deny file-write*)",
+        f'(allow file-write* {allow_w} (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))',
+        "",
+    ])
+
+
+def available() -> bool:
+    """A worker process can be started here (not under Pyodide)."""
+    return sys.platform not in ("emscripten", "wasi")
+
+
 def caps(timeout_s=None, memory_mb=None) -> dict:
     try:
         t = DEFAULT_TIMEOUT_S if timeout_s is None else float(timeout_s)
@@ -89,6 +126,9 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
     figure ref to its PNG (base64) for the investigator's eyes."""
     if not isinstance(source, str) or not source.strip():
         raise BenchError("BAD_PARAMS", "a code cell needs source")
+    if not available():
+        raise BenchError("NOT_SUPPORTED", "the bench needs a local engine (a worker process); "
+                                          "this runtime can't start one")
     files_dir.mkdir(parents=True, exist_ok=True)
     mpl_dir.mkdir(parents=True, exist_ok=True)
     work = scratch / f"bench-{uuid.uuid4().hex[:12]}"
@@ -100,9 +140,15 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
     out_p, err_p = work / "stdout.txt", work / "stderr.txt"
     started = time.monotonic()
     at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    argv = [sys.executable, "-m", "slingology_eis.investigations.bench_worker", str(work / "request.json")]
+    os_sandbox = None
+    if _SANDBOX_EXEC and Path(_SANDBOX_EXEC).exists():
+        profile = work / "sandbox.sb"
+        profile.write_text(_sandbox_profile(writable=[files_dir, work, mpl_dir]))
+        argv = [_SANDBOX_EXEC, "-f", str(profile)] + argv
+        os_sandbox = "sandbox-exec"
     with open(out_p, "wb") as out_f, open(err_p, "wb") as err_f:
-        proc = subprocess.Popen([sys.executable, "-m", "slingology_eis.investigations.bench_worker",
-                                 str(work / "request.json")], cwd=str(files_dir), env=_env(mpl_dir),
+        proc = subprocess.Popen(argv, cwd=str(files_dir), env=_env(mpl_dir),
                                 stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f, start_new_session=True)
         status = None
         try:
@@ -158,7 +204,8 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
                         "evalue": f"the bench process ended without a result (exit {proc.returncode})",
                         "traceback": "The bench process ended without a result; stderr above may say why."})
     ran = {"engine": __version__, "flights": (result or {}).get("flights") or [], "at": at, "ms": ms,
-           "status": status, "caps": {"timeout_s": cap["timeout_s"], "memory_mb": cap["memory_mb"]}}
+           "status": status, "caps": {"timeout_s": cap["timeout_s"], "memory_mb": cap["memory_mb"],
+                                      "os_sandbox": os_sandbox}}
     for p in work.iterdir():
         p.unlink()
     work.rmdir()
