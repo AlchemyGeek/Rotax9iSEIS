@@ -146,6 +146,25 @@ def test_notebook_round_trip(research_ws):
     if code is not None:
         assert ipynb["cells"][3]["cell_type"] == "code" and ipynb["cells"][3]["outputs"]
 
+    if code is not None:
+        # S5: what leaves the workspace names flights by content fingerprint, never flight_id…
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            sent_doc = json.loads(z.read("study.json"))["study"]
+        sent_code = next(c for c in sent_doc["cells"] if c["kind"] == "code")
+        assert sent_code["ran"]["flights"] and all(f.startswith("src:") for f in sent_code["ran"]["flights"])
+        assert not set(sent_code["ran"]["flights"]) & set(ids)
+        nb_code = next(c for c in ipynb["cells"] if c["cell_type"] == "code")
+        assert all(f.startswith("src:") for f in nb_code["metadata"]["eis"]["ran"]["flights"])
+        # …and an import where the flights are maps them back to ids.
+        back = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.eisstudy"}))
+        back_code = next(c for c in back["study"]["cells"] if c["kind"] == "code")
+        assert back_code["ran"]["flights"] == code["ran"]["flights"] and not back_code.get("read_only")
+        # The stored study still names them by id.
+        assert next(c for c in _ok(rpc(h, "load_study", {"study_id": sid}))["cells"]
+                    if c["kind"] == "code")["ran"]["flights"] == code["ran"]["flights"]
+
     # Another workspace that has none of these flights: read-only per cell.
     _ok(rpc(h, "create_workspace", {"name": "Other", "engine_model": "916iS"}))
     other = _import(h, "2026-02-01")
@@ -157,6 +176,7 @@ def test_notebook_round_trip(research_ws):
     if code is not None:
         c = next(c for c in st["cells"] if c["kind"] == "code")
         assert c.get("read_only") and c["outputs"] == code["outputs"]
+        assert all(f.startswith("src:") for f in c["ran"]["flights"])   # not here: kept as fingerprints
         assert c["outputs"][-1]["ref"].startswith("files/")
         # The figure travelled in the .eisstudy's files/: the imported notebook's .ipynb embeds it.
         nb2 = _ok(rpc(h, "export_study", {"study_id": st["study_id"], "format": "ipynb"}))

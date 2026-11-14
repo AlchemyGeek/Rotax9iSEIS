@@ -463,7 +463,7 @@ Everything in the workspace that the logs and the app can't reproduce, and nothi
 | Annotations, including acknowledged insights | `annotations.json` (§6.5) |
 | Log admission record, re-keyed by file fingerprint (§7.5) | `exclusions.json` (§6.8) |
 | Research studies: selection, slice rules, hand slices, references, tests, notes — without results, descriptor cache or last run (a read-only import keeps the sender's results) | `studies/*.json` (Spec 06 §10) |
-| A notebook's cells with their stored outputs (code outputs are the sender's, marked *ran elsewhere* on import) and its files | `studies/*.json` cells, `studies/*/files/*` (Spec 16 §5) |
+| A notebook's cells with their stored outputs (code outputs are the sender's, marked *ran elsewhere* on import; in a `.eisstudy` a code cell names its flights by content fingerprint, Spec 16 §3.1 S5) and its files | `studies/*.json` cells, `studies/*/files/*` (Spec 16 §5) |
 | The inbox: candidates, their status, linked studies and resolution notes | `inbox.json` (Spec 16 §6) |
 | The aircraft document | `aircraft.json` (Spec 16 §4.4) |
 | **Manifest of the sender's flights**: per flight, `flight_id`, every source's fingerprint (`source_key`) and file name, date, duration, airport hint | `flights/*/sources.json`, `analysis.json` headers |

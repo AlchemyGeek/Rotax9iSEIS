@@ -2898,6 +2898,8 @@ def op_export_study(params: dict, ctx: dict) -> Any:
     from .research import studies as rs
     _require_active(ctx)
     doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
+    # Spec 16 S5: what leaves the workspace names flights by content fingerprint.
+    doc = _nb.ran_for_export(doc, ctx["workspace_dir"])
     fmt = params.get("format") or "eisstudy"
     if fmt == "ipynb":
         # Spec 16 §5: one-way export to Jupyter.

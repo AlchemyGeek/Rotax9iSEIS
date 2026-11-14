@@ -24,7 +24,12 @@ is its content hash, so a re-run that draws the same figure names the same
 file.
 
 Flights are named by `flight_id` here as everywhere in Research (Spec 06
-§3.2), so `ran.flights` holds flight ids — the hash of each fingerprint.
+§3.2), so `ran.flights` holds flight ids inside a workspace. What leaves
+it — a `.eisstudy`, an `.ipynb` — names them by content fingerprint
+instead (Spec 16 §3.1 S5): `src:<source_key>`, the hash of the analysed
+log's bytes, which a reader can't derive from a tail number and a date
+as they can a flight_id. An import maps each fingerprint back to the
+flight here that has that source; one with no such flight keeps it.
 """
 from __future__ import annotations
 
@@ -346,3 +351,52 @@ def ipynb_bytes(doc: dict, read_file) -> bytes:
     for i, c in enumerate(nb["cells"]):
         c["id"] = (c["metadata"].get("eis") or {}).get("id") or f"h{i}"
     return json.dumps(nb, indent=1, ensure_ascii=False).encode()
+
+
+# ── ran.flights across the workspace boundary (S5) ─────────────────────────
+
+FP_PREFIX = "src:"
+
+
+def fingerprints(ws_dir: Path) -> tuple[dict, dict]:
+    """(flight_id → its fingerprint, fingerprint → flight_id) for this
+    workspace: the analysed source's key, and every source key a flight
+    has (an AXIS SD-card log and its aircraft log are one flight)."""
+    from .. import workspace as ws
+    out, back = {}, {}
+    for fid in ws.list_flight_ids(ws_dir):
+        src = ws.load_sources(ws_dir, fid)
+        imports = list(src.imports) if src else []
+        analysed = ws.source_filename(ws_dir, fid)
+        keys = [i.source_key for i in imports if i.filename == analysed] + [i.source_key for i in imports]
+        fa = ws.load_flight_analysis(ws_dir, fid)
+        keys += list((fa.source_keys if fa else None) or [])
+        keys = [k for k in dict.fromkeys(keys) if k]
+        if keys:
+            out[fid] = FP_PREFIX + keys[0]
+            for k in keys:
+                back.setdefault(FP_PREFIX + k, fid)
+    return out, back
+
+
+def _map_ran(doc: dict, f) -> dict:
+    doc = copy.deepcopy(doc)
+    for c in doc.get("cells") or []:
+        if c.get("kind") != "code":
+            continue
+        for k in ("ran", "pending_ran"):
+            if isinstance(c.get(k), dict) and c[k].get("flights"):
+                c[k]["flights"] = [f(x) for x in c[k]["flights"]]
+    return doc
+
+
+def ran_for_export(doc: dict, ws_dir: Path) -> dict:
+    """A copy of the study whose code cells name their flights by fingerprint."""
+    out, _ = fingerprints(ws_dir)
+    return _map_ran(doc, lambda fid: out.get(fid, fid))
+
+
+def ran_from_import(doc: dict, ws_dir: Path) -> dict:
+    """Fingerprints back to this workspace's flight ids, where it has the flight."""
+    _, back = fingerprints(ws_dir)
+    return _map_ran(doc, lambda x: back.get(x, x))

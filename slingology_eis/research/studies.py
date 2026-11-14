@@ -392,7 +392,9 @@ def import_bytes(ws_dir: Path, data: bytes, *, engine_model: str = "") -> dict:
     """§10.2: always a new study in this workspace. Returns
     {study, matched, missing, read_only}."""
     body = parse_export(data)
-    sent = copy.deepcopy(body["study"])
+    from ..investigations import notebook as NB
+    # Spec 16 S5: code cells name flights by fingerprint; back to ids where the flight is here.
+    sent = NB.ran_from_import(copy.deepcopy(body["study"]), ws_dir)
     flights = referenced_flights(sent)
     present = set(ws.list_flight_ids(ws_dir))
     matched = [f for f in flights if f in present]
@@ -419,7 +421,6 @@ def import_bytes(ws_dir: Path, data: bytes, *, engine_model: str = "") -> dict:
         _forget_absent(sent, present)
     sent["imported"] = imported
     sent["flights"] = flights
-    from ..investigations import notebook as NB
     if sent.get("cells") is not None:
         NB.mark_imported(sent, present)     # code outputs are the sender's; per-cell read-only (Spec 16 §5)
     studies_dir(ws_dir).mkdir(parents=True, exist_ok=True)

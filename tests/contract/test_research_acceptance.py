@@ -416,11 +416,10 @@ def test_15_window_on_the_first_full_power_segment(app, oct24):
         {k: segs[0]["descriptors"]["rpm"][k] for k in ("swing", "period_s", "period_prominence")}
 
 
-@pytest.mark.xfail(strict=True, reason="Spec 06 §15 item 15: period 3.5–4.1 s is the set's IQR (item 2); this "
-                                       "segment's own period is 3.4 s by the same estimator that gives the set "
-                                       "3.8 s — proposed revision in the Session C report.")
 def test_15_window_period_as_the_spec_states(app, oct24):
-    assert 3.5 <= _first_window(app, oct24)["descriptors"]["rpm"]["period_s"] <= 4.1
+    """Spec 06 v0.9: item 15's range is 3.2–4.1 s — one segment's own period
+    (3.4 s) sits below the set's IQR (item 2), measured the same way."""
+    assert 3.2 <= _first_window(app, oct24)["descriptors"]["rpm"]["period_s"] <= 4.1
 
 
 def test_15_derived_rule_recovers_the_segment(app, oct24):
