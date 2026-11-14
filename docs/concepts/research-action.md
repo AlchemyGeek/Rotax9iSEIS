@@ -6,12 +6,9 @@
 
 ## The question a finding raises
 
-*So what do I do with this?* was the question that shaped Research. A pilot who is handed *RPM cycles every 3.8 s in 93 of 98 takeoffs* and nothing else has been given a worry, not help. A finding is useful when it comes with its evidence, in a form that lets the right person recognise it. In the oscillation case the right person was the propeller controller's manufacturer, who identified a known behaviour from one email containing a plot and the per-takeoff table, and offered a firmware update the same day. The owner had spent an evening with scripts to produce that table. Research produces it in a click.
+*So what do I do with this?* was the question that shaped Research. A pilot who is handed *RPM cycles every 3.8 s in 93 of 98 takeoffs* and nothing else has been given a worry, not help. A finding is useful when it comes with its evidence, in a form that lets the right person recognise it. In the oscillation case the right person was the propeller controller's manufacturer, who identified a known behaviour from one email containing a plot and the per-takeoff table, and offered a firmware update the same day. The owner had spent an evening with Claude and scripts to produce that table. Research — by hand, or Claude through the instrument — produces it as a study, and the study produces the package in a click.
 
-<figure class="diagram">
---8<-- "diagrams/research-paths-out.svg"
-<figcaption>Where a finding goes: the Journal, an evidence package, a shared study — and, in time, a shared detector.</figcaption>
-</figure>
+<!-- diagram: research-paths-out-v2.svg — a finding (hand study or Claude notebook) with arrows to Journal entry, evidence package, shared study; a dashed arrow to a shared detector -->
 
 ## Three ways out
 
@@ -42,7 +39,7 @@ Keep the finding sentence as the app wrote it; its count is the most persuasive 
 
 ## What comes next, in time
 
-A finding that recurs on several aircraft is a candidate for the app to watch for routinely. The path is a proposal through the topic register, with the study as its evidence; and, further off, a shared **detector** — the study's rule and measurement packaged with its author's explanation of what the pattern may mean and what to do, installed by owners who want it. The app will never ship such detectors itself; they will be the work of people who understood a finding well enough to write that explanation. Until then, the Journal and the evidence package are the ways out, and they are the ones a manufacturer can act on today.
+A finding that recurs on several aircraft is a candidate for the app to watch for routinely. The path is a proposal through the topic register, with the study as its evidence; and, further off, a shared **detector** — the study's rule and measurement packaged with its author's explanation of what the pattern may mean and what to do, installed by owners who want it. The app will never ship such detectors itself; they will be the work of people who understood a finding well enough to write that explanation — which, with Claude doing the investigating, more owners will. Until then, the Journal and the evidence package are the ways out, and they are the ones a manufacturer can act on today.
 
 ## What to do with this
 

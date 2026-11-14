@@ -1,7 +1,7 @@
 # Spec 06 — Research
 
 **Project:** SlingologyEIS
-**Status:** v0.6 — v1 (Sessions A and B) built on branch `research`; **v1.1 adds the per-flight levels — Signal view and Compare (§9, D8–D12) — Session C, to be built.** Decisions D1–D12 in §3 and Q1–Q13 in §16 closed.
+**Status:** v0.7 — **Research is the instrument.** v1 (Sessions A and B) built on branch `research`: slices, descriptors, the four questions, studies, the manual Research UI. The v0.6 Signal/Compare *screens* are withdrawn; their engine operations (`analyze_signal`, `compare_rows`) stay as tools. AI-driven investigations, the Claude Desktop extension, notebook studies, the code tool and the inbox are owned by **Spec 16 — Investigations**. Decisions D1–D7 and Q1–Q13 closed.
 **Suggested repo path:** `docs/specs/06-research.md`
 **Builds on:** Spec 01 (§7 operations envelope, §8.7 series, §9 extension model, §10 privacy), Spec 02 (§5.3 workspace layout, §7 export/import), Spec 03 (principle 6: the Explore → operational path; §4 navigation shell), Spec 10 (§4 admission criteria, §8 lifecycle, §10 proposals; D2/D7 items parked as "Research"), Spec 12 (§13 deferred change-point detection), Spec 14 (§4, Q3)
 **Revises:** Spec 03 §4 and §5 (Research becomes a destination; new view), Spec 02 §5.3 and §7.1 (a `studies/` document set, carried by export), Spec 01 §7 (Research operations), Spec 14 Q3 (closes: Research is designed)
@@ -11,6 +11,7 @@
 
 | Version | Change |
 |---|---|
+| 0.7 | **Cut to the instrument (Nov 14 2026).** After the owner's experience investigating the takeoff rpm/MAP cycle with Claude, Research is reframed: the app is the *instrument* — slices, descriptors, questions, studies, the manual UI for the casual user on the website — and the *scientist* is the user's own Claude, connected through an MCP server in the Claude Desktop extension (Spec 16). Withdrawn from v0.6: the Signal view and Compare screens, D8–D12, acceptance 18, Session C as a UI session. Kept from v0.6: `analyze_signal` and `compare_rows` as engine operations (§11) with their engine-level acceptance (14–17), and the rolling-correlation strip note (§14.7). §14.2 Investigations and §14.3 detectors move to Spec 16. The §9 UI text returns to v1. |
 | 0.6 | **Per-flight analysis (D8–D12, Nov 12 2026).** Research presented only the set level: one sentence, one chart, per-flight detail in a table. Two levels are added beneath it — **Signal view** (one flight, one or more channels, rolling swing and period strips over the whole flight to find *where* a signal cycles, click to set a window, window diagnostics: detrended trace, autocorrelation, spectrum, correlation-vs-lag) and **Compare** (the same analysis per flight over a selection, one row per slice grouped by flight, a chart of the values against date / engine hours / DA / OAT, a pinnable reference row, diagnostics on demand). The existing questions become summaries over Compare's rows. §9 rewritten; §11 gains `analyze_signal` and `compare_rows`; §12 study page restructured as Signal → Compare → Questions; the Flight view's *Research this window* lands on Signal mode; acceptance 14–18; §17 Session C. |
 | 0.5 | **After Session B** (2026-11-07). Research is in the nav, gated by the `research` capability (Spec 03 v0.29 §4, §5.10; Spec 14 v0.19 Q3 closed). Research home, study page, aligned view, read-only studies with *Run this on my flights*, the three *Research this* entry points, inline help, and the Journal's `study_finding` entry (§10.3) are built; §11 gains `note_study_finding` and `forget_study_finding`, and `get_slice_samples` reads only the slices' flights. Acceptance 8 measured in-page (§5.5); 10 and 12 pass. Functional decisions of Session B in §3.3. Docs: concept page and walkthrough (§12). |
 | 0.4 | **Q11–Q13 decided by the owner** (Nov 7 2026): acceptance 1 is pinned to flights dated through 2026-10-28; acceptance 2 states the period the app measures, **3.8 s (IQR 3.5–4.1)**, with the write-up's 4.4 s kept in Appendix A as the investigation's own figure from a different count; acceptance 5 asserts the two clean high-DA takeoffs stand out on rpm swing, and §7.4's ranking improvements (count of descriptors standing out, combined robust distance, ranking within the study's channels) are recorded as v2 work the §14.1 scan depends on. The two expected failures become passing tests. `docs/research/` is exempted from the repo's per-flight-detail rule by the owner (CLAUDE.md). Session B scope unchanged. |
@@ -58,11 +59,6 @@ Two further facts shaped the design. The analysis took real understanding of con
 | **D5** | **One result contract: evidence against a visible reference, no verdict.** Finding (one sentence with recurrence), Evidence (chart + per-slice table), Magnitude (effect size beside its reference), Caveats, machine-readable block (§8). References are the OM value from the engine profile where one applies, otherwise the spread of the same measure across the other slices in the set, plus any reference the user types in for the study. | A shipped threshold ("cycling / steady") would be a non-OM rule — what the Oct 4 2026 program reset removed. Evidence alone leaves "is that a lot?" unanswered; a visible comparison answers it without us judging. The same contract is what a future Investigator consumes, so it is designed once. |
 | **D6** | **Overlay alignment is rule-based: the slice condition's crossing is t = 0 by default**, with selectable anchors (slice start, slice end, peak of a channel, phase boundary); shared x in elapsed seconds, shared y per channel. Free drag alignment is the v2 splicer; the study format reserves a per-slice offset field from v1 so v2 adds no format change. | The crossing is the physically meaningful instant (the oscillation starts when rpm passes ~5600; a touch-and-go reaches it in 2 s, a normal takeoff after 20 s of roll) and every anchor is a rule, so a study reproduces the view. |
 | **D7** | **Research is a top-level destination with contextual entry points.** A nav item "Research" lists the workspace's studies and the presets; "Research this" actions on Flight view, Trends cards and events open a study pre-seeded with that flight, metric or event. | Spec 03 principle 6 and Spec 14 Q3 require a distinct destination. Most pilots will first arrive from context — "this takeoff felt odd" → Research this → full-power slices across every flight — which is the KBLI moment made into a button; a hypothesis-first researcher needs a door of their own. |
-| **D8** | **Research has three levels: Signal (one flight), Compare (rows per flight), Questions (summary over rows).** The set-level questions remain; the two levels beneath them are added, built on the same per-slice descriptors. | The hunting problem is first *looked at* on one flight, then compared across flights, then summarised. v1 skipped the first two; the per-slice table was the only trace of them. |
-| **D9** | **Signal view starts from the whole flight with rolling strips; clicking a strip sets the window.** | Answers "where in this flight does it hunt?" without the user knowing beforehand; the window diagnostics then follow. Window-only would assume the answer. |
-| **D10** | **Two rolling strips — swing and dominant period (with prominence) — computed as the slice descriptors are, on a sliding window sized by §7.0.** A rolling-correlation strip for a pair is v2. | Swing says how big, period says whether it repeats; a throttle change has swing but no period, a hunt has both. Same computation as the descriptors, so a strip value and a slice value agree. |
-| **D11** | **Compare rows are per slice, grouped by flight, collapsible to one row per flight (median, count shown).** The window chosen in Signal view becomes a rule so the matching window is found in every selected flight; hand windows compare as single slices. | A touch-and-go session has several takeoffs and the before/after needs every one; the pilot still reads it per flight. Rows are the descriptors the questions already use, so the questions stay a summary over level 2. |
-| **D12** | **A Compare row shows the analysis values and conditions; the chart plots any value against date, engine hours, DA or OAT; one row can be pinned as the reference and the rest shown as differences from it; diagnostics open as an expandable panel for selected rows.** Signal and Compare are sections of the study page; the Flight view's existing *Research this window* opens a study in Signal mode on that flight with the window set. | Table and chart are the comparison; pinning makes before/after a one-click reading; diagnostics on demand keep the page readable above ~20 rows. One saved study records look → compare → summarise; the Flight view gains nothing new. |
 
 ### 3.1 Positions recorded during the discussion (not decisions of this spec, but constraints on it)
 
@@ -285,53 +281,15 @@ Every test returns the same five parts; the UI renders them in this order and th
 
 Nothing in the contract is a verdict. The only shipped numbers are OM values already in the profile.
 
-## 9. The three levels: Signal, Compare, Questions (D8)
-
-Research works at three levels on the same per-slice descriptors (§6). v1 built the third; v1.1 adds the first two.
-
-| Level | Unit | Question it answers | Output |
-|---|---|---|---|
-| **Signal** (§9.1) | one flight, one or more channels | *Where in this flight does the signal cycle, and what does it look like there?* | rolling strips over the flight; window diagnostics; this flight's numbers |
-| **Compare** (§9.2) | a selection of flights | *Does every flight do this, and how do they differ?* | one row per slice grouped by flight; chart against conditions; reference row |
-| **Questions** (§7) | a slice set | *What is true of the set as a whole?* | the §8 result contract |
-
-### 9.1 Signal view (D9, D10)
-
-**Inputs.** One flight; one or more channels (default: the channels the study's last question used, else rpm and manifold pressure); an optional **window** (start/end seconds); for a pair, the reference channel.
-
-**Over the whole flight:**
-- the channels as a stacked multi-channel chart sharing the time axis (Spec 07 charts; phases shaded as in Flight view);
-- under each channel, two **rolling strips**: *swing* (rolling peak-to-peak) and *dominant period* with its prominence (rolling detrended autocorrelation with a periodogram cross-check), both on a sliding window sized by §7.0 from the flight's own dominant period where one exists, floors otherwise. Strips are colour-mapped (swing in the channel's units; period in seconds, drawn only where prominence passes the §7 threshold). A strip value equals the descriptor a slice of that window would carry.
-- a **rolling correlation** strip for a pair (v2, §14.7).
-
-**Window.** Click-drag on a strip or the chart sets the window; the Flight view's *Research this window* passes its zoom as the initial window. For the window:
-- **diagnostics**: the detrended trace; the autocorrelation with the detected period marked; the periodogram with its peak; for a pair, correlation against lag with the best lag marked;
-- **this flight's numbers**: period, prominence, swing, level, and for a pair correlation at zero lag and the lag of best match — the same descriptors as §6, with the §7.0 resolved windows printed;
-- **Make this a rule**: derives a condition rule from the window (the channel's level band over the window and its duration, editable in the rule form) so Compare can find the same window in other flights (D11).
-
-**No verdict**: the numbers carry the OM reference and the user's references as in §8 Magnitude; no threshold is applied.
-
-### 9.2 Compare (D11, D12)
-
-**Inputs.** A selection of flights (all, picked, or a split — §5) and either a rule (from Signal's *Make this a rule*, a preset, a phase) or hand slices; the channels and, for a pair, the reference channel.
-
-**Rows.** One per slice, grouped by flight; flights with no matching slice are listed as such. Columns: flight, start time, duration, source, DA, OAT, engine hours, phases, and the analysis values — period, prominence, swing, level, correlation at zero lag, best lag. Group rows collapse to one per flight (median of its slices, slice count shown). CSV export as §8 Evidence.
-
-**Chart.** Any value against date, engine hours, DA or OAT; one point per row, colour by flight or source; the OM line where the channel has one.
-
-**Reference row.** Any row can be pinned; the table then shows each row's difference from it (Δperiod, Δswing, Δcorrelation) and the chart marks it. Pinning survives save.
-
-**Diagnostics.** An expandable panel shows the §9.1 window diagnostics for the pinned row and the rows the user selects, as aligned small multiples (D6 anchors apply).
-
-**Relationship to the questions.** Compare's rows *are* the slice set's descriptors; adding a question summarises them (§7, §8). A study records the Signal flight and window, the derived rule, the Compare selection, the pinned row, and the questions.
-
-### 9.3 Aligned view (v1, unchanged)
+## 9. Visual inspection — v1
 
 - **Aligned overlay** of a slice set for chosen channels: t = 0 at the rule's crossing by default (D6); anchors selectable; x in elapsed seconds; y shared per channel; one colour per slice with a legend keyed to the slice table.
 - **Small multiples** (one panel per slice, shared axes) becomes the default above ~10 slices; overlay stays a toggle. A **scrubbing cursor** reads every panel at the same aligned time.
 - **Multi-channel stack:** rpm, MAP and fuel flow (or any picked channels) as stacked strips sharing the time axis — the view that shows lockstep by eye.
 - Clicking a slice opens the flight at that window in Flight view.
 - Charts follow Spec 03 §6.1 (ECharts) and Spec 07's channel presets; Research adds no new charting stack.
+
+The per-flight analyses designed in v0.6 — rolling swing/period strips over a whole flight, window diagnostics, a rule derived from a window, and rows per flight with a pinned reference — exist as **engine operations** (§11 `analyze_signal`, `compare_rows`) for the investigator of Spec 16 to call, not as screens of this UI.
 
 ## 10. Studies (D3)
 
@@ -378,8 +336,8 @@ API-first (Goal 6): each UI action is one operation on the standard envelope; pr
 | `build_slices` | selection, slice rules, hand slices | slice set (definitions + descriptors + context; samples on request) |
 | `get_slice_samples` | slice ids, channels, anchor | aligned sample arrays for the views |
 | `run_test` | test id, slice set (or two), channels, params, references | §8 result |
-| `analyze_signal` | flight id, channels, optional window, optional reference channel | rolling strips (swing, period, prominence per sample), window diagnostics (detrended trace, autocorrelation, periodogram, correlation-vs-lag), the window's descriptors with resolved §7.0 windows, and a derived rule (§9.1) — v1.1 |
-| `compare_rows` | selection, rule or hand slices, channels, optional reference channel, optional pinned row | rows per slice grouped by flight with analysis values, conditions and differences from the pinned row; flights without a match — v1.1 |
+| `analyze_signal` | flight id, channels, optional window, optional reference channel | rolling strips (swing, period, prominence per sample), window diagnostics (detrended trace, autocorrelation, periodogram, correlation-vs-lag), the window's descriptors with resolved §7.0 windows, and a derived rule (the channel's level band over the window and its duration, as a §5.1 rule) — engine only, Spec 16 tool |
+| `compare_rows` | selection, rule or hand slices, channels, optional reference channel, optional pinned row | rows per slice grouped by flight with analysis values, conditions and differences from the pinned row; flights without a match; group collapse to one row per flight (median, count) — engine only, Spec 16 tool |
 | `save_study` / `load_study` / `list_studies` / `delete_study` | study document | — |
 | `export_study` / `import_study` | study id / file | `.eisstudy` / new study |
 | `run_study` | study id | the study with each test's result, the cache and a last-run summary |
@@ -395,8 +353,8 @@ CLI: `slingology-eis research presets | slices | samples | test | signal | compa
 
 - **Nav:** `Flights Trends Research Journal ⚙` — Research is the fourth everyday destination (D7; Spec 14 Q3 closed), shown when `get_capabilities().features.research` is true (Spec 03 v0.29 §4). Built: Spec 03 §5.10 describes the views as they are.
 - **Research home:** the workspace's studies (name, finding of its first test, updated date), the presets with a one-line question each, *New study*. Empty state: the presets, and a sentence on what Research is for.
-- **Study page** (v1.1, D12), top to bottom: **Signal** (one flight, channels, strips, window, diagnostics, *Make this a rule*) → **Compare** (selection, rule or hand slices with the slice count live, rows grouped by flight, chart, pinned reference, diagnostics panel; the aligned view of §9.3 as a tab of Compare) → **Questions** (add a question; each renders the §8 contract) → references and notes → actions (Journal entry, evidence package, export). Each section collapses; a study opened from a preset starts at Compare, one opened from a flight starts at Signal.
-- **Entry points** ("Research this"): on Flight view (v1.1: opens a study in **Signal mode** on that flight with the chart's channels and zoom as the window; the full-power preset is suggested for a takeoff window); on a Trends card (study pre-split before/after the card's shift); on an event (study with a slice at the event's window across all flights with the same limit).
+- **Study page**, top to bottom: selection (all flights / pick / split by) → slice rules and hand slices, with the slice count live → aligned view → tests (add a question; each renders the §8 contract) → references and notes → actions (Journal entry, evidence package, export). A study authored by the investigator (Spec 16) renders in the same view as a notebook.
+- **Entry points** ("Research this"): on Flight view (opens a study with that flight selected and the full-power preset suggested for a takeoff, or a hand slice at the current zoom); on a Trends card (study pre-split before/after the card's shift); on an event (study with a slice at the event's window across all flights with the same limit).
 - **Help:** inline help on each test's question, the reference, the slice rule and the selection (Spec 14 §7.4 registry); the docs site has a Research concept page (`docs/concepts/research.md`) and one walkthrough (`docs/walkthroughs/research-takeoff.md`) reproducing the acceptance case; screenshots to be taken in the docs' screenshot pass (Spec 13).
 
 ## 13. Relationship to other specs
@@ -412,11 +370,8 @@ CLI: `slingology-eis research presets | slices | samples | test | signal | compa
 ### 14.1 Scan with recurrence (v2)
 §7.4 run automatically on preset slice types after import, surfacing a short list only when a pattern holds in **N of M** slices (both shown and tunable; default to be set from the acceptance data), and including physics flags (a prominent period in a governed-rpm slice; a non-decaying autocorrelation) beside statistical outliers. Output goes to Research home, never to Flight view cards. One-off events stay with limits/events.
 
-### 14.2 Investigations (future)
-A client-side agent that takes the scan's list or a user's question, forms hypotheses, calls the §11 operations, reads the OM and service documents, and writes a card in the §8 contract plus candidate causes and what to do. Constraints fixed now: the user connects **their own AI provider with their own key**; the app operates no service and stores nothing; only descriptors and test results leave the device, never raw logs, with explicit consent; every sentence traces to a tool result or a cited document or is labelled hypothesis; on-demand first, never chatty. Named *Investigations*; "insights" stays with the deterministic layer.
-
-### 14.3 Symptom detectors (future)
-A finding may be packaged as a **declarative detector**: slice rule + descriptor + threshold + author's text (what was observed, what it may mean, what to do). Detectors are built in Research by people who understand the mechanism, shared as files, and installed by users; **the app ships none**. A detector whose author cannot fill in "what it may mean" and "what to do" is not publishable — the Research analogue of Spec 10's admission bar. A fired detector is an observation, silenceable like any other.
+### 14.2 Investigations and detectors — moved to Spec 16
+AI-driven investigations (the user's own Claude through the Desktop extension's MCP server), notebook studies, the code tool, the inbox and shared detectors are owned by Spec 16 — Investigations. This spec's constraint stands: the instrument ships no rule beyond the OM.
 
 ### 14.4 Splicer (v2)
 Free drag alignment of slices with stored per-slice `offset_s` (field reserved in v1), slice trimming, and copying slices between studies.
@@ -446,13 +401,12 @@ A third Signal strip for a channel pair — rolling correlation at zero lag — 
 12. A `.eisstudy` imported into a workspace with none of its flights opens read-only with the sender's cached results and the label of §10.2; *Run this on my flights* produces a new study over the recipient's selection.
 13. Each shipped preset's measurement (slice count, slices per flight, duration distribution) is recorded in §5.2 and a test guards the chosen values against the log set.
 
-**v1.1 — Signal and Compare (Session C):**
+**Engine operations `analyze_signal` and `compare_rows` (Spec 16's first session):**
 
 14. `analyze_signal` on the 2026-10-24 KAWO–KPAE–KBLI–KAWO flight, channels rpm and manifold pressure, no window: the period strip is lit (prominence above threshold, period 3–5 s) over each of the three full-power segments and dark over cruise and taxi; the swing strip peaks in the same segments.
 15. With the window set to the first full-power segment (the KAWO takeoff), the diagnostics report period 3.5–4.1 s, swing 150–210 rpm, rpm–MAP correlation ≥ 0.85 at lag 0, fuel flow best lag +1 s; *Make this a rule* yields a rule that, applied to the flight, recovers that segment within ±3 s at each end.
 16. `compare_rows` over the flights dated through 2026-10-28 with the full-power preset gives 98 rows in 59 flight groups whose per-row values equal the per-slice descriptors of acceptance 1–2 (same engine code path), and collapsing to flights gives 59 rows with counts summing to 98.
 17. Pinning the KAWO row shows every other row's Δperiod and Δswing; the two high-DA rows show Δswing ≤ −90 rpm; a chart of swing against DA reproduces the acceptance-4 picture.
-18. The study page opened from Flight view's *Research this window* on that flight lands in Signal mode with the zoom as the window; a study saved with a Signal flight, a derived rule, a pinned row and one question reopens with all four; `.eisstudy` carries them (acceptance 6 extended).
 
 ## 16. Questions resolved in v0.2
 
@@ -490,7 +444,7 @@ Two Claude Code sessions on branch **`research`** off `main` (merged back when b
 
 - **Session A — engine and CLI:** slice rules and presets (with the Q1 measurement), slice building over `LogSource`, descriptors and the §7.0 window rule, tests 7.1–7.4 with the §8 contract, hand slices in the model, studies with descriptor cache, `.eisstudy` export/import including read-only state, operations and CLI, acceptance 1–7, 9, 11–13; the investigation write-up placed at `docs/research/`.
 - **Session B — web:** nav item, Research home, study page, aligned overlay and small multiples, entry points, help text; acceptance 8, 10 and the UI side of 12; Spec 03 revision rows.
-- **Session C — Signal and Compare (v1.1):** engine: rolling strips and window diagnostics (`analyze_signal`), rule derivation from a window, `compare_rows` with grouping, pinning and differences; CLI `signal` and `compare`; study format extended (Signal flight and window, derived rule, pinned row). Web: the study page restructured as Signal → Compare → Questions (§12), strips with click-drag window, diagnostics panels, the Compare table/chart with pinning, Flight view entry in Signal mode. Acceptance 14–18; Spec 03 §5.10 and Spec 02 §5.3 revision rows; docs: Signal and Compare concept pages and a walkthrough (owner's docs plan, Phase 3).
+- **Session C — withdrawn** (Nov 14 2026). The engine operations `analyze_signal` and `compare_rows` are built in Spec 16's first session alongside the MCP server; no further screens are added to this UI.
 
 ---
 
