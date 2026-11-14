@@ -64,9 +64,18 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("filters.json", "carried", "Filters (Spec 09 §9)"),
     ("journal.json", "carried", "Journal entries and their records (Spec 14 §6)"),
     ("annotations.json", "carried", "Annotations, including acknowledged insights"),
+    # Spec 16 §5: a notebook's files (the figures and tables its code cells
+    # wrote) travel with it, as they are; listed before studies/*.json,
+    # which fnmatch would otherwise match too.
+    ("studies/*/files/*", "carried", "Notebook files: figures and tables a study's code wrote (Spec 16 §5)"),
     # Spec 06 §10.2: studies travel; their tests' results and descriptor
     # cache are derived, and are recomputed when the recipient runs them.
-    ("studies/*.json", "carried", "Research studies (Spec 06 §10)"),
+    # A notebook's code-cell outputs travel (the website can't recompute them).
+    ("studies/*.json", "carried", "Research studies (Spec 06 §10), notebooks included (Spec 16 §5)"),
+    ("inbox.json", "carried", "Research inbox: candidates and their resolutions (Spec 16 §6)"),
+    ("inbox_cache.json", "derived", "The inbox scan's descriptor cache (Spec 16 §6); recomputed"),
+    ("aircraft.json", "carried", "Aircraft document (Spec 16 §4.4)"),
+    ("documents/*", "local", "The user's own documents (manuals, bulletins; Spec 16 §4.2): their copies, not shared"),
     ("exclusions.json", "carried", "Log admission record, re-keyed by source_key (§7.5)"),
     ("manifest.json", "manifest", "Workspace name and engine model go into provenance; log_folders are local"),
     ("flights/*/sources.json", "manifest", "Per-flight sources: the flight manifest"),
@@ -83,7 +92,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
 _IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 # WorkspaceSettings fields that travel; the rest are device- or view-local.
-_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases", "channel_assignments")
+_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases", "channel_assignments", "research_sensitivity")
 
 # §7.6 (and Spec 02 v0.12): columns blanked in anonymised copies — GPS
 # position, and the navigation and radio columns that place the aircraft.
@@ -110,6 +119,12 @@ class ImportRefused(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_raw(rel: str) -> bool:
+    """A carried document that travels as bytes, not JSON: a notebook's
+    files (Spec 16 §5)."""
+    return fnmatch.fnmatchcase(rel, "studies/*/files/*") and ".." not in rel.split("/")
 
 
 def classify(rel: str) -> Optional[tuple[str, str]]:
@@ -452,7 +467,7 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     docs: dict[str, Any] = {}
     for d in documents:
         if d["class"] == "carried" and d["path"] not in ("settings.json", "exclusions.json"):
-            docs[d["path"]] = _read_json(ws_dir / d["path"])
+            docs[d["path"]] = (ws_dir / d["path"]).read_bytes() if _is_raw(d["path"]) else _read_json(ws_dir / d["path"])
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
     for rel in [r for r in docs if r.startswith("studies/")]:
@@ -539,7 +554,7 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("workspace.json", json.dumps(workspace_json, indent=2))
         for rel, obj in sorted(docs.items()):
-            z.writestr(rel, json.dumps(obj, indent=2))
+            z.writestr(rel, obj if isinstance(obj, bytes) else json.dumps(obj, indent=2))
     if include_logs:
         path = out_dir / f"{safe}.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -625,7 +640,8 @@ def _parse_eisworkspace(data: bytes, label: str) -> tuple[dict, dict]:
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             names = z.namelist()
             workspace = json.loads(z.read("workspace.json"))
-            documents = {n: json.loads(z.read(n)) for n in names if n != "workspace.json" and n.endswith(".json")}
+            documents = {n: (z.read(n) if _is_raw(n) else json.loads(z.read(n))) for n in names
+                         if n != "workspace.json" and (n.endswith(".json") or _is_raw(n))}
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
         raise ImportRefused(f"{label} isn't a workspace export ({e}).") from e
     if workspace.get("format") != FORMAT:
@@ -761,14 +777,21 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
     settings.active_engine_profile = carried_settings.get("active_engine_profile") or settings.active_engine_profile
     settings.aircraft_aliases = carried_settings.get("aircraft_aliases") or []
     settings.channel_assignments = carried_settings.get("channel_assignments") or {}   # Spec 02 v0.15 §7.1
+    if carried_settings.get("research_sensitivity") in ("quiet", "normal", "curious"):   # Spec 16 §6
+        settings.research_sensitivity = carried_settings["research_sensitivity"]
     ws.save_workspace_settings(ws_dir, settings)
     carried = {p for p, c, _n in DOCUMENTS if c == "carried"} - {"settings.json", "exclusions.json"}
     for rel, obj in docs.items():
         if not any(fnmatch.fnmatchcase(rel, pattern) for pattern in carried):
             continue   # only documents the export format carries
         target = ws_dir / rel
+        if not target.resolve().is_relative_to(ws_dir.resolve()):
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(obj, indent=2))
+        if isinstance(obj, bytes):
+            target.write_bytes(obj)
+        else:
+            target.write_text(json.dumps(obj, indent=2))
     record = {
         "imported_at": _now(), "provenance": prov,
         "manifest": contents.workspace.get("manifest", []),

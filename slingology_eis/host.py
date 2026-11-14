@@ -966,7 +966,15 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
             raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
         content, filename = found
-    return _downsample_series(content, filename, _expand_channels(channels),
+    # `max_points` (Spec 16 §4.2's series cap): at most that many points per
+    # channel — every row of a window that fits, else the min/max envelope.
+    n_buckets = 400
+    if params.get("max_points") is not None:
+        try:
+            n_buckets = max(10, int(params["max_points"]) // 2)
+        except (TypeError, ValueError):
+            raise RpcError("BAD_PARAMS", "max_points is a whole number")
+    return _downsample_series(content, filename, _expand_channels(channels), n_buckets=n_buckets,
                               assignments=_assignments(ctx), window=window)
 
 
@@ -2865,13 +2873,22 @@ def op_export_study(params: dict, ctx: dict) -> Any:
     """§10.2: the study as `<name>.eisstudy` (its results, descriptor cache,
     evidence CSVs and charts), handed to the transport like a workspace
     export."""
+    from .investigations import notebook as _nb
     from .research import studies as rs
     _require_active(ctx)
     doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
-    data = rs.export_bytes(doc)
+    fmt = params.get("format") or "eisstudy"
+    if fmt == "ipynb":
+        # Spec 16 §5: one-way export to Jupyter.
+        from .investigations.ops import ipynb_export
+        data, suffix = ipynb_export(ctx, doc), ".ipynb"
+    elif fmt == "eisstudy":
+        data, suffix = rs.export_bytes(doc, _nb.files_dir(ctx["workspace_dir"], doc["study_id"])), rs.SUFFIX
+    else:
+        raise RpcError("BAD_PARAMS", "format is eisstudy or ipynb")
     out = _export_dir(ctx) / uuid.uuid4().hex
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{rs.safe_name(doc['name'])}{rs.SUFFIX}"
+    path = out / f"{rs.safe_name(doc['name'])}{suffix}"
     path.write_bytes(data)
     return {"filename": path.name, "size": len(data), "download_url": ctx["deliver_file"](path, path.name)}
 
@@ -2898,6 +2915,13 @@ async def op_run_study_on_my_flights(params: dict, ctx: dict) -> Any:
     _require_active(ctx)
     src = rs.load(ctx["workspace_dir"], params.get("study_id"))
     doc = rs.save(ctx["workspace_dir"], rs.for_my_flights(src), engine_model=_engine_model(ctx))
+    if src.get("cells") is not None:
+        # The notebook's figures and files travel with its code cells (Spec 16 §5).
+        import shutil
+        from .investigations import notebook as _nb
+        a, b = _nb.files_dir(ctx["workspace_dir"], src["study_id"]), _nb.files_dir(ctx["workspace_dir"], doc["study_id"])
+        if a.is_dir():
+            shutil.copytree(a, b, dirs_exist_ok=True)
     return await op_run_study({"study_id": doc["study_id"]}, ctx)
 
 
@@ -2937,10 +2961,12 @@ def op_forget_study_finding(params: dict, ctx: dict) -> Any:
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
                "persistent_storage_status": False, "download_url": True, "folder_watching": False,
-               "research": True},
+               "research": True, "investigations": True, "bench": True},
+    # Spec 16 D8: the website renders notebooks and keeps an inbox, but has
+    # no bench — code_run is a server-host operation.
     "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
                 "persistent_storage_status": True, "download_url": False, "folder_watching": False,
-                "research": True},
+                "research": True, "investigations": True, "bench": False},
 }
 
 
@@ -3070,6 +3096,26 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
 }
 
 
+def _investigation_op(name: str):
+    """Spec 16 §4.3: an Investigations operation (investigations/ops.py),
+    imported when first called so the browser runtime loads none of it
+    until asked."""
+    async def op(params: dict, ctx: dict) -> Any:
+        from .investigations import ops as _iops
+        out = getattr(_iops, f"op_{name}")(params, ctx)
+        if inspect.iscoroutine(out):
+            out = await out
+        return out
+    op.__name__ = f"op_{name}"
+    return _research_call(op)
+
+
+for _name in ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+              "study_finish", "aircraft_get", "aircraft_set", "documents_list", "document_read", "document_add",
+              "document_remove", "inbox_scan", "inbox_list", "inbox_resolve"):
+    _OPS[_name] = _investigation_op(_name)
+
+
 def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path, workspaces_root: Path,
                               configured_root: Optional[Path] = None) -> tuple[Path, Optional[str]]:
     """
@@ -3153,7 +3199,9 @@ def _no_delivery(path: Path, filename: str) -> Any:
 # matching capability.
 _HOST_ONLY: dict[str, set] = {
     op: {"server"} for op in ("get_data_location", "assess_data_location", "change_data_location",
-                              "get_data_location_progress", "retry_data_location", "add_log_folder")
+                              "get_data_location_progress", "retry_data_location", "add_log_folder",
+                              # Spec 16 D3/D8: the bench runs only beside a local engine.
+                              "code_run")
 }
 
 

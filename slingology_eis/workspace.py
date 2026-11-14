@@ -434,6 +434,10 @@ class WorkspaceSettings:
     # {"channel": "co_ppm", "ignore_value": 254} (Spec 14 v0.15 §5.3): one
     # sentinel that is not a reading.
     channel_assignments: dict = field(default_factory=dict)
+    # Spec 16 §6 (D5): the Research inbox's three-position sensitivity,
+    # "quiet" | "normal" | "curious" (Settings → Research). Only the user
+    # changes it; the investigator may propose a change in a notebook.
+    research_sensitivity: str = "normal"
 
     def to_dict(self) -> dict:
         d = {
@@ -447,6 +451,8 @@ class WorkspaceSettings:
             d["trends_detail_strips"] = self.trends_detail_strips
         if self.channel_assignments:
             d["channel_assignments"] = self.channel_assignments
+        if self.research_sensitivity != "normal":
+            d["research_sensitivity"] = self.research_sensitivity
         return d
 
     @classmethod
@@ -457,6 +463,8 @@ class WorkspaceSettings:
             aircraft_aliases=d.get("aircraft_aliases") or [],
             trends_detail_strips=d.get("trends_detail_strips") or {},
             channel_assignments=d.get("channel_assignments") or {},
+            research_sensitivity=d.get("research_sensitivity") if d.get("research_sensitivity") in
+            ("quiet", "normal", "curious") else "normal",
         )
 
 
