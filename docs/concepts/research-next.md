@@ -1,7 +1,7 @@
 # Questions Research will ask next
 
 <div class="in-brief" markdown>
-**In brief.** Four questions ship today. Six more are designed and will arrive as they are built and measured against real logs; three open questions from the app's own research are waiting for one of them; and two larger ideas — an automatic scan that only speaks when a pattern recurs across flights, and an assistant that runs investigations for you with your own AI — are sketched but not promised. This page says what each would do, in plain words, so you know what to expect and what not to.
+**In brief.** Four questions ship today. Six more are designed and will arrive as they are built and measured against real logs; three open questions from the app's own research are waiting for one of them. Two larger things are being built now: investigations by your own Claude through the Desktop extension, and an inbox that collects patterns recurring across your flights for Claude to look into. This page says what each does, in plain words, so you know what to expect and what not to.
 </div>
 
 ## Six more questions
@@ -21,13 +21,11 @@ Each will follow the same rules as the four that exist: a question in your words
 
 When the app's topics were audited, three measurements were set aside as *needs research* because they were too noisy to report as insights: how fast oil and coolant warm in a climb, once climb rate, power and outside temperature are accounted for; whether fuel flow follows power and altitude as the engine computer's map would predict; and how high oil and coolant peak given how long the flight was and how warm the day. All three are *does it depend on conditions?* questions. When that question ships, the three will come as example studies you can run on your own flights.
 
-## Two larger ideas
+## Two larger things, now being built
 
-**A scan that speaks only when a pattern recurs.** Today *Which slices are unusual?* runs when you ask. The designed next step runs it automatically on each preset's slices after an import, and surfaces a short list on the Research page *only when a pattern holds across many flights* — so many of so many, both numbers visible and yours to set. Single odd flights stay where they are, in the Flight view and the Events table. The list would appear on the Research page, never on a flight's cards.
+**Investigations.** The oscillation case was investigated by a person asking Claude to run exactly the questions this app now contains. The app is being made so that your own Claude can do the same through the Claude Desktop extension: you ask about a flight in words; Claude works the Research instrument through its tools, writes code against your logs where no tool fits, reads the manuals you give it, and writes the investigation into EIS as a notebook. Three things are fixed about it: it is **your** Claude, on your account — the app runs no service and holds no key; your logs never leave your computer, and only what Claude asked for travels in your conversation; and every sentence it writes must trace to a tool result, a code cell or a cited document, or be labelled a hypothesis. See [Investigations](research-investigations.md).
 
-**Investigations.** The oscillation case was investigated by a person asking an AI assistant to run exactly the questions this app now contains. The designed idea is to let the app do the same for you: an assistant that takes the scan's list or your question, runs Research's questions, reads the Operators Manual and service documents, and writes up what it found — observation, possible causes, what to do, evidence package — in the same five-part shape. Three things are fixed about it already: it would connect to **your own AI provider with your own key** — the app runs no service and stores nothing; only the measurements leave your machine, never your logs, and only with your consent; and every sentence it writes must trace to a result or a cited document, or be labelled a hypothesis. It is a future capability, not a current one, and it does not replace the deterministic insights the app already produces.
-
-**What the code it runs can and can't do.** On a Mac, macOS itself fences in the code the assistant runs on your computer: it can't reach the internet, start other programs, or change any file outside its own study folder. That fence exists only on a Mac, and the macOS tool it uses is one Apple has deprecated, though it still works today; on Windows and Linux only the app's own, weaker check applies. On every computer the code can *read* any file you can, and what it reads can end up in your conversation with the assistant.
+**An inbox that speaks only when a pattern recurs.** After each import the app runs *Which slices are unusual?* on each preset's slices and keeps only patterns that hold across many recent flights — so many of so many, both numbers visible and yours to set. Those land in an inbox on the Research page, never on a flight's cards, with their evidence, for Claude to look into when you ask or on a schedule you set. Single odd flights stay in the Flight view.
 
 ## What is not planned
 

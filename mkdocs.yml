@@ -86,6 +86,7 @@ nav:
       - The Journal: concepts/the-journal.md
   - Investigating your engine:
       - "Research: the third question": concepts/research.md
+      - "Investigations: asking Claude": concepts/research-investigations.md
       - "Slices: pieces of flights": concepts/research-slices.md
       - Seeing slices together: concepts/research-aligned-view.md
       - "Signal view: one flight, looked at closely": concepts/research-signal.md
@@ -106,7 +107,6 @@ nav:
       - From an insight to a decision: walkthroughs/insight-to-decision.md
       - Export and import: walkthroughs/export-import.md
       - Reproducing a takeoff investigation: walkthroughs/research-takeoff.md
-      - "“This flight felt odd”": walkthroughs/research-odd-flight.md
       - Sharing a study: walkthroughs/research-sharing.md
   - Reference:
       - Operators Manual limits by engine: reference/om-limits.md

@@ -17,7 +17,8 @@ Each part of the app is described in a numbered specification, kept up to date a
 | 01 | Engine contract | Flight admission, phase detection, limit detection, CAS classification, the reference |
 | 02 | Workspace | Log folders, skipped logs, export and import |
 | 03 | User interface | Every page and what is on it |
-| 06 | Research | Slices, the four questions, the result contract, studies and sharing |
+| 06 | Research | The instrument: slices, the four questions, the result contract, studies and sharing |
+| 16 | Investigations | Your own Claude working the instrument through the Desktop extension; notebooks, the inbox |
 | 07 | Flight chart | Channels and presets |
 | 08 | Cylinder balance | The composite panel |
 | 09 | Limit filters | Filters, their conditions, the change monitor |

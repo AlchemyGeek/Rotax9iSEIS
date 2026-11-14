@@ -1,26 +1,24 @@
-# Studies: saving and sharing
+# Studies: notebooks you keep and share
 
 <div class="in-brief" markdown>
-**In brief.** A Research session is a **study**: which flights, which slice rules and hand slices, which questions with which settings, your references and your notes. Studies are saved in the workspace and listed on the Research page with their first finding. A study refers to flights by their fingerprint, never by file, so it travels: export it as a `.eisstudy`, and another owner imports it and runs *your* rule on *their* flights. Opened without any of its flights, it shows the sender's results read-only — clearly labelled as theirs — with one button: **Run this on my flights**.
+**In brief.** A **study** is a notebook: the question, the flights and slices it looked at, the questions asked and their results, figures and tables, your notes — and, when Claude did the work, the code it ran and what it wrote. Studies are saved in the workspace and listed on the Research page with their first finding. A study refers to flights by their fingerprint, never by file, so it travels: export it as a `.eisstudy`, and another owner imports it and runs *your* investigation on *their* flights. Opened without any of its flights, it shows the sender's results read-only — clearly labelled as theirs — with one button: **Run this on my flights**.
 </div>
 
 ## What a study holds
 
-Definitions, not data. A study stores:
+Definitions and record, not data. A study stores:
 
 - the **selection** — all flights, or chosen ones, and any split (by source, altitude band, temperature band, date);
 - the **slice rules** (a preset or your edit of one), phase slices, and **hand slices** (a flight and a window);
 - the **questions** asked, each with its channels and settings;
 - your **references** — label, channel, value, source;
 - your **notes**;
+- when Claude investigated: its narrative, the **code cells** it ran against your logs and their outputs, the figures and tables it made — so you can read what it did, re-run it, and disagree with it;
 - and, for speed, each slice's measurements, so the study reopens instantly.
 
 It does not store the logs or the second-by-second samples. The aligned view reads the slices' flights again when you open it; everything else is already there.
 
-<figure class="diagram">
---8<-- "diagrams/research-study-lifecycle.svg"
-<figcaption>A study's life: cut, ask, save, export, import read-only, run on my flights.</figcaption>
-</figure>
+<!-- diagram: research-notebook.svg — a notebook study: narrative, code, figure, table cells; made by hand or by Claude; saved, exported, imported read-only, run on my flights -->
 
 ## Saving
 
