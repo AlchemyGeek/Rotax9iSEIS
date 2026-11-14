@@ -30,7 +30,7 @@ An investigation is that loop, done by your Claude with EIS as its instrument. Y
 
 ## The inbox
 
-You don't have to notice something to start. After each import the app runs its own cheap scan — no AI — on the preset slices and keeps only patterns that hold across many recent flights: a repeating cycle in governed rpm, a measurement that has shifted against your fleet reference, a group of slices that stand apart. Those land in the **inbox** on the Research page with their evidence table. Ask Claude to look into one, or set a schedule — *"every Sunday, review anything new in my EIS inbox"* — and Claude's own scheduled tasks will do it. "Nothing here" is a legitimate result and is recorded so the same candidate isn't investigated twice.
+You don't have to notice something to start. When you next open the inbox after new flights, the app runs its own cheap scan — no AI — on the preset slices and keeps only patterns that hold across many recent flights: a repeating cycle in governed rpm, a measurement that has shifted against your fleet reference, a group of slices that stand apart. Those land in the **inbox** on the Research page with their evidence table. Ask Claude to look into one, or set a schedule — *"every Sunday, review anything new in my EIS inbox"* — and Claude's own scheduled tasks will do it. "Nothing here" is a legitimate result and is recorded so the same candidate isn't investigated twice.
 
 The inbox never puts anything on a flight's cards, and a single odd flight is not an inbox item: that is what the Flight view is for.
 
