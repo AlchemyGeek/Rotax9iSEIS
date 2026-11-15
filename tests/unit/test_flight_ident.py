@@ -141,13 +141,16 @@ def test_ops_identify_name_find(registry_server):
 
 
 def test_the_browser_host_refuses_the_server_operations(isolated_packaged_home):  # noqa: F811
-    """Spec 04 §9.5: flights_find, the documents and the bench are the server host's."""
+    """Spec 04 §9.5: the documents and the bench are the server host's;
+    flights_find scores stored facts and runs in both hosts (Spec 16 v0.6, E5)."""
     from slingology_eis import host
     from slingology_eis.log_sources import DISK
     ctx = host.new_context(log_sources=DISK, host="browser")
     host.dispatch("create_workspace", {"name": "B", "engine_model": "916iS"}, ctx)
-    for op, params in (("flights_find", {"description": "yesterday"}), ("documents_list", {}),
+    for op, params in (("documents_list", {}),
                        ("document_read", {"name": "om.md"}), ("code_run", {"study_id": "x", "source": "1"})):
         assert host.reply({"op": op, "params": params}, ctx)["error"]["code"] == "UNSUPPORTED_IN_HOST", op
+    found = host.reply({"op": "flights_find", "params": {"description": "yesterday"}}, ctx)
+    assert found["ok"] and found["result"]["candidates"] == [], found
     # Naming a flight is everyone's.
     assert host.reply({"op": "flight_set_name", "params": {"flight_id": "x", "name": "y"}}, ctx)["error"]["code"] == "NOT_FOUND"

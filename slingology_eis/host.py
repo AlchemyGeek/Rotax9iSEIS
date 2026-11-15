@@ -3412,8 +3412,6 @@ _HOST_ONLY: dict[str, set] = {
                               "get_data_location_progress", "retry_data_location", "add_log_folder",
                               # Spec 16 D3/D8: the bench runs only beside a local engine.
                               "code_run",
-                              # Spec 16 §4.4: reads every log once; the server host's.
-                              "flights_find",
                               # Spec 16 D11: the owner's folders, read in place.
                               "documents_list", "document_read")
 }

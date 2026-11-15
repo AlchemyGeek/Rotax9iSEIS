@@ -308,6 +308,12 @@ def test_guide(research_ws):
     g2 = _ok(rpc(h, "guide", {}))
     assert "aircraft_record_empty" not in g2["flags"] and "Governor adjusted 2026-01-03." in g2["document"]
     assert "- Propeller: Test prop" in g2["document"]
+    assert "engine_model_mismatch" not in g2["flags"]
+    # v0.6 (E1): a 915 iS workspace under the 916 iS aircraft (as the migration does) is flagged.
+    _ok(rpc(h, "create_workspace", {"name": "Other engine", "engine_model": "915iS"}))
+    g3 = _ok(rpc(h, "guide", {}))
+    assert "engine_model_mismatch" in g3["flags"]
+    assert "This workspace's profile is Rotax 915 iS; the aircraft record says Rotax 916 iS" in g3["document"]
 
 
 # ── aircraft and documents (§4.4) ─────────────────────────────────────────

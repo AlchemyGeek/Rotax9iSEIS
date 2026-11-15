@@ -130,12 +130,21 @@ def _guide_aircraft(ctx: dict) -> tuple[str, dict]:
     label = AC.engine_label(ac.get("engine_model") or "")
     lines = [f"**{ac.get('name')}**" + (f" — {label}" if label and label != ac.get("name") else ""), ""]
     lines += [f"- {label}: {value}" for label, value in filled]
+    # v0.6 (E1): the migration put every workspace under one aircraft; say when this workspace's
+    # engine profile isn't the aircraft record's, so no one reads one engine's limits as the other's.
+    ws_model = H._current_engine(ctx)[1]
+    mismatch = bool(ac.get("engine_model")) and ws_model != ac.get("engine_model")
+    if mismatch:
+        lines.append(f"- *This workspace's profile is {AC.engine_label(ws_model)}; the aircraft record says "
+                     f"{AC.engine_label(ac['engine_model'])}. Use the workspace's profile for limits; the owner can "
+                     "move the workspace to its own aircraft (Settings → Aircraft).*")
     empty = not filled
     if empty:
         lines.append("- *The record is empty: no propeller, controller, firmware or avionics. Ask the owner what is "
                      "fitted (Settings → Aircraft) before naming a component as a cause.*")
     lines += ["", "**The owner's notes (notes.md):**", "", notes or "*No notes yet.*"]
-    return "\n".join(lines) + "\n", {"empty": empty, "notes": bool(notes), "aircraft_id": ac["id"]}
+    return "\n".join(lines) + "\n", {"empty": empty, "notes": bool(notes), "aircraft_id": ac["id"],
+                                     "engine_mismatch": mismatch}
 
 
 def _guide_documents(ctx: dict) -> tuple[str, dict]:
@@ -197,6 +206,8 @@ def op_guide(params: dict, ctx: dict) -> Any:
         flags.append("no_owner_notes")
     if not docs["count"]:
         flags.append("no_documents")
+    if ac.get("engine_mismatch"):
+        flags.append("engine_model_mismatch")
     document = (base + "\n## 4. The aircraft\n\n" + ac_text + "\n## 5. The documents\n\n" + doc_text
                 + "\n## 6. The workspace in use\n\n" + ws_text)
     return {"document": document, "flags": flags, "workspace": wsi, "documents": docs["count"],
