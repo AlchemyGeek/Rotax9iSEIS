@@ -108,16 +108,25 @@ def _set_params(args: dict) -> dict:
 
 # ── Raw material ───────────────────────────────────────────────────────────
 
+def flight_row(f: dict) -> dict:
+    """One flights_list row: local times (§4.7), the route from GPS, the
+    counts, the pilot's name — no UTC (F8)."""
+    h, s, i = f.get("header") or {}, f.get("summary") or {}, f.get("ident") or {}
+    facts = dict(s.get("facts") or {})
+    if i.get("max_altitude_ft") is not None:
+        facts["max_altitude_ft"] = round(i["max_altitude_ft"])
+    return {"flight_id": f["flight_id"], "date": i.get("local_date") or h.get("date"),
+            "start_local": i.get("start_local"), "end_local": i.get("end_local"), "tz": i.get("tz_abbrev"),
+            "route": "–".join(i.get("route") or []) or None, "dep_airport": i.get("dep_airport"),
+            "arr_airport": i.get("arr_airport"), "takeoffs": i.get("takeoffs"), "landings": i.get("landings"),
+            "name": f.get("name"), "engine_hours_start": h.get("engine_hours_start"),
+            "engine_hours_end": h.get("engine_hours_end"), "source": s.get("source"),
+            "source_filename": f.get("source_filename"), **facts, "phase_min": s.get("phase_min"),
+            "events": s.get("events"), "quality_notes": len(f.get("quality") or [])}
+
+
 def shape_flights(args: dict, flights: list) -> dict:
-    rows = []
-    for f in flights:
-        h, s = f.get("header") or {}, f.get("summary") or {}
-        rows.append({"flight_id": f["flight_id"], "date": h.get("date"), "start_utc": h.get("start_utc"),
-                     "engine_hours_start": h.get("engine_hours_start"), "engine_hours_end": h.get("engine_hours_end"),
-                     "airport_hint": h.get("airport_hint"), "source": s.get("source"),
-                     "source_filename": f.get("source_filename"), **(s.get("facts") or {}),
-                     "phase_min": s.get("phase_min"), "events": s.get("events"),
-                     "quality_notes": len(f.get("quality") or [])})
+    rows = [flight_row(f) for f in flights]
 
     def keep(r: dict) -> bool:
         if args.get("date_from") and (r["date"] or "") < args["date_from"]:
@@ -126,20 +135,33 @@ def shape_flights(args: dict, flights: list) -> dict:
             return False
         if args.get("source") and r["source"] != args["source"]:
             return False
-        if args.get("airport") and (r["airport_hint"] or "").upper() != str(args["airport"]).upper():
-            return False
+        if args.get("airport"):
+            want = str(args["airport"]).upper()
+            if want not in {(r["dep_airport"] or "").upper(), (r["arr_airport"] or "").upper()} \
+                    and want not in (r["route"] or "").upper().split("–"):
+                return False
         hrs = r["engine_hours_start"]
         if args.get("hours_min") is not None and (hrs is None or hrs < args["hours_min"]):
             return False
         if args.get("hours_max") is not None and (hrs is None or hrs > args["hours_max"]):
             return False
         return True
-    rows = sorted((r for r in rows if keep(r)), key=lambda r: (r["start_utc"] or "", r["flight_id"]))
+    rows = sorted((r for r in rows if keep(r)), key=lambda r: (r["start_local"] or r["date"] or "", r["flight_id"]))
     return page(rows, args, "flights")
 
 
 def run_flights_list(args: dict, call: Call) -> dict:
-    return shape_flights(args, call("list_flights", {"summary": True}))
+    p = {"summary": True, "identify": True}
+    if args.get("name"):
+        p["name"] = args["name"]
+    return shape_flights(args, call("list_flights", p))
+
+
+def run_flights_find(args: dict, call: Call) -> dict:
+    p = {"description": args.get("description")}
+    if args.get("limit"):
+        p["limit"] = args["limit"]
+    return call("flights_find", p)
 
 
 def shape_flight(args: dict, g: dict) -> dict:
@@ -567,11 +589,23 @@ _SET = {"slice_rules": _RULES,
 
 TOOLS: list[Tool] = [
     Tool("flights_list", "List flights",
-         "The workspace's flights, oldest first: date, engine hours, airport, source (G3X or AXIS), flight facts, "
-         f"minutes per phase and event count. Filters by date, source, airport and engine hours; {PAGE_ROWS} per page.",
-         {"date_from": {**_S, "description": "YYYY-MM-DD"}, "date_to": {**_S, "description": "YYYY-MM-DD"},
-          "source": {"type": "string", "enum": ["G3X", "AXIS"]}, "airport": _S, "hours_min": _N, "hours_max": _N,
+         "The workspace's flights, oldest first: local date and start/end time with the zone, route (airports "
+         "resolved from GPS), takeoffs and landings, the pilot's name, engine hours, source (G3X or AXIS), flight "
+         "facts, minutes per phase and event count. Filters: date_from/date_to (local YYYY-MM-DD), source, "
+         "airport (any airport on the route), name (words in the pilot's name or notes), hours_min/hours_max; "
+         f"{PAGE_ROWS} per page. Example: {{\"airport\": \"KBLI\", \"date_from\": \"2026-10-01\"}}.",
+         {"date_from": {**_S, "description": "Local date YYYY-MM-DD"}, "date_to": {**_S, "description": "Local date YYYY-MM-DD"},
+          "source": {"type": "string", "enum": ["G3X", "AXIS"]},
+          "airport": {**_S, "description": "An airport code on the route, e.g. KBLI"},
+          "name": {**_S, "description": "Words in the flight's name or notes"}, "hours_min": _N, "hours_max": _N,
           **_PAGE}, run_flights_list, ops=("list_flights",)),
+    Tool("flights_find", "Find a flight",
+         "Flights for a description in words, best first (at most 10), each with what matched: dates (\"Oct 24\", "
+         "\"2026-10-24\", \"last Friday\", a month or weekday), airports by code or name (\"KBLI\", \"Bellingham\"), "
+         "counts (\"three landings\", \"two stops\", \"touch and go\"), words of the pilot's flight name. "
+         "Example: {\"description\": \"the Oct 24 flight with three landings, Bellingham\"}.",
+         {"description": _S, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, run_flights_find,
+         required=("description",), ops=("flights_find",)),
     Tool("flight_get", "One flight",
          "One flight: header, phases, flight facts, events (limit exceedances and CAS) and the topic findings the "
          "Flight view shows.", {"flight_id": _S}, run_flight_get, required=("flight_id",), ops=("get_flight",)),

@@ -996,7 +996,7 @@ def test_get_flight_series_works_for_folder_scanned_flight(registry_server, tmp_
     flight_dir = ws.resolve_workspaces_root() / [
         e["id"] for e in rpc(registry_server, "list_workspaces", {})["result"] if e["name"] == "N117ZS"
     ][0] / "flights" / flight_id
-    assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] == []
+    assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json", "ident.json")] == []
 
     series = rpc(registry_server, "get_flight_series", {"flight_id": flight_id, "channels": ["ias_kt"]})
     assert series["ok"], series

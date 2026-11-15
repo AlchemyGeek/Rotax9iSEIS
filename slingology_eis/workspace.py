@@ -695,8 +695,18 @@ def load_flight_analysis(ws_dir: Path, flight_id: str) -> Optional[FlightAnalysi
     return FlightAnalysis(**json.loads(f.read_text()))
 
 
+# The engine's own documents in flights/<id>/; anything else there is an
+# uploaded log's copy.
+FLIGHT_DOCUMENTS = ("analysis.json", "sources.json", "ident.json")
+
+
 def save_flight_analysis(ws_dir: Path, fa: FlightAnalysis) -> None:
     _write_json(ws_dir / "flights" / fa.flight_id / "analysis.json", fa.to_dict())
+    # Spec 16 §4.4: identification computed with the analysis (no second read).
+    ident = getattr(fa, "ident", None)
+    if ident:
+        from . import flight_ident as _flight_ident
+        _flight_ident.save(ws_dir, fa, ident)
 
 
 def list_flight_ids(ws_dir: Path) -> list[str]:
@@ -2136,6 +2146,12 @@ async def scan_workspace_async(
         migrate_limit_annotations(ws_dir, fa, fresh)
         result.reanalyzed_flight_ids.append(fid)
 
+    # Spec 16 §4.4: flight identification facts (route, local times,
+    # takeoffs and landings) for every flight lacking them — new,
+    # re-analysed, or stored before they existed. Facts, not analysis.
+    from . import flight_ident as _flight_ident
+    await _flight_ident.ensure_async(ws_dir, sources)
+
     # Update manifest + registry.
     if manifest.primary_tail_number is None and primary_ident:
         manifest.primary_tail_number = primary_ident
@@ -2556,7 +2572,7 @@ def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
     if imp is not None and imp.log_folder_path == UPLOADED_SOURCE and (d / imp.filename).is_file():
         return imp.filename   # the analysed one of two kept copies (an AXIS pair, v0.16)
     if d.is_dir():
-        others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
+        others = [p.name for p in d.iterdir() if p.name not in FLIGHT_DOCUMENTS]
         if others:
             return others[0]
     return imp.filename if imp else None

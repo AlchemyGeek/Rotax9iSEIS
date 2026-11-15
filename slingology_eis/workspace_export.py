@@ -83,6 +83,8 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("manifest.json", "manifest", "Workspace name and engine model go into provenance; log_folders are local"),
     ("flights/*/sources.json", "manifest", "Per-flight sources: the flight manifest"),
     ("flights/*/analysis.json", "derived", "Flight analysis"),
+    ("flights/*/ident.json", "derived", "Flight identification: route, local times, takeoffs and landings (Spec 16 §4.4); recomputed"),
+    ("flight_names.json", "carried", "The names and notes the pilot gave flights (Spec 16 §4.4)"),
     ("fleet/analysis.json", "derived", "Fleet analysis: baselines, models, trends"),
     ("flights/*/*", "log", "An uploaded log's own copy"),
     ("logs/*", "log", "Logs extracted from an imported export zip (Spec 02 v0.14); linked as a log folder"),

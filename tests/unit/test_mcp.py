@@ -26,7 +26,7 @@ from tests.unit.test_research_ops import FULL_POWER, FP_START, _import, _ok
 from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noqa: F401 — fixture
 
 WRITING = {"code_run", "study_create", "cell_append", "study_finish", "inbox_resolve", "workspace_use"}
-TOOL_COUNT = 26
+TOOL_COUNT = 27
 
 
 @pytest.fixture
@@ -74,6 +74,7 @@ def _read_cases(ids, sid):
     fp = [FULL_POWER]
     return [
         ("flights_list", {"date_from": "2026-01-02", "limit": 3, "offset": 1}, T.shape_flights),
+        ("flights_find", {"description": "January 3"}, None),
         ("flight_get", {"flight_id": ids[0]}, T.shape_flight),
         ("series_get", {"flight_id": ids[0], "channels": ["rpm", "map_inhg"], "start_s": FP_START, "end_s": FP_START + 60},
          None),

@@ -732,15 +732,71 @@ def _flight_summary(workspace_dir: Path, fa: FlightAnalysis) -> dict:
     }
 
 
-def op_list_flights(params: dict, ctx: dict) -> Any:
+async def op_list_flights(params: dict, ctx: dict) -> Any:
+    """Every flight's header, quality and log filename; with `summary`, the
+    flight facts and phase summary (S13). Every row carries its
+    identification (`ident`: route, local times, takeoffs and landings —
+    Spec 16 §4.4) when it is known, and the pilot's `name` / `notes`.
+    `identify: true` first fills the identification of flights lacking it
+    (reads their logs once). `name` keeps flights whose name or notes
+    contain it (case-insensitive)."""
+    from . import flight_ident as fi
+    if params.get("identify"):
+        await fi.ensure_async(ctx["workspace_dir"], _sources(ctx))
+    names = fi.load_names(ctx["workspace_dir"])
+    want = (params.get("name") or "").strip().lower()
     out = []
     for fa in _load_workspace_flights(ctx["workspace_dir"]):
+        named = names.get(fa.flight_id) or {}
+        if want and want not in f"{named.get('name', '')} {named.get('notes', '')}".lower():
+            continue
         row = {"flight_id": fa.flight_id, "header": fa.header, "quality": fa.quality,
                "source_filename": _source_filename(ctx["workspace_dir"], fa.flight_id)}
+        ident = fi.current(ctx["workspace_dir"], fa)
+        if ident is not None:
+            row["ident"] = {k: v for k, v in ident.items() if k not in ("key", "version")}
+        if named:
+            row["name"] = named.get("name") or None
+            row["notes"] = named.get("notes") or None
         if params.get("summary"):
             row["summary"] = _flight_summary(ctx["workspace_dir"], fa)
         out.append(row)
     return out
+
+
+def op_flight_set_name(params: dict, ctx: dict) -> Any:
+    """Spec 16 §4.4: the pilot's name and notes for a flight (both
+    optional; empty clears). Carried by workspace export."""
+    from . import flight_ident as fi
+    _require_active(ctx)
+    fid = params.get("flight_id")
+    if not fid or not (ctx["workspace_dir"] / "flights" / str(fid) / "analysis.json").is_file():
+        raise RpcError("NOT_FOUND", f"no flight {fid} in this workspace")
+    if params.get("name") is None and params.get("notes") is None:
+        raise RpcError("BAD_PARAMS", "flight_set_name needs name and/or notes")
+    try:
+        got = fi.set_name(ctx["workspace_dir"], fid, params.get("name"), params.get("notes"))
+    except ValueError as e:
+        raise RpcError("BAD_PARAMS", str(e))
+    return {"flight_id": fid, "name": got.get("name"), "notes": got.get("notes")}
+
+
+async def op_flights_find(params: dict, ctx: dict) -> Any:
+    """Spec 16 D10: flights for a description in words — date words
+    (\"Oct 24\", \"last Friday\"), airport codes and names, counts
+    (\"three landings\"), name words — ≤ `limit` (10) candidates ranked,
+    with what matched and what the description was understood to ask."""
+    from datetime import date as _date
+    from . import flight_ident as fi
+    _require_active(ctx)
+    text = params.get("description")
+    if not isinstance(text, str) or not text.strip():
+        raise RpcError("BAD_PARAMS", "flights_find needs a description, e.g. \"the Oct 24 flight with three landings\"")
+    rows = await op_list_flights({"identify": True}, ctx)
+    today = _date.fromisoformat(params["today"]) if params.get("today") else None
+    limit = max(1, min(10, int(params.get("limit") or 10)))
+    return fi.find([{"flight_id": r["flight_id"], "ident": r.get("ident"), "date": r["header"].get("date"),
+                     "name": r.get("name"), "notes": r.get("notes")} for r in rows], text, today=today, limit=limit)
 
 
 def op_get_flight(params: dict, ctx: dict) -> Any:
@@ -973,7 +1029,7 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
             raise RpcError("BAD_PARAMS", "end_s is before start_s")
     workspace_dir = ctx["workspace_dir"]
     flight_dir = workspace_dir / "flights" / flight_id
-    source_files = [p for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] if flight_dir.is_dir() else []
+    source_files = [p for p in flight_dir.iterdir() if p.name not in ws.FLIGHT_DOCUMENTS] if flight_dir.is_dir() else []
     # Two kept copies (an AXIS SD-card log and its aircraft log, Spec 02
     # v0.16 §5.7): the one the analysis comes from.
     analysed = ws.source_filename(workspace_dir, flight_id)
@@ -3037,6 +3093,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "analyze_ecu_workspace": op_analyze_ecu_workspace,
     "validate_rules": op_validate_rules,
     "list_flights": op_list_flights,
+    "flight_set_name": op_flight_set_name,
+    "flights_find": op_flights_find,
     "get_flight": op_get_flight,
     "get_fleet": op_get_fleet,
     "get_trends_panels": op_get_trends_panels,
@@ -3231,7 +3289,9 @@ _HOST_ONLY: dict[str, set] = {
     op: {"server"} for op in ("get_data_location", "assess_data_location", "change_data_location",
                               "get_data_location_progress", "retry_data_location", "add_log_folder",
                               # Spec 16 D3/D8: the bench runs only beside a local engine.
-                              "code_run")
+                              "code_run",
+                              # Spec 16 §4.4: reads every log once; the server host's.
+                              "flights_find")
 }
 
 

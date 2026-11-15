@@ -56,4 +56,5 @@ include = ["slingology_eis*"]
 # tree by design (Spec 10 §5) — true package data for it is the same
 # unresolved gap engines/*.json already has for a genuinely installed
 # wheel, not a new one.
-slingology_eis = ["help/topics.md"]
+slingology_eis = ["help/topics.md", "airports/airports.csv.gz", "airports/README.md",
+                  "investigations/guide.md", "investigations/prompts/*.md"]
