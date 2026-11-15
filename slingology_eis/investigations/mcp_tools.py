@@ -629,8 +629,9 @@ TOOLS: list[Tool] = [
          "The engine profile: limits with their Operators Manual references.", {}, run_profile_get,
          ops=("get_engine_limits",)),
     Tool("aircraft_get", "Aircraft",
-         "The aircraft configuration: airframe, engine serial, propeller, controller, firmware, avionics, notes; "
-         "the engine model and the Settings → Log channels assignments.", {}, run_aircraft_get, ops=("aircraft_get",)),
+         "The aircraft record: name, airframe, engine serial, propeller, controller, firmware, avionics, the "
+         "documents folders; the owner's notes (notes.md) whole; its workspaces; the engine model and the "
+         "Settings → Log channels assignments.", {}, run_aircraft_get, ops=("aircraft_get",)),
     Tool("documents_list", "Documents",
          "The documents the user placed in the workspace's documents folder (manuals, service bulletins, notes).",
          {}, run_documents_list, ops=("documents_list",)),
@@ -677,6 +678,69 @@ TOOLS: list[Tool] = [
                                          "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
           "study_id": _S, "note": _S}, run_inbox_resolve, required=("candidate_id", "status"), writes=True,
          ops=("inbox_resolve",)),
+]
+
+# ── Session tools (D10): which workspace this conversation's tools see ──
+# They act on the server (the conversation), not on a host operation, so
+# they aren't in the parity test; nothing they do touches the registry.
+
+def _workspaces_view(server) -> dict:
+    from .. import aircraft as AC
+    root, _ws, entries = server._registry()
+    if root is None:
+        return {"aircraft": None, "in_use": None, "workspaces": [], "other_aircraft": []}
+    ac = server.aircraft()
+    in_use = server.choose_workspace()
+    reg = {e.id: e for e in entries}
+
+    def row(wid: str) -> dict:
+        e = reg[wid]
+        return {"workspace_id": e.id, "name": e.name, "engine_model": e.engine_model,
+                "flight_count": e.flight_count, "last_opened_at": e.last_opened_at, "in_use": e.id == in_use}
+    others = [{"aircraft_id": a["id"], "name": a["name"], "workspaces": [row(w) for w in a["workspaces"] if w in reg]}
+              for a in AC.list_aircraft(root) if not ac or a["id"] != ac["id"]]
+    return {"aircraft": {"aircraft_id": ac["id"], "name": ac["name"], "engine_model": ac["engine_model"]} if ac else None,
+            "in_use": in_use, "chosen_by": ("workspace_use" if server.use_workspace == in_use and in_use
+                                            else "--workspace" if server.workspace_arg else "aircraft"),
+            "workspaces": [row(w) for w in (ac["workspaces"] if ac else []) if w in reg],
+            "other_aircraft": others}
+
+
+def call_session_tool(name: str, args: dict, server, *, engine_version: str, workspace_id: Optional[str]) -> dict:
+    from .. import serialize
+    if workspace_id is None:
+        return _error(server.aircraft_error or NO_WORKSPACE)
+    if name == "workspaces_list":
+        result = _workspaces_view(server)
+    else:   # workspace_use
+        want = args.get("workspace_id")
+        _root, _ws, entries = server._registry()
+        match = next((e for e in entries if want in (e.id, e.name)), None) if want else None
+        if match is None:
+            names = ", ".join(f"{e.name} ({e.id})" for e in entries) or "none"
+            return _error(f"workspace_use needs workspace_id, one of: {names}.")
+        server.use_workspace = match.id
+        workspace_id = server._refresh()
+        result = {**_workspaces_view(server),
+                  "note": "Only this conversation's following tool calls use it; the EIS pages are unchanged."}
+    body = {"engine_version": engine_version, "workspace_id": workspace_id, "result": result}
+    text = serialize.dumps(body)
+    return {"content": [{"type": "text", "text": text}], "structuredContent": json.loads(text), "isError": False}
+
+
+def _no_op(args: dict, call: Call) -> Any:
+    raise ToolRefusal("a session tool runs in the server")
+
+
+SESSION_TOOLS = ("workspaces_list", "workspace_use")
+TOOLS[:0] = [
+    Tool("workspaces_list", "Workspaces",
+         "The aircraft's workspaces (and any other aircraft's), with the one these tools use. Usually one: the "
+         "server opens the aircraft's workspace without asking.", {}, _no_op, ops=()),
+    Tool("workspace_use", "Use a workspace",
+         "Use another of the aircraft's workspaces for the rest of this conversation (not the EIS pages). "
+         "Example: {\"workspace_id\": \"ws_2b59350ca5ac\"} or the workspace's name.",
+         {"workspace_id": _S}, _no_op, required=("workspace_id",), writes=True, ops=()),
 ]
 
 # code_run's façade result is shaped after the call (the images need the raw result).

@@ -176,6 +176,8 @@ class WorkspaceRegistryEntry:
     last_opened_at: str = ""
     log_folder_count: int = 0
     flight_count: int = 0
+    # Spec 16 D10: the aircraft this workspace belongs to (aircraft.py).
+    aircraft_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -185,6 +187,8 @@ class WorkspaceRegistryEntry:
         }
         if self.primary_tail_number is not None:
             d["primary_tail_number"] = self.primary_tail_number
+        if self.aircraft_id is not None:
+            d["aircraft_id"] = self.aircraft_id
         return d
 
     @classmethod
@@ -194,6 +198,7 @@ class WorkspaceRegistryEntry:
             primary_tail_number=d.get("primary_tail_number"),
             created_at=d.get("created_at", ""), last_opened_at=d.get("last_opened_at", ""),
             log_folder_count=d.get("log_folder_count", 0), flight_count=d.get("flight_count", 0),
+            aircraft_id=d.get("aircraft_id"),
         )
 
 
@@ -555,6 +560,8 @@ def create_workspace(
     name: str,
     engine_model: str,
     primary_tail_number: Optional[str] = None,
+    aircraft_id: Optional[str] = None,
+    aircraft_fields: Optional[dict] = None,
 ) -> WorkspaceManifest:
     """
     Spec 02 §5.2/§5.3/§6.1. `engine_model` is required and locked here —
@@ -596,6 +603,12 @@ def create_workspace(
     save_manifest(ws_dir, manifest)
     save_selection(ws_dir, FleetSelection())
     save_workspace_settings(ws_dir, WorkspaceSettings(active_engine_profile=engine_model))
+    # Spec 16 D10: every workspace belongs to an aircraft.
+    from . import aircraft as _aircraft
+    root = registry_path.parent
+    _aircraft.ensure(root)
+    ac = _aircraft.for_new_workspace(root, engine_model, aircraft_id, aircraft_fields)
+    _aircraft.assign(root, ws_id, ac["id"])
     return manifest
 
 
@@ -615,6 +628,8 @@ def delete_workspace(registry_path: Path, workspaces_root: Path, workspace_id: s
         raise ValueError(f"no workspace {workspace_id!r}")
     registry.workspaces = [w for w in registry.workspaces if w.id != workspace_id]
     save_registry(registry_path, registry)
+    from . import aircraft as _aircraft
+    _aircraft.unassign(registry_path.parent, workspace_id)
 
     app_settings = load_app_settings(registry_path)
     if app_settings.last_active_workspace_id == workspace_id:

@@ -43,11 +43,20 @@ INSTRUCTIONS = (
 
 
 class Server:
-    def __init__(self, *, workspace_arg: Optional[str] = None, ctx: Optional[dict] = None):
+    """One MCP connection's server. Which workspace the tools see (D10):
+    `workspace_use` for this conversation, else `--workspace`, else the
+    aircraft's (`--aircraft`, else the registry's only aircraft, else the
+    one most recently opened) most recently opened workspace."""
+
+    def __init__(self, *, workspace_arg: Optional[str] = None, aircraft_arg: Optional[str] = None,
+                 ctx: Optional[dict] = None):
         from .. import host as H
         from ..log_sources import DISK
         self.H = H
         self.workspace_arg = workspace_arg
+        self.aircraft_arg = aircraft_arg
+        self.use_workspace: Optional[str] = None
+        self.aircraft_error: Optional[str] = None
         self.ctx = ctx if ctx is not None else H.new_context(log_sources=DISK, host="server",
                                                              workspace_arg=workspace_arg)
         self.lock = threading.Lock()
@@ -59,15 +68,70 @@ class Server:
         except self.H.RpcError as e:
             raise T.ToolOpError(e.code, e.message)
 
+    def _registry(self):
+        from .. import workspace as ws
+        from .. import data_location
+        loc = data_location.resolve()
+        if loc.missing:
+            return None, None, []
+        return loc.root, ws, ws.load_registry(loc.root / "registry.json").workspaces
+
+    def aircraft(self) -> Optional[dict]:
+        """The aircraft this server opens (D10), or None."""
+        from .. import aircraft as AC
+        root, _ws, entries = self._registry()
+        if root is None:
+            return None
+        AC.ensure(root)
+        self.aircraft_error = None
+        if self.aircraft_arg:
+            try:
+                return AC.resolve(root, self.aircraft_arg)
+            except AC.AircraftError as e:
+                self.aircraft_error = e.message
+                return None
+        every = AC.list_aircraft(root)
+        if len(every) <= 1:
+            return every[0] if every else None
+        recent = sorted(entries, key=lambda e: e.last_opened_at or "", reverse=True)
+        for e in recent:
+            a = AC.of_workspace(root, e.id)
+            if a is not None:
+                return a
+        return every[0]
+
+    def choose_workspace(self) -> Optional[str]:
+        root, _ws, entries = self._registry()
+        if root is None:
+            return None
+        ids = {e.id for e in entries}
+        if self.use_workspace in ids:
+            return self.use_workspace
+        if self.workspace_arg:
+            return self.workspace_arg
+        ac = self.aircraft()
+        if ac is None:
+            return None
+        mine = sorted((e for e in entries if e.id in ac["workspaces"]), key=lambda e: e.last_opened_at or "",
+                      reverse=True)
+        return mine[0].id if mine else None
+
     def _refresh(self) -> Optional[str]:
-        self.H._open_data_root(self.ctx, self.workspace_arg)
+        chosen = self.choose_workspace()
+        self.H._open_data_root(self.ctx, chosen)
         if self.ctx.get("data_location_missing"):
+            return None
+        if chosen is None and (self.aircraft_arg or self.aircraft_error):
             return None
         return self.ctx.get("active_workspace_id")
 
     def call_tool(self, name: str, args: dict) -> dict:
         with self.lock:
             ws_id = self._refresh()
+            if name in T.SESSION_TOOLS:
+                return T.call_session_tool(name, args or {}, self, engine_version=__version__, workspace_id=ws_id)
+            if ws_id is None and self.aircraft_error:
+                return T._error(self.aircraft_error)
             return T.call_tool(name, args or {}, self.call_op, engine_version=__version__, workspace_id=ws_id)
 
     # ── JSON-RPC ──
@@ -134,7 +198,8 @@ def serve_stdio(server: Server, stdin=None, out=None) -> None:
             out.flush()
 
 
-def main(*, workspace_arg: Optional[str] = None, serve: bool = False, port: int = 8420) -> int:
+def main(*, workspace_arg: Optional[str] = None, aircraft_arg: Optional[str] = None, serve: bool = False,
+         port: int = 8420) -> int:
     # The protocol owns the real stdout; everything else written to fd 1 goes to stderr.
     proto = os.fdopen(os.dup(1), "w", encoding="utf-8", buffering=1)
     os.dup2(2, 1)
@@ -143,6 +208,6 @@ def main(*, workspace_arg: Optional[str] = None, serve: bool = False, port: int 
         from ..server import run_server
         threading.Thread(target=run_server, args=(None, workspace_arg, port, True), daemon=True,
                          name="eis-http").start()
-    server = Server(workspace_arg=workspace_arg)
+    server = Server(workspace_arg=workspace_arg, aircraft_arg=aircraft_arg)
     serve_stdio(server, sys.stdin, proto)
     return 0

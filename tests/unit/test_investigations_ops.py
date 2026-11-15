@@ -194,15 +194,26 @@ def test_notebook_round_trip(research_ws):
 # ── aircraft and documents (§4.4) ─────────────────────────────────────────
 
 def test_aircraft(registry_server):
+    """D10: the record is the registry's; every workspace belongs to one."""
     h = registry_server
     _ok(rpc(h, "create_workspace", {"name": "A", "engine_model": "916iS"}))
     a = _ok(rpc(h, "aircraft_get", {}))
     assert a["engine_model"] == "916iS" and "propeller" in [f["key"] for f in a["fields"]]
-    s = _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop", "prop_controller": "Test ctl"}}))
-    assert s["aircraft"]["propeller"] == "Test prop"
-    assert _ok(rpc(h, "aircraft_get", {}))["aircraft"]["prop_controller"] == "Test ctl"
+    assert a["aircraft"]["name"] == "Rotax 916 iS" and a["notes"] == ""
+    assert [w["name"] for w in a["workspaces"]] == ["A"]
+    s = _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop", "prop_controller": "Test ctl",
+                                                 "name": "My Sling"}, "notes": "# Notes\n\nGovernor replaced.\n"}))
+    assert s["aircraft"]["propeller"] == "Test prop" and s["notes"].startswith("# Notes")
+    got = _ok(rpc(h, "aircraft_get", {}))
+    assert got["aircraft"]["prop_controller"] == "Test ctl" and got["aircraft"]["name"] == "My Sling"
     bad = rpc(h, "aircraft_set", {"aircraft": {"registration": "N1"}})
     assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
+    rel = rpc(h, "aircraft_set", {"aircraft": {"documents_dirs": ["relative/path"]}})
+    assert not rel["ok"] and "absolute" in rel["error"]["message"]
+    # A second workspace joins the only aircraft.
+    _ok(rpc(h, "create_workspace", {"name": "B", "engine_model": "916iS"}))
+    every = _ok(rpc(h, "list_aircraft", {}))
+    assert len(every) == 1 and sorted(w["name"] for w in every[0]["workspaces"]) == ["A", "B"]
 
 
 def test_documents_paged(registry_server):

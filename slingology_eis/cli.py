@@ -890,7 +890,8 @@ def cmd_mcp(args) -> int:
     of acceptance 8: the same façade, the same JSON)."""
     from .investigations import mcp_server, mcp_tools
     if args.mcp_action in (None, "serve"):
-        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), serve=args.serve, port=args.port)
+        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft,
+                               serve=args.serve, port=args.port)
     if args.mcp_action == "tools":
         if args.json:
             print(json.dumps([t.definition() for t in mcp_tools.TOOLS], indent=2, ensure_ascii=False))
@@ -905,7 +906,7 @@ def cmd_mcp(args) -> int:
         tool_args = json.loads(args.arguments) if args.arguments else {}
     except ValueError as e:
         raise CliUsageError(f"arguments are a JSON object: {e}")
-    server = mcp_server.Server(workspace_arg=getattr(args, "workspace", None))
+    server = mcp_server.Server(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft)
     out = server.call_tool(args.tool, tool_args)
     if out.get("isError"):
         print(out["content"][0]["text"], file=sys.stderr)
@@ -1346,6 +1347,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("arguments", nargs="?", help="call: the tool's arguments as a JSON object")
     p.add_argument("--serve", action="store_true", help="Also start the web server in the same process")
     p.add_argument("--port", type=int, default=8420, help="--serve: port on 127.0.0.1 (default: 8420)")
+    p.add_argument("--aircraft", help="The aircraft (id or name) whose workspace the tools open (Spec 16 D10); "
+                                      "default: the registry's only aircraft, else the most recently opened")
     p.set_defaults(func=cmd_mcp)
 
     return parser

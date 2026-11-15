@@ -74,7 +74,10 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("studies/*.json", "carried", "Research studies (Spec 06 §10), notebooks included (Spec 16 §5)"),
     ("inbox.json", "carried", "Research inbox: candidates and their resolutions (Spec 16 §6)"),
     ("inbox_cache.json", "derived", "The inbox scan's descriptor cache (Spec 16 §6); recomputed"),
-    ("aircraft.json", "carried", "Aircraft document (Spec 16 §4.4)"),
+    # Spec 16 D10: the aircraft record is the registry's; the export writes
+    # its fields as aircraft.json (no documents_dirs, no notes). A
+    # workspace-level aircraft.json is Session D's, migrated on open.
+    ("aircraft.json", "retired", "Session D's per-workspace aircraft document; now the registry's aircraft record"),
     ("documents/*", "local", "The user's own documents (manuals, bulletins; Spec 16 §4.2): their copies, not shared"),
     ("exclusions.json", "carried", "Log admission record, re-keyed by source_key (§7.5)"),
     ("manifest.json", "manifest", "Workspace name and engine model go into provenance; log_folders are local"),
@@ -536,6 +539,14 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
                      "blanked; file names neutral; flight ids recomputed. Dates, times, engine hours and your "
                      "own text are unchanged.")
 
+    # Spec 16 §4.4: the aircraft's fields travel; its documents_dirs and notes don't.
+    from . import aircraft as _aircraft
+    ac = _aircraft.of_workspace(ws_dir.parent.parent, manifest.id)
+    if ac is not None:
+        docs["aircraft.json"] = _aircraft.exported(ac)
+        if anonymise:   # an engine serial and a pilot-chosen name can identify the aircraft
+            docs["aircraft.json"].update(engine_serial="", name=_aircraft.engine_label(ac["engine_model"]))
+
     workspace_json = {
         "format": FORMAT, "format_version": FORMAT_VERSION,
         "provenance": {
@@ -757,7 +768,7 @@ def summarize(contents: ExportContents) -> dict:
 # ── Import ───────────────────────────────────────────────────────────────────
 
 def import_workspace(registry_path: Path, workspaces_root: Path, contents: ExportContents,
-                     name: Optional[str] = None) -> ws.WorkspaceManifest:
+                     name: Optional[str] = None, aircraft_id: Optional[str] = None) -> ws.WorkspaceManifest:
     """§7.4 steps 2–3: a new workspace holding the export's documents and
     its sender manifest; an export folder's logs/ is linked. Never
     touches an existing workspace."""
@@ -768,9 +779,13 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
     engine_model = prov.get("engine_model") or ""
     ws.check_engine_model(engine_model, prov.get("workspace_name") or "")
     name = (name or f"{prov.get('workspace_name') or 'Workspace'} (imported)").strip()
-    manifest = ws.create_workspace(registry_path, workspaces_root, name, engine_model)
-    ws_dir = workspaces_root / manifest.id
     docs = copy.deepcopy(contents.documents)
+    # Spec 16 §4.4: the sender's aircraft fields seed (or find) the aircraft.
+    ac_fields = docs.pop("aircraft.json", None)
+    ac_fields = ac_fields if isinstance(ac_fields, dict) else None
+    manifest = ws.create_workspace(registry_path, workspaces_root, name, engine_model, aircraft_id=aircraft_id,
+                                   aircraft_fields=ac_fields)
+    ws_dir = workspaces_root / manifest.id
 
     carried_settings = docs.pop("settings.json", {}) or {}
     settings = ws.load_workspace_settings(ws_dir)

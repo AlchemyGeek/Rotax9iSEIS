@@ -1800,7 +1800,7 @@ def op_create_workspace(params: dict, ctx: dict) -> Any:
         manifest = ws.create_workspace(
             ctx["registry_path"], ctx["workspaces_root"],
             params["name"], params["engine_model"],
-            primary_tail_number=params.get("tail_number"),
+            primary_tail_number=params.get("tail_number"), aircraft_id=params.get("aircraft_id"),
         )
     except ValueError as e:
         raise RpcError("BAD_PARAMS", str(e))
@@ -1932,7 +1932,8 @@ def op_import_workspace(params: dict, ctx: dict) -> Any:
     from . import workspace_export as wx
     try:
         contents = _export_contents(params, ctx)
-        manifest = wx.import_workspace(ctx["registry_path"], ctx["workspaces_root"], contents, name=params.get("name"))
+        manifest = wx.import_workspace(ctx["registry_path"], ctx["workspaces_root"], contents, name=params.get("name"),
+                                       aircraft_id=params.get("aircraft_id"))
     except wx.ImportRefused as e:
         raise RpcError("IMPORT_REFUSED", str(e))
     except ValueError as e:
@@ -3137,7 +3138,7 @@ def _investigation_op(name: str):
 
 
 for _name in ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-              "study_finish", "aircraft_get", "aircraft_set", "documents_list", "document_read", "document_add",
+              "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "document_add",
               "document_remove", "inbox_scan", "inbox_list", "inbox_resolve"):
     _OPS[_name] = _investigation_op(_name)
 
@@ -3188,6 +3189,9 @@ def _open_data_root(ctx: dict, workspace_arg: Optional[str] = None) -> None:
         ctx["workspace_dir"], ctx["active_workspace_id"] = loc.root, None
         return
     ctx.pop("data_location_missing", None)
+    # Spec 16 §4.4: every workspace belongs to an aircraft (idempotent).
+    from . import aircraft as _aircraft
+    _aircraft.ensure(loc.root)
     # Spec 02 §5.8.1: a configured location wins; and outside a developer
     # checkout (an installed wheel, the browser) the default root is used as
     # it is — the legacy single-workspace fallback is a checkout's alone.

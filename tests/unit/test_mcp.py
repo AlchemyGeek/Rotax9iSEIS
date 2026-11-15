@@ -25,7 +25,8 @@ from slingology_eis.investigations import mcp_tools as T
 from tests.unit.test_research_ops import FULL_POWER, FP_START, _import, _ok
 from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noqa: F401 — fixture
 
-WRITING = {"code_run", "study_create", "cell_append", "study_finish", "inbox_resolve"}
+WRITING = {"code_run", "study_create", "cell_append", "study_finish", "inbox_resolve", "workspace_use"}
+TOOL_COUNT = 26
 
 
 @pytest.fixture
@@ -100,7 +101,7 @@ def test_every_read_tool_is_its_operation_trimmed(ws):
     h, ids, sid, _ws_id, _home = ws
     server = M.Server()
     cases = _read_cases(ids, sid)
-    assert {c[0] for c in cases} | WRITING == set(T.BY_NAME)
+    assert {c[0] for c in cases} | WRITING | set(T.SESSION_TOOLS) == set(T.BY_NAME)
     for name, args, shape in cases:
         got, seen = _tool(server, name, args)
         assert tuple(op for op, _ in seen) == T.BY_NAME[name].ops, name
@@ -177,7 +178,7 @@ def test_annotations_mark_writing_tools():
         assert a["readOnlyHint"] is (t.name not in WRITING), t.name
         assert a["openWorldHint"] is False and a["destructiveHint"] is False
         assert t.definition()["inputSchema"]["type"] == "object"
-    assert len(T.TOOLS) == 24
+    assert len(T.TOOLS) == TOOL_COUNT
 
 
 def test_no_workspace_yet(isolated_packaged_home):
@@ -215,7 +216,7 @@ def test_stdio_subprocess(ws):
                        capture_output=True, text=True, env=env, timeout=120)
     lines = [json.loads(x) for x in p.stdout.splitlines()]   # nothing but protocol on stdout
     assert [m["id"] for m in lines] == [1, 2, 3], p.stderr
-    assert len(lines[1]["result"]["tools"]) == 24
+    assert len(lines[1]["result"]["tools"]) == TOOL_COUNT
     body = lines[2]["result"]["structuredContent"]
     assert body["workspace_id"] == ws_id and body["result"]["flight_id"] == ids[0]
 

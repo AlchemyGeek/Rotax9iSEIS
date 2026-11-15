@@ -5,7 +5,7 @@ host's own file doesn't grow by a feature's worth of code.
 
     code_run                                   (D3 — server host only)
     study_cells_append / _rerun / _accept / _discard, study_finish   (D4)
-    aircraft_get / aircraft_set                (§4.4)
+    aircraft_get / aircraft_set / list_aircraft (§4.4 — the registry's record, D10)
     documents_list / document_read / document_add / document_remove
     inbox_scan / inbox_list / inbox_resolve    (D5)
 
@@ -21,7 +21,7 @@ from .. import host as H
 from .. import workspace as ws
 from ..research import studies as rs
 from ..research.rules import RuleError
-from . import aircraft as AC
+from .. import aircraft as AC
 from . import bench as B
 from . import documents as DOC
 from . import inbox as IB
@@ -70,7 +70,7 @@ def _run_code(ctx: dict, doc: dict, cell_id: str, source: str, timeout_s=None, m
         return B.run_cell(source=source, cell_id=cell_id, ws_dir=ctx["workspace_dir"],
                           files_dir=NB.files_dir(ctx["workspace_dir"], doc["study_id"]),
                           scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), engine_cfg=engine_cfg,
-                          engine_name=engine_name, aircraft=AC.load(ctx["workspace_dir"]),
+                          engine_name=engine_name, aircraft=_aircraft_for_bench(ctx),
                           assignments=H._assignments(ctx), study=study, cap=B.caps(timeout_s, memory_mb))
     except B.BenchError as e:
         raise _err(e)
@@ -267,22 +267,70 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
 
 # ── Aircraft and documents (§4.4, §2.4 layer 4) ────────────────────────────
 
+def _root(ctx: dict) -> Path:
+    return Path(ctx["registry_path"]).parent
+
+
+def _aircraft(ctx: dict, aircraft_id=None) -> dict:
+    try:
+        if aircraft_id:
+            return AC.load(_root(ctx), aircraft_id)
+        H._require_active(ctx)
+        ac = AC.of_workspace(_root(ctx), ctx["active_workspace_id"])
+    except AC.AircraftError as e:
+        raise _err(e)
+    if ac is None:
+        raise H.RpcError("NOT_FOUND", "this workspace belongs to no aircraft")
+    return ac
+
+
+def _aircraft_for_bench(ctx: dict) -> dict:
+    ac = AC.of_workspace(_root(ctx), ctx.get("active_workspace_id")) or {}
+    out = {k: ac.get(k, "") for k in ("name", "engine_model") + AC.KEYS}
+    out["notes"] = AC.read_notes(_root(ctx), ac["id"]) if ac.get("id") else ""
+    return out
+
+
+def _with_workspaces(ctx: dict, ac: dict) -> list[dict]:
+    reg = {e.id: e for e in ws.load_registry(ctx["registry_path"]).workspaces}
+    return [{"id": w, "name": reg[w].name, "engine_model": reg[w].engine_model,
+             "flight_count": reg[w].flight_count, "last_opened_at": reg[w].last_opened_at}
+            for w in ac["workspaces"] if w in reg]
+
+
 def op_aircraft_get(params: dict, ctx: dict) -> Any:
-    """The aircraft document, its field list, and what Settings → Log
-    channels holds (the channel assignments)."""
-    H._require_active(ctx)
-    settings = ws.load_workspace_settings(ctx["workspace_dir"])
-    _cfg, engine_name = H._current_engine(ctx)
-    return {"aircraft": AC.load(ctx["workspace_dir"]), "fields": AC.field_list(), "engine_model": engine_name,
-            "channel_assignments": settings.channel_assignments}
+    """The aircraft record (§4.4): the active workspace's aircraft, or
+    `aircraft_id`'s; with its notes.md whole, its workspaces, the field
+    list, and — for the active workspace — what Settings → Log channels
+    holds (the channel assignments)."""
+    ac = _aircraft(ctx, params.get("aircraft_id"))
+    out = {"aircraft": ac, "notes": AC.read_notes(_root(ctx), ac["id"]), "fields": AC.field_list(),
+           "workspaces": _with_workspaces(ctx, ac), "engine_model": ac["engine_model"]}
+    if ctx.get("active_workspace_id") and ctx["active_workspace_id"] in ac["workspaces"]:
+        settings = ws.load_workspace_settings(ctx["workspace_dir"])
+        out["channel_assignments"] = settings.channel_assignments
+    return out
 
 
 def op_aircraft_set(params: dict, ctx: dict) -> Any:
-    H._require_active(ctx)
+    """Set fields of the record (the S14 fields, `name`, `documents_dirs`)
+    and/or its notes (`notes`, the whole notes.md)."""
+    ac = _aircraft(ctx, params.get("aircraft_id"))
     try:
-        return {"aircraft": AC.save(ctx["workspace_dir"], params.get("aircraft") or {}), "fields": AC.field_list()}
+        if params.get("aircraft"):
+            ac = AC.update(_root(ctx), ac["id"], params["aircraft"])
+        if params.get("notes") is not None:
+            if not isinstance(params["notes"], str):
+                raise H.RpcError("BAD_PARAMS", "notes is the whole notes.md as text")
+            AC.write_notes(_root(ctx), ac["id"], params["notes"])
     except AC.AircraftError as e:
-        raise H.RpcError("BAD_PARAMS", str(e))
+        raise _err(e)
+    return op_aircraft_get({"aircraft_id": ac["id"]}, ctx)
+
+
+def op_list_aircraft(params: dict, ctx: dict) -> Any:
+    """Every aircraft in the registry with its workspaces (D10)."""
+    return [{**ac, "workspaces": _with_workspaces(ctx, ac)} for ac in AC.list_aircraft(_root(ctx))]
 
 
 def op_documents_list(params: dict, ctx: dict) -> Any:
@@ -400,6 +448,6 @@ def ipynb_export(ctx: dict, doc: dict) -> bytes:
 
 
 OPS = ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-       "study_finish", "aircraft_get", "aircraft_set", "documents_list", "document_read", "document_add",
+       "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "document_add",
        "document_remove", "inbox_scan", "inbox_list", "inbox_resolve")
 
