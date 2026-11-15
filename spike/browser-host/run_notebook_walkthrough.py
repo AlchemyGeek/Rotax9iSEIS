@@ -1,6 +1,8 @@
 """
-Browser-mode walk-through of an investigation notebook on the Research page
-(Spec 16 §5.3, D8; acceptance 8 and 12's page clauses), driven through the
+Browser-mode walk-through of Spec 16 Session F's pages — an investigation notebook on
+the Research page (§5.3, D8; acceptance 8 and 12's page clauses), and with
+logs the Flights identification and names, Settings → Aircraft / Research
+and the Research inbox (§6) — driven through the
 real UI of the static site in the installed Chrome (Playwright, headless).
 
     .venv/bin/python spike/browser-host/run_notebook_walkthrough.py --notebook NB.zip \
@@ -120,6 +122,50 @@ def main() -> int:
                 page.locator("tr").filter(has_text="20").first.wait_for(timeout=600000)
                 time.sleep(2)
                 step("logs analysed in the browser", True, logs=len(args.with_logs))
+
+            if args.with_logs:
+                cells = page.get_by_test_id("flight-route-cell")
+                cells.first.wait_for(timeout=60000)
+                texts = cells.all_inner_texts()
+                step("Flights rows show local time with zone and takeoffs/landings",
+                     all(re.search(r"\d\d:\d\d [A-Z]{2,4}", t) and "takeoff" in t for t in texts),
+                     rows=len(texts), with_route=sum(" – " in t for t in texts))
+                cells.first.get_by_test_id("flight-name").click()
+                page.get_by_test_id("flight-name-input").fill("Walkthrough name")
+                page.get_by_test_id("flight-name-input").press("Enter")
+                page.get_by_text("Walkthrough name").first.wait_for(timeout=30000)
+                page.get_by_label("Find a flight").fill("walkthrough")
+                page.get_by_test_id("flight-find").get_by_role("button", name="Find").click()
+                page.get_by_test_id("flight-find-summary").wait_for(timeout=60000)
+                step("a name is set in place and Find a flight finds it (flights_find in the browser)",
+                     page.get_by_test_id("flight-route-cell").count() == 1
+                     and "Walkthrough name" in page.get_by_test_id("flight-route-cell").first.inner_text())
+
+                page.goto(url + "#/settings?tab=aircraft")
+                page.get_by_test_id("documents-extension-only").wait_for(timeout=30000)
+                page.get_by_label("Propeller", exact=True).fill("Test propeller")
+                page.get_by_test_id("aircraft-save").click()
+                page.get_by_test_id("aircraft-saved").wait_for(timeout=30000)
+                step("Settings → Aircraft saves; documents folders greyed 'extension only'",
+                     page.get_by_label("Add a documents folder").count() == 0)
+                page.goto(url + "#/settings?tab=research")
+                page.get_by_test_id("sensitivity-curious").click()
+                page.get_by_test_id("sensitivity-saved").wait_for(timeout=30000)
+                page.get_by_test_id("sensitivity-normal").click()
+                step("Settings → Research saves the sensitivity", True)
+
+                page.goto(url + "#/research")
+                page.get_by_test_id("inbox").wait_for(timeout=60000)
+                page.get_by_test_id("inbox-install").wait_for(timeout=300000)
+                n = page.get_by_test_id("inbox-candidate").count()
+                step("the inbox is on Research home in the browser, with the install invitation", True, candidates=n,
+                     scan=page.get_by_test_id("inbox-scan").inner_text() if page.get_by_test_id("inbox-scan").count() else None)
+                if n:
+                    page.get_by_test_id("inbox-candidate").first.get_by_test_id("inbox-mark-watch").click()
+                    page.get_by_label("Note").fill("walkthrough")
+                    page.get_by_test_id("inbox-mark-confirm").click()
+                    page.wait_for_function("() => document.querySelector('[data-testid=inbox-candidate]')?.dataset.status === 'watch'", timeout=30000)
+                    step("a candidate is marked (watch, with a note)", True)
 
             page.goto(url + "#/research")
             page.get_by_test_id("import-study-input").set_input_files(args.notebook)

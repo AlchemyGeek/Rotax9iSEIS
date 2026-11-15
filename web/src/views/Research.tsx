@@ -6,6 +6,7 @@ import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import type { SlicePresets, StudySummary } from "../types/contract";
 import { stashStudySeed } from "../lib/research";
 import { isNotebookView } from "../components/research/NotebookView";
+import { Inbox } from "../components/research/Inbox";
 import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY } from "../components/research/ui";
 
 const client = getEngineClient();
@@ -102,6 +103,8 @@ export function Research() {
         {noWorkspace && <div style={NOTICE}>Open or create a workspace first — Research works on the flights of the active workspace.</div>}
         {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
         {importNote && <div style={NOTICE}>{importNote}</div>}
+
+        {!noWorkspace && <Inbox />}
 
         <section style={PANEL}>
           <div style={PANEL_TITLE}>Studies {studies && <span style={MUTED}>({studies.length})</span>}</div>

@@ -75,7 +75,7 @@ export function presetForMetric(metricId: string): string {
 
 export interface StudySeed {
   name: string;
-  from: "flight" | "trends" | "event" | "preset";
+  from: "flight" | "trends" | "event" | "preset" | "inbox";
   selection: StudySelection;
   slice_rules: (SliceRule | string)[];
   hand_slices: HandSlice[];
@@ -146,6 +146,37 @@ export function seedFromTrend(args: { metricId: string; label: string; recentFli
     tests: [{ test_id: "groups", params: { descriptor: `${ch}.median` }, channels: [ch] }],
     view: { anchor: "crossing", channels: [ch, "rpm"] },
     notes: `Started from the Trends card for ${args.label}.`,
+  };
+}
+
+// Spec 16 §6 (Session F) — Run the question by hand: an inbox candidate as
+// a hand study over its preset, the recent flights it fired on against the
+// rest, with the test that matches what fired (a recurring cycle → cycling;
+// a shift → groups on the descriptor; slices grouping apart → unusual).
+export function seedFromInbox(args: {
+  candidateId: string; kind: string; preset: string; presetName: string; descriptors: string[]; summary: string;
+  recentFlightIds: string[]; allFlightIds: string[];
+}): StudySeed {
+  const [channel] = (args.descriptors[0] ?? "rpm.swing").split(".");
+  const recent = new Set(args.recentFlightIds);
+  const reference = args.allFlightIds.filter((f) => !recent.has(f));
+  const test: StudyTest = args.kind === "recurring"
+    ? { test_id: "cycling", params: {}, channels: [channel] }
+    : args.kind === "shift"
+      ? { test_id: "groups", params: { descriptor: args.descriptors[0] }, channels: [channel] }
+      : { test_id: "unusual", params: {}, channels: [...new Set(args.descriptors.map((d) => d.split(".")[0]))] };
+  return {
+    name: `${args.presetName}: ${args.descriptors.join(", ")} — from the inbox`,
+    from: "inbox",
+    selection: {
+      mode: "all",
+      split: reference.length ? { by: "flights", groups: [{ label: "reference flights", flights: reference }, { label: "recent flights", flights: args.recentFlightIds }] } : null,
+    },
+    slice_rules: [args.preset],
+    hand_slices: [],
+    tests: [test],
+    view: { anchor: "crossing", channels: [channel] },
+    notes: `Started from inbox candidate ${args.candidateId}: ${args.summary}`,
   };
 }
 
