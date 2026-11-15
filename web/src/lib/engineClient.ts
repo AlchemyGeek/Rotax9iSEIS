@@ -66,6 +66,7 @@ import type {
   StudyImportResult,
   StudySelection,
   StudySummary,
+  FlightFindResult, AircraftView, AircraftRecord, AircraftWorkspaceRef, InboxStatus, InboxCandidate, InboxListing,
   UserReference,
 } from "../types/contract";
 import { targetLabel } from "../types/contract";
@@ -280,6 +281,17 @@ export interface EngineClient {
   // Spec 16 §5.1 — a notebook's re-run (D4 semantics) and its pending outputs; needs features.bench.
   // `source: "external"` keeps outputs a kernel outside EIS saved in place (D14).
   rerunStudyCells(studyId: string): Promise<NotebookRerunResult>;
+  // Spec 16 Session F — flights by name and words, the aircraft record, the inbox (both hosts).
+  flightSetName(flightId: string, name: string | null): Promise<{ flight_id: string; name: string | null; notes: string | null }>;
+  flightsFind(description: string): Promise<FlightFindResult>;
+  /** Work out the route, local times and takeoffs/landings of flights lacking them (reads each such log once). */
+  identifyFlights(): Promise<number>;
+  aircraftGet(aircraftId?: string): Promise<AircraftView>;
+  aircraftSet(args: { aircraft_id?: string; aircraft?: Record<string, unknown>; notes?: string }): Promise<AircraftView>;
+  aircraftAssign(args: { workspace_id: string; aircraft_id?: string; new_aircraft?: { name: string } }): Promise<AircraftView>;
+  listAircraft(): Promise<(AircraftRecord & { workspaces: AircraftWorkspaceRef[] })[]>;
+  inboxList(args?: { status?: InboxStatus[]; scan?: "auto" | "never" | "always" }): Promise<InboxListing>;
+  inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ candidate: InboxCandidate }>;
   acceptStudyCells(studyId: string, opts?: { cell_ids?: string[]; source?: "rerun" | "external" }): Promise<{ study: StudySummary; cells: string[] }>;
   discardStudyCells(studyId: string, cellIds?: string[]): Promise<{ study: StudySummary; cells: string[] }>;
   runStudyOnMyFlights(studyId: string): Promise<Study>;
@@ -805,6 +817,34 @@ export class LocalServerClient implements EngineClient {
   }
   rerunStudyCells(studyId: string) {
     return this.rpc<NotebookRerunResult>("study_cells_rerun", { study_id: studyId });
+  }
+  flightSetName(flightId: string, name: string | null) {
+    return this.rpc<{ flight_id: string; name: string | null; notes: string | null }>("flight_set_name", { flight_id: flightId, name: name ?? "" });
+  }
+  flightsFind(description: string) {
+    return this.rpc<FlightFindResult>("flights_find", { description });
+  }
+  async identifyFlights() {
+    const rows = await this.rpc<{ ident?: unknown }[]>("list_flights", { identify: true });
+    return rows.filter((r) => r.ident).length;
+  }
+  aircraftGet(aircraftId?: string) {
+    return this.rpc<AircraftView>("aircraft_get", aircraftId ? { aircraft_id: aircraftId } : {});
+  }
+  aircraftSet(args: { aircraft_id?: string; aircraft?: Record<string, unknown>; notes?: string }) {
+    return this.rpc<AircraftView>("aircraft_set", args);
+  }
+  aircraftAssign(args: { workspace_id: string; aircraft_id?: string; new_aircraft?: { name: string } }) {
+    return this.rpc<AircraftView>("aircraft_assign", args);
+  }
+  listAircraft() {
+    return this.rpc<(AircraftRecord & { workspaces: AircraftWorkspaceRef[] })[]>("list_aircraft", {});
+  }
+  inboxList(args: { status?: InboxStatus[]; scan?: "auto" | "never" | "always" } = {}) {
+    return this.rpc<InboxListing>("inbox_list", args);
+  }
+  inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }) {
+    return this.rpc<{ candidate: InboxCandidate }>("inbox_resolve", args);
   }
   acceptStudyCells(studyId: string, opts: { cell_ids?: string[]; source?: "rerun" | "external" } = {}) {
     return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_accept", { study_id: studyId, ...opts });

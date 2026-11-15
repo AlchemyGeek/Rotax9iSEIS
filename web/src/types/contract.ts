@@ -782,6 +782,9 @@ export interface WorkspaceSettings {
   // this is the one place already round-tripped through the local
   // server scoped to exactly one workspace.
   trends_detail_strips?: Record<string, boolean>;
+  // Spec 16 §6 (D5): the Research inbox's sensitivity (Settings → Research); absent = "normal".
+  research_sensitivity?: "quiet" | "normal" | "curious";
+  channel_assignments?: Record<string, unknown>;
 }
 
 // Spec 14 v0.13 §5 — a results-affecting setting that differs from
@@ -890,6 +893,15 @@ export interface FlightTableRow {
   different_tail_number?: string;
   filename: string;
   log_folder: string;
+  // Spec 16 §4.4 / Spec 03 §5.1 (Session F): the flight's identification
+  // (computed on Sync) and the pilot's name for it.
+  identified?: boolean; // false: not worked out yet (a flight stored before Session E; Sync or Identify does it)
+  route?: string[];
+  start_local?: string | null;
+  tz_abbrev?: string | null;
+  takeoffs?: number | null;
+  landings?: number | null;
+  name?: string | null;
 }
 
 export interface FlightsTableFixture {
@@ -1040,6 +1052,7 @@ export interface HostCapabilities {
     research?: boolean; // Spec 06 §11 — absent on a host older than Research
     investigations?: boolean; // Spec 16 — notebooks and the inbox (both hosts)
     bench?: boolean; // Spec 16 D3/D8 — runs notebook code (server host only)
+    documents?: boolean; // Spec 16 D11 — reads the aircraft's documents folders (server host only)
   };
 }
 
@@ -1727,4 +1740,84 @@ export interface ResearchProgress {
   phase?: "starting" | "slicing";
   done?: number;
   total?: number;
+}
+
+// ── Spec 16 (Session F): flight search, the aircraft record, the inbox ─────
+
+export interface FlightFindCandidate {
+  flight_id: string;
+  score: number;
+  matched: string[];
+  local_date: string;
+  start_local: string | null;
+  route: string | null;
+  takeoffs: number | null;
+  landings: number | null;
+  name: string | null;
+}
+
+export interface FlightFindResult {
+  description: string;
+  understood: { dates: string[]; months: string[]; weekdays: string[]; landings: number | null; takeoffs: number | null;
+    airports: Record<string, string[]>; other_words: string[] };
+  candidates: FlightFindCandidate[];
+  total: number;
+}
+
+export interface AircraftRecord {
+  id: string;
+  name: string;
+  engine_model: string;
+  documents_dirs: string[];
+  workspaces: string[];
+  created?: string;
+  updated?: string;
+  [field: string]: unknown;
+}
+
+export interface AircraftWorkspaceRef {
+  id: string;
+  name: string;
+  engine_model: string;
+  flight_count: number;
+  last_opened_at: string | null;
+}
+
+export interface AircraftView {
+  aircraft: AircraftRecord;
+  notes: string;
+  fields: { key: string; label: string; hint: string }[];
+  workspaces: AircraftWorkspaceRef[];
+  engine_model: string;
+}
+
+export type InboxStatus = "new" | "investigating" | "nothing-here" | "watch" | "acted";
+
+export interface InboxCandidate {
+  id: string;
+  key: string;
+  preset: string;
+  preset_name: string;
+  kind: "recurring" | "shift" | "group" | string;
+  descriptors: string[];
+  fired: { rule: string; hits?: number; of?: number; n?: number; m?: number; [k: string]: unknown };
+  summary: string;
+  evidence: { columns: string[]; rows: (string | number | boolean | null)[][] };
+  slices: string[];
+  window: { flight_ids: string[]; hours_from?: number; hours_to?: number };
+  status: InboxStatus;
+  sensitivity: "quiet" | "normal" | "curious";
+  parameters: { n: number; m: number; shift_z: number; group_z: number };
+  created: string;
+  last_seen: string;
+  holds: boolean;
+  study_id: string | null;
+  note: string | null;
+  resolved_at: string | null;
+}
+
+export interface InboxListing {
+  candidates: InboxCandidate[];
+  counts: Record<InboxStatus, number>;
+  last_scan: { at: string; sensitivity: string; flights: number; parameters: Record<string, unknown>; [k: string]: unknown } | null;
 }

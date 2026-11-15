@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
 import { SeverityBadge } from "../components/SeverityBadge";
+import { FlightName } from "../components/FlightName";
 import { ExcludeConfirmDialog } from "../components/ExcludeDialog";
 import { flightsTable as fixtureFlights, workspaceManifest as fixtureManifest } from "../lib/fixtures";
 import { getEngineClient, type IngestResult, type UploadFile } from "../lib/engineClient";
@@ -12,7 +13,7 @@ import type { FolderPicking } from "../lib/browserClient";
 import { EXCLUSION_CATEGORY_COLOR, EXCLUSION_CATEGORY_LABEL } from "../lib/exclusions";
 import { SOURCE_FORMAT_LABEL } from "../lib/sourceFormat";
 import type {
-  ExclusionEntry, FlightRowStatus, FlightTableRow, ImportInfo,
+  ExclusionEntry, FlightFindResult, FlightRowStatus, FlightTableRow, ImportInfo,
   InsightSeverity, ScanOptions, ScanProgress, ScanResult, SenderMissingFlight, WorkspaceManifest,
 } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
@@ -27,8 +28,8 @@ const client = getEngineClient();
 const FLIGHT_COLUMNS = (
   <colgroup>
     <col style={{ width: 36 }} />
-    <col style={{ width: "19%" }} />
-    <col style={{ width: "16%" }} />
+    <col style={{ width: "27%" }} />
+    <col style={{ width: "14%" }} />
     <col style={{ width: "10%" }} />
     <col style={{ width: "10%" }} />
     <col style={{ width: "13%" }} />
@@ -97,6 +98,33 @@ type Banner =
   | { kind: "prompt"; newLogs: number; stale: number; uploads: File[] }
   | { kind: "summary"; lines: string[] };
 
+// Spec 16 §4.7: the flight's local start with its zone ("09:12 PDT").
+function localStart(row: FlightTableRow): string | null {
+  if (!row.start_local) return null;
+  const hhmm = row.start_local.slice(11, 16);
+  return `${hhmm} ${row.tz_abbrev || row.start_local.slice(19)}`.trim();
+}
+
+function routeText(row: FlightTableRow): string {
+  return row.route && row.route.length ? row.route.join(" – ") : row.airport;
+}
+
+function countsText(row: FlightTableRow): string | null {
+  if (row.takeoffs == null || row.landings == null) return null;
+  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  return `${n(row.takeoffs, "takeoff")} · ${n(row.landings, "landing")}`;
+}
+
+// What flights_find understood, in words ("2026-10-24, 3 landings, KBLI").
+function understoodText(f: FlightFindResult): string {
+  const u = f.understood;
+  const parts = [...u.dates, ...u.months, ...u.weekdays,
+    ...(u.takeoffs != null ? [`${u.takeoffs} takeoff${u.takeoffs === 1 ? "" : "s"}`] : []),
+    ...(u.landings != null ? [`${u.landings} landing${u.landings === 1 ? "" : "s"}`] : []),
+    ...Object.entries(u.airports).map(([w, codes]) => `${w} → ${codes.join("/")}`)];
+  return parts.join(", ");
+}
+
 function rowKey(row: FlightTableRow): string {
   return row.flight_id ?? (row.source_key ? `log:${row.source_key}` : `upload:${row.upload_key}`);
 }
@@ -163,6 +191,11 @@ export function Flights() {
   // in-progress states for that).
   const [loading, setLoading] = useState(true);
   const [groupBy, setGroupBy] = useState<GroupBy>("date");
+  // Spec 16 D10 (Session F): Find a flight — flights_find, in both hosts.
+  const [findText, setFindText] = useState("");
+  const [finding, setFinding] = useState(false);
+  const [found, setFound] = useState<FlightFindResult | null>(null);
+  const [findError, setFindError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FlightRowStatus | "excluded" | null>(
     (params.get("filter") as FlightRowStatus | "excluded" | null) ?? null
   );
@@ -645,15 +678,57 @@ export function Flights() {
     stale: allRows.filter((r) => r.status === "needs_reanalysis").length,
   };
 
+  async function runFind() {
+    const q = findText.trim();
+    if (!q) { setFound(null); return; }
+    setFinding(true);
+    setFindError(null);
+    try {
+      setFound(await client.flightsFind(q));
+    } catch (e) {
+      setFindError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFinding(false);
+    }
+  }
+  function clearFind() {
+    setFound(null);
+    setFindText("");
+    setFindError(null);
+  }
+  // Flights stored before identification existed get it on the next Sync;
+  // this does it now, on the pilot's word (each such log is read once).
+  const [identifying, setIdentifying] = useState(false);
+  const unidentified = rows.filter((r) => r.flight_id && r.identified === false).length;
+  async function identifyNow() {
+    setIdentifying(true);
+    try {
+      await client.identifyFlights();
+      await refresh();
+    } catch {
+      // the rows stay as they are; Sync will do it
+    } finally {
+      setIdentifying(false);
+    }
+  }
+  function setRowName(fid: string, name: string | null) {
+    setRows((prev) => prev.map((r) => (r.flight_id === fid ? { ...r, name } : r)));
+  }
+
   const filtered = useMemo(() => {
     let out = allRows;
+    if (found) {
+      const byId = new Map(allRows.filter((r) => r.flight_id).map((r) => [r.flight_id!, r]));
+      return found.candidates.map((c) => byId.get(c.flight_id)).filter((r): r is FlightTableRow => !!r);
+    }
     if (idsFilter) out = out.filter((r) => r.flight_id !== null && idsFilter.has(r.flight_id));
     if (statusFilter === "excluded") out = out.filter((r) => r.excluded_reason);
     else if (statusFilter) out = out.filter((r) => r.status === statusFilter);
     return out;
-  }, [allRows, idsFilter, statusFilter]);
+  }, [allRows, idsFilter, statusFilter, found]);
 
   const groups = useMemo(() => {
+    if (found) return filtered.length ? [["Best matches first", filtered] as [string, FlightTableRow[]]] : [];
     const map = new Map<string, FlightTableRow[]>();
     for (const row of filtered) {
       const key = groupBy === "date" ? groupKeyForDate(row) : row.log_folder || "(unknown folder)";
@@ -675,7 +750,7 @@ export function Flights() {
       entries.sort((a, b) => a[0].localeCompare(b[0]));
     }
     return entries;
-  }, [filtered, groupBy]);
+  }, [filtered, groupBy, found]);
 
   const summary = useMemo(() => {
     const flights = rows.filter((r) => r.flight_id !== null);
@@ -1157,6 +1232,18 @@ export function Flights() {
             </button>
           )}
           <div style={{ flexGrow: 1 }} />
+          {!showSkipped && !usingFixture && (
+            <form onSubmit={(e) => { e.preventDefault(); void runFind(); }} style={{ display: "flex", gap: 4 }} data-testid="flight-find">
+              <input
+                value={findText} onChange={(e) => { setFindText(e.target.value); if (!e.target.value) setFound(null); }}
+                placeholder="Find a flight — Oct 24, three landings, Bellingham…" aria-label="Find a flight"
+                style={{ fontSize: 11, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", width: 280 }}
+              />
+              <button type="submit" disabled={finding || !findText.trim()} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 11, cursor: "pointer", border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)" }}>
+                {finding ? "Finding…" : "Find"}
+              </button>
+            </form>
+          )}
           {!showSkipped && (
           <div style={{ display: "flex", gap: 4 }}>
             {(["date", "folder"] as GroupBy[]).map((g) => (
@@ -1210,6 +1297,26 @@ export function Flights() {
             <a href="#" onClick={(e) => { e.preventDefault(); setSelectedIds(new Set()); setBulkConfirming(false); }} style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
               clear selection
             </a>
+          </div>
+        )}
+
+        {!showSkipped && !usingFixture && unidentified > 0 && (
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }} data-testid="identify-flights">
+            Routes, local times and takeoffs/landings aren't worked out yet for {unidentified} flight{unidentified === 1 ? "" : "s"}.{" "}
+            <button type="button" disabled={identifying} onClick={() => void identifyNow()}
+              style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}>
+              {identifying ? "Reading the logs…" : "Work them out now"}
+            </button>
+          </div>
+        )}
+
+        {!showSkipped && (found || findError) && (
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }} data-testid="flight-find-summary">
+            {findError ?? (found!.candidates.length
+              ? `${found!.candidates.length}${found!.total > found!.candidates.length ? ` of ${found!.total}` : ""} flight${found!.candidates.length === 1 ? "" : "s"} for “${found!.description}”${understoodText(found!) ? ` — read as ${understoodText(found!)}` : ""}`
+              : `No flight matches “${found!.description}”${understoodText(found!) ? ` (read as ${understoodText(found!)})` : ""}.`)}
+            {" "}·{" "}
+            <a href="#" onClick={(e) => { e.preventDefault(); clearFind(); }}>show all flights</a>
           </div>
         )}
 
@@ -1273,8 +1380,11 @@ export function Flights() {
                       <td onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" checked={selectedIds.has(fid)} onChange={() => toggleSelected(fid)} />
                       </td>
-                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }}>
-                        {row.date} &middot; {row.airport}
+                      <td className="mono" onClick={() => navigate(`/flights/${fid}`)} style={{ cursor: "pointer" }} data-testid="flight-route-cell">
+                        {row.date}{localStart(row) && <span style={{ color: "var(--text-tertiary)" }}> {localStart(row)}</span>} &middot; {routeText(row)}
+                        {countsText(row) && <div style={{ fontSize: 10, color: "var(--text-tertiary)" }}>{countsText(row)}</div>}
+                        <FlightName flightId={fid} name={row.name} editable={!usingFixture} onSaved={(n) => setRowName(fid, n)} />
+                        {found && (() => { const c = found.candidates.find((x) => x.flight_id === fid); return c?.matched.length ? <div style={{ fontSize: 10, color: "var(--brand-tint)" }}>matched {c.matched.join(", ")}</div> : null; })()}
                         {row.different_tail_number && (
                           <span style={{ marginLeft: 6, fontSize: 10, color: "var(--severity-watch)" }} title="informational only — never excludes">
                             &#9992; {row.different_tail_number}

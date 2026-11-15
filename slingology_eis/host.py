@@ -1193,12 +1193,17 @@ async def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
     pending_logs, stale_ids = (await ws.pending_work_async(workspace_dir, _sources(ctx))) if ctx.get("active_workspace_id") else ([], [])
     stale = set(stale_ids)
 
+    from . import flight_ident as fi
+    names = fi.load_names(workspace_dir)
     rows = []
     for fid in ws.list_flight_ids(workspace_dir):
         fa = ws.load_flight_analysis(workspace_dir, fid)
         if fa is None:
             continue
         src = ws.load_sources(workspace_dir, fid)
+        # Spec 16 §4.4 / Spec 03: the route, local start with its zone,
+        # takeoffs and landings (computed on Sync), and the pilot's name.
+        ident = fi.current(workspace_dir, fa) or {}
         iset = evaluate_insights(fa, fleet, rules, filters=filters)
         insights = [i for t in iset.topics for i in t.get("insights", [])]
         worst = None
@@ -1239,6 +1244,13 @@ async def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
                 if i is not last_import and i.via != (last_import.via if last_import else None)
             } - {"unknown"}),
             "log_folder": last_import.log_folder_path if last_import else "",
+            "identified": bool(ident),
+            "route": list(ident.get("route") or []),
+            "start_local": ident.get("start_local"),
+            "tz_abbrev": ident.get("tz_abbrev"),
+            "takeoffs": ident.get("takeoffs"),
+            "landings": ident.get("landings"),
+            "name": (names.get(fid) or {}).get("name") or None,
         })
     # Spec 03 §5.1 "Unreadable": logs the scan couldn't read or analyse,
     # with the reason — not "Needs analysis", which they'd never leave.
@@ -3144,12 +3156,13 @@ def op_forget_study_finding(params: dict, ctx: dict) -> Any:
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
                "persistent_storage_status": False, "download_url": True, "folder_watching": False,
-               "research": True, "investigations": True, "bench": True},
+               "research": True, "investigations": True, "bench": True, "documents": True},
     # Spec 16 D8: the website renders notebooks and keeps an inbox, but has
-    # no bench — code_run is a server-host operation.
+    # no bench — code_run is a server-host operation — and reads no
+    # documents folders (D11: documents_list / document_read).
     "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
                 "persistent_storage_status": True, "download_url": False, "folder_watching": False,
-                "research": True, "investigations": True, "bench": False},
+                "research": True, "investigations": True, "bench": False, "documents": False},
 }
 
 
@@ -3299,7 +3312,7 @@ def _investigation_op(name: str):
 
 
 for _name in ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-              "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
+              "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
     _OPS[_name] = _investigation_op(_name)
 
 

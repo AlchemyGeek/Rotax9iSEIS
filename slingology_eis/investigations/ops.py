@@ -515,6 +515,32 @@ def op_aircraft_set(params: dict, ctx: dict) -> Any:
     return op_aircraft_get({"aircraft_id": ac["id"]}, ctx)
 
 
+def op_aircraft_assign(params: dict, ctx: dict) -> Any:
+    """Settings → Aircraft (Spec 16 §4.4, Session F): move `workspace_id`
+    (default: the active one) to `aircraft_id`, or to a new aircraft
+    (`new_aircraft: {"name": …}`, the workspace's engine model). Answers
+    with the target's record (aircraft_get)."""
+    root = _root(ctx)
+    wid = params.get("workspace_id") or ctx.get("active_workspace_id")
+    reg = {e.id: e for e in ws.load_registry(ctx["registry_path"]).workspaces}
+    if not wid or wid not in reg:
+        raise H.RpcError("NOT_FOUND", f"no workspace {wid!r} in this registry")
+    new = params.get("new_aircraft")
+    if bool(new) == bool(params.get("aircraft_id")):
+        raise H.RpcError("BAD_PARAMS", "give aircraft_id (an aircraft in this registry) or new_aircraft {\"name\": …}")
+    try:
+        if new:
+            if not isinstance(new, dict):
+                raise H.RpcError("BAD_PARAMS", "new_aircraft is {\"name\": …}")
+            target = AC.create(root, str(new.get("name") or ""), reg[wid].engine_model)
+        else:
+            target = AC.load(root, params["aircraft_id"])
+        AC.assign(root, wid, target["id"])
+    except AC.AircraftError as e:
+        raise _err(e)
+    return op_aircraft_get({"aircraft_id": target["id"]}, ctx)
+
+
 def op_list_aircraft(params: dict, ctx: dict) -> Any:
     """Every aircraft in the registry with its workspaces (D10)."""
     return [{**ac, "workspaces": _with_workspaces(ctx, ac)} for ac in AC.list_aircraft(_root(ctx))]
@@ -632,5 +658,5 @@ def ipynb_export(ctx: dict, doc: dict) -> bytes:
 
 
 OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-       "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
+       "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
 
