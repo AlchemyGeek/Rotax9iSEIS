@@ -622,3 +622,53 @@ def find(rows: list[dict], description: str, today: Optional[date] = None, limit
         "other_words": [w for w, c in airports_by_word.items() if not c],
     }
     return {"description": description, "understood": understood, "candidates": out[:limit], "total": len(out)}
+
+
+# ── §4.7: every time a tool returns is local with its offset ───────────────
+
+# What the caller sends back as a definition (a derived rule's hand slice,
+# a study's slice set) stays as the engine gave it.
+_DEFINITIONS = ("derived_rule", "hand_slices", "slice_rules", "selection", "slice_set", "params")
+_SLICE_ID = _re.compile(r"^([0-9a-f]{16}):.*:(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$")
+
+
+def localise(ws_dir: Path, obj, _cache: Optional[dict] = None):
+    """Label every slice and window in an operation's answer with the
+    flight's local time (§4.7): a dict naming a slice (`slice_id`
+    "<flight>:<rule>:<a>-<b>") or a flight and `start_s` gains
+    `start_local` ("2026-11-11 12:55:22 PST") and `when` ("2026-11-11
+    12:55:22–12:56:19 PST (+06:07–+07:04 into the flight)"). Facts, not
+    analysis: nothing else changes. Returns obj (changed in place)."""
+    cache = {} if _cache is None else _cache
+
+    def ident(fid: str):
+        if fid not in cache:
+            cache[fid] = load(ws_dir, fid)
+        return cache[fid]
+
+    def walk(x, inherited=None):
+        if isinstance(x, list):
+            for v in x:
+                walk(v, inherited)
+            return
+        if not isinstance(x, dict):
+            return
+        own = x.get("flight") or x.get("flight_id")
+        here = own if isinstance(own, str) and _re.match(r"^[0-9a-f]{16}$", own) else inherited
+        fid, a, b = None, None, None
+        m = _SLICE_ID.match(str(x.get("slice_id") or ""))
+        if m:
+            fid, a, b = m.group(1), float(m.group(2)), float(m.group(3))
+        elif here and isinstance(x.get("start_s"), (int, float)) and not isinstance(x.get("start_s"), bool):
+            fid, a = here, float(x["start_s"])
+            b = float(x["end_s"]) if isinstance(x.get("end_s"), (int, float)) else None
+        if fid:
+            i = ident(fid)
+            if i and i.get("start_local"):
+                x["start_local"] = local_clock(i, None, a)
+                x["when"] = window_label(i, a, b)
+        for k, v in x.items():
+            if isinstance(v, (dict, list)) and k not in _DEFINITIONS:
+                walk(v, here)
+    walk(obj)
+    return obj

@@ -27,7 +27,7 @@ from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noq
 
 WRITING = {"code_run", "study_create", "cell_append", "study_rerun", "study_accept", "study_discard", "study_finish",
            "inbox_resolve", "workspace_use"}
-TOOL_COUNT = 30
+TOOL_COUNT = 31
 
 
 @pytest.fixture
@@ -79,6 +79,7 @@ def _tool(server, name, args, error=False):
 def _read_cases(ids, sid):
     fp = [FULL_POWER]
     return [
+        ("guide", {}, None),
         ("flights_list", {"date_from": "2026-01-02", "limit": 3, "offset": 1}, T.shape_flights),
         ("flights_find", {"description": "January 3"}, None),
         ("flight_get", {"flight_id": ids[0]}, T.shape_flight),
@@ -118,7 +119,15 @@ def test_every_read_tool_is_its_operation_trimmed(ws):
             expected = T.shape_series(args, raw, params)
         else:
             expected = shape(args, raw) if shape else raw
-        assert got == _norm(expected), name
+        assert got == _norm(T.local_only(expected)), name       # §4.7: local times only
+        assert "start_utc" not in json.dumps(got), name
+    # §4.7: slices and windows carry the local time with the zone and the offset into the flight.
+    sl, _ = _tool(server, "slices_build", {"slice_rules": [FULL_POWER], "channels": ["rpm"], "limit": 2})
+    assert all(s["when"].endswith("into the flight)") and "start_time" not in s["context"] for s in sl["slices"]), sl
+    q, _ = _tool(server, "question_run", {"test_id": "cycling", "slice_rules": [FULL_POWER], "channels": ["rpm"]})
+    assert "start_local" in q["columns"] and all("start_local" in r and "when" in r for r in q["rows"])
+    sig, _ = _tool(server, "signal_analyze", {"flight_id": ids[0], "start_s": FP_START, "end_s": FP_START + 60})
+    assert sig["window"]["when"].endswith("into the flight)")
 
 
 def test_caps_refuse_and_say_why(ws):
@@ -212,7 +221,24 @@ def test_jsonrpc_methods(ws):
     init = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                           "params": {"protocolVersion": "2025-06-18", "capabilities": {}}})["result"]
     assert init["protocolVersion"] == "2025-06-18" and init["serverInfo"]["version"] == __version__
-    assert init["capabilities"] == {"tools": {"listChanged": False}} and init["instructions"]
+    assert init["capabilities"] == {"tools": {"listChanged": False}, "prompts": {"listChanged": False}}
+    assert "Call `guide` first" in init["instructions"] and "notebook" in init["instructions"]
+    tools = server.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/list"})["result"]["tools"]
+    assert tools[0]["name"] == "guide"                                  # D13: listed first
+    prompts = server.handle({"jsonrpc": "2.0", "id": 10, "method": "prompts/list"})["result"]["prompts"]
+    assert [p["name"] for p in prompts] == ["investigate", "inbox-item", "before-after", "review-new-flights"]
+    assert prompts[0]["arguments"] == [{"name": "question", "description": prompts[0]["arguments"][0]["description"],
+                                        "required": True}]
+    got = server.handle({"jsonrpc": "2.0", "id": 11, "method": "prompts/get",
+                         "params": {"name": "investigate", "arguments": {"question": "Does rpm hunt at takeoff?"}}})
+    text = got["result"]["messages"][0]["content"]["text"]
+    assert "> Does rpm hunt at takeoff?" in text and "Call `guide` first" in text and "{{" not in text
+    for p in prompts[1:]:
+        args = {a["name"]: "x" for a in p["arguments"]}
+        assert server.handle({"jsonrpc": "2.0", "id": 12, "method": "prompts/get",
+                              "params": {"name": p["name"], "arguments": args}})["result"]["messages"]
+    missing = server.handle({"jsonrpc": "2.0", "id": 13, "method": "prompts/get", "params": {"name": "investigate"}})
+    assert missing["error"]["code"] == -32602
     newer = server.handle({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {"protocolVersion": "2099-01-01"}})
     assert newer["result"]["protocolVersion"] == M.LATEST
     assert server.handle({"jsonrpc": "2.0", "id": 3, "method": "server/discover"})["error"]["code"] == -32601

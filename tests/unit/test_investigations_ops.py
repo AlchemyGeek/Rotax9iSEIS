@@ -287,6 +287,29 @@ def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_h
     assert _ok(rpc(h, "load_study", {"study_id": hand["study_id"]}))["tests"][0]["test_id"] == "cycling"
 
 
+# ── guide (§4.6) ──────────────────────────────────────────────────────────
+
+def test_guide(research_ws):
+    """D13: one document — the method and tool map (guide.md), the notebook
+    rules, the aircraft record and notes, documents, the workspace — and
+    F6: an empty aircraft record is flagged."""
+    h, ids = research_ws
+    g = _ok(rpc(h, "guide", {}))
+    doc = g["document"]
+    for part in ("## 1. The method", "## 2. The tool map", "## 3. The notebook", "## 4. The aircraft",
+                 "## 5. The documents", "## 6. The workspace in use"):
+        assert part in doc, part
+    for form in ('"split": "source"', '{"by": "date", "date": "2026-10-01"}', '"hand_slices"', '"windows"',
+                 "skip_onset_s", '"phase:CLIMB"'):
+        assert form in doc, form
+    assert "aircraft_record_empty" in g["flags"] and "The record is empty" in doc
+    assert g["workspace"]["flights"] == len(ids) and "6 flights" in doc and "Inbox: 0 open" in doc
+    _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop"}, "notes": "Governor adjusted 2026-01-03."}))
+    g2 = _ok(rpc(h, "guide", {}))
+    assert "aircraft_record_empty" not in g2["flags"] and "Governor adjusted 2026-01-03." in g2["document"]
+    assert "- Propeller: Test prop" in g2["document"]
+
+
 # ── aircraft and documents (§4.4) ─────────────────────────────────────────
 
 def test_aircraft(registry_server):

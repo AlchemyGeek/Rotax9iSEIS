@@ -77,6 +77,22 @@ class Tool:
 
 # ── shared shaping ─────────────────────────────────────────────────────────
 
+def local_only(x):
+    """§4.7 (F8): every time a tool returns is the flight's local time with
+    its offset. The operations label slices and windows (`start_local`,
+    `when`); this trim drops what isn't local — `start_utc`, and a
+    `start_time` (the log's own clock) wherever `start_local` stands
+    beside it. Applied to every tool's result."""
+    if isinstance(x, list):
+        return [local_only(v) for v in x]
+    if not isinstance(x, dict):
+        return x
+    d = {k: local_only(v) for k, v in x.items() if k != "start_utc"}
+    if "start_local" in d:
+        d.pop("start_time", None)
+    return d
+
+
 def page(items: list, args: dict, key: str = "rows") -> dict:
     """A page of at most PAGE_ROWS items: offset/limit from the arguments."""
     offset = max(0, int(args.get("offset") or 0))
@@ -180,11 +196,32 @@ def shape_flight(args: dict, g: dict) -> dict:
                                      "message": (i.get("message") or {}).get("text")} for i in t.get("insights") or []],
                        "triggers": [{"type": s.get("type"), "met": s.get("met"), "detail": s.get("detail")}
                                     for s in t.get("trigger_status") or []]})
-    return {"flight_id": fa["flight_id"], "header": fa.get("header"), "source_filename": g.get("source_filename"),
-            "phases": fa.get("phases"), "phase_min": phase_min,
+    ident = g.get("ident") or {}
+    from ..flight_ident import window_label
+
+    def when(a, b=None):
+        return window_label(ident, a, b) if ident.get("start_local") and isinstance(a, (int, float)) else None
+    header = dict(fa.get("header") or {})
+    if ident.get("start_local"):
+        header.update({"start_local": ident.get("start_local"), "end_local": ident.get("end_local"),
+                       "tz": ident.get("tz_abbrev"), "local_date": ident.get("local_date")})
+    events = []
+    for e in fa.get("exceedances") or []:
+        ev = {k: e.get(k) for k in ev_keys if e.get(k) is not None}
+        w = when(e.get("elapsed_s"), (e.get("elapsed_s") or 0) + (e.get("duration_s") or 0)
+                 if isinstance(e.get("elapsed_s"), (int, float)) else None)
+        if w:
+            ev["when"] = w
+        events.append(ev)
+    phases = [{**p, **({"when": when(p.get("start_s"), p.get("end_s"))} if when(p.get("start_s")) else {})}
+              for p in fa.get("phases") or []]
+    route = {k: ident.get(k) for k in ("route", "dep_airport", "arr_airport", "takeoffs", "landings",
+                                       "max_altitude_ft") if ident.get(k) is not None}
+    return {"flight_id": fa["flight_id"], "header": header, "source_filename": g.get("source_filename"), **route,
+            "phases": phases, "phase_min": phase_min,
             "facts": {k: {"value": (v or {}).get("value"), "unit": (v or {}).get("unit")}
                       for k, v in (fa.get("metrics") or {}).items()},
-            "events": [{k: e.get(k) for k in ev_keys if e.get(k) is not None} for e in fa.get("exceedances") or []],
+            "events": events,
             "available_channels": fa.get("available_channels"), "quality": fa.get("quality"),
             "topics": topics, "reference_state": g.get("reference_state")}
 
@@ -291,9 +328,15 @@ def shape_slices(args: dict, ss: dict) -> dict:
     out = {k: ss.get(k) for k in ("count", "flights_selected", "flights_with_slices", "by_source", "windows",
                                   "missing_flights", "unreachable_flights", "selection")}
     out["rules"] = [{"rule_id": r.get("rule_id"), "name": r.get("name")} for r in ss.get("rules") or []]
-    out.update(page([{k: s.get(k) for k in ("slice_id", "flight", "rule_id", "kind", "label", "start_s", "end_s",
-                                            "context", "descriptors")} for s in ss.get("slices") or []],
-                    args, "slices"))
+    def one(s: dict) -> dict:
+        d = {k: s.get(k) for k in ("slice_id", "flight", "rule_id", "kind", "label", "when", "start_s", "end_s",
+                                   "context", "descriptors")}
+        if s.get("when"):          # §4.7: the log's own clock gives way to the local time
+            d["context"] = {k: v for k, v in (s.get("context") or {}).items() if k != "start_time"}
+        else:
+            d.pop("when")
+        return d
+    out.update(page([one(s) for s in ss.get("slices") or []], args, "slices"))
     return out
 
 
@@ -325,7 +368,8 @@ def shape_question(args: dict, r: dict) -> dict:
     out = {k: r.get(k) for k in ("test_id", "question", "finding", "magnitude", "caveats")}
     out.update({"summary": block.get("summary"), "params": block.get("params"),
                 "slice_set": block.get("slice_set"), "references": block.get("references"),
-                "columns": [c.get("id", c.get("label")) if isinstance(c, dict) else c for c in table.get("columns") or []]})
+                "columns": [{"start_time": "start_local"}.get(k, k) for k in
+                            (c.get("key", c.get("label")) if isinstance(c, dict) else c for c in table.get("columns") or [])]})
     out.update(page(table.get("rows") or [], args, "rows"))
     return out
 
@@ -365,7 +409,7 @@ def _peaks(pg: dict) -> list:
 
 
 def shape_signal(args: dict, a: dict) -> dict:
-    out = {k: a.get(k) for k in ("flight_id", "duration_s", "source", "start_time", "date", "channels",
+    out = {k: a.get(k) for k in ("flight_id", "duration_s", "source", "date", "channels",
                                  "missing_channels", "reference", "filled", "prominence_min", "om_limits",
                                  "strip_windows")}
     out["phases"] = a.get("phases")
@@ -381,8 +425,10 @@ def shape_signal(args: dict, a: dict) -> dict:
             if d.get("lag_curve") and d.get("best_lag_s") is not None:
                 diag[ch]["corr_at_best_lag"] = next((c.get("corr") for c in d["lag_curve"]
                                                      if c.get("lag_s") == d["best_lag_s"]), None)
-        out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "duration_s", "context", "descriptors", "windows",
-                                               "numbers", "derived_rule")}
+        out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "when", "duration_s", "context", "descriptors",
+                                               "windows", "numbers", "derived_rule") if k in w}
+        if w.get("when") and isinstance(out["window"].get("context"), dict):
+            out["window"]["context"] = {k: v for k, v in out["window"]["context"].items() if k != "start_time"}
         out["window"]["diagnostics"] = diag
     return out
 
@@ -852,6 +898,16 @@ TOOLS[:0] = [
          {"workspace_id": _S}, _no_op, required=("workspace_id",), writes=True, ops=()),
 ]
 
+# D13: `guide` is listed first — the server's instructions say to call it before anything else.
+TOOLS.insert(0, Tool(
+    "guide", "Read this first",
+    "How to investigate with EIS, in one document: the method (one flight first, then across the flights; the "
+    "mechanism as a hypothesis; alternatives ruled out; what it means and what to do; no verdict words without "
+    "their reference), the tool map with every parameter form and an example, the notebook rules, this "
+    "aircraft's record and the owner's notes, its documents, and the workspace in use (flights, date span, open "
+    "inbox candidates). Call it at the start of every conversation.",
+    {}, lambda args, call: call("guide", {}), ops=("guide",)))
+
 # code_run's façade result is shaped after the call (the images need the raw result).
 _SHAPE_AFTER = {"code_run": shape_code_run, "cell_append": shape_code_run, "study_rerun": shape_rerun}
 
@@ -871,7 +927,7 @@ def call_tool(name: str, args: dict, call: Call, *, engine_version: str, workspa
         return _error(f"{name} needs {', '.join(missing)}.")
     try:
         raw = tool.run(dict(args), call)
-        result = _SHAPE_AFTER[name](args, raw) if name in _SHAPE_AFTER else raw
+        result = local_only(_SHAPE_AFTER[name](args, raw) if name in _SHAPE_AFTER else raw)
     except ToolRefusal as e:
         return _error(str(e))
     except ToolOpError as e:

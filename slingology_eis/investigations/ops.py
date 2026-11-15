@@ -3,6 +3,7 @@ Spec 16 §4.3: the host operations Investigations adds, on the Spec 01 §7
 envelope. host.py registers each one; this module holds them so the
 host's own file doesn't grow by a feature's worth of code.
 
+    guide                                      (D13: method, tool map, aircraft, documents, workspace)
     study_create                               (D12: a notebook, studies/<id>/notebook.ipynb)
     code_run                                   (D3 — server host only; refused without a notebook)
     study_cells_append / _rerun / _accept / _discard, study_finish   (§5.1)
@@ -111,6 +112,128 @@ def op_study_create(params: dict, ctx: dict) -> Any:
         except IB.InboxError as e:
             raise _err(e)
     return NBX.read_view(_save_nb(ctx, nb))
+
+
+# ── guide (D13, §4.6) ──────────────────────────────────────────────────────
+
+GUIDE_FILE = Path(__file__).with_name("guide.md")
+PROMPTS_DIR = Path(__file__).with_name("prompts")
+
+
+def _guide_aircraft(ctx: dict) -> tuple[str, dict]:
+    try:
+        ac = _aircraft(ctx)
+    except H.RpcError:
+        return "No aircraft record for this workspace.\n", {"empty": True}
+    notes = AC.read_notes(_root(ctx), ac["id"]).strip()
+    filled = [(f["label"], ac.get(f["key"])) for f in AC.field_list() if (ac.get(f["key"]) or "").strip()]
+    label = AC.engine_label(ac.get("engine_model") or "")
+    lines = [f"**{ac.get('name')}**" + (f" — {label}" if label and label != ac.get("name") else ""), ""]
+    lines += [f"- {label}: {value}" for label, value in filled]
+    empty = not filled
+    if empty:
+        lines.append("- *The record is empty: no propeller, controller, firmware or avionics. Ask the owner what is "
+                     "fitted (Settings → Aircraft) before naming a component as a cause.*")
+    lines += ["", "**The owner's notes (notes.md):**", "", notes or "*No notes yet.*"]
+    return "\n".join(lines) + "\n", {"empty": empty, "notes": bool(notes), "aircraft_id": ac["id"]}
+
+
+def _guide_documents(ctx: dict) -> tuple[str, dict]:
+    if ctx.get("host") == "browser":
+        return "Documents are read by the EIS engine on the owner's computer; not in the browser.\n", {"count": 0}
+    try:
+        got = DOC.list_documents(_documents_dirs(ctx), _root(ctx))
+    except (DOC.DocumentError, H.RpcError) as e:
+        return f"{getattr(e, 'message', str(e))}\n", {"count": 0}
+    if got.get("message") and not got["documents"]:
+        return f"*{got['message']}*\n", {"count": 0}
+    lines = ["Folders: " + ", ".join(f"{f['label']} ({f['path']}{'' if f['reachable'] else ', not reachable'})"
+                                     for f in got["folders"]), ""]
+    lines += [f"- `{d['name']}` — {d['kind']}, {d['pages'] if d.get('pages') is not None else '?'} pages"
+              + (f": {d['first_line']}" if d.get("first_line") else "") for d in got["documents"]]
+    return "\n".join(lines) + "\n", {"count": len(got["documents"])}
+
+
+def _guide_workspace(ctx: dict) -> tuple[str, dict]:
+    from .. import flight_ident as fi
+    wid = ctx.get("active_workspace_id")
+    entry = next((e for e in ws.load_registry(ctx["registry_path"]).workspaces if e.id == wid), None)
+    dates = []
+    n = 0
+    for fid in ws.list_flight_ids(ctx["workspace_dir"]):
+        fa = ws.load_flight_analysis(ctx["workspace_dir"], fid)
+        if fa is None:
+            continue
+        n += 1
+        i = fi.load(ctx["workspace_dir"], fid) or {}
+        d = i.get("local_date") or (fa.header or {}).get("date")
+        if d:
+            dates.append(d)
+    inbox = IB.load(ctx["workspace_dir"])["candidates"]
+    open_ = [c for c in inbox if c.get("status") in IB.OPEN]
+    span = f"{min(dates)} to {max(dates)}" if dates else "no dates"
+    text = (f"**{entry.name if entry else wid}** (`{wid}`), engine {entry.engine_model if entry else ''}: "
+            f"{n} flights, {span} (local dates). Inbox: {len(open_)} open candidate"
+            f"{'' if len(open_) == 1 else 's'} ({sum(1 for c in open_ if c['status'] == 'new')} new).\n")
+    return text, {"workspace_id": wid, "flights": n, "first": min(dates) if dates else None,
+                  "last": max(dates) if dates else None, "inbox_open": len(open_)}
+
+
+def op_guide(params: dict, ctx: dict) -> Any:
+    """§4.6: one document — the method, the tool map and the notebook rules
+    (guide.md, the owner's to edit), then this aircraft's record and notes,
+    its documents, and the workspace in use with its flight count, date
+    span and open inbox candidates. `flags` say what is missing (F6: an
+    empty aircraft record)."""
+    H._require_active(ctx)
+    base = GUIDE_FILE.read_text(encoding="utf-8").rstrip() + "\n"
+    ac_text, ac = _guide_aircraft(ctx)
+    doc_text, docs = _guide_documents(ctx)
+    ws_text, wsi = _guide_workspace(ctx)
+    flags = []
+    if ac.get("empty"):
+        flags.append("aircraft_record_empty")
+    if not ac.get("notes"):
+        flags.append("no_owner_notes")
+    if not docs["count"]:
+        flags.append("no_documents")
+    document = (base + "\n## 4. The aircraft\n\n" + ac_text + "\n## 5. The documents\n\n" + doc_text
+                + "\n## 6. The workspace in use\n\n" + ws_text)
+    return {"document": document, "flags": flags, "workspace": wsi, "documents": docs["count"],
+            "aircraft_id": ac.get("aircraft_id")}
+
+
+def list_prompts() -> list[dict]:
+    """The MCP prompts (§4.6): prompts/*.md, front matter + text."""
+    out = []
+    for p in sorted(PROMPTS_DIR.glob("*.md")):
+        head, body = _front_matter(p.read_text(encoding="utf-8"))
+        out.append({**head, "text": body})
+    order = {"investigate": 0, "inbox-item": 1, "before-after": 2, "review-new-flights": 3}
+    return sorted(out, key=lambda x: order.get(x.get("name"), 9))
+
+
+def _front_matter(text: str) -> tuple[dict, str]:
+    """The small YAML subset the prompt files use: name, title,
+    description, and `arguments` as a list of {name, description, required}."""
+    if not text.startswith("---\n"):
+        return {}, text
+    head, body = text[4:].split("\n---\n", 1)
+    out: dict = {"arguments": []}
+    cur = None
+    for line in head.splitlines():
+        if line.startswith("  - name:"):
+            cur = {"name": line.split(":", 1)[1].strip()}
+            out["arguments"].append(cur)
+        elif line.startswith("    ") and cur is not None and ":" in line:
+            k, v = line.strip().split(":", 1)
+            v = v.strip()
+            cur[k] = v.lower() == "true" if k == "required" else v
+        elif ":" in line and not line.startswith(" "):
+            k, v = line.split(":", 1)
+            if k != "arguments":
+                out[k.strip()] = v.strip()
+    return out, body.lstrip("\n")
 
 
 # ── The bench (D3) ─────────────────────────────────────────────────────────
@@ -480,6 +603,6 @@ def ipynb_export(ctx: dict, doc: dict) -> bytes:
     return NB.ipynb_bytes(doc, read)
 
 
-OPS = ("study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
        "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
 

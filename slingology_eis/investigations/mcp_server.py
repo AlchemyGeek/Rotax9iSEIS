@@ -4,7 +4,8 @@ host's third front door, in the engine's own process.
 
 The transport is newline-delimited JSON-RPC 2.0 on stdin/stdout, written
 by hand (no SDK dependency): `initialize`, `ping`, `tools/list`,
-`tools/call` and the `notifications/*` a client sends. Anything else is
+`tools/call`, `prompts/list`, `prompts/get` (§4.6's four prompts, from
+investigations/prompts/*.md) and the `notifications/*` a client sends. Anything else is
 -32601, which is also how a client that tries a newer handshake first
 learns to fall back to `initialize`.
 
@@ -33,12 +34,12 @@ LATEST = SUPPORTED_VERSIONS[0]
 
 INSTRUCTIONS = (
     "SlingologyEIS: the owner's engine logs (Rotax 9-series, Garmin G3X/AXIS), analysed by the EIS engine on this "
-    "computer. Start with inbox_list (what the detectors raised) or flights_list / trends_summary. Numbers come "
-    "from the engine's operations; quote them with the OM references they carry. For an investigation: "
-    "study_create, then question_run / signal_analyze / code_run (each kept as a cell), then study_finish with "
-    "what was found, what it means and what to do. series_get and samples_get are capped — use a window, or "
-    "code_run's load_flight / load_slice_samples for whole flights. Tools never change logs, limits, filters or "
-    "settings."
+    "computer. Call `guide` first, in every conversation: it gives the method, every tool's parameters with "
+    "examples, the notebook rules, the aircraft record with the owner's notes, the documents and the workspace in "
+    "use. Numbers come from the engine's tools; quote them with the OM references they carry, and never use a "
+    "verdict word (normal, excessive, fault…) without its reference. Times are the flight's local time. Put "
+    "findings in a notebook (study_create, cell_append, code_run, study_finish) — the owner reads and re-runs "
+    "the notebook, not this conversation. Tools never change logs, limits, filters or settings."
 )
 
 
@@ -153,13 +154,31 @@ class Server:
         if method == "initialize":
             asked = params.get("protocolVersion")
             return {"protocolVersion": asked if asked in SUPPORTED_VERSIONS else LATEST,
-                    "capabilities": {"tools": {"listChanged": False}},
+                    "capabilities": {"tools": {"listChanged": False}, "prompts": {"listChanged": False}},
                     "serverInfo": {"name": "slingology-eis", "title": "SlingologyEIS", "version": __version__},
                     "instructions": INSTRUCTIONS}
         if method == "ping":
             return {}
         if method == "tools/list":
             return {"tools": [t.definition() for t in T.TOOLS]}
+        if method == "prompts/list":
+            from .ops import list_prompts
+            return {"prompts": [{k: p[k] for k in ("name", "title", "description", "arguments") if k in p}
+                                for p in list_prompts()]}
+        if method == "prompts/get":
+            from .ops import list_prompts
+            p = next((x for x in list_prompts() if x.get("name") == params.get("name")), None)
+            if p is None:
+                raise _RpcFail(-32602, f"Unknown prompt: {params.get('name')}")
+            args = params.get("arguments") or {}
+            missing = [a["name"] for a in p.get("arguments") or [] if a.get("required") and not args.get(a["name"])]
+            if missing:
+                raise _RpcFail(-32602, f"Prompt {p['name']} needs {', '.join(missing)}")
+            text = p["text"]
+            for a in p.get("arguments") or []:
+                text = text.replace("{{" + a["name"] + "}}", str(args.get(a["name"]) or ""))
+            return {"description": p.get("description"),
+                    "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
         if method == "tools/call":
             name = params.get("name")
             if name not in T.BY_NAME:

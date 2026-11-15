@@ -330,6 +330,9 @@ def _write_workspace(
         d = flights_dir / fa.flight_id
         d.mkdir(parents=True, exist_ok=True)
         (d / "analysis.json").write_text(_json_serialize.dumps(fa.to_dict(), indent=2))
+        if getattr(fa, "ident", None):        # Spec 16 §4.4: the facts computed with the analysis
+            from . import flight_ident as _fi
+            _fi.save(workspace_dir, fa, fa.ident)
         src = (source_paths or {}).get(fa.flight_id)
         if src is not None:
             dest = d / src.name

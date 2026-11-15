@@ -822,7 +822,16 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
         # open "reference changed" markers (acceptance 8) for this flight.
         "reference_state": {"excluded": excluded_entry is not None, "reason": excluded_entry["reason"] if excluded_entry else None},
         "reference_changes": ws.open_reference_changes_for_flight(ctx["workspace_dir"], flight_id),
+        # Spec 16 §4.4/§4.7: the flight's identification — route, local
+        # start with its zone — when it is known.
+        "ident": _ident_of(ctx["workspace_dir"], fa),
     }
+
+
+def _ident_of(ws_dir: Path, fa) -> Optional[dict]:
+    from . import flight_ident as fi
+    i = fi.current(ws_dir, fa)
+    return {k: v for k, v in i.items() if k not in ("key", "version")} if i else None
 
 
 def _engine_config_for(workspace_dir: Path) -> dict:
@@ -3287,9 +3296,30 @@ def _investigation_op(name: str):
     return _research_call(op)
 
 
-for _name in ("study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+for _name in ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
               "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
     _OPS[_name] = _investigation_op(_name)
+
+
+def _localised(fn):
+    """Spec 16 §4.7: the answer's slices and windows labelled with the
+    flight's local time and offset (flight_ident.localise)."""
+    async def op(params: dict, ctx: dict) -> Any:
+        out = fn(params, ctx)
+        if inspect.iscoroutine(out):
+            out = await out
+        if isinstance(out, (dict, list)) and ctx.get("workspace_dir") is not None:
+            from . import flight_ident as fi
+            fi.localise(ctx["workspace_dir"], out)
+        return out
+    op.__name__ = getattr(fn, "__name__", "op")
+    op.__doc__ = fn.__doc__
+    return op
+
+
+for _name in ("build_slices", "get_slice_samples", "run_test", "compare_rows", "analyze_signal", "inbox_scan",
+              "inbox_list"):
+    _OPS[_name] = _localised(_OPS[_name])
 
 
 def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path, workspaces_root: Path,
