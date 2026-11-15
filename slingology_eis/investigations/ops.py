@@ -3,13 +3,15 @@ Spec 16 §4.3: the host operations Investigations adds, on the Spec 01 §7
 envelope. host.py registers each one; this module holds them so the
 host's own file doesn't grow by a feature's worth of code.
 
-    code_run                                   (D3 — server host only)
-    study_cells_append / _rerun / _accept / _discard, study_finish   (D4)
+    study_create                               (D12: a notebook, studies/<id>/notebook.ipynb)
+    code_run                                   (D3 — server host only; refused without a notebook)
+    study_cells_append / _rerun / _accept / _discard, study_finish   (§5.1)
     aircraft_get / aircraft_set / list_aircraft (§4.4 — the registry's record, D10)
     documents_list / document_read             (D11: the aircraft's documents_dirs, read in place)
     inbox_scan / inbox_list / inbox_resolve    (D5)
 
-`export_study` (Spec 06 §11) gains `format: "ipynb"`; it stays in host.py.
+`export_study` / `import_study` (Spec 06 §11) handle notebooks (zip of the
+folder, HTML render) in host.py.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from .. import aircraft as AC
 from . import bench as B
 from . import documents as DOC
 from . import inbox as IB
+from . import ipynb as NBX
 from . import notebook as NB
 
 
@@ -60,209 +63,242 @@ def _mpl_dir(ctx: dict) -> Path:
     return base / "SlingologyEIS" / "matplotlib"
 
 
+# ── The notebook (D12, §5.1) ───────────────────────────────────────────────
+
+def presets_of(ctx: dict):
+    """rule_id → the engine's preset rule (None if no such preset): how a
+    converted question cell names a preset by id."""
+    from ..research import presets as rp
+    engine_cfg, engine_name = H._current_engine(ctx)
+    return lambda rid: rp.preset(rid, engine_name, engine_cfg)
+
+
+def notebook(ctx: dict, study_id) -> dict:
+    """The investigation notebook `study_id` (a Session D study converted
+    on this first load); a hand study or an unknown id is refused."""
+    if not study_id:
+        raise H.RpcError("BAD_PARAMS", "every executed cell belongs to a notebook: start one with study_create "
+                                       "and pass its study_id")
+    try:
+        return NBX.load(ctx["workspace_dir"], study_id, presets=presets_of(ctx))
+    except NBX.NotebookError as e:
+        if e.code == "NOT_FOUND" and (ctx["workspace_dir"] / "studies" / f"{study_id}.json").is_file():
+            raise H.RpcError("BAD_PARAMS", f"{study_id} is a hand study (Spec 06); cells are added to an "
+                                           "investigation notebook — start one with study_create")
+        raise _err(e)
+
+
+def _save_nb(ctx: dict, nb: dict) -> dict:
+    try:
+        return NBX.save(ctx["workspace_dir"], nb)
+    except NBX.NotebookError as e:
+        raise _err(e)
+
+
+def op_study_create(params: dict, ctx: dict) -> Any:
+    """§5.1: a new investigation notebook, its first cell the question."""
+    H._require_active(ctx)
+    try:
+        nb = NBX.new(name=params.get("name"), question=params.get("question"),
+                     kind=params.get("kind") or "investigation", author=params.get("author") or "claude",
+                     inbox_candidate=params.get("inbox_candidate"), engine_type=params.get("engine_type"))
+    except NBX.NotebookError as e:
+        raise _err(e)
+    if params.get("inbox_candidate"):
+        try:
+            IB.resolve(ctx["workspace_dir"], params["inbox_candidate"], "investigating",
+                       study_id=NBX.meta(nb)["id"], note=None)
+        except IB.InboxError as e:
+            raise _err(e)
+    return NBX.read_view(_save_nb(ctx, nb))
+
+
 # ── The bench (D3) ─────────────────────────────────────────────────────────
 
-def _run_code(ctx: dict, doc: dict, cell_id: str, source: str, timeout_s=None, memory_mb=None) -> dict:
+def _run_code(ctx: dict, nb: dict, cell_id: str, source: str, timeout_s=None, memory_mb=None) -> dict:
     engine_cfg, engine_name = H._current_engine(ctx)
-    study = {k: doc.get(k) for k in ("study_id", "name", "question", "selection", "slice_rules", "hand_slices",
-                                      "references")}
+    m = NBX.meta(nb)
+    study = {"study_id": m["id"], "name": m.get("name"), "question": m.get("question")}
+    ac = _aircraft(ctx)
     try:
         return B.run_cell(source=source, cell_id=cell_id, ws_dir=ctx["workspace_dir"],
-                          files_dir=NB.files_dir(ctx["workspace_dir"], doc["study_id"]),
+                          files_dir=NBX.files_dir(ctx["workspace_dir"], m["id"]),
                           scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), engine_cfg=engine_cfg,
                           engine_name=engine_name, aircraft=_aircraft_for_bench(ctx),
-                          assignments=H._assignments(ctx), study=study, cap=B.caps(timeout_s, memory_mb))
+                          assignments=H._assignments(ctx), study=study, cap=B.caps(timeout_s, memory_mb),
+                          documents_dirs=list(ac.get("documents_dirs") or []), data_root=_root(ctx),
+                          notes=AC.read_notes(_root(ctx), ac["id"]) if ac.get("id") else "")
     except B.BenchError as e:
         raise _err(e)
 
 
-def op_code_run(params: dict, ctx: dict) -> Any:
-    """§4.5: run a cell of Python on the bench and keep it in the study —
-    appended, or (`cell_id`) replacing that code cell's source and
-    outputs. The cell's error, if any, is its output, not an RpcError."""
-    H._require_active(ctx)
-    doc = NB.materialise(_load_editable(ctx, params.get("study_id")))
-    source = params.get("source")
+def _append_code(ctx: dict, nb: dict, source: str, timeout_s=None, memory_mb=None, cell_id=None) -> dict:
     if not isinstance(source, str) or not source.strip():
-        raise H.RpcError("BAD_PARAMS", "code_run needs source")
-    cid = params.get("cell_id")
-    if cid:
+        raise H.RpcError("BAD_PARAMS", "a code cell needs source")
+    if cell_id:
         try:
-            cell = NB.find(doc, cid)
-        except RuleError as e:
-            raise H.RpcError("NOT_FOUND", str(e))
-        if cell["kind"] != "code":
-            raise H.RpcError("BAD_PARAMS", f"cell {cid} isn't a code cell")
+            cell = NBX.find(nb, cell_id)
+        except NBX.NotebookError as e:
+            raise _err(e)
+        if cell["cell_type"] != "code":
+            raise H.RpcError("BAD_PARAMS", f"cell {cell_id} isn't a code cell")
     else:
-        cell = {"id": NB.next_id(doc), "kind": "code", "source": source, "outputs": [], "ran": None,
-                "pending_outputs": None}
-        doc["cells"].append(cell)
-    got = _run_code(ctx, doc, cell["id"], source, params.get("timeout_s"), params.get("memory_mb"))
-    cell.update({"source": source, "outputs": got["outputs"], "ran": got["ran"], "pending_outputs": None})
-    for k in ("pending_ran", "ran_elsewhere", "read_only"):
-        cell.pop(k, None)
-    saved = _save(ctx, doc)
-    NB.collect_figures(ctx["workspace_dir"], saved)
-    return {"study_id": saved["study_id"], "cell": NB.find(saved, cell["id"]), "previews": got["previews"]}
+        cell = NBX.code_cell(NBX.next_id(nb), source)
+        nb["cells"].append(cell)
+    got = _run_code(ctx, nb, cell["id"], source, timeout_s, memory_mb)
+    cell["source"] = source
+    NBX.set_run(cell, got["outputs"], got["ran"])
+    _save_nb(ctx, nb)
+    return {"study_id": NBX.meta(nb)["id"], "cell": cell, "previews": got["previews"]}
 
 
-# ── Cells (D4) ─────────────────────────────────────────────────────────────
-
-async def _run_question(ctx: dict, doc: dict) -> dict:
-    engine_cfg, _ = H._current_engine(ctx)
-    H._emit(ctx, "research", {"active": True, "phase": "starting"})
-    try:
-        return await rs.run(ctx["workspace_dir"], H._sources(ctx), doc, engine_cfg=engine_cfg,
-                            assignments=H._assignments(ctx), on_progress=H._research_progress(ctx))
-    finally:
-        H._emit(ctx, "research", {"active": False})
-
-
-async def op_study_cells_append(params: dict, ctx: dict) -> Any:
-    """Append one cell: markdown (`source`), question (`test_id`,
-    `channels`, `params`, optional own `slices`; run at once), or a figure
-    or table a code cell wrote under files/ (`ref`, `title`). Code cells
-    are appended by code_run."""
+def op_code_run(params: dict, ctx: dict) -> Any:
+    """§4.5: run a cell of Python on the bench and keep it in the notebook —
+    appended, or (`cell_id`) replacing that code cell's source and
+    outputs. Refused without a study: every executed cell belongs to a
+    notebook. The cell's error, if any, is its output, not an RpcError."""
     H._require_active(ctx)
-    doc = NB.materialise(_load_editable(ctx, params.get("study_id")))
+    nb = notebook(ctx, params.get("study_id"))
+    return _append_code(ctx, nb, params.get("source"), params.get("timeout_s"), params.get("memory_mb"),
+                        params.get("cell_id"))
+
+
+def logview_source(cell: dict) -> str:
+    """`cell_append kind=logview` is the eis.logview call (§5.2), run on the bench."""
+    if not cell.get("flight"):
+        raise H.RpcError("BAD_PARAMS", "a log view needs flight, start_s, end_s and channels")
+    try:
+        a, b = float(cell.get("start_s")), float(cell.get("end_s"))
+    except (TypeError, ValueError):
+        raise H.RpcError("BAD_PARAMS", "a log view needs start_s and end_s (seconds into the flight)")
+    if b <= a:
+        raise H.RpcError("BAD_PARAMS", "a log view's end_s is after its start_s")
+    marks = [list(m) if isinstance(m, (list, tuple)) else [m.get("t_s"), m.get("label", "")]
+             for m in cell.get("marks") or []]
+    args = [repr(str(cell["flight"])), f"{a:g}", f"{b:g}", f"channels={list(cell.get('channels') or ['rpm', 'map_inhg'])!r}"]
+    if marks:
+        args.append(f"marks={[(float(t), str(label)) for t, label in marks]!r}")
+    if cell.get("title"):
+        args.append(f"title={str(cell['title'])!r}")
+    if cell.get("rule"):
+        args.append(f"rule={str(cell['rule'])!r}")
+    return "eis.logview(" + ", ".join(args) + ")\n"
+
+
+# ── Cells (D4 on the standard format) ──────────────────────────────────────
+
+def op_study_cells_append(params: dict, ctx: dict) -> Any:
+    """Append one cell (§5.1): markdown (`source`); code (`source`, run at
+    once on the bench); logview (`flight`, `start_s`, `end_s`, `channels`,
+    `marks`, `title` — the eis.logview call, run at once)."""
+    H._require_active(ctx)
+    nb = notebook(ctx, params.get("study_id"))
     cell = dict(params.get("cell") or {})
     kind = cell.get("kind")
-    new = {"id": NB.next_id(doc), "kind": kind}
     if kind == "markdown":
-        new["source"] = cell.get("source")
-        if cell.get("role"):
-            new["role"] = cell["role"]
-    elif kind == "question":
-        test = {k: cell[k] for k in ("test_id", "params", "channels", "slices") if cell.get(k) is not None}
-        if isinstance(test.get("slices"), dict):
-            # A preset named by id stands for its rule, as in save_study.
-            test["slices"] = {**test["slices"], "slice_rules": H._research_rules(ctx, test["slices"].get("slice_rules"))}
-        doc["tests"] = list(doc.get("tests") or []) + [test]
-        new["test_index"] = len(doc["tests"]) - 1
-    elif kind in ("figure", "table"):
-        new["ref"] = cell.get("ref")
-        if cell.get("title"):
-            new["title"] = cell["title"]
-        f = NB.files_dir(ctx["workspace_dir"], doc["study_id"]) / str(cell.get("ref") or "").split("/", 1)[-1]
-        if not str(cell.get("ref") or "").startswith("files/") or not f.is_file():
-            raise H.RpcError("BAD_PARAMS", f"no file {cell.get('ref')!r} in the study's files/ (a code cell writes it under FILES)")
-    elif kind == "code":
-        raise H.RpcError("BAD_PARAMS", "code cells are run and appended by code_run")
-    else:
-        raise H.RpcError("BAD_PARAMS", f"a cell's kind is one of markdown, question, figure, table; got {kind!r}")
-    doc["cells"].append(new)
-    doc = rs.normalise(doc)                       # validates the new cell (RuleError → BAD_PARAMS)
-    if kind == "question":
-        doc = await _run_question(ctx, doc)
-    saved = _save(ctx, doc)
-    out = {"study_id": saved["study_id"], "cell": NB.find(saved, new["id"])}
-    if kind == "question":
-        t = saved["tests"][new["test_index"]]
-        out["result"] = t.get("result")
-        if t.get("error"):
-            out["error"] = t["error"]
-    return out
+        src = cell.get("source")
+        if not isinstance(src, str) or not src.strip():
+            raise H.RpcError("BAD_PARAMS", "a markdown cell needs source")
+        new = NBX.markdown_cell(NBX.next_id(nb), src, role=cell.get("role"))
+        nb["cells"].append(new)
+        _save_nb(ctx, nb)
+        return {"study_id": NBX.meta(nb)["id"], "cell": new, "previews": {}}
+    if kind == "code":
+        return _append_code(ctx, nb, cell.get("source"), cell.get("timeout_s"), cell.get("memory_mb"))
+    if kind == "logview":
+        return _append_code(ctx, nb, logview_source(cell))
+    raise H.RpcError("BAD_PARAMS", f"a cell's kind is markdown, code or logview; got {kind!r}")
 
 
-async def op_study_cells_rerun(params: dict, ctx: dict) -> Any:
-    """§5 re-run: every cell in order against this workspace. Question
-    cells recompute (their results replace the stored ones, as run_study
-    does); code cells run on the bench where there is one and their new
-    outputs wait in `pending_outputs` until accepted or discarded — unless
-    they are identical to the stored outputs, which then stand. Without a
-    bench (the website) code cells are left as they are, marked *ran
-    elsewhere* if their outputs came from another machine."""
+def op_study_cells_rerun(params: dict, ctx: dict) -> Any:
+    """§5.1 re-run: the code cells in order against this workspace. New
+    outputs identical to the stored ones stand; others wait in `pending`
+    until accepted or discarded. Without a bench (the website) nothing
+    runs; cells keep their outputs, marked *ran elsewhere* if they came
+    from another machine."""
     H._require_active(ctx)
-    doc = NB.materialise(_load_editable(ctx, params.get("study_id")))
-    report = []
-    if doc.get("tests"):
-        doc = await _run_question(ctx, doc)
+    nb = notebook(ctx, params.get("study_id"))
     bench = H._FEATURES[ctx.get("host", "server")].get("bench", False)
-    previews: dict = {}
-    for c in doc["cells"]:
-        if c["kind"] == "question":
-            t = doc["tests"][c["test_index"]]
-            report.append({"cell_id": c["id"], "kind": "question", "ran": t.get("result") is not None,
-                           "error": t.get("error")})
-        elif c["kind"] == "code":
-            if not bench:
-                report.append({"cell_id": c["id"], "kind": "code", "ran": False,
-                               "ran_elsewhere": bool(c.get("ran_elsewhere") or c.get("outputs"))})
-                continue
-            got = _run_code(ctx, doc, c["id"], c["source"])
-            previews.update(got["previews"])
-            same = B.outputs_equal(got["outputs"], c.get("outputs"))
-            if same:
-                c["ran"] = got["ran"]
-                c["pending_outputs"] = None
-                c.pop("pending_ran", None)
-                c.pop("ran_elsewhere", None)
-                c.pop("read_only", None)
-            else:
-                c["pending_outputs"], c["pending_ran"] = got["outputs"], got["ran"]
-            report.append({"cell_id": c["id"], "kind": "code", "ran": True, "identical": same,
-                           "status": got["ran"]["status"]})
-    saved = _save(ctx, doc)
-    NB.collect_figures(ctx["workspace_dir"], saved)
-    return {"study": saved, "cells": report, "previews": previews}
+    report, previews = [], {}
+    for c in nb["cells"]:
+        if c["cell_type"] != "code":
+            continue
+        sm = NBX.slmeta(c)
+        if not bench:
+            report.append({"cell_id": c["id"], "ran": False, "ran_elsewhere": bool(sm.get("ran_elsewhere") or c.get("outputs"))})
+            continue
+        got = _run_code(ctx, nb, c["id"], NBX.text(c["source"]))
+        previews.update({f"{c['id']}:{k}": v for k, v in got["previews"].items()})
+        same = B.outputs_equal(got["outputs"], c.get("outputs"))
+        if same:
+            NBX.set_run(c, c.get("outputs") or [], got["ran"])
+        else:
+            sm["pending"] = {"outputs": got["outputs"], "ran": got["ran"]}
+        report.append({"cell_id": c["id"], "ran": True, "identical": same, "status": got["ran"]["status"]})
+    _save_nb(ctx, nb)
+    return {"study": NBX.summary(nb), "cells": report, "previews": previews}
 
 
 def _pending(params: dict, ctx: dict, fn) -> Any:
     H._require_active(ctx)
-    doc = NB.materialise(_load_editable(ctx, params.get("study_id")))
+    nb = notebook(ctx, params.get("study_id"))
     ids = params.get("cell_ids")
-    done = fn(doc, list(ids) if ids else None)
-    saved = _save(ctx, doc)
-    NB.collect_figures(ctx["workspace_dir"], saved)
-    return {"study": saved, "cells": done}
+    done = fn(nb, list(ids) if ids else None)
+    _save_nb(ctx, nb)
+    return {"study": NBX.summary(nb), "cells": done}
 
 
 def op_study_cells_accept(params: dict, ctx: dict) -> Any:
-    """Accept re-run outputs (all pending, or `cell_ids`): they become the
-    cells' outputs."""
-    return _pending(params, ctx, NB.accept)
+    """Accept re-run outputs (all pending, or `cell_ids`): they become the cells' outputs."""
+    return _pending(params, ctx, NBX.accept)
 
 
 def op_study_cells_discard(params: dict, ctx: dict) -> Any:
     """Discard re-run outputs; the stored outputs stand."""
-    return _pending(params, ctx, NB.discard)
+    return _pending(params, ctx, NBX.discard)
 
 
 def op_study_finish(params: dict, ctx: dict) -> Any:
-    """An investigation ends: its summary (what it found, what it means,
-    what to do) is kept on the study; optionally the inbox candidate it
-    answered is resolved, and the summary noted in the Journal as a study
-    finding — the one Journal entry an investigation may write (D7)."""
+    """An investigation ends (§5.1): the floor rule first — a summary, and a
+    markdown cell next to every figure and log view (refused, naming the
+    cells, otherwise); then status, summary, the inbox candidate resolved,
+    and optionally the Journal study finding (the one Journal entry an
+    investigation may write, D7). Reports the inbox's open candidates (F6)
+    and the flights the cells read, one count (F7)."""
     H._require_active(ctx)
-    doc = _load_editable(ctx, params.get("study_id"))
+    nb = notebook(ctx, params.get("study_id"))
     summary = params.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         raise H.RpcError("BAD_PARAMS", "study_finish needs a summary: what was found, what it means, what to do")
-    doc["summary"] = summary.strip()
-    doc["status"] = "finished"
-    doc["finished"] = H._now_iso()
-    if doc.get("kind", "hand") == "hand":
-        doc["kind"] = "investigation"
+    lacking = NBX.floor_lacking(nb)
+    if lacking:
+        raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
+                                       "saying what it shows; add one beside cell " + ", ".join(lacking))
+    m = NBX.meta(nb)
+    m.update({"summary": summary.strip(), "status": "finished", "finished": H._now_iso()})
     resolved = None
-    cand = params.get("inbox_candidate") or doc.get("inbox_candidate")
+    cand = params.get("inbox_candidate") or m.get("inbox_candidate")
     if cand:
-        doc["inbox_candidate"] = cand
+        m["inbox_candidate"] = cand
         status = params.get("resolution")
         if status:
             try:
-                resolved = IB.resolve(ctx["workspace_dir"], cand, status, study_id=doc["study_id"],
-                                      note=params.get("note"))
+                resolved = IB.resolve(ctx["workspace_dir"], cand, status, study_id=m["id"], note=params.get("note"))
             except IB.InboxError as e:
                 raise _err(e)
-    saved = _save(ctx, doc)
+    _save_nb(ctx, nb)
     entry = None
     if params.get("journal"):
         finding = params.get("finding") or summary.strip().split("\n", 1)[0]
         entry = ws.upsert_journal_entry(
-            ctx["workspace_dir"], kind="study_finding", ref_id=f"{saved['study_id']}:summary", what=finding,
-            where={"study_id": saved["study_id"], "test_index": None, "study_name": saved["name"]},
-            note=params.get("note"))
-    return {"study": rs.summary(saved), "inbox_candidate": resolved, "journal_entry": entry}
+            ctx["workspace_dir"], kind="study_finding", ref_id=f"{m['id']}:summary", what=finding,
+            where={"study_id": m["id"], "test_index": None, "study_name": m.get("name")}, note=params.get("note"))
+    open_ = [c for c in IB.load(ctx["workspace_dir"])["candidates"] if c.get("status") in IB.OPEN]
+    flights = NBX.flights_of(nb)
+    return {"study": NBX.summary(nb), "inbox_candidate": resolved, "journal_entry": entry,
+            "flights": len(flights), "flight_ids": flights,
+            "inbox": {"open": len(open_), "new": sum(1 for c in open_ if c.get("status") == "new"),
+                      "unresolved_here": bool(cand) and not params.get("resolution")}}
 
 
 # ── Aircraft and documents (§4.4, §2.4 layer 4) ────────────────────────────
@@ -444,6 +480,6 @@ def ipynb_export(ctx: dict, doc: dict) -> bytes:
     return NB.ipynb_bytes(doc, read)
 
 
-OPS = ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+OPS = ("study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
        "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
 

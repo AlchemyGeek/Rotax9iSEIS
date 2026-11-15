@@ -32,8 +32,15 @@ def _download(h, url):
 
 
 def _notebook(h, name="Why does rpm cycle?") -> str:
-    return _ok(rpc(h, "save_study", {"study": {"name": name, "kind": "investigation", "author": "claude",
-                                               "question": "Why does rpm cycle at full power?", "cells": []}}))["study_id"]
+    return _ok(rpc(h, "study_create", {"name": name, "question": "Why does rpm cycle at full power?"}))["study_id"]
+
+
+def _sm(cell: dict) -> dict:
+    return (cell.get("metadata") or {}).get("slingology") or {}
+
+
+def _rule_literal() -> str:
+    return json.dumps(FULL_POWER).replace("false", "False").replace("true", "True").replace("null", "None")
 
 
 # ── capabilities ──────────────────────────────────────────────────────────
@@ -48,10 +55,13 @@ def test_capabilities(registry_server):
 
 def test_code_run_keeps_a_cell(research_ws):
     h, ids = research_ws
+    # Every executed cell belongs to a notebook (§5.1).
+    no = rpc(h, "code_run", {"source": "1 + 1"})
+    assert not no["ok"] and no["error"]["code"] == "BAD_PARAMS" and "study_create" in no["error"]["message"]
     sid = _notebook(h)
     src = ("df = load_slices(FULL_POWER_RULE, channels=['rpm'])\nprint(len(df), 'slices')\n"
            "fig, ax = plt.subplots(); ax.plot(df['rpm.swing']); df[['flight_id', 'rpm.swing']]")
-    src = src.replace("FULL_POWER_RULE", json.dumps(FULL_POWER).replace("false", "False").replace("true", "True"))
+    src = src.replace("FULL_POWER_RULE", _rule_literal())
     d = rpc(h, "code_run", {"study_id": sid, "source": src})
     if not _has_bench(h):
         assert not d["ok"] and d["error"]["code"] == "NOT_SUPPORTED"
@@ -59,18 +69,27 @@ def test_code_run_keeps_a_cell(research_ws):
     _bench_stack()
     r = _ok(d)
     cell = r["cell"]
-    assert cell["kind"] == "code" and cell["ran"]["status"] == "ok", cell
-    kinds = [o["kind"] for o in cell["outputs"]]
-    assert kinds == ["text", "table", "figure"], kinds   # figures left open come last
+    assert cell["cell_type"] == "code" and _sm(cell)["ran"]["status"] == "ok", cell
+    kinds = [o["output_type"] for o in cell["outputs"]]
+    assert kinds == ["stream", "execute_result", "display_data"], kinds   # figures left open come last
     assert cell["outputs"][0]["text"].strip() == "6 slices"
-    assert sorted(cell["ran"]["flights"]) == sorted(ids)
-    fig = cell["outputs"][2]["ref"]
-    assert fig.startswith("files/fig-") and fig in r["previews"]
-    # Replacing the cell: same id, new source, the old figure collected.
+    assert "<table" in cell["outputs"][1]["data"]["text/html"]
+    assert cell["outputs"][1]["metadata"]["slingology"]["table"]["n_rows"] == 6
+    assert cell["outputs"][2]["data"]["image/svg+xml"].lstrip().startswith("<?xml")
+    assert sorted(_sm(cell)["ran"]["flights"]) == sorted(ids)
+    assert list(r["previews"]) == ["o2"]
+    # Replacing the cell: same id, new source.
     r2 = _ok(rpc(h, "code_run", {"study_id": sid, "cell_id": cell["id"], "source": "1 + 1"}))
-    assert r2["cell"]["id"] == cell["id"] and r2["cell"]["outputs"] == [{"kind": "text", "text": "2"}]
-    doc = _ok(rpc(h, "load_study", {"study_id": sid}))
-    assert [c["id"] for c in doc["cells"]] == [cell["id"]]
+    assert r2["cell"]["id"] == cell["id"]
+    assert r2["cell"]["outputs"] == [{"output_type": "execute_result", "execution_count": None, "metadata": {},
+                                      "data": {"text/plain": "2"}}]
+    view = _ok(rpc(h, "load_study", {"study_id": sid}))
+    assert [c["id"] for c in view["notebook"]["cells"]] == ["c1", cell["id"]]
+    assert view["notebook"]["cells"][0]["cell_type"] == "markdown"          # the question
+    # A hand study takes no code.
+    hand = _ok(rpc(h, "save_study", {"study": {"name": "Hand", "slice_rules": ["full_power"]}}))
+    refused = rpc(h, "code_run", {"study_id": hand["study_id"], "source": "1"})
+    assert not refused["ok"] and "hand study" in refused["error"]["message"]
 
 
 def test_code_run_errors_are_outputs(research_ws):
@@ -80,115 +99,192 @@ def test_code_run_errors_are_outputs(research_ws):
     _bench_stack()
     sid = _notebook(h)
     cell = _ok(rpc(h, "code_run", {"study_id": sid, "source": "x = 1\n1 / 0"}))["cell"]
-    assert cell["ran"]["status"] == "error"
+    assert _sm(cell)["ran"]["status"] == "error"
     err = cell["outputs"][-1]
-    assert err["kind"] == "error" and err["ename"] == "ZeroDivisionError"
-    assert "1 / 0" in err["traceback"] and "cell" in err["traceback"]
+    assert err["output_type"] == "error" and err["ename"] == "ZeroDivisionError"
+    tb = "\n".join(err["traceback"])
+    assert "1 / 0" in tb and "cell" in tb
     bad = rpc(h, "code_run", {"study_id": sid, "source": "1", "timeout_s": 9999})
     assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
 
 
-# ── cells (§5) ────────────────────────────────────────────────────────────
+# ── cells (§5.1) ──────────────────────────────────────────────────────────
 
 def test_cells_append_rerun_accept_finish(research_ws):
     h, ids = research_ws
     sid = _notebook(h)
     md = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "# Plan"}}))
-    assert md["cell"]["kind"] == "markdown"
-    q = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
-        "kind": "question", "test_id": "cycling", "channels": ["rpm"], "slices": {"slice_rules": [FULL_POWER]}}}))
-    assert q["cell"]["kind"] == "question" and q["cell"]["test_index"] == 0
-    assert q["result"]["finding"].startswith("RPM cycles")
-    bad = rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "figure", "ref": "files/none.svg"}})
-    assert not bad["ok"]
+    assert md["cell"]["cell_type"] == "markdown" and md["cell"]["id"] == "c2"
+    old = rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "question", "test_id": "cycling"}})
+    assert not old["ok"] and "markdown, code or logview" in old["error"]["message"]
+    bench = _has_bench(h)
+    if bench:
+        _bench_stack()
+        # Acceptance 12: eis.cycling is question_run's own code.
+        tool = _ok(rpc(h, "run_test", {"test_id": "cycling", "slice_rules": [FULL_POWER], "channels": ["rpm"]}))
+        c = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
+            "kind": "code", "source": f"r = eis.cycling({_rule_literal()}, 'rpm')\nprint(r.finding)\nr"}}))["cell"]
+        assert c["outputs"][0]["text"].strip() == tool["finding"]
+        assert c["outputs"][1]["data"]["text/plain"].startswith(tool["question"])      # the §8 text
+        assert sorted(_sm(c)["ran"]["flights"]) == sorted(ids)
+        # A log view (§5.2): the SVG and the reference, never samples.
+        lv = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
+            "kind": "logview", "flight": ids[0], "start_s": 10, "end_s": 70, "channels": ["rpm", "map_inhg"],
+            "marks": [[20, "takeoff power"]], "title": "Full power"}}))
+        out = lv["cell"]["outputs"][-1]["data"]
+        ref = out["application/vnd.slingology.logview+json"]
+        assert ref["flight"] == ids[0] and ref["start_s"] == 10 and ref["end_s"] == 70
+        assert ref["marks"] == [{"t_s": 20.0, "label": "takeoff power"}] and "rpm" not in json.dumps(ref).split('"channels"')[0]
+        assert "image/svg+xml" in out and not any(isinstance(v, list) and len(v) > 50 for v in ref.values())
+        assert lv["cell"]["source"].startswith("eis.logview(")
+        # The floor rule: the log view has a code cell before it and nothing after.
+        fl = rpc(h, "study_finish", {"study_id": sid, "summary": "x"})
+        assert not fl["ok"] and fl["error"]["code"] == "FLOOR_RULE" and lv["cell"]["id"] in fl["error"]["message"]
+        _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown",
+                                                                     "source": "The window shows the swing."}}))
+        # A cell whose output changes on re-run waits in pending.
+        rnd = _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())"}))["cell"]
     re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
-    assert re["study"]["tests"][0]["result"]["finding"] == q["result"]["finding"]
-    acc = _ok(rpc(h, "study_cells_accept", {"study_id": sid}))
-    assert acc["cells"] == []          # nothing was pending: re-run outputs were identical
+    if bench:
+        by = {c["cell_id"]: c for c in re["cells"]}
+        assert by[rnd["id"]]["identical"] is False
+        assert all(c["identical"] for k, c in by.items() if k != rnd["id"]), re["cells"]
+        assert re["study"]["pending"] == 1
+        view = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
+        pend = next(c for c in view["cells"] if c["id"] == rnd["id"])
+        assert _sm(pend)["pending"]["outputs"] != pend["outputs"]
+        acc = _ok(rpc(h, "study_cells_accept", {"study_id": sid}))
+        assert acc["cells"] == [rnd["id"]] and acc["study"]["pending"] == 0
+        assert _ok(rpc(h, "study_cells_discard", {"study_id": sid}))["cells"] == []
+    else:
+        assert re["cells"] == []
     fin = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "RPM cycles at full power.\nIt is the governor.",
                                       "journal": True}))
     assert fin["study"]["status"] == "finished" and fin["journal_entry"]["kind"] == "study_finding"
     assert fin["journal_entry"]["what"] == "RPM cycles at full power."
+    assert fin["flights"] == (len(ids) if bench else 0) and "open" in fin["inbox"]       # F7, F6
     j = _ok(rpc(h, "get_journal", {}))
     assert [e["kind"] for e in j["entries"]].count("study_finding") == 1
     listed = _ok(rpc(h, "list_studies", {}))["studies"]
-    assert next(s for s in listed if s["study_id"] == sid)["cells"] == 2
+    row = next(s for s in listed if s["study_id"] == sid)
+    assert row["format"] == "ipynb" and row["cells"] == (6 if bench else 2) and row["status"] == "finished"
     assert not rpc(h, "study_finish", {"study_id": sid, "summary": " "})["ok"]
 
 
-# ── .eisstudy, read-only import, Run this on my flights, .ipynb (acceptance 5) ──
+# ── export, import, Run this on my flights (§5.1, acceptance 5, 12) ───────
 
 def test_notebook_round_trip(research_ws):
+    import io
+    import zipfile
     h, ids = research_ws
     sid = _notebook(h)
-    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "Plan."}}))
-    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
-        "kind": "question", "test_id": "cycling", "channels": ["rpm"], "slices": {"slice_rules": [FULL_POWER]}}}))
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "Plan: **look**."}}))
     code = None
     if _has_bench(h):
         _bench_stack()
         code = _ok(rpc(h, "code_run", {"study_id": sid, "source": (
             "import matplotlib.pyplot as plt\nfig, ax = plt.subplots(); ax.plot([1, 2, 3]); "
             "print(len(flights())); info = flight_info(flights().flight_id[0])")}))["cell"]
-        assert code["ran"]["flights"], code
-    # Re-run on the same workspace: identical outputs, nothing pending.
+        assert _sm(code)["ran"]["flights"], code
     re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
-    assert not any(c.get("pending_outputs") for c in re["study"]["cells"])
-    sent = _ok(rpc(h, "load_study", {"study_id": sid}))
+    assert re["study"]["pending"] == 0
+    stored = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
+    try:
+        import nbformat
+        nbformat.validate(nbformat.from_dict(stored))
+    except ImportError:
+        pass
 
+    assert not rpc(h, "export_study", {"study_id": sid, "format": "eisstudy"})["ok"]
     exp = _ok(rpc(h, "export_study", {"study_id": sid}))
+    assert exp["filename"].endswith(".zip")
     data = _download(h, exp["download_url"])
-    nb = _ok(rpc(h, "export_study", {"study_id": sid, "format": "ipynb"}))
-    ipynb = json.loads(_download(h, nb["download_url"]))
-    # A title cell (name, question), then one per notebook cell; a question becomes markdown.
-    assert ipynb["nbformat"] == 4 and len(ipynb["cells"]) == len(sent["cells"]) + 1
-    assert [c["cell_type"] for c in ipynb["cells"]][:3] == ["markdown", "markdown", "markdown"]
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        assert z.namelist()[0] == "notebook.ipynb"
+        sent = json.loads(z.read("notebook.ipynb"))
+    assert sent["metadata"]["slingology"]["id"] == sid and len(sent["cells"]) == len(stored["cells"])
+    page = _download(h, _ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))["download_url"]).decode()
+    assert page.startswith("<!DOCTYPE html>") and "<strong>look</strong>" in page and "<script" not in page
+    assert page == _download(h, _ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))["download_url"]).decode()
     if code is not None:
-        assert ipynb["cells"][3]["cell_type"] == "code" and ipynb["cells"][3]["outputs"]
-
-    if code is not None:
-        # S5: what leaves the workspace names flights by content fingerprint, never flight_id…
-        import io
-        import zipfile
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            sent_doc = json.loads(z.read("study.json"))["study"]
-        sent_code = next(c for c in sent_doc["cells"] if c["kind"] == "code")
-        assert sent_code["ran"]["flights"] and all(f.startswith("src:") for f in sent_code["ran"]["flights"])
-        assert not set(sent_code["ran"]["flights"]) & set(ids)
-        nb_code = next(c for c in ipynb["cells"] if c["cell_type"] == "code")
-        assert all(f.startswith("src:") for f in nb_code["metadata"]["eis"]["ran"]["flights"])
-        # …and an import where the flights are maps them back to ids.
-        back = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.eisstudy"}))
-        back_code = next(c for c in back["study"]["cells"] if c["kind"] == "code")
-        assert back_code["ran"]["flights"] == code["ran"]["flights"] and not back_code.get("read_only")
-        # The stored study still names them by id.
-        assert next(c for c in _ok(rpc(h, "load_study", {"study_id": sid}))["cells"]
-                    if c["kind"] == "code")["ran"]["flights"] == code["ran"]["flights"]
+        assert "show code" in page and "data:image/svg+xml;base64," in page
+        # S5: what leaves names flights by content fingerprint, never flight_id…
+        sent_code = next(c for c in sent["cells"] if c["cell_type"] == "code")
+        fl = _sm(sent_code)["ran"]["flights"]
+        assert fl and all(f.startswith("src:") for f in fl) and not set(fl) & set(ids)
+        # …and an import where the flights are maps them back.
+        back = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.zip"}))
+        back_code = next(c for c in back["notebook"]["cells"] if c["cell_type"] == "code")
+        assert _sm(back_code)["ran"]["flights"] == _sm(code)["ran"]["flights"]
+        assert _sm(back_code)["ran_elsewhere"] and not _sm(back_code).get("read_only")
+        # A bare .ipynb imports too.
+        bare = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(json.dumps(sent).encode()).decode(),
+                                           "filename": "S.ipynb"}))
+        assert bare["study_id"] != sid and bare["format"] == "ipynb"
 
     # Another workspace that has none of these flights: read-only per cell.
     _ok(rpc(h, "create_workspace", {"name": "Other", "engine_model": "916iS"}))
     other = _import(h, "2026-02-01")
-    got = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.eisstudy"}))
-    st = got["study"]
-    assert got["read_only"] and st["kind"] == "investigation"
-    q = next(c for c in st["cells"] if c["kind"] == "question")
-    assert q.get("read_only")
+    got = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.zip"}))
+    assert got["kind"] == "investigation" and got["format"] == "ipynb"
     if code is not None:
-        c = next(c for c in st["cells"] if c["kind"] == "code")
-        assert c.get("read_only") and c["outputs"] == code["outputs"]
-        assert all(f.startswith("src:") for f in c["ran"]["flights"])   # not here: kept as fingerprints
-        assert c["outputs"][-1]["ref"].startswith("files/")
-        # The figure travelled in the .eisstudy's files/: the imported notebook's .ipynb embeds it.
-        nb2 = _ok(rpc(h, "export_study", {"study_id": st["study_id"], "format": "ipynb"}))
-        code2 = next(x for x in json.loads(_download(h, nb2["download_url"]))["cells"] if x["cell_type"] == "code")
-        assert any("image/svg+xml" in (o.get("data") or {}) or "image/png" in (o.get("data") or {})
-                   for o in code2["outputs"]), code2["outputs"]
-    mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": st["study_id"]}))
-    assert mine["flights"] == [other] and not mine.get("read_only")
-    assert mine["tests"][0]["result"]["finding"].endswith("in 1 of 1 slice.")
+        c = next(c for c in got["notebook"]["cells"] if c["cell_type"] == "code")
+        assert _sm(c).get("read_only") and c["outputs"] == code["outputs"]
+        assert all(f.startswith("src:") for f in _sm(c)["ran"]["flights"])   # not here: kept as fingerprints
+    mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": got["study_id"]}))
+    assert mine["study_id"] != got["study_id"] and mine["format"] == "ipynb"
     if code is not None:
-        c = next(c for c in mine["cells"] if c["kind"] == "code")
-        assert c.get("ran_elsewhere"), c   # marked, not re-executed
+        c = next(c for c in mine["notebook"]["cells"] if c["cell_type"] == "code")
+        assert _sm(c)["ran"]["flights"] == [other] and not _sm(c).get("read_only")
+        assert c["outputs"][0]["text"].strip() == "1"
+    else:
+        c = next((c for c in mine["notebook"]["cells"] if c["cell_type"] == "code"), None)
+        assert c is None or _sm(c).get("ran_elsewhere")
+
+
+def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_home):
+    """Acceptance 15: a Session D investigation (the Spec 06 document with
+    cells) becomes notebook.ipynb on first load — markdown kept, code kept
+    with its outputs, a question cell as markdown plus the eis code that
+    reproduces it; a hand study is untouched."""
+    h, ids = research_ws
+    if isinstance(h, NodeHost):
+        pytest.skip("writes the Session D document straight into the workspace folder")
+    ws_dir = next(p.parent for p in (isolated_packaged_home / "workspaces").glob("*/manifest.json"))
+    tool = _ok(rpc(h, "run_test", {"test_id": "cycling", "slice_rules": ["full_power"], "channels": ["rpm"]}))
+    full = _ok(rpc(h, "list_slice_presets", {"engine": "916iS"}))["presets"][0]
+    full = {k: v for k, v in full.items() if k not in ("question", "status", "description")}
+    hand = _ok(rpc(h, "save_study", {"study": {"name": "Hand", "slice_rules": ["full_power"],
+                                                "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))
+    doc = {"study_id": "st-0123456789ab", "name": "Old", "kind": "investigation", "author": "claude",
+           "question": "Why?", "selection": {"mode": "all"}, "slice_rules": [hand["slice_rules"][0]],
+           "hand_slices": [], "references": [], "windows": {}, "provenance": {"engine": "1.0.2"},
+           "tests": [{"test_id": "cycling", "channels": ["rpm"], "params": {}, "result": tool}],
+           "cells": [{"id": "c1", "kind": "markdown", "source": "First."},
+                     {"id": "c2", "kind": "code", "source": "print(1)", "ran": {"engine": "1.0.2", "flights": []},
+                      "outputs": [{"kind": "text", "stream": "stdout", "text": "1\n"}], "pending_outputs": None},
+                     {"id": "c3", "kind": "question", "test_index": 0}],
+           "status": "finished", "summary": "It cycles."}
+    (ws_dir / "studies" / "st-0123456789ab.json").write_text(json.dumps(doc))
+    listed = {s["study_id"]: s for s in _ok(rpc(h, "list_studies", {}))["studies"]}
+    assert listed["st-0123456789ab"]["format"] == "ipynb" and listed[hand["study_id"]].get("format") is None
+    assert (ws_dir / "studies" / "st-0123456789ab" / "notebook.ipynb").is_file()
+    assert (ws_dir / "studies" / "st-0123456789ab" / ".session-d.json").is_file()
+    assert not (ws_dir / "studies" / "st-0123456789ab.json").exists()
+    nb = _ok(rpc(h, "load_study", {"study_id": "st-0123456789ab"}))["notebook"]
+    assert [c["cell_type"] for c in nb["cells"]] == ["markdown", "markdown", "code", "markdown", "code"]
+    assert nb["metadata"]["slingology"]["status"] == "finished"
+    assert nb["cells"][2]["outputs"] == [{"output_type": "stream", "name": "stdout", "text": "1\n"}]
+    q = nb["cells"][4]
+    assert q["source"].startswith("r = eis.cycling('full_power', 'rpm')") and "print(r)" in q["source"]
+    stored_text = q["outputs"][0]["text"]
+    assert stored_text.startswith(tool["question"]) and tool["finding"] in stored_text
+    if _has_bench(h):
+        _bench_stack()
+        re = _ok(rpc(h, "study_cells_rerun", {"study_id": "st-0123456789ab"}))
+        assert next(c for c in re["cells"] if c["cell_id"] == q["id"])["identical"] is True, re
+    # The hand study is a hand study.
+    assert _ok(rpc(h, "load_study", {"study_id": hand["study_id"]}))["tests"][0]["test_id"] == "cycling"
 
 
 # ── aircraft and documents (§4.4) ─────────────────────────────────────────

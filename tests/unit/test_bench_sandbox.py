@@ -22,10 +22,12 @@ def bench(isolated_packaged_home):
     h = InProcess()
     _ok(rpc(h, "create_workspace", {"name": "Bench", "engine_model": "916iS"}))
     _import(h, "2026-01-01")
-    sid = _ok(rpc(h, "save_study", {"study": {"name": "Sandbox", "kind": "investigation", "cells": []}}))["study_id"]
+    sid = _ok(rpc(h, "study_create", {"name": "Sandbox"}))["study_id"]
 
     def run(source, **caps):
-        return _ok(rpc(h, "code_run", {"study_id": sid, "source": source, **caps}))["cell"]
+        cell = _ok(rpc(h, "code_run", {"study_id": sid, "source": source, **caps}))["cell"]
+        cell["ran"] = cell["metadata"]["slingology"]["ran"]          # the notebook cell's run record (§5.1)
+        return cell
     run.home = isolated_packaged_home
     return run
 
@@ -33,7 +35,7 @@ def bench(isolated_packaged_home):
 def _refused(cell) -> str:
     assert cell["ran"]["status"] == "error", cell
     err = cell["outputs"][-1]
-    assert err["kind"] == "error" and err["ename"] == "Refused", err
+    assert err["output_type"] == "error" and err["ename"] == "Refused", err
     return err["evalue"]
 
 
@@ -86,7 +88,7 @@ def test_runaway_stopped_with_partial_output(bench):
                  timeout_s=3)
     assert cell["ran"]["status"] == "timeout"
     text = cell["outputs"][0]["text"]
-    assert cell["outputs"][0]["kind"] == "text" and "line 0" in text and "line 5" in text
+    assert cell["outputs"][0]["output_type"] == "stream" and "line 0" in text and "line 5" in text
     assert cell["outputs"][-1]["ename"] == "Stopped" and "3 s cap" in cell["outputs"][-1]["evalue"]
 
 

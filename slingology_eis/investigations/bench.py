@@ -1,15 +1,16 @@
 """
 The code tool's engine side (Spec 16 D3, §4.5): run one cell in a worker
 process (bench_worker.py) under the envelope, and turn what it returned
-into a notebook cell.
+into a notebook cell's nbformat 4 outputs (§5.1).
 
 Caps (§9 Q2), per cell:
 - wall clock `DEFAULT_TIMEOUT_S` (a cell may ask for up to `MAX_TIMEOUT_S`),
   counted from the worker's start, imports included;
 - memory `DEFAULT_MEMORY_MB` peak resident (up to `MAX_MEMORY_MB`);
 - stdout and stderr kept up to `MAX_STREAM_CHARS` each;
-- tables up to `TABLE_ROWS` rows, figures as SVG (stored under the
-  study's files/) with a small PNG preview for the investigator.
+- tables up to `TABLE_ROWS` rows (text/html and text/plain), figures as
+  inline SVG (image/svg+xml) with a small PNG preview for the
+  investigator, never stored.
 
 A cell stopped at a cap keeps what it printed before the stop. A cell's
 own error is its output, never a host error, so the investigator can read
@@ -21,7 +22,6 @@ environment either.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import signal
@@ -120,10 +120,13 @@ def _env(mpl_dir: Path) -> dict:
 
 def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratch: Path, mpl_dir: Path,
              engine_cfg: dict, engine_name: str, aircraft: dict, assignments: dict, study: dict,
-             cap: dict) -> dict:
+             cap: dict, documents_dirs: Optional[list] = None, data_root: Optional[Path] = None,
+             notes: str = "") -> dict:
     """Run one cell; returns {outputs, ran, previews}. `outputs` are the
-    notebook outputs (figures as refs into files/), `previews` maps a
-    figure ref to its PNG (base64) for the investigator's eyes."""
+    cell's nbformat 4 outputs (Spec 16 §5.1: streams, tables as text/html,
+    figures inline as image/svg+xml, log views as SVG + their reference);
+    `previews` maps an output's index ("o2") to a PNG (base64) of its
+    figure for the investigator's eyes — never stored."""
     if not isinstance(source, str) or not source.strip():
         raise BenchError("BAD_PARAMS", "a code cell needs source")
     if not available():
@@ -135,7 +138,8 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
     work.mkdir(parents=True, exist_ok=True)
     req = {"source": source, "cell_id": cell_id, "ws_dir": str(ws_dir), "files_dir": str(files_dir),
            "engine_cfg": engine_cfg, "engine_name": engine_name, "aircraft": aircraft, "assignments": assignments,
-           "study": study, "caps": cap, "result_path": str(work / "result.json")}
+           "study": study, "caps": cap, "result_path": str(work / "result.json"),
+           "documents_dirs": list(documents_dirs or []), "data_root": str(data_root or ""), "notes": notes or ""}
     (work / "request.json").write_text(json.dumps(req))
     out_p, err_p = work / "stdout.txt", work / "stderr.txt"
     started = time.monotonic()
@@ -177,32 +181,30 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
 
     outputs: list[dict] = []
     if stdout:
-        outputs.append({"kind": "text", "stream": "stdout", "text": stdout})
+        outputs.append({"output_type": "stream", "name": "stdout", "text": stdout})
     previews: dict[str, str] = {}
     for o in (result or {}).get("outputs") or []:
-        if o["kind"] == "figure":
-            svg = o["svg"].encode()
-            name = f"fig-{hashlib.sha256(svg).hexdigest()[:16]}.svg"
-            (files_dir / name).write_bytes(svg)
-            ref = f"files/{name}"
-            previews[ref] = o["png_base64"]
-            outputs.append({"kind": "figure", "ref": ref, "title": o.get("title")})
-        else:
-            outputs.append(o)
+        png = o.pop("_png", None)
+        if png:
+            previews[f"o{len(outputs)}"] = png
+        outputs.append(o)
     if stderr.strip():
-        outputs.append({"kind": "text", "stream": "stderr", "text": stderr})
+        outputs.append({"output_type": "stream", "name": "stderr", "text": stderr})
+
+    def stopped(evalue: str, tb: str) -> dict:
+        return {"output_type": "error", "ename": "Stopped" if status != "crashed" else "Crashed",
+                "evalue": evalue, "traceback": [tb]}
     if status == "timeout":
-        outputs.append({"kind": "error", "ename": "Stopped", "evalue": f"the cell ran past the {cap['timeout_s']:g} s cap",
-                        "traceback": f"Stopped at the {cap['timeout_s']:g} s wall-clock cap; the output above is what "
-                                     "it printed before the stop."})
+        outputs.append(stopped(f"the cell ran past the {cap['timeout_s']:g} s cap",
+                               f"Stopped at the {cap['timeout_s']:g} s wall-clock cap; the output above is what "
+                               "it printed before the stop."))
     elif status == "memory":
-        outputs.append({"kind": "error", "ename": "Stopped", "evalue": f"the cell passed the {cap['memory_mb']:g} MB memory cap",
-                        "traceback": f"Stopped at the {cap['memory_mb']:g} MB memory cap; the output above is what "
-                                     "it printed before the stop."})
+        outputs.append(stopped(f"the cell passed the {cap['memory_mb']:g} MB memory cap",
+                               f"Stopped at the {cap['memory_mb']:g} MB memory cap; the output above is what "
+                               "it printed before the stop."))
     elif status == "crashed":
-        outputs.append({"kind": "error", "ename": "Crashed",
-                        "evalue": f"the bench process ended without a result (exit {proc.returncode})",
-                        "traceback": "The bench process ended without a result; stderr above may say why."})
+        outputs.append(stopped(f"the bench process ended without a result (exit {proc.returncode})",
+                               "The bench process ended without a result; stderr above may say why."))
     ran = {"engine": __version__, "flights": (result or {}).get("flights") or [], "at": at, "ms": ms,
            "status": status, "caps": {"timeout_s": cap["timeout_s"], "memory_mb": cap["memory_mb"],
                                       "os_sandbox": os_sandbox}}
@@ -213,5 +215,5 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
 
 
 def outputs_equal(a: Optional[list], b: Optional[list]) -> bool:
-    """Two runs' outputs say the same thing (refs are content hashes)."""
+    """Two runs' outputs say the same thing (figures are deterministic SVG)."""
     return json.dumps(a or [], sort_keys=True) == json.dumps(b or [], sort_keys=True)

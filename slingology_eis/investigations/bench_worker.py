@@ -38,6 +38,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+from typing import Optional
 
 MEMORY_EXIT = 87
 _MAX_TEXT_CHARS = 20000
@@ -142,7 +143,7 @@ def install_envelope(files_dir: str) -> None:
     sys.addaudithook(hook)
 
 
-# ── Rendering what a cell returns ──────────────────────────────────────────
+# ── Rendering what a cell returns (Spec 16 §5.1: nbformat 4 outputs) ─────
 
 def _cell_value(v):
     import numpy as np
@@ -163,51 +164,97 @@ def _cell_value(v):
     return str(v)
 
 
-def render_table(obj, max_rows: int, title=None) -> dict:
+def _esc(v) -> str:
+    return "" if v is None else str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def render_table(obj, max_rows: int, title=None, result: bool = False) -> dict:
+    """A frame as `text/html` (the table EIS and Jupyter draw) and
+    `text/plain`; at most `max_rows` rows are kept, the count is said."""
     import pandas as pd
     df = obj.to_frame() if isinstance(obj, pd.Series) else obj
     if not isinstance(df.index, pd.RangeIndex) or df.index.name is not None:
         df = df.reset_index()
     n = len(df)
     head = df.head(max_rows)
-    out = {"kind": "table", "columns": [str(c) for c in head.columns],
-           "rows": [[_cell_value(v) for v in row] for row in head.itertuples(index=False, name=None)],
-           "n_rows": int(n), "n_cols": int(df.shape[1]), "truncated": n > max_rows}
+    cols = [str(c) for c in head.columns]
+    rows = [[_cell_value(v) for v in row] for row in head.itertuples(index=False, name=None)]
+    more = f"<p>{n - len(rows)} more rows not kept</p>" if n > len(rows) else ""
+    cap = f"<caption>{_esc(title)}</caption>" if title else ""
+    html = (f'<table class="eis-table">{cap}<thead><tr>' + "".join(f"<th>{_esc(c)}</th>" for c in cols)
+            + "</tr></thead><tbody>" + "".join("<tr>" + "".join(f"<td>{_esc(v)}</td>" for v in r) + "</tr>"
+                                                for r in rows) + f"</tbody></table>{more}")
+    with pd.option_context("display.max_rows", max_rows, "display.max_columns", 50, "display.width", 200):
+        plain = head.to_string(index=False)
+    if n > len(rows):
+        plain += f"\n[{n - len(rows)} more rows not kept]"
     if title:
-        out["title"] = str(title)
+        plain = f"{title}\n{plain}"
+    meta = {"slingology": {"table": {"n_rows": int(n), "n_cols": int(df.shape[1]), "truncated": n > max_rows}}}
+    return _bundle({"text/html": html, "text/plain": plain}, meta, result)
+
+
+def _bundle(data: dict, metadata: Optional[dict] = None, result: bool = False) -> dict:
+    if result:
+        return {"output_type": "execute_result", "execution_count": None, "metadata": metadata or {}, "data": data}
+    return {"output_type": "display_data", "metadata": metadata or {}, "data": data}
+
+
+def _figure_title(fig) -> str:
+    t = fig._suptitle.get_text() if getattr(fig, "_suptitle", None) is not None else ""
+    if not t and fig.axes:
+        t = fig.axes[0].get_title()
+    return t
+
+
+def _png(fig) -> str:
+    png = io.BytesIO()
+    fig.savefig(png, format="png", dpi=72, bbox_inches="tight")
+    return base64.b64encode(png.getvalue()).decode()
+
+
+def render_figure(fig, title=None, result: bool = False) -> dict:
+    buf = io.StringIO()
+    fig.savefig(buf, format="svg", metadata={"Date": None}, bbox_inches="tight")
+    t = title or _figure_title(fig)
+    out = _bundle({"image/svg+xml": buf.getvalue(), "text/plain": f"<Figure: {t}>" if t else "<Figure>"}, None, result)
+    out["_png"] = _png(fig)          # the investigator's preview; never stored
     return out
 
 
-def render_figure(fig, title=None) -> dict:
-    buf = io.StringIO()
-    fig.savefig(buf, format="svg", metadata={"Date": None}, bbox_inches="tight")
-    png = io.BytesIO()
-    fig.savefig(png, format="png", dpi=72, bbox_inches="tight")
-    t = title
-    if not t:
-        t = fig._suptitle.get_text() if getattr(fig, "_suptitle", None) is not None else ""
-        if not t and fig.axes:
-            t = fig.axes[0].get_title()
-    return {"kind": "figure", "svg": buf.getvalue(), "png_base64": base64.b64encode(png.getvalue()).decode(),
-            "title": t or None}
+def _text(text: str) -> str:
+    return text if len(text) <= _MAX_TEXT_CHARS else text[:_MAX_TEXT_CHARS] + "\n[…truncated]"
 
 
-def render(obj, caps: dict, title=None):
+def render(obj, caps: dict, title=None, result: bool = False):
     import matplotlib.figure
     import pandas as pd
     if isinstance(obj, (pd.DataFrame, pd.Series)):
-        return render_table(obj, int(caps["table_rows"]), title)
+        return render_table(obj, int(caps["table_rows"]), title, result)
     if isinstance(obj, matplotlib.figure.Figure):
-        return render_figure(obj, title)
+        return render_figure(obj, title, result)
     if hasattr(obj, "figure") and isinstance(getattr(obj, "figure"), matplotlib.figure.Figure):
-        return render_figure(obj.figure, title)          # an Axes
-    text = repr(obj)
-    if len(text) > _MAX_TEXT_CHARS:
-        text = text[:_MAX_TEXT_CHARS] + "\n[…truncated]"
-    out = {"kind": "text", "text": text}
+        return render_figure(obj.figure, title, result)          # an Axes
+    if hasattr(obj, "_repr_mimebundle_"):
+        data = obj._repr_mimebundle_()
+        data = {k: v for k, v in data.items() if v is not None}
+        data["text/plain"] = _text(str(data.get("text/plain") or repr(obj)))
+        out = _bundle(data, None, result)
+        if getattr(obj, "fig", None) is not None:
+            out["_png"] = _png(obj.fig)
+        return out
+    text = _text(repr(obj))
     if title:
-        out["title"] = str(title)
-    return out
+        text = f"{title}\n{text}"
+    return _bundle({"text/plain": text}, None, result)
+
+
+def _close(obj) -> None:
+    import matplotlib.pyplot as plt
+    for f in (obj, getattr(obj, "figure", None), getattr(obj, "fig", None)):
+        if hasattr(f, "savefig"):
+            plt.close(f)
+            return
 
 
 # ── The run ────────────────────────────────────────────────────────────────
@@ -261,17 +308,18 @@ def main(request_path: str) -> int:
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
     w = Workspace(req)
+    from .eis_lib import EIS
+    eis = EIS(w, req)
     outputs: list[dict] = []
 
     def show(obj, title=None):
         """Put a table (DataFrame), a figure or any value into the cell's outputs now."""
         outputs.append(render(obj, caps, title))
-        if hasattr(obj, "savefig"):
-            plt.close(obj)
+        _close(obj)
 
     namespace = {"__name__": "__eis_cell__", "__builtins__": __builtins__,
                  "np": np, "pd": pd, "plt": plt, "matplotlib": matplotlib, "scipy": scipy,
-                 "ws": w, "show": show, "FILES": Path(req["files_dir"]), "profile": w.profile,
+                 "ws": w, "eis": eis, "show": show, "FILES": Path(req["files_dir"]), "profile": w.profile,
                  "aircraft": w.aircraft, "flights": w.flights, "load_flight": w.load_flight,
                  "load_slices": w.load_slices, "load_slice_samples": w.load_slice_samples,
                  "flight_info": w.flight_info, "study": w.study}
@@ -286,24 +334,22 @@ def main(request_path: str) -> int:
         if last is not None:
             value = eval(last, namespace)
             if value is not None:
-                outputs.append(render(value, caps))
-                if hasattr(value, "savefig"):
-                    plt.close(value)
-                elif hasattr(value, "figure") and hasattr(value.figure, "savefig"):
-                    plt.close(value.figure)
+                outputs.append(render(value, caps, result=True))
+                _close(value)
     except SyntaxError as e:
-        status, error = "error", {"kind": "error", "ename": "SyntaxError", "evalue": str(e),
-                                  "traceback": f"SyntaxError: {e.msg} (line {e.lineno})"}
+        status, error = "error", {"output_type": "error", "ename": "SyntaxError", "evalue": str(e),
+                                  "traceback": [f"SyntaxError: {e.msg} (line {e.lineno})"]}
     except BaseException as e:  # noqa: BLE001 — a cell's error is its output (Spec 16 §4.5)
-        status, error = "error", {"kind": "error", "ename": type(e).__name__, "evalue": str(e),
-                                  "traceback": _cell_traceback(e, filename)}
+        status, error = "error", {"output_type": "error", "ename": type(e).__name__, "evalue": str(e),
+                                  "traceback": _cell_traceback(e, filename).splitlines()}
     # Figures the cell drew and left open, as a notebook would show them.
     try:
         for num in plt.get_fignums():
             outputs.append(render_figure(plt.figure(num)))
         plt.close("all")
     except Exception as e:  # noqa: BLE001
-        outputs.append({"kind": "text", "text": f"[a figure couldn't be drawn: {type(e).__name__}: {e}]"})
+        outputs.append({"output_type": "stream", "name": "stderr",
+                        "text": f"[a figure couldn't be drawn: {type(e).__name__}: {e}]\n"})
     if error is not None:
         outputs.append(error)
     ms = int((time.monotonic() - t0) * 1000)

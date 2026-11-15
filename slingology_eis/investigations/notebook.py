@@ -1,6 +1,10 @@
 """
-The notebook study (Spec 16 §5, D4): the Spec 06 study document with a
-`cells` list.
+Session D's notebook study (Spec 16 v0.4 §5, D4): the Spec 06 study
+document with a `cells` list. Since Session E an investigation is a
+Jupyter notebook (`ipynb.py`), and a study stored this way is converted on
+first load (`ipynb.convert`); what stays here is what hand studies and
+the conversion still use — the cell vocabulary below, the one-way
+`.ipynb` export of a hand study, and the S5 fingerprints.
 
     { "id": "c1", "kind": "markdown", "source": "…" }
     { "id": "c2", "kind": "code", "source": "…", "outputs": [ … ],

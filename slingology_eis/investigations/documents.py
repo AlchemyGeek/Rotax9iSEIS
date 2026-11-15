@@ -49,6 +49,11 @@ class DocumentError(Exception):
         self.code, self.message = code, message
 
 
+# The bench (eis.document) reads the cache but never writes it: its writes
+# are confined to the study's files/ (Spec 16 §4.5).
+READ_ONLY = False
+
+
 def cache_root(data_root: Path) -> Path:
     return Path(data_root) / "cache" / "documents"
 
@@ -125,6 +130,8 @@ class _Index:
     def prune(self) -> int:
         """Forget paths that are gone; drop the cache of every hash no
         remaining path has. Returns how many cache entries were dropped."""
+        if READ_ONLY:
+            return 0
         for key in [k for k in self.paths if not Path(k).is_file()]:
             del self.paths[key]
             self.dirty = True
@@ -138,7 +145,7 @@ class _Index:
         return dropped
 
     def save(self) -> None:
-        if self.dirty:
+        if self.dirty and not READ_ONLY:
             self.root.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps({"version": 1, "paths": self.paths}))
             self.dirty = False
@@ -209,6 +216,8 @@ def pages_of(index: _Index, f: dict) -> list[dict]:
         except (ValueError, KeyError):
             pass
     pages = _extract(f["path"], f["kind"])
+    if READ_ONLY:
+        return pages
     try:
         cached.parent.mkdir(parents=True, exist_ok=True)
         cached.write_text(json.dumps({"kind": f["kind"], "pages": pages}))

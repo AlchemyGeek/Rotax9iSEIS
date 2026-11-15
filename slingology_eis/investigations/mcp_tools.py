@@ -417,32 +417,57 @@ def run_rows_compare(args: dict, call: Call) -> dict:
 
 # ── Bench ──────────────────────────────────────────────────────────────────
 
+def _text(v) -> str:
+    return "".join(v) if isinstance(v, list) else str(v or "")
+
+
 def _trim_outputs(outputs: list, stream_chars: int) -> list:
+    """nbformat outputs as the investigator reads them: text clipped,
+    a table's text, a figure or log view named (its image comes back as
+    an image block from code_run), never SVG markup."""
     out = []
     for o in outputs or []:
-        o = dict(o)
-        if o.get("kind") == "text":
-            o["text"], cut = _clip(o.get("text"), stream_chars)
+        t = o.get("output_type")
+        if t == "stream":
+            txt, cut = _clip(_text(o.get("text")), stream_chars)
+            out.append({"stream": o.get("name"), "text": txt, **({"clipped": True} if cut else {})})
+        elif t == "error":
+            tb = o.get("traceback") or []
+            lines = tb if isinstance(tb, list) else str(tb).splitlines()
+            out.append({"error": o.get("ename"), "evalue": o.get("evalue"),
+                        "traceback": (["[…]"] + lines[-20:]) if len(lines) > 20 else lines})
+        else:
+            data = o.get("data") or {}
+            item: dict = {}
+            txt, cut = _clip(_text(data.get("text/plain")), stream_chars)
+            if txt:
+                item["text"] = txt
             if cut:
-                o["clipped"] = True
-        elif o.get("kind") == "table":
-            rows = o.get("rows") or []
-            if len(rows) > PAGE_ROWS:
-                o["rows"], o["truncated"] = rows[:PAGE_ROWS], True
-        elif o.get("kind") == "error":
-            tb = o.get("traceback") or ""
-            lines = tb.splitlines() if isinstance(tb, str) else list(tb)
-            if len(lines) > 20:
-                o["traceback"] = "\n".join(["[…]"] + lines[-20:]) if isinstance(tb, str) else lines[-20:]
-        out.append(o)
+                item["clipped"] = True
+            table = ((o.get("metadata") or {}).get("slingology") or {}).get("table")
+            if table:
+                item["table"] = table
+            if "image/svg+xml" in data or "image/png" in data:
+                item["figure"] = True
+            lv = data.get("application/vnd.slingology.logview+json")
+            if lv:
+                item["logview"] = lv
+            out.append(item)
     return out
+
+
+def _ran(cell: dict) -> dict:
+    return ((cell.get("metadata") or {}).get("slingology") or {}).get("ran") or {}
 
 
 def shape_code_run(args: dict, r: dict) -> dict:
     cell = r["cell"]
-    return {"study_id": r["study_id"], "cell_id": cell["id"], "status": (cell.get("ran") or {}).get("status"),
-            "ran": cell.get("ran"), "outputs": _trim_outputs(cell.get("outputs"), CODE_STREAM_CHARS),
-            "figures_returned": [ref for ref in list(r.get("previews") or {})[:CODE_FIGURES]]}
+    out = {"study_id": r["study_id"], "cell_id": cell["id"], "kind": cell.get("cell_type")}
+    if cell.get("cell_type") == "code":
+        out.update({"status": _ran(cell).get("status"), "ran": _ran(cell),
+                    "outputs": _trim_outputs(cell.get("outputs"), CODE_STREAM_CHARS),
+                    "figures_returned": len(list(r.get("previews") or {})[:CODE_FIGURES])})
+    return out
 
 
 def code_run_images(r: dict) -> list:
@@ -496,24 +521,39 @@ def run_studies_list(args: dict, call: Call) -> dict:
 
 
 def shape_study(args: dict, doc: dict) -> dict:
+    if isinstance(doc.get("notebook"), dict):
+        return shape_notebook(args, doc)
     out = {k: v for k, v in doc.items() if k not in ("cache", "cells", "tests")}
     out["tests"] = [{**{k: v for k, v in t.items() if k != "result"},
                      "result": shape_question({}, t["result"]) if t.get("result") else None}
                     for t in doc.get("tests") or []]
-    cells = []
-    for c in doc.get("cells") or []:
-        c = dict(c)
-        if c.get("kind") == "markdown":
-            c["source"], _ = _clip(c.get("source"), TEXT_CHARS)
-        for k in ("outputs", "pending_outputs"):
-            if c.get(k):
-                c[k] = _trim_outputs(c[k], TEXT_CHARS)
-        cells.append(c)
-    if doc.get("cells") is not None:
-        out["cells"] = cells
     for t in out["tests"]:
         if t["result"]:
             t["result"]["rows"] = t["result"]["rows"][:10]
+    return out
+
+
+def shape_notebook(args: dict, view: dict) -> dict:
+    """A notebook as the investigator reads it: its metadata and each cell
+    — markdown source and code source clipped, outputs as _trim_outputs,
+    pending re-run outputs flagged."""
+    nb = view["notebook"]
+    out = {k: v for k, v in view.items() if k != "notebook"}
+    cells = []
+    for c in nb.get("cells") or []:
+        sm = (c.get("metadata") or {}).get("slingology") or {}
+        src, _ = _clip(_text(c.get("source")), TEXT_CHARS)
+        cell = {"cell_id": c.get("id"), "kind": c.get("cell_type"), "source": src}
+        if c.get("cell_type") == "code":
+            cell["ran"] = sm.get("ran")
+            cell["outputs"] = _trim_outputs(c.get("outputs"), TEXT_CHARS)
+            for k in ("ran_elsewhere", "read_only"):
+                if sm.get(k):
+                    cell[k] = True
+            if sm.get("pending"):
+                cell["pending"] = _trim_outputs(sm["pending"].get("outputs"), TEXT_CHARS)
+        cells.append(cell)
+    out["cells"] = cells
     return out
 
 
@@ -524,32 +564,35 @@ def run_study_read(args: dict, call: Call) -> dict:
 # ── Record ─────────────────────────────────────────────────────────────────
 
 def run_study_create(args: dict, call: Call) -> dict:
-    study = {"name": args["name"], "kind": args.get("kind") or "investigation", "author": "claude",
-             "question": args.get("question"), "cells": [], "selection": _selection(args)}
-    if args.get("inbox_candidate"):
-        study["inbox_candidate"] = args["inbox_candidate"]
-    if args.get("engine_type"):
-        study["engine_type"] = args["engine_type"]
-    saved = call("save_study", {"study": study})
-    return {"study_id": saved["study_id"], "name": saved["name"], "kind": saved.get("kind"),
-            "question": saved.get("question"), "inbox_candidate": saved.get("inbox_candidate")}
+    p = {"name": args["name"], "author": "claude"}
+    for k in ("question", "kind", "inbox_candidate", "engine_type"):
+        if args.get(k):
+            p[k] = args[k]
+    view = call("study_create", p)
+    return {k: view.get(k) for k in ("study_id", "name", "kind", "author", "question", "status", "inbox_candidate")}
 
 
 def run_cell_append(args: dict, call: Call) -> dict:
-    cell = {k: args[k] for k in ("kind", "source", "role", "test_id", "params", "channels", "slices", "ref", "title")
-            if args.get(k) is not None}
-    r = call("study_cells_append", {"study_id": args["study_id"], "cell": cell})
-    return shape_cell_append(args, r)
+    cell = {k: args[k] for k in ("kind", "source", "role", "flight", "start_s", "end_s", "channels", "marks",
+                                 "title", "rule", "timeout_s", "memory_mb") if args.get(k) is not None}
+    return call("study_cells_append", {"study_id": args["study_id"], "cell": cell})
 
 
-def shape_cell_append(args: dict, r: dict) -> dict:
-    out = dict(r)
-    if isinstance(out.get("cell"), dict) and out["cell"].get("outputs"):
-        out["cell"] = {**out["cell"], "outputs": _trim_outputs(out["cell"]["outputs"], CODE_STREAM_CHARS)}
-    if isinstance(out.get("result"), dict):
-        out["result"] = shape_question({}, out["result"])
-    out.pop("study", None)
-    return out
+def run_study_rerun(args: dict, call: Call) -> dict:
+    return call("study_cells_rerun", {"study_id": args["study_id"]})
+
+
+def shape_rerun(args: dict, r: dict) -> dict:
+    return {"study": r["study"], "cells": r["cells"], "figures_returned": len(list(r.get("previews") or {})[:CODE_FIGURES])}
+
+
+def _pending_call(op: str):
+    def run(args: dict, call: Call) -> dict:
+        p = {"study_id": args["study_id"]}
+        if args.get("cell_ids"):
+            p["cell_ids"] = list(args["cell_ids"])
+        return call(op, p)
+    return run
 
 
 def run_study_finish(args: dict, call: Call) -> dict:
@@ -650,11 +693,19 @@ TOOLS: list[Tool] = [
          {**_SET, "reference": _S, "pinned": _S, "collapse": {"type": "boolean"}, **_PAGE},
          run_rows_compare, ops=("compare_rows",)),
     Tool("code_run", "Run Python",
-         "Run Python on the bench (numpy, pandas, scipy, matplotlib; helpers flights(), load_flight(), "
-         "load_slices(), load_slice_samples(), flight_info(), profile, aircraft, FILES, show()) and keep it as a "
-         "code cell in the study — appended, or replacing cell_id. No network, no subprocesses, writes only under "
-         f"FILES, time and memory capped. Returns stdout (≤ {CODE_STREAM_CHARS} characters), tables "
-         f"(≤ {PAGE_ROWS} rows) and up to {CODE_FIGURES} figures as images.",
+         "Run Python on the bench and keep it as a code cell in the notebook study_id (study_create first: every "
+         "executed cell belongs to a notebook) — appended, or replacing cell_id. The namespace has numpy (np), pandas "
+         "(pd), scipy, matplotlib (plt) and the eis library, the tools' own code: eis.flights(), eis.find(\"Oct 24 "
+         "Bellingham\"), eis.load(flight, [\"rpm\"], start_s, end_s), eis.slices(\"full_power\"), "
+         "eis.cycling(\"full_power\", \"rpm\") → Result (.finding, .magnitude, .caveats, .rows, .figure(); "
+         "print(r) is the §8 text), eis.coupling(rule, [\"rpm\", \"map_inhg\"]), eis.groups(rule, \"rpm.swing\", "
+         "by=\"source\") or by=\"date\", date=\"2026-10-01\", eis.unusual(rule), eis.signal(flight, start_s, end_s, "
+         "[\"rpm\"]), eis.compare(rule), eis.logview(flight, start_s, end_s, [\"rpm\", \"map_inhg\"], "
+         "marks=[(t_s, \"label\")]), eis.document(\"om.pdf\").find(\"boost\"), eis.aircraft, eis.profile, eis.notes. "
+         "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. The last "
+         "expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and "
+         f"memory capped. Returns stdout (≤ {CODE_STREAM_CHARS} characters), tables (text) and up to {CODE_FIGURES} "
+         "figures as images.",
          {"study_id": _S, "source": _S, "cell_id": _S,
           "timeout_s": {"type": "number", "minimum": 1, "maximum": 300, "description": "Default 60"},
           "memory_mb": {"type": "number", "minimum": 256, "maximum": 8192, "description": "Default 2048"}},
@@ -683,25 +734,45 @@ TOOLS: list[Tool] = [
     Tool("studies_list", "Studies", "The studies in the workspace: kind, author, question, status, finding.",
          {}, run_studies_list, ops=("list_studies",)),
     Tool("study_read", "Read a study",
-         "One study: its definition, its tests' findings and its notebook cells with their outputs.",
+         "One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures "
+         "named, not drawn; pending re-run outputs flagged), or a hand study's definition and findings.",
          {"study_id": _S}, run_study_read, required=("study_id",), ops=("load_study",)),
-    Tool("study_create", "Start a study",
-         "Start a notebook study (an investigation) for a question; cells are added with code_run and cell_append.",
+    Tool("study_create", "Start a notebook",
+         "Start an investigation notebook for a question; its first cell holds the question. Add cells with "
+         "cell_append and code_run, end with study_finish. Example: {\"name\": \"Full-power rpm cycling\", "
+         "\"question\": \"Why does rpm hunt at full power?\"}.",
          {"name": _S, "question": _S, "kind": {"type": "string", "enum": ["investigation", "question-for-type"]},
-          "inbox_candidate": {**_S, "description": "The inbox candidate this investigates"},
-          "engine_type": _S, "flights": _STRS}, run_study_create, required=("name",), writes=True,
-         ops=("save_study",)),
+          "inbox_candidate": {**_S, "description": "The inbox candidate this investigates (marked investigating)"},
+          "engine_type": _S}, run_study_create, required=("name",), writes=True, ops=("study_create",)),
     Tool("cell_append", "Add a cell",
-         "Append a cell to a study: markdown (source), a question (test_id, params, channels, own slices; run at "
-         "once), or a figure or table a code cell wrote under files/ (ref, title).",
-         {"study_id": _S, "kind": {"type": "string", "enum": ["markdown", "question", "figure", "table"]},
-          "source": _S, "role": _S, "test_id": _S, "params": {"type": "object"}, "channels": _STRS,
-          "slices": {"type": "object", "description": "This question's own {selection, slice_rules, hand_slices}"},
-          "ref": _S, "title": _S}, run_cell_append, required=("study_id", "kind"), writes=True,
+         "Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; "
+         "code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "
+         "\"label\"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight "
+         "view. Example: {\"kind\": \"logview\", \"flight\": \"…\", \"start_s\": 360, \"end_s\": 420, "
+         "\"channels\": [\"rpm\", \"map_inhg\"], \"marks\": [[367, \"takeoff power\"]]}.",
+         {"study_id": _S, "kind": {"type": "string", "enum": ["markdown", "code", "logview"]},
+          "source": _S, "role": _S, "flight": _S, "start_s": _N, "end_s": _N, "channels": _STRS,
+          "marks": {"type": "array", "items": {"type": "array"}}, "title": _S, "rule": _S,
+          "timeout_s": _N, "memory_mb": _N},
+         run_cell_append, required=("study_id", "kind"), writes=True, images=code_run_images,
          ops=("study_cells_append",)),
-    Tool("study_finish", "Finish a study",
-         "End an investigation with its summary (what was found, what it means, what to do); optionally resolve its "
-         "inbox candidate and note the finding in the Journal (the one Journal entry Claude may write).",
+    Tool("study_rerun", "Re-run a notebook",
+         "Re-run every code cell of a notebook against this workspace; outputs that differ wait as pending until "
+         "study_accept or study_discard.", {"study_id": _S}, run_study_rerun, required=("study_id",), writes=True,
+         images=code_run_images, ops=("study_cells_rerun",)),
+    Tool("study_accept", "Accept re-run outputs",
+         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs.",
+         {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_accept"), required=("study_id",),
+         writes=True, ops=("study_cells_accept",)),
+    Tool("study_discard", "Discard re-run outputs",
+         "Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.",
+         {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_discard"), required=("study_id",),
+         writes=True, ops=("study_cells_discard",)),
+    Tool("study_finish", "Finish a notebook",
+         "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
+         "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
+         "resolves its inbox candidate and notes the finding in the Journal (the one Journal entry Claude may "
+         "write). Reports the flights the cells read and the inbox's open candidates.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
           "note": _S, "journal": {"type": "boolean"}, "finding": _S}, run_study_finish,
@@ -782,7 +853,7 @@ TOOLS[:0] = [
 ]
 
 # code_run's façade result is shaped after the call (the images need the raw result).
-_SHAPE_AFTER = {"code_run": shape_code_run}
+_SHAPE_AFTER = {"code_run": shape_code_run, "cell_append": shape_code_run, "study_rerun": shape_rerun}
 
 BY_NAME = {t.name: t for t in TOOLS}
 

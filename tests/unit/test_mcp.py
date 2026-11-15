@@ -25,8 +25,9 @@ from slingology_eis.investigations import mcp_tools as T
 from tests.unit.test_research_ops import FULL_POWER, FP_START, _import, _ok
 from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noqa: F401 — fixture
 
-WRITING = {"code_run", "study_create", "cell_append", "study_finish", "inbox_resolve", "workspace_use"}
-TOOL_COUNT = 27
+WRITING = {"code_run", "study_create", "cell_append", "study_rerun", "study_accept", "study_discard", "study_finish",
+           "inbox_resolve", "workspace_use"}
+TOOL_COUNT = 30
 
 
 @pytest.fixture
@@ -60,10 +61,14 @@ def _recording(server):
     return call, seen
 
 
-def _tool(server, name, args):
-    """Run a tool with a recording `call`; returns (result, the (op, params) it made)."""
+def _tool(server, name, args, error=False):
+    """Run a tool with a recording `call`; returns (result, the (op, params) it made)
+    — or, with error=True, (the error text, the calls)."""
     call, seen = _recording(server)
     out = T.call_tool(name, args, call, engine_version=__version__, workspace_id=server._refresh())
+    if error:
+        assert out["isError"], out
+        return out["content"][0]["text"], seen
     assert not out["isError"], out["content"][0]["text"]
     body = out["structuredContent"]
     assert body["engine_version"] == __version__ and body["workspace_id"] == server._refresh()
@@ -143,8 +148,13 @@ def test_writing_tools(ws):
     h, ids, _sid, _ws_id, _home = ws
     server = M.Server()
     made, seen = _tool(server, "study_create", {"name": "Why", "question": "Why does rpm cycle?"})
-    assert [op for op, _ in seen] == ["save_study"]
+    assert [op for op, _ in seen] == ["study_create"]
     st = made["study_id"]
+    app, _ = _tool(server, "cell_append", {"study_id": st, "kind": "code",
+                                           "source": "r = eis.cycling('full_power', 'rpm')\nprint(r.finding)"})
+    tool_finding = _tool(server, "question_run", {"test_id": "cycling", "slice_rules": ["full_power"],
+                                                  "channels": ["rpm"]})[0]["finding"]
+    assert app["outputs"][0]["text"].strip() == tool_finding        # acceptance 12
     raw_seen = []
 
     def call(op, params):
@@ -159,11 +169,17 @@ def test_writing_tools(ws):
     assert res["status"] == "ok" and res["outputs"][0]["clipped"] and len(res["outputs"][0]["text"]) < 8100
     images = [c for c in out["content"] if c["type"] == "image"]
     assert len(images) == 1 and images[0]["mimeType"] == "image/png"
-    stored = _ok(rpc(h, "load_study", {"study_id": st}))["cells"][0]
-    assert len(stored["outputs"][0]["text"]) == 10001          # the study keeps it whole (with the newline)
-    app, _ = _tool(server, "cell_append", {"study_id": st, "kind": "question", "test_id": "cycling",
-                                           "channels": ["rpm"], "slices": {"slice_rules": ["full_power"]}})
-    assert app["cell"]["kind"] == "question" and app["result"]["finding"]
+    stored = _ok(rpc(h, "load_study", {"study_id": st}))["notebook"]["cells"][2]
+    assert len(stored["outputs"][0]["text"]) == 10001          # the notebook keeps it whole (with the newline)
+    refused, _ = _tool(server, "study_finish", {"study_id": st, "summary": "x"}, error=True)
+    assert "FLOOR_RULE" in refused and stored["id"] in refused
+    _tool(server, "cell_append", {"study_id": st, "kind": "markdown", "source": "The figure above is a line."})
+    rr, _ = _tool(server, "study_rerun", {"study_id": st})
+    assert rr["study"]["pending"] == 0 and all(c["identical"] for c in rr["cells"])
+    assert _tool(server, "study_accept", {"study_id": st})[0]["cells"] == []
+    read, _ = _tool(server, "study_read", {"study_id": st})
+    assert [c["kind"] for c in read["cells"]] == ["markdown", "code", "code", "markdown"]
+    assert read["cells"][2]["outputs"][-1] == {"text": "<Figure>", "figure": True}
     cand = _ok(rpc(h, "inbox_list", {}))["candidates"]
     fin, _ = _tool(server, "study_finish", {"study_id": st, "summary": "It cycles.", "journal": True,
                                             **({"inbox_candidate": cand[0]["id"], "resolution": "watch"} if cand else {})})

@@ -68,6 +68,8 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     # wrote) travel with it, as they are; listed before studies/*.json,
     # which fnmatch would otherwise match too.
     ("studies/*/files/*", "carried", "Notebook files: figures and tables a study's code wrote (Spec 16 §5)"),
+    ("studies/*/notebook.ipynb", "carried", "Investigation notebooks, nbformat 4, outputs included (Spec 16 §5.1)"),
+    ("studies/*/.session-d.json", "retired", "A Session D investigation study, kept beside the notebook it was converted to"),
     # Spec 06 §10.2: studies travel; their tests' results and descriptor
     # cache are derived, and are recomputed when the recipient runs them.
     # A notebook's code-cell outputs travel (the website can't recompute them).
@@ -181,8 +183,8 @@ def _study_for_export(study: Any) -> Any:
     descriptor cache are derived and recomputed by the recipient — except
     in a read-only study, whose whole content is the sender's results
     (Spec 06 §10.2)."""
-    if not isinstance(study, dict) or study.get("read_only"):
-        return study
+    if not isinstance(study, dict) or study.get("read_only") or "nbformat" in study:
+        return study            # a notebook's outputs travel (the website can't recompute them)
     out = {k: v for k, v in study.items() if k not in ("cache", "last_run")}
     out["tests"] = [{k: v for k, v in t.items() if k != "result"} for t in study.get("tests") or []]
     return out
@@ -654,7 +656,7 @@ def _parse_eisworkspace(data: bytes, label: str) -> tuple[dict, dict]:
             names = z.namelist()
             workspace = json.loads(z.read("workspace.json"))
             documents = {n: (z.read(n) if _is_raw(n) else json.loads(z.read(n))) for n in names
-                         if n != "workspace.json" and (n.endswith(".json") or _is_raw(n))}
+                         if n != "workspace.json" and (n.endswith((".json", ".ipynb")) or _is_raw(n))}
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
         raise ImportRefused(f"{label} isn't a workspace export ({e}).") from e
     if workspace.get("format") != FORMAT:

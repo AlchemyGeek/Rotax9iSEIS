@@ -441,3 +441,25 @@ def test_a_study_is_carried_without_its_derived_results(registry_server, tmp_pat
     assert [s["name"] for s in got] == ["Taxi idle"]
     again = rpc(url, "run_study", {"study_id": got[0]["study_id"]})["result"]
     assert again["tests"][0]["result"]["finding"] == ran["tests"][0]["result"]["finding"]
+
+
+def test_a_notebook_travels_with_its_outputs(registry_server, tmp_path):
+    """Spec 16 §5.1: studies/<id>/notebook.ipynb is carried as stored —
+    outputs included (the website can't recompute them)."""
+    url = registry_server
+    _sender(url, tmp_path)
+    sid = rpc(url, "study_create", {"name": "Carried", "question": "Does it travel?"})["result"]["study_id"]
+    assert rpc(url, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "A note."}})["ok"]
+    nb_path = _active_dir() / "studies" / sid / "notebook.ipynb"
+    sent = json.loads(nb_path.read_text())
+    sent["cells"].append({"id": "c3", "cell_type": "code", "execution_count": None, "source": "print(1)",
+                          "metadata": {"slingology": {"ran": {"engine": __version__, "flights": [], "status": "ok"}}},
+                          "outputs": [{"output_type": "stream", "name": "stdout", "text": "1\n"}]})
+    nb_path.write_text(json.dumps(sent))
+    _res, data = _export(url, include_logs=False)
+    rpc(url, "import_workspace", {"content_base64": base64.b64encode(data).decode(), "filename": "x.eisworkspace",
+                                  "skip_linking": True})
+    got = rpc(url, "load_study", {"study_id": sid})
+    assert got["ok"], got
+    got = got["result"]
+    assert got["format"] == "ipynb" and got["notebook"]["cells"] == sent["cells"]

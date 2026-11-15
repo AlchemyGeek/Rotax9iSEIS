@@ -2815,8 +2815,6 @@ async def op_run_test(params: dict, ctx: dict) -> Any:
     """§11: one test (§7.1–7.4) on a slice set, returning the §8 result.
     The set is given as selection + slice_rules + hand_slices (or a
     study_id whose definition and cache are used)."""
-    from .research import questions as rq
-    from .research import studies as rs
     _require_active(ctx)
     test_id = params.get("test_id")
     doc, cache = _study_cache(ctx, params.get("study_id"))
@@ -2825,15 +2823,21 @@ async def op_run_test(params: dict, ctx: dict) -> Any:
         base = {"selection": doc["selection"], "slice_rules": doc["slice_rules"], "hand_slices": doc["hand_slices"],
                 "windows": doc.get("windows"), "references": doc.get("references")}
     merged = {**base, **{k: v for k, v in params.items() if v is not None}}
-    t = {"test_id": test_id, "params": dict(params.get("params") or {}), "channels": list(params.get("channels") or [])}
-    chans, ref = rs._channels_for(rs._test(t))
-    ss = await _build(ctx, {**merged, "channels": chans, "reference": ref}, cache=cache)
-    _keep_cache(ctx, doc, cache)
-    d = ss.to_dict()
-    d["selection"] = merged.get("selection") or {"mode": "all"}
     engine_cfg, _ = _current_engine(ctx)
-    return rq.run(test_id, d, channels=t["channels"] or None, params=t["params"],
-                  references=merged.get("references"), engine_cfg=engine_cfg)
+    from .research.api import run_question
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        out = await run_question(
+            ctx["workspace_dir"], _sources(ctx), test_id=test_id, selection=merged.get("selection"),
+            slice_rules=_research_rules(ctx, merged.get("slice_rules")), hand_slices=merged.get("hand_slices"),
+            channels=list(params.get("channels") or []), params=dict(params.get("params") or {}),
+            references=merged.get("references"), windows=merged.get("windows"),
+            prominence_min=float(merged.get("prominence_min", 0.2)), engine_cfg=engine_cfg,
+            assignments=_assignments(ctx), cache=cache, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+    _keep_cache(ctx, doc, cache)
+    return out
 
 
 async def op_analyze_signal(params: dict, ctx: dict) -> Any:
@@ -2864,7 +2868,7 @@ async def op_compare_rows(params: dict, ctx: dict) -> Any:
     slice build as build_slices (study cache used with `study_id`);
     `collapse` gives one row per flight; `pinned` names the reference row.
     Flights of the selection with no matching slice are listed."""
-    from .research.compare import compare_rows
+    from .research.api import compare
     _require_active(ctx)
     doc, cache = _study_cache(ctx, params.get("study_id"))
     base = {}
@@ -2873,23 +2877,18 @@ async def op_compare_rows(params: dict, ctx: dict) -> Any:
                 "windows": doc.get("windows")}
     merged = {**base, **{k: v for k, v in params.items() if v is not None}}
     merged.setdefault("channels", ["rpm", "map_inhg"])
-    ss = await _build(ctx, merged, cache=cache)
-    _keep_cache(ctx, doc, cache)
-    d = ss.to_dict()
-    from .research.slices import _selected_flights
-    selected, _missing = _selected_flights(ctx["workspace_dir"], merged.get("selection") or {"mode": "all"})
-    selected = list(dict.fromkeys(selected + [h["flight"] for h in ss.hand_slices]))
-    meta = {}
-    for fid in selected:
-        if fid in set(d["unreachable_flights"]):
-            continue
-        fa = ws.load_flight_analysis(ctx["workspace_dir"], fid)
-        if fa is not None:
-            meta[fid] = {"date": fa.header.get("date"), "start_utc": fa.header.get("start_utc")}
     engine_cfg, _ = _current_engine(ctx)
-    out = compare_rows(d, channels=ss.channels, pinned=params.get("pinned"), collapse=bool(params.get("collapse")),
-                       flights=meta, engine_cfg=engine_cfg)
-    out["selection"] = merged.get("selection") or {"mode": "all"}
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        out = await compare(ctx["workspace_dir"], _sources(ctx), selection=merged.get("selection"),
+                            slice_rules=_research_rules(ctx, merged.get("slice_rules")),
+                            hand_slices=merged.get("hand_slices"), channels=merged["channels"],
+                            windows=merged.get("windows"), pinned=params.get("pinned"),
+                            collapse=bool(params.get("collapse")), engine_cfg=engine_cfg,
+                            assignments=_assignments(ctx), cache=cache, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+    _keep_cache(ctx, doc, cache)
     return out
 
 
@@ -2900,12 +2899,27 @@ def _engine_model(ctx: dict) -> str:
         return ""
 
 
+def _notebooks(ctx: dict):
+    """Spec 16 §5: the investigation notebooks' store, Session D studies
+    converted to it on first sight."""
+    from .investigations import ipynb as nbx
+    from .investigations.ops import presets_of
+    nbx.convert_all(ctx["workspace_dir"], presets=presets_of(ctx))
+    return nbx
+
+
 def op_save_study(params: dict, ctx: dict) -> Any:
-    """Create (no study_id) or replace a study; tests' results and the
-    cache are derived and may be sent or left out."""
+    """Create (no study_id) or replace a hand study (Spec 06); tests'
+    results and the cache are derived and may be sent or left out. An
+    investigation notebook is written cell by cell (Spec 16 §5)."""
     from .research import studies as rs
     _require_active(ctx)
     study = dict(params.get("study") or {})
+    nbx = _notebooks(ctx)
+    if nbx.exists(ctx["workspace_dir"], study.get("study_id")) or study.get("cells") is not None \
+            or (study.get("kind") or "hand") != "hand":
+        raise RpcError("BAD_PARAMS", "an investigation is a notebook: study_create starts one and its cells are "
+                                     "added with study_cells_append / code_run")
     # A preset named by id is stored as its full rule: the study travels
     # to workspaces (and engine versions) whose presets may differ.
     study["slice_rules"] = _research_rules(ctx, study.get("slice_rules"))
@@ -2913,29 +2927,49 @@ def op_save_study(params: dict, ctx: dict) -> Any:
 
 
 def op_load_study(params: dict, ctx: dict) -> Any:
+    """A hand study's document, or a notebook's list row with `notebook`
+    (the .ipynb as stored)."""
     from .research import studies as rs
     _require_active(ctx)
-    return rs.load(ctx["workspace_dir"], params.get("study_id"))
+    nbx = _notebooks(ctx)
+    sid = params.get("study_id")
+    if nbx.exists(ctx["workspace_dir"], sid):
+        return nbx.read_view(nbx.load(ctx["workspace_dir"], sid))
+    return rs.load(ctx["workspace_dir"], sid)
 
 
 def op_list_studies(params: dict, ctx: dict) -> Any:
+    """Hand studies and investigation notebooks, most recently updated first."""
     from .research import studies as rs
     _require_active(ctx)
-    return {"studies": rs.list_all(ctx["workspace_dir"])}
+    nbx = _notebooks(ctx)
+    rows = rs.list_all(ctx["workspace_dir"])
+    for sid in nbx.list_ids(ctx["workspace_dir"]):
+        try:
+            rows.append(nbx.summary(nbx.load(ctx["workspace_dir"], sid)))
+        except (ValueError, KeyError, nbx.NotebookError):
+            continue
+    return {"studies": sorted(rows, key=lambda s: s.get("updated") or "", reverse=True)}
 
 
 def op_delete_study(params: dict, ctx: dict) -> Any:
     from .research import studies as rs
     _require_active(ctx)
-    if not rs.delete(ctx["workspace_dir"], params.get("study_id")):
-        raise RpcError("NOT_FOUND", f"no study {params.get('study_id')}")
-    return {"deleted": params.get("study_id")}
+    nbx = _notebooks(ctx)
+    sid = params.get("study_id")
+    if not (nbx.exists(ctx["workspace_dir"], sid) and nbx.delete(ctx["workspace_dir"], sid)) \
+            and not rs.delete(ctx["workspace_dir"], sid):
+        raise RpcError("NOT_FOUND", f"no study {sid}")
+    return {"deleted": sid}
 
 
 async def op_run_study(params: dict, ctx: dict) -> Any:
-    """Run every test of a saved study and save the results and cache."""
+    """Run every test of a saved hand study and save the results and
+    cache; a notebook re-runs its code cells (study_cells_rerun)."""
     from .research import studies as rs
     _require_active(ctx)
+    if _notebooks(ctx).exists(ctx["workspace_dir"], params.get("study_id")):
+        return await _OPS["study_cells_rerun"]({"study_id": params.get("study_id")}, ctx)
     doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
     engine_cfg, _ = _current_engine(ctx)
     _emit(ctx, "research", {"active": True, "phase": "starting"})
@@ -2948,35 +2982,72 @@ async def op_run_study(params: dict, ctx: dict) -> Any:
 
 
 def op_export_study(params: dict, ctx: dict) -> Any:
-    """§10.2: the study as `<name>.eisstudy` (its results, descriptor cache,
-    evidence CSVs and charts), handed to the transport like a workspace
-    export."""
+    """§10.2: a hand study as `<name>.eisstudy` (its results, descriptor
+    cache, evidence CSVs and charts) or a one-way `.ipynb`; an
+    investigation notebook (Spec 16 §5.1) as a zip of its folder
+    (`format: "zip"`, the default) or one HTML page (`"html"`) — never an
+    .eisstudy. Handed to the transport like a workspace export."""
     from .investigations import notebook as _nb
     from .research import studies as rs
     _require_active(ctx)
-    doc = rs.load(ctx["workspace_dir"], params.get("study_id"))
-    # Spec 16 S5: what leaves the workspace names flights by content fingerprint.
-    doc = _nb.ran_for_export(doc, ctx["workspace_dir"])
-    fmt = params.get("format") or "eisstudy"
-    if fmt == "ipynb":
-        # Spec 16 §5: one-way export to Jupyter.
-        from .investigations.ops import ipynb_export
-        data, suffix = ipynb_export(ctx, doc), ".ipynb"
-    elif fmt == "eisstudy":
-        data, suffix = rs.export_bytes(doc, _nb.files_dir(ctx["workspace_dir"], doc["study_id"])), rs.SUFFIX
+    nbx = _notebooks(ctx)
+    sid = params.get("study_id")
+    fmt = params.get("format")
+    if nbx.exists(ctx["workspace_dir"], sid):
+        from .investigations import nbhtml
+        nb = nbx.load(ctx["workspace_dir"], sid)
+        name = rs.safe_name(nbx.meta(nb).get("name") or sid)
+        if fmt in (None, "zip"):
+            data, suffix = nbx.export_zip(ctx["workspace_dir"], nb), ".zip"
+        elif fmt == "html":
+            files = nbx.files_dir(ctx["workspace_dir"], sid)
+
+            def read(ref: str):
+                p = files / ref.split("/", 1)[-1]
+                return p.read_bytes() if p.is_file() and ".." not in ref else None
+            data, suffix = nbhtml.render(nbx.for_export(nb, ctx["workspace_dir"]), read).encode(), ".html"
+        else:
+            raise RpcError("BAD_PARAMS", "an investigation exports as format zip (the notebook folder) or html; "
+                                         "the .eisstudy evidence package is for hand studies")
     else:
-        raise RpcError("BAD_PARAMS", "format is eisstudy or ipynb")
+        doc = rs.load(ctx["workspace_dir"], sid)
+        # Spec 16 S5: what leaves the workspace names flights by content fingerprint.
+        doc = _nb.ran_for_export(doc, ctx["workspace_dir"])
+        name = rs.safe_name(doc["name"])
+        fmt = fmt or "eisstudy"
+        if fmt == "ipynb":
+            from .investigations.ops import ipynb_export
+            data, suffix = ipynb_export(ctx, doc), ".ipynb"
+        elif fmt == "eisstudy":
+            data, suffix = rs.export_bytes(doc, _nb.files_dir(ctx["workspace_dir"], doc["study_id"])), rs.SUFFIX
+        else:
+            raise RpcError("BAD_PARAMS", "format is eisstudy or ipynb")
     out = _export_dir(ctx) / uuid.uuid4().hex
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{rs.safe_name(doc['name'])}{suffix}"
+    path = out / f"{name}{suffix}"
     path.write_bytes(data)
     return {"filename": path.name, "size": len(data), "download_url": ctx["deliver_file"](path, path.name)}
 
 
+def _is_notebook_bytes(data: bytes) -> bool:
+    if data[:2] == b"PK":
+        import io as _io
+        import zipfile
+        try:
+            names = zipfile.ZipFile(_io.BytesIO(data)).namelist()
+        except zipfile.BadZipFile:
+            return False
+        return any(n.endswith(".ipynb") for n in names) and "study.json" not in names
+    return data.lstrip()[:1] == b"{" and b'"nbformat"' in data[:4096] or b'"nbformat":' in data
+
+
 def op_import_study(params: dict, ctx: dict) -> Any:
-    """§10.2: a `.eisstudy` (content or upload_id) becomes a new study in
-    the active workspace; flights matched by flight_id. Read-only when
-    none of its flights are here (Q5)."""
+    """§10.2: a `.eisstudy` (content or upload_id) becomes a new hand study
+    in the active workspace, flights matched by flight_id, read-only when
+    none of its flights are here (Q5). A notebook — its folder's zip or a
+    bare .ipynb (Spec 16 §5.1) — becomes a new investigation, its
+    fingerprints mapped to flights here and cells whose flights are absent
+    read-only."""
     from .research import studies as rs
     _require_active(ctx)
     if params.get("upload_id"):
@@ -2984,24 +3055,45 @@ def op_import_study(params: dict, ctx: dict) -> Any:
     elif isinstance(params.get("content"), (bytes, bytearray)):
         data = bytes(params["content"])
     else:
-        raise RpcError("BAD_PARAMS", "choose a .eisstudy file")
+        raise RpcError("BAD_PARAMS", "choose a .eisstudy, a notebook zip or an .ipynb file")
+    if _is_notebook_bytes(data):
+        nbx = _notebooks(ctx)
+        try:
+            return nbx.read_view(nbx.import_bytes(ctx["workspace_dir"], data))
+        except nbx.NotebookError as e:
+            raise RpcError(e.code, e.message)
     return rs.import_bytes(ctx["workspace_dir"], data, engine_model=_engine_model(ctx))
 
 
 async def op_run_study_on_my_flights(params: dict, ctx: dict) -> Any:
     """Q5 *Run this on my flights*: a new study with the same rules,
-    references and tests over this workspace's flights, run and saved."""
+    references and tests over this workspace's flights, run and saved. A
+    notebook is copied as a new notebook (its files with it) and re-run
+    where there is a bench (D8), its new outputs accepted."""
+    import shutil
     from .research import studies as rs
     _require_active(ctx)
-    src = rs.load(ctx["workspace_dir"], params.get("study_id"))
-    doc = rs.save(ctx["workspace_dir"], rs.for_my_flights(src), engine_model=_engine_model(ctx))
-    if src.get("cells") is not None:
-        # The notebook's figures and files travel with its code cells (Spec 16 §5).
-        import shutil
-        from .investigations import notebook as _nb
-        a, b = _nb.files_dir(ctx["workspace_dir"], src["study_id"]), _nb.files_dir(ctx["workspace_dir"], doc["study_id"])
+    nbx = _notebooks(ctx)
+    sid = params.get("study_id")
+    if nbx.exists(ctx["workspace_dir"], sid):
+        import copy as _copy
+        import uuid as _uuid
+        src = nbx.load(ctx["workspace_dir"], sid)
+        nb = _copy.deepcopy(src)
+        m = nbx.meta(nb)
+        m.update({"id": f"st-{_uuid.uuid4().hex[:12]}", "name": f"{m.get('name') or 'Notebook'} — my flights",
+                  "status": "open", "created": None})
+        m.pop("imported", None)
+        nbx.save(ctx["workspace_dir"], nb)
+        a, b = nbx.files_dir(ctx["workspace_dir"], sid), nbx.files_dir(ctx["workspace_dir"], m["id"])
         if a.is_dir():
             shutil.copytree(a, b, dirs_exist_ok=True)
+        await _OPS["study_cells_rerun"]({"study_id": m["id"]}, ctx)
+        if _FEATURES[ctx.get("host", "server")].get("bench"):
+            await _OPS["study_cells_accept"]({"study_id": m["id"]}, ctx)
+        return nbx.read_view(nbx.load(ctx["workspace_dir"], m["id"]))
+    src = rs.load(ctx["workspace_dir"], sid)
+    doc = rs.save(ctx["workspace_dir"], rs.for_my_flights(src), engine_model=_engine_model(ctx))
     return await op_run_study({"study_id": doc["study_id"]}, ctx)
 
 
@@ -3195,7 +3287,7 @@ def _investigation_op(name: str):
     return _research_call(op)
 
 
-for _name in ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+for _name in ("study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
               "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
     _OPS[_name] = _investigation_op(_name)
 
