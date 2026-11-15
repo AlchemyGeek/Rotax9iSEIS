@@ -26,7 +26,7 @@ import numpy as np
 from .. import __version__
 from ..channels import CHANNEL_REGISTRY
 from ..fleet import DA_BANDS, MIN_FLIGHTS_FOR_CONFIDENCE, OAT_BANDS
-from .descriptors import PERIOD_FLOOR_S, _r
+from .descriptors import PERIOD_FLOOR_S, _r, below_floor
 from .rules import RuleError
 
 # Q10: the small-group caution reuses n_min (Spec 12 A4) — one constant.
@@ -253,9 +253,18 @@ def cycling(slice_set: dict, channel: str, params: dict, references: list, engin
     split = (" (" + ", ".join(f"{src} {v['prominent']} of {v['slices']}" for src, v in per_source.items()) + ")"
              if len(per_source) > 1 else "")
     sw = f"swing {with_unit(s50, channel)} ({fmt(s25)}–{fmt(s75)})"
+    # F2: a period under the 1 Hz floor whose prominence passes is a cycle
+    # the log can't resolve — said so, never "no period".
+    fast = [x for x in d if not x.get("period_prominent") and below_floor(x, params["prominence_min"])]
+    m = len(fast)
+    floor_s = f"≈ {PERIOD_FLOOR_S:g} s"
     if k:
         finding = (f"{label(channel)} cycles every {fmt(p50, nd=1)} s (IQR {fmt(p25, nd=1)}–{fmt(p75, nd=1)}), {sw}, "
-                   f"in {k} of {_plural(n, 'slice')}{split}.")
+                   f"in {k} of {_plural(n, 'slice')}{split}"
+                   + (f"; in {m} more, a cycle faster than the 1 Hz log can resolve ({floor_s})" if m else "") + ".")
+    elif m:
+        finding = (f"{label(channel)} shows a cycle faster than the 1 Hz log can resolve ({floor_s}) in {m} of "
+                   f"{_plural(n, 'slice')}; no period at or above {PERIOD_FLOOR_S:g} s stands out{split}; {sw}.")
     else:
         finding = (f"No repeating period stands out in {label(channel)}: 0 of {_plural(n, 'slice')} have a prominent "
                    f"period{split}; {sw}.")
@@ -269,8 +278,9 @@ def cycling(slice_set: dict, channel: str, params: dict, references: list, engin
             continue
         gap = edge - lim["value"]
         where = "at" if gap == 0 else ("above" if gap > 0 else "below")
-        what = "top reaches" if lim["limit_type"] == "MAX" else "bottom is"
-        lim = dict(lim, text=f"OM {lim['label']} {with_unit(lim['value'], channel)}: the median slice's {what} "
+        # F3: the crest of the oscillation is where it peaks.
+        what = "median slice peaks at" if lim["limit_type"] == "MAX" else "median slice's bottom is"
+        lim = dict(lim, text=f"OM {lim['label']} {with_unit(lim['value'], channel)}: the {what} "
                              f"{with_unit(edge, channel)}" + ("" if gap == 0 else f", {with_unit(abs(gap), channel)}")
                              + f" {where} it")
         om.append(lim)
@@ -288,14 +298,17 @@ def cycling(slice_set: dict, channel: str, params: dict, references: list, engin
          "spread": [_r(p25, 3), _r(p75, 3)],
          "references": [{"kind": "set", "label": "recurrence", "value": [k, n],
                          "text": f"prominent in {k} of {n} slices (prominence ≥ {params['prominence_min']:g})"}],
-         "text": (f"{fmt(p50, nd=1)} s" if k else "none prominent")},
+         "text": (f"{fmt(p50, nd=1)} s" if k else
+                  (f"faster than the 1 Hz log can resolve ({floor_s}) in {m}" if m else "none prominent"))},
     ]
     columns = _context_columns() + [
         {"key": "swing", "label": "Swing", "unit": unit(channel)}, {"key": "period_s", "label": "Period", "unit": "s"},
         {"key": "period_prominence", "label": "Prominence"}, {"key": "period_prominent", "label": "Prominent"},
+        {"key": "below_floor", "label": "Faster than the log resolves"},
         {"key": "median", "label": "Level", "unit": unit(channel)}, {"key": "max", "label": "Max", "unit": unit(channel)}]
     rows = [dict(_row(s), **{k2: s["descriptors"][channel].get(k2) for k2 in
-                             ("swing", "period_s", "period_prominence", "period_prominent", "median", "max")})
+                             ("swing", "period_s", "period_prominence", "period_prominent", "median", "max")},
+                 below_floor=below_floor(s["descriptors"][channel], params["prominence_min"]))
             for s in slices]
     chart = {"kind": "aligned_slices", "channels": [channel], "anchor": params.get("anchor", "crossing"),
              "distribution": {"descriptor": "swing", "channel": channel}}
@@ -445,8 +458,26 @@ def _band_groups(values: list, edges: list, unit_txt: str, what: str) -> list[tu
     return out
 
 
-def _split(slices: list[dict], split: dict) -> list[tuple[str, list[dict]]]:
-    by = (split or {}).get("by")
+SPLIT_FORMS = ('"source" (short for {"by": "source"}), {"by": "date", "date": "2026-10-01"}, {"by": "da_band"}, '
+               '{"by": "oat_band", "edges": [5, 20]}, {"by": "engine_hours", "edges": [150]}, {"by": "rule"}, '
+               '{"by": "flights", "groups": [{"label": "before", "flights": [...]}, {"label": "after", "flights": [...]}]}')
+
+
+def normalise_split(split) -> dict:
+    """§3.2 F1 (Spec 16): `split` as `{"by": …, …}`, or a bare string as
+    shorthand for `{"by": "<string>"}`. A wrong form is a RuleError naming
+    the forms."""
+    if isinstance(split, str) and split.strip():
+        split = {"by": split.strip()}
+    if not isinstance(split, dict) or split.get("by") not in ("da_band", "oat_band", "engine_hours", "source", "date",
+                                                               "rule", "flights"):
+        raise RuleError(f"groups needs a split, one of: {SPLIT_FORMS}; got {split!r}")
+    return split
+
+
+def _split(slices: list[dict], split) -> list[tuple[str, list[dict]]]:
+    split = normalise_split(split)
+    by = split.get("by")
     if by in ("da_band", "oat_band", "engine_hours"):
         key = {"da_band": "da_ft", "oat_band": "oat_c", "engine_hours": "engine_hours"}[by]
         default = [b[1] for b in (DA_BANDS if by == "da_band" else OAT_BANDS)[:-1]] if by != "engine_hours" else None
@@ -475,7 +506,7 @@ def _split(slices: list[dict], split: dict) -> list[tuple[str, list[dict]]]:
             raise RuleError("split by flights needs two groups of flights")
         return [(str(g.get("label") or f"group {i + 1}"), [s for s in slices if s["flight"] in set(g.get("flights") or [])])
                 for i, g in enumerate(groups)]
-    raise RuleError("groups needs a split: by da_band, oat_band, engine_hours, source, date, rule or flights")
+    raise RuleError(f"groups needs a split, one of: {SPLIT_FORMS}")
 
 
 def groups(slice_set: dict, descriptor: str, params: dict, references: list, engine_cfg: Optional[dict]) -> dict:
@@ -483,7 +514,7 @@ def groups(slice_set: dict, descriptor: str, params: dict, references: list, eng
         raise RuleError("descriptor is channel.name, e.g. rpm.swing")
     ch, name = descriptor.split(".", 1)
     slices = [s for s in _need(slice_set["slices"], ch) if s["descriptors"][ch].get(name) is not None]
-    split = params.get("split") or slice_set.get("selection", {}).get("split")
+    split = normalise_split(params.get("split") or slice_set.get("selection", {}).get("split"))
     parts = [(g, ss) for g, ss in _split(slices, split) if ss]
     if len(parts) < 2:
         raise RuleError("the split leaves fewer than two non-empty groups")

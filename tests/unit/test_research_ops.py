@@ -281,7 +281,11 @@ def test_signal_window_numbers_diagnostics_and_derived_rule(research_ws):
     r = _signal(h, ids[0], window=win)["window"]
     hand = _ok(rpc(h, "build_slices", {"slice_rules": [], "channels": ["rpm", "map_inhg"],
                                        "hand_slices": [{"flight": ids[0], **win}]}))["slices"][0]
-    assert r["descriptors"] == hand["descriptors"]          # the same §6 code path as a hand slice
+    # The same §6 code path as a hand slice; the window adds F2's derived below_floor (not cached on slices).
+    from slingology_eis.research.descriptors import below_floor
+    assert {ch: {k: v for k, v in d.items() if k != "below_floor"} for ch, d in r["descriptors"].items()} \
+        == hand["descriptors"]
+    assert all(r["descriptors"][ch]["below_floor"] == below_floor(d) for ch, d in hand["descriptors"].items())
     assert r["windows"]["rpm"]["window_s"] == 12
     dg = r["diagnostics"]
     assert len(dg["rpm"]["detrended"]) == FP_LEN and dg["rpm"]["acf"] and dg["rpm"]["periodogram"]["period_s"]
@@ -370,3 +374,36 @@ def test_analyze_signal_window_only(research_ws):
     lean = _signal(h, ids[0], window=win, include_strips=False, include_values=False)
     assert lean["strips"] == {} and lean["strip_windows"] == {} and "values" not in lean
     assert lean["window"] == full["window"]
+
+
+def test_skip_onset_s_leaves_the_ramp_out_and_the_caveat_suggests_it(research_ws):
+    """Spec 16 §3.2 F4: a window that opens on the power change carries a
+    caveat naming a skip; with it the cycle's period comes back, and the
+    window itself is unchanged."""
+    h, ids = research_ws
+    win = {"start_s": FP_START - 15, "end_s": FP_START + FP_LEN}
+    plain = _signal(h, ids[0], window=win, include_strips=False, include_values=False)["window"]
+    assert plain["skip_onset_s"] == 0
+    cav = [c for c in plain["caveats"] if "Try skip_onset_s=" in c]
+    assert cav, plain["caveats"]
+    skip = int(cav[0].rsplit("=", 1)[1].rstrip("."))
+    assert 14 <= skip <= 22
+    got = _signal(h, ids[0], window=win, skip_onset_s=skip, include_strips=False, include_values=False)["window"]
+    assert (got["start_s"], got["end_s"], got["skip_onset_s"]) == (win["start_s"], win["end_s"], skip)
+    rpm = got["descriptors"]["rpm"]
+    assert rpm["period_prominent"] and abs(rpm["period_s"] - 4.4) < 0.5 and rpm["below_floor"] is False
+    assert any("left out of the descriptors" in c for c in got["caveats"])
+    bad = rpc(h, "analyze_signal", {"flight_id": ids[0], "window": win, "skip_onset_s": FP_LEN + 10})
+    assert bad["error"]["code"] == "BAD_PARAMS" and "fewer than 8 seconds" in bad["error"]["message"]
+
+
+def test_groups_split_shorthand_over_rpc(research_ws):
+    h, _ids = research_ws
+    # Every synthetic flight is G3X: the shorthand answers exactly as {"by": "source"} does.
+    run = lambda split: rpc(h, "run_test", {"test_id": "groups", "slice_rules": [FULL_POWER],  # noqa: E731
+                                            "params": {"descriptor": "rpm.swing", "split": split}})
+    short, full = run("source"), run({"by": "source"})
+    assert short == full and "fewer than two non-empty groups" in short["error"]["message"]
+    bad = rpc(h, "run_test", {"test_id": "groups", "slice_rules": [FULL_POWER],
+                              "params": {"descriptor": "rpm.swing", "split": "colour"}})
+    assert bad["error"]["code"] == "BAD_PARAMS" and "da_band" in bad["error"]["message"]

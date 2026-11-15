@@ -157,6 +157,16 @@ def dominant_period(y: np.ndarray, filled: Optional[np.ndarray] = None,
     return out
 
 
+def below_floor(d: dict, prominence_min: float = PROMINENCE_MIN) -> bool:
+    """§3.2 F2: the autocorrelation found a period under the sampling floor
+    and its prominence passes — a cycle faster than the 1 Hz log can
+    resolve. `period_prominent` stays false (the period itself is not
+    trusted); this says that something cycles. Derived from the stored
+    descriptors, so a cached slice answers it too."""
+    p, pr = d.get("period_s"), d.get("period_prominence")
+    return p is not None and pr is not None and p < PERIOD_FLOOR_S and pr >= prominence_min
+
+
 def swing(y: np.ndarray, window_s: int) -> Optional[float]:
     """Peak-to-peak: the median, over every window of `window_s` seconds
     with at least 80 % of its samples, of max − min. A slice shorter than

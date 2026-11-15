@@ -377,3 +377,62 @@ def test_strip_value_is_the_window_descriptor():
         p = D.dominant_period(y[a:a + 12], f[a:a + 12])
         assert (st["period_s"][i], st["prominent"][i], st["swing"][i]) == \
             (p["period_s"], p["period_prominent"], D._r(D.swing(y[a:a + 12], 12), 3))
+
+
+# ── Spec 16 §3.2 F1–F4 ─────────────────────────────────────────────────────
+
+def test_split_shorthand_and_a_bad_split_names_the_forms():
+    slices = [_fake_slice(i) for i in range(12)] + [_fake_slice(20 + i, source="AXIS", swing=120) for i in range(12)]
+    short = Q.run("groups", _fake_set(slices), params={"descriptor": "rpm.swing", "split": "source"}, engine_cfg=CFG)
+    full = Q.run("groups", _fake_set(slices), params={"descriptor": "rpm.swing", "split": {"by": "source"}},
+                 engine_cfg=CFG)
+    assert short["finding"] == full["finding"] and "AXIS" in short["finding"]
+    assert Q.normalise_split("date") == {"by": "date"}
+    for bad in ("nope", 3, {"by": "colour"}, None):
+        with pytest.raises(RuleError) as e:
+            Q.run("groups", _fake_set(slices), params={"descriptor": "rpm.swing", "split": bad}, engine_cfg=CFG)
+        assert "source" in str(e.value) and "da_band" in str(e.value) and "flights" in str(e.value)
+
+
+def test_below_floor_is_a_cycle_the_log_cannot_resolve():
+    assert D.below_floor({"period_s": 2.4, "period_prominence": 0.5})
+    assert not D.below_floor({"period_s": 2.4, "period_prominence": 0.1})     # not prominent enough
+    assert not D.below_floor({"period_s": 4.4, "period_prominence": 0.9})     # above the floor: a period
+    assert not D.below_floor({"period_s": None, "period_prominence": 0.0})
+    d = D.dominant_period(_oscillation(period=2.5, n=80))
+    assert not d["period_prominent"] and D.below_floor(d)
+
+
+def _fast_slice(i):
+    s = _fake_slice(i, period=2.4, prominent=False)
+    s["descriptors"]["rpm"]["period_prominence"] = 0.5
+    return s
+
+
+def test_cycling_says_faster_than_the_log_can_resolve():
+    slices = [_fake_slice(i) for i in range(10)] + [_fast_slice(20 + i) for i in range(2)]
+    r = Q.run("cycling", _fake_set(slices), channels=["rpm"], engine_cfg=CFG)
+    assert "in 10 of 12 slices" in r["finding"]
+    assert "; in 2 more, a cycle faster than the 1 Hz log can resolve (≈ 3 s)." in r["finding"]
+    assert sum(1 for row in r["evidence"]["table"]["rows"] if row.get("below_floor")) == 2
+    assert any(c.get("key") == "below_floor" for c in r["evidence"]["table"]["columns"])
+    only = Q.run("cycling", _fake_set([_fast_slice(i) for i in range(4)] + [_fake_slice(9, prominent=False)]),
+                 channels=["rpm"], engine_cfg=CFG)
+    assert "a cycle faster than the 1 Hz log can resolve (≈ 3 s) in 4 of 5 slices" in only["finding"]
+    assert check_no_verdicts(r) == [] and check_no_verdicts(only) == []
+
+
+def test_magnitude_says_peaks_not_top():
+    r = Q.run("cycling", _fake_set([_fake_slice(i) for i in range(12)]), channels=["rpm"], engine_cfg=CFG)
+    texts = " ".join(ref["text"] for m in r["magnitude"] for ref in m["references"])
+    assert "median slice peaks at" in texts and "top" not in texts
+
+
+def test_onset_ramp_finds_a_power_change_larger_than_the_swing():
+    from slingology_eis.research.signal import onset_ramp
+    ramp = np.concatenate([np.linspace(5000, 5700, 10), _oscillation(n=50)])
+    r = onset_ramp(ramp, 180)
+    assert r["direction"] == "rising" and 8 <= r["seconds"] <= 13 and r["change"] > 600
+    assert onset_ramp(_oscillation(n=60), 180) is None
+    down = onset_ramp(np.concatenate([np.linspace(5700, 5000, 8), np.full(40, 5000.0)]), 50)
+    assert down["direction"] == "falling"

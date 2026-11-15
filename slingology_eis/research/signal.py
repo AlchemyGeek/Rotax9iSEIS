@@ -162,8 +162,8 @@ def _numbers(ch: str, d: dict, references: list, engine_cfg: Optional[dict]) -> 
             continue
         gap = edge - lim["value"]
         where = "at" if gap == 0 else ("above" if gap > 0 else "below")
-        what = "top reaches" if lim["limit_type"] == "MAX" else "bottom is"
-        om.append(dict(lim, text=f"OM {lim['label']} {Q.with_unit(lim['value'], ch)}: the window's {what} "
+        what = "window peaks at" if lim["limit_type"] == "MAX" else "window's bottom is"
+        om.append(dict(lim, text=f"OM {lim['label']} {Q.with_unit(lim['value'], ch)}: the {what} "
                                  f"{Q.with_unit(edge, ch)}" + ("" if gap == 0 else f", {Q.with_unit(abs(gap), ch)}")
                                  + f" {where} it"))
     if om and level is not None:
@@ -171,12 +171,17 @@ def _numbers(ch: str, d: dict, references: list, engine_cfg: Optional[dict]) -> 
     users = Q._user_refs_for(Q._normalise_user_refs(references), ch, "cycling", d.get("swing"))
     out.append({"label": f"{Q.label(ch)} swing", "value": d.get("swing"), "unit": Q.unit(ch),
                 "references": om + users, "text": f"{Q.with_unit(d.get('swing'), ch)} peak-to-peak"})
-    prom = d.get("period_prominent")
+    fast = D.below_floor(d)
+    passes = (d.get("period_prominence") or 0) >= D.PROMINENCE_MIN
+    floor = (f"; the period is under the {D.PERIOD_FLOOR_S:g} s a 1 Hz log resolves" if fast else "")
     out.append({"label": f"{Q.label(ch)} period", "value": d.get("period_s"), "unit": "s",
                 "references": [{"kind": "threshold", "label": "prominence", "value": d.get("period_prominence"),
                                 "text": f"prominence {Q.fmt(d.get('period_prominence'), nd=2)} "
-                                        f"({'at or above' if prom else 'below'} the {D.PROMINENCE_MIN:g} the questions use)"}],
-                "text": f"{Q.fmt(d.get('period_s'), nd=1)} s" if d.get("period_s") is not None else "no period found"})
+                                        f"({'at or above' if passes else 'below'} the {D.PROMINENCE_MIN:g} the "
+                                        f"questions use{floor})"}],
+                "text": (f"a cycle faster than the 1 Hz log can resolve (≈ {D.PERIOD_FLOOR_S:g} s; "
+                         f"{Q.fmt(d.get('period_s'), nd=1)} s measured)" if fast else
+                         f"{Q.fmt(d.get('period_s'), nd=1)} s" if d.get("period_s") is not None else "no period found")})
     out.append({"label": f"{Q.label(ch)} level", "value": level, "unit": Q.unit(ch), "references": om,
                 "text": f"median {Q.with_unit(level, ch)}"})
     if d.get("corr0") is not None:
@@ -187,14 +192,43 @@ def _numbers(ch: str, d: dict, references: list, engine_cfg: Optional[dict]) -> 
     return out
 
 
+def onset_ramp(y, swing, max_s: int = 30) -> Optional[dict]:
+    """F4: a power change in the window's first `max_s` seconds — from its
+    lowest (highest) point to where it has gone 90 % of the way to its
+    highest (lowest) — larger than the window's swing. `seconds` is how
+    far into the window the change is done (what skip_onset_s should be).
+    None when there is none."""
+    y = np.asarray(y, dtype=float)[:max_s]
+    if np.isfinite(y).sum() < 4 or swing is None:
+        return None
+    lo, hi = int(np.nanargmin(y)), int(np.nanargmax(y))
+    change = float(y[hi] - y[lo])
+    if change <= float(swing):
+        return None
+    start, rising = (lo, True) if lo < hi else (hi, False)
+    target = y[start] + (0.9 * change if rising else -0.9 * change)
+    seg = y[start:]
+    done = np.flatnonzero(seg >= target) if rising else np.flatnonzero(seg <= target)
+    if not len(done):
+        return None
+    end = start + int(done[0]) + 1
+    return {"seconds": int(end), "change": D._r(change, 0), "direction": "rising" if rising else "falling"}
+
+
 async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Optional[list] = None,
                          window: Optional[dict] = None, reference: Optional[str] = None,
                          rule_channel: Optional[str] = None, windows: Optional[dict] = None,
                          prominence_min: float = D.PROMINENCE_MIN, references: Optional[list] = None,
                          engine_cfg: Optional[dict] = None, assignments: Optional[dict] = None,
                          include_values: bool = True, include_strips: bool = True,
+                         skip_onset_s: float = 0,
                          on_progress: Optional[Callable[[dict], None]] = None) -> dict:
-    """§9.1 / §11 `analyze_signal`."""
+    """§9.1 / §11 `analyze_signal`. `skip_onset_s` (Spec 16 §3.2 F4) leaves
+    the window's first seconds out of its descriptors and diagnostics — a
+    power change at the start of a takeoff window buries the period under
+    the ramp — while the window itself (and its derived rule) stays as
+    given; a window whose start holds a ramp larger than the swing gets a
+    caveat suggesting it."""
     fa = ws.load_flight_analysis(ws_dir, flight_id)
     if fa is None:
         raise RuleError(f"no flight {flight_id} in this workspace")
@@ -247,6 +281,13 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
         b = min(n, int(math.ceil(float(window.get("end_s", n)))))
         if b - a < 2:
             raise RuleError(f"the window {a}–{b} s holds fewer than two seconds of this flight")
+        try:
+            skip = int(math.ceil(float(skip_onset_s or 0)))
+        except (TypeError, ValueError):
+            raise RuleError("skip_onset_s is a number of seconds")
+        if skip < 0 or b - (a + skip) < 8:
+            raise RuleError(f"skip_onset_s {skip} leaves fewer than 8 seconds of the {b - a} s window")
+        a0, a = a, a + skip          # the descriptors read from a; the window is still a0–b
         f = filled[a:b]
         ref_y = values[reference][a:b] if reference in values else None
         per_ch, desc, diag, resolved = {}, {}, {}, {}
@@ -265,13 +306,25 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
                 diag[ch]["best_lag_s"] = desc[ch].get("lag_s")
             per_ch[ch] = _numbers(ch, desc[ch], references or [], engine_cfg)
         rc = rule_channel or (reference if reference in values else present[0])
-        when = f"{context.get('date')} {Q.fmt(a)}–{Q.fmt(b)} s" if context.get("date") else None
-        rule = derive_rule(rc, values[rc][a:b], f, a, b, flight_id, when=when)
+        when = f"{context.get('date')} {Q.fmt(a0)}–{Q.fmt(b)} s" if context.get("date") else None
+        rule = derive_rule(rc, values[rc][a0:b], filled[a0:b], a0, b, flight_id, when=when)
+        for ch in present:
+            desc[ch]["below_floor"] = D.below_floor(desc[ch], prominence_min)
+        caveats = []
+        if skip:
+            caveats.append(f"The first {skip} s of the window (from {a0} s) are left out of the descriptors and the "
+                           f"period (skip_onset_s); the window is still {a0}–{b} s.")
+        else:
+            ramp = onset_ramp(values[rc][a0:b], desc.get(rc, {}).get("swing"))
+            if ramp:
+                caveats.append(f"The window's first {ramp['seconds']} s hold a {Q.with_unit(ramp['change'], rc)} "
+                               f"{ramp['direction']} ramp, more than the {Q.with_unit(desc[rc].get('swing'), rc)} swing: "
+                               f"it can bury the period. Try skip_onset_s={ramp['seconds']}.")
         result["window"] = {
-            "start_s": a, "end_s": b, "duration_s": b - a,
-            "context": _context(fa, info, df, values, row_of, a, b, fa.phases),
+            "start_s": a0, "end_s": b, "duration_s": b - a0, "skip_onset_s": skip,
+            "context": _context(fa, info, df, values, row_of, a0, b, fa.phases),
             "descriptors": desc, "windows": resolved, "diagnostics": diag, "numbers": per_ch,
-            "derived_rule": rule,
+            "derived_rule": rule, "caveats": caveats,
         }
     if on_progress:
         on_progress({"phase": "done", "done": 1, "total": 1})

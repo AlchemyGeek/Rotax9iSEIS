@@ -128,6 +128,16 @@ def test_every_read_tool_is_its_operation_trimmed(ws):
     assert "start_local" in q["columns"] and all("start_local" in r and "when" in r for r in q["rows"])
     sig, _ = _tool(server, "signal_analyze", {"flight_id": ids[0], "start_s": FP_START, "end_s": FP_START + 60})
     assert sig["window"]["when"].endswith("into the flight)")
+    # Spec 16 §3.2 F1/F4: the shorthand split and skip_onset_s reach the operation as given.
+    sk, seen = _tool(server, "signal_analyze", {"flight_id": ids[0], "start_s": FP_START - 15, "end_s": FP_START + 60,
+                                                "skip_onset_s": 16, "strips": False})
+    assert seen[0][1]["skip_onset_s"] == 16 and sk["window"]["skip_onset_s"] == 16 and sk["window"]["caveats"]
+    err, _ = _tool(server, "question_run", {"test_id": "groups", "slice_rules": [FULL_POWER],
+                                            "params": {"descriptor": "rpm.swing", "split": "colour"}}, error=True)
+    assert err.startswith("BAD_PARAMS") and all(f in err for f in ("source", "date", "da_band", "flights"))
+    # every tool that takes more than an id or a page shows an example of its parameters
+    formed = [t for t in T.TOOLS if set(t.properties) - {"study_id", "offset", "limit"}]
+    assert [t.name for t in formed if "xample" not in t.description] == []
 
 
 def test_caps_refuse_and_say_why(ws):

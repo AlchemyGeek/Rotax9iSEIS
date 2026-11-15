@@ -2867,7 +2867,8 @@ async def op_analyze_signal(params: dict, ctx: dict) -> Any:
             windows=params.get("windows"), prominence_min=float(params.get("prominence_min", 0.2)),
             references=params.get("references"), engine_cfg=engine_cfg, assignments=_assignments(ctx),
             include_values=params.get("include_values", True) is not False,
-            include_strips=params.get("include_strips", True) is not False, on_progress=_research_progress(ctx))
+            include_strips=params.get("include_strips", True) is not False,
+            skip_onset_s=params.get("skip_onset_s") or 0, on_progress=_research_progress(ctx))
     finally:
         _emit(ctx, "research", {"active": False})
 

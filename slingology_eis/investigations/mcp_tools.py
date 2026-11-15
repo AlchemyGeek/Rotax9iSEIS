@@ -116,7 +116,7 @@ def _set_params(args: dict) -> dict:
     """The slice-set parameters every Instrument tool shares (Spec 06 §11)."""
     p: dict = {"selection": _selection(args)}
     for a, k in (("slice_rules", "slice_rules"), ("hand_slices", "hand_slices"), ("channels", "channels"),
-                 ("reference", "reference"), ("study_id", "study_id")):
+                 ("reference", "reference"), ("study_id", "study_id"), ("windows", "windows")):
         if args.get(a) is not None:
             p[k] = args[a]
     return p
@@ -425,8 +425,8 @@ def shape_signal(args: dict, a: dict) -> dict:
             if d.get("lag_curve") and d.get("best_lag_s") is not None:
                 diag[ch]["corr_at_best_lag"] = next((c.get("corr") for c in d["lag_curve"]
                                                      if c.get("lag_s") == d["best_lag_s"]), None)
-        out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "when", "duration_s", "context", "descriptors",
-                                               "windows", "numbers", "derived_rule") if k in w}
+        out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "when", "duration_s", "skip_onset_s", "context",
+                                               "descriptors", "windows", "numbers", "derived_rule", "caveats") if k in w}
         if w.get("when") and isinstance(out["window"].get("context"), dict):
             out["window"]["context"] = {k: v for k, v in out["window"]["context"].items() if k != "start_time"}
         out["window"]["diagnostics"] = diag
@@ -435,7 +435,7 @@ def shape_signal(args: dict, a: dict) -> dict:
 
 def run_signal_analyze(args: dict, call: Call) -> dict:
     p = {"flight_id": args["flight_id"], "include_values": False, "include_strips": bool(args.get("strips", True))}
-    for k in ("channels", "reference", "rule_channel", "references"):
+    for k in ("channels", "reference", "rule_channel", "references", "skip_onset_s"):
         if args.get(k) is not None:
             p[k] = args[k]
     if args.get("start_s") is not None or args.get("end_s") is not None:
@@ -674,7 +674,19 @@ _SET = {"slice_rules": _RULES,
                         "description": "Hand slices: {flight, start_s, end_s, label?}"},
         "flights": {**_STRS, "description": "Flight ids (default: every flight)"},
         "channels": {**_STRS, "description": "Channels (default rpm, map_inhg)"},
-        "study_id": {**_S, "description": "Use this study's descriptor cache"}}
+        "study_id": {**_S, "description": "Use this study's descriptor cache"},
+        "windows": {"type": "object", "description": "Per channel {window_s, lag_s} (default: the engine's)"}}
+# F1: the slice set's forms, with an example of each, for every tool that takes one.
+_SET_HELP = (" A slice set: `flights` (default every flight) and `slice_rules`, each a preset id (\"full_power\"), "
+             "a phase (\"phase:CLIMB\") or a rule object ({\"rule_id\": \"high_map\", \"name\": \"MAP >= 38\", "
+             "\"conditions\": [{\"channel\": \"map_inhg\", \"op\": \">=\", \"value\": 38}], "
+             "\"min_duration_s\": 20}); optional `hand_slices` ([{\"flight\": \"…\", \"start_s\": 600, "
+             "\"end_s\": 660}]) and `windows` ({\"rpm\": {\"window_s\": 8, \"lag_s\": 5}}).")
+_SPLIT_HELP = (" groups: params.descriptor is channel.measure (\"rpm.swing\"); params.split is \"source\" (short for "
+               "{\"by\": \"source\"}), {\"by\": \"date\", \"date\": \"2026-10-01\"}, {\"by\": \"da_band\"}, "
+               "{\"by\": \"oat_band\", \"edges\": [5, 20]}, {\"by\": \"engine_hours\", \"edges\": [150]}, "
+               "{\"by\": \"rule\"} or {\"by\": \"flights\", \"groups\": [{\"label\": \"before\", "
+               "\"flights\": [\"…\"]}, {\"label\": \"after\", \"flights\": [\"…\"]}]}.")
 
 TOOLS: list[Tool] = [
     Tool("flights_list", "List flights",
@@ -697,16 +709,19 @@ TOOLS: list[Tool] = [
          required=("description",), ops=("flights_find",)),
     Tool("flight_get", "One flight",
          "One flight: header, phases, flight facts, events (limit exceedances and CAS) and the topic findings the "
-         "Flight view shows.", {"flight_id": _S}, run_flight_get, required=("flight_id",), ops=("get_flight",)),
+         "Flight view shows. Example: {\"flight_id\": \"1e10d971bd5da136\"}.", {"flight_id": _S}, run_flight_get, required=("flight_id",), ops=("get_flight",)),
     Tool("series_get", "Channel series",
          f"Channels of one flight over a window (seconds from the log's start). At most {SERIES_MAX_CHANNELS} channels; "
          f"a window of up to {SERIES_MAX_POINTS} s comes back at every row, a longer one as a {SERIES_MAX_POINTS}-point "
-         "min/max envelope per channel. Without a window it answers only for a flight that short.",
+         "min/max envelope per channel. Without a window it answers only for a flight that short. Example: "
+         "{\"flight_id\": \"1e10d971bd5da136\", \"channels\": [\"rpm\", \"map_inhg\"], \"start_s\": 600, "
+         "\"end_s\": 660}.",
          {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N}, run_series_get,
          required=("flight_id", "channels"), ops=("get_flight_series",)),
     Tool("fleet_metrics", "Per-flight metrics",
          f"The Spec 12 per-flight metrics table (one row per flight, ordered by engine hours) with each metric's "
-         f"baseline, trend, outliers and shift; {PAGE_ROWS} rows per page. Default metrics: all but the limit_* ones.",
+         f"baseline, trend, outliers and shift; {PAGE_ROWS} rows per page. Default metrics: all but the limit_* ones. "
+         "Example: {\"metrics\": [\"cht_max_f\", \"oil_temp_max_f\"], \"limit\": 20}.",
          {"metrics": _STRS, "flights": _STRS, **_PAGE}, run_fleet_metrics, ops=("get_fleet",)),
     Tool("trends_summary", "Trends summary",
          "The Trends change summary (ranked metrics with baseline, trend and shift) and the shift history.",
@@ -715,27 +730,43 @@ TOOLS: list[Tool] = [
          "The engine profile's shipped slice rules (Spec 06): id, name, the question each is for, its conditions.",
          {}, run_presets_list, ops=("list_slice_presets",)),
     Tool("slices_build", "Build slices",
-         f"The slices a selection and slice rules make, with each slice's context and descriptors; {PAGE_ROWS} per page.",
+         f"The slices a selection and slice rules make, each with its local time, context and descriptors; "
+         f"{PAGE_ROWS} per page." + _SET_HELP + " Example: {\"slice_rules\": [\"full_power\"], \"channels\": "
+         "[\"rpm\", \"map_inhg\"]}.",
          {**_SET, **_PAGE}, run_slices_build, ops=("build_slices",)),
     Tool("samples_get", "Slice samples",
          f"The 1 Hz samples of slices, aligned at an anchor (crossing, start, end, peak:CHANNEL). Refuses more than "
-         f"{SAMPLES_MAX_VALUES} values — name slice_ids from slices_build.",
+         f"{SAMPLES_MAX_VALUES} values — name slice_ids from slices_build." + _SET_HELP + " Example: "
+         "{\"slice_rules\": [\"full_power\"], \"slice_ids\": [\"<a slice_id from slices_build>\"], "
+         "\"channels\": [\"rpm\"], \"anchor\": \"start\"}.",
          {**_SET, "slice_ids": _STRS, "anchor": _S}, run_samples_get, ops=("get_slice_samples",)),
     Tool("question_run", "Run a question",
          "A Spec 06 test over a slice set — cycling, coupling, groups or unusual — with its finding, magnitude with "
-         f"OM references, caveats and the evidence rows ({PAGE_ROWS} per page).",
+         f"OM references, caveats and the evidence rows ({PAGE_ROWS} per page)." + _SET_HELP + _SPLIT_HELP
+         + " Examples: {\"test_id\": \"cycling\", \"slice_rules\": [\"full_power\"], \"channels\": [\"rpm\"]}; "
+         "{\"test_id\": \"coupling\", \"slice_rules\": [\"full_power\"], \"channels\": [\"rpm\", "
+         "\"map_inhg\"]}; {\"test_id\": \"groups\", \"slice_rules\": [\"full_power\"], \"params\": "
+         "{\"descriptor\": \"rpm.swing\", \"split\": \"source\"}}; {\"test_id\": \"unusual\", "
+         "\"slice_rules\": [\"full_power\"]}.",
          {"test_id": {"type": "string", "enum": ["cycling", "coupling", "groups", "unusual"]},
           "params": {"type": "object", "description": "Test parameters (Spec 06 §7)"}, "reference": _S, **_SET, **_PAGE},
          run_question_run, required=("test_id",), ops=("run_test",)),
     Tool("signal_analyze", "Signal view",
          "One flight's rolling strips, summarised as the runs where each channel cycles (lit), and a window's "
-         f"descriptors, numbers with OM references and diagnostics (periods, top {PERIODOGRAM_PEAKS} periodogram peaks, "
-         "best lag). Without a window, the window is derived from where the reference channel cycles.",
+         f"descriptors, numbers with OM references and diagnostics (periods, the {PERIODOGRAM_PEAKS} strongest "
+         "periodogram peaks, best lag) and caveats. Without a window, the window is derived from where the "
+         "reference channel cycles. skip_onset_s leaves the window's first seconds out of the descriptors and "
+         "period (a power change at its start buries the cycle; a caveat suggests a value when it sees one). "
+         "Example: {\"flight_id\": \"1e10d971bd5da136\", \"start_s\": 600, \"end_s\": 662, \"channels\": "
+         "[\"rpm\", \"map_inhg\"], \"skip_onset_s\": 16}.",
          {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N, "reference": _S, "rule_channel": _S,
+          "skip_onset_s": {"type": "number", "minimum": 0,
+                           "description": "Seconds at the window's start left out of the descriptors (default 0)"},
           "strips": {"type": "boolean", "description": "Compute the rolling strips (default true)"}},
          run_signal_analyze, required=("flight_id",), ops=("analyze_signal",)),
     Tool("rows_compare", "Compare rows",
-         f"One row per slice, grouped by flight, with deltas to a pinned row; {PAGE_ROWS} rows per page.",
+         f"One row per slice, grouped by flight, with deltas to a pinned row; {PAGE_ROWS} rows per page."
+         + _SET_HELP + " Example: {\"slice_rules\": [\"full_power\"], \"pinned\": \"<a slice_id>\"}.",
          {**_SET, "reference": _S, "pinned": _S, "collapse": {"type": "boolean"}, **_PAGE},
          run_rows_compare, ops=("compare_rows",)),
     Tool("code_run", "Run Python",
@@ -751,7 +782,8 @@ TOOLS: list[Tool] = [
          "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. The last "
          "expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and "
          f"memory capped. Returns stdout (≤ {CODE_STREAM_CHARS} characters), tables (text) and up to {CODE_FIGURES} "
-         "figures as images.",
+         "figures as images. Example: {\"study_id\": \"…\", \"source\": \"r = eis.cycling('full_power', "
+         "'rpm')\\nprint(r)\"}.",
          {"study_id": _S, "source": _S, "cell_id": _S,
           "timeout_s": {"type": "number", "minimum": 1, "maximum": 300, "description": "Default 60"},
           "memory_mb": {"type": "number", "minimum": 256, "maximum": 8192, "description": "Default 2048"}},
@@ -807,28 +839,32 @@ TOOLS: list[Tool] = [
          "study_accept or study_discard.", {"study_id": _S}, run_study_rerun, required=("study_id",), writes=True,
          images=code_run_images, ops=("study_cells_rerun",)),
     Tool("study_accept", "Accept re-run outputs",
-         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs.",
+         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs. Example: "
+         "{\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
          {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_accept"), required=("study_id",),
          writes=True, ops=("study_cells_accept",)),
     Tool("study_discard", "Discard re-run outputs",
-         "Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.",
+         "Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand. Example: "
+         "{\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
          {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_discard"), required=("study_id",),
          writes=True, ops=("study_cells_discard",)),
     Tool("study_finish", "Finish a notebook",
          "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
          "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
          "resolves its inbox candidate and notes the finding in the Journal (the one Journal entry Claude may "
-         "write). Reports the flights the cells read and the inbox's open candidates.",
+         "write). Reports the flights the cells read and the inbox's open candidates. Example: {\"study_id\": "
+         "\"…\", \"summary\": \"…\", \"resolution\": \"watch\", \"journal\": true}.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
           "note": _S, "journal": {"type": "boolean"}, "finding": _S}, run_study_finish,
          required=("study_id", "summary"), writes=True, ops=("study_finish",)),
     Tool("inbox_list", "Inbox",
          "The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence "
-         "and status; scans first when there are new flights.",
+         "and status; scans first when there are new flights. Example: {\"status\": [\"new\", \"investigating\"]}.",
          {"status": {"anyOf": [_S, _STRS]}}, run_inbox_list, ops=("inbox_list",)),
     Tool("inbox_resolve", "Resolve a candidate",
-         "Set a candidate's status — investigating, nothing-here, watch, acted (or new) — with its study and a note.",
+         "Set a candidate's status — investigating, nothing-here, watch, acted (or new) — with its study and a note. "
+         "Example: {\"candidate_id\": \"…\", \"status\": \"nothing-here\", \"note\": \"the governor, known\"}.",
          {"candidate_id": _S, "status": {"type": "string",
                                          "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
           "study_id": _S, "note": _S}, run_inbox_resolve, required=("candidate_id", "status"), writes=True,
