@@ -84,8 +84,8 @@ def test_code_run_keeps_a_cell(research_ws):
     assert r2["cell"]["outputs"] == [{"output_type": "execute_result", "execution_count": None, "metadata": {},
                                       "data": {"text/plain": "2"}}]
     view = _ok(rpc(h, "load_study", {"study_id": sid}))
-    assert [c["id"] for c in view["notebook"]["cells"]] == ["c1", cell["id"]]
-    assert view["notebook"]["cells"][0]["cell_type"] == "markdown"          # the question
+    assert [c["id"] for c in view["notebook"]["cells"]] == ["setup", "c1", cell["id"]]
+    assert view["notebook"]["cells"][1]["cell_type"] == "markdown"          # the question, after the setup cell
     # A hand study takes no code.
     hand = _ok(rpc(h, "save_study", {"study": {"name": "Hand", "slice_rules": ["full_power"]}}))
     refused = rpc(h, "code_run", {"study_id": hand["study_id"], "source": "1"})
@@ -156,8 +156,8 @@ def test_cells_append_rerun_accept_finish(research_ws):
         acc = _ok(rpc(h, "study_cells_accept", {"study_id": sid}))
         assert acc["cells"] == [rnd["id"]] and acc["study"]["pending"] == 0
         assert _ok(rpc(h, "study_cells_discard", {"study_id": sid}))["cells"] == []
-    else:
-        assert re["cells"] == []
+    else:       # no bench: nothing runs; the setup cell (D14) is the only code cell
+        assert re["cells"] == [{"cell_id": "setup", "ran": False, "ran_elsewhere": False}]
     fin = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "RPM cycles at full power.\nIt is the governor.",
                                       "journal": True}))
     assert fin["study"]["status"] == "finished" and fin["journal_entry"]["kind"] == "study_finding"
@@ -167,7 +167,7 @@ def test_cells_append_rerun_accept_finish(research_ws):
     assert [e["kind"] for e in j["entries"]].count("study_finding") == 1
     listed = _ok(rpc(h, "list_studies", {}))["studies"]
     row = next(s for s in listed if s["study_id"] == sid)
-    assert row["format"] == "ipynb" and row["cells"] == (6 if bench else 2) and row["status"] == "finished"
+    assert row["format"] == "ipynb" and row["cells"] == (7 if bench else 3)   # the setup cell (D14) first and row["status"] == "finished"
     assert not rpc(h, "study_finish", {"study_id": sid, "summary": " "})["ok"]
 
 
@@ -209,12 +209,12 @@ def test_notebook_round_trip(research_ws):
     if code is not None:
         assert "show code" in page and "data:image/svg+xml;base64," in page
         # S5: what leaves names flights by content fingerprint, never flight_id…
-        sent_code = next(c for c in sent["cells"] if c["cell_type"] == "code")
+        sent_code = next(c for c in sent["cells"] if c["cell_type"] == "code" and c["id"] != "setup")
         fl = _sm(sent_code)["ran"]["flights"]
         assert fl and all(f.startswith("src:") for f in fl) and not set(fl) & set(ids)
         # …and an import where the flights are maps them back.
         back = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.zip"}))
-        back_code = next(c for c in back["notebook"]["cells"] if c["cell_type"] == "code")
+        back_code = next(c for c in back["notebook"]["cells"] if c["cell_type"] == "code" and c["id"] != "setup")
         assert _sm(back_code)["ran"]["flights"] == _sm(code)["ran"]["flights"]
         assert _sm(back_code)["ran_elsewhere"] and not _sm(back_code).get("read_only")
         # A bare .ipynb imports too.
@@ -228,17 +228,17 @@ def test_notebook_round_trip(research_ws):
     got = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.zip"}))
     assert got["kind"] == "investigation" and got["format"] == "ipynb"
     if code is not None:
-        c = next(c for c in got["notebook"]["cells"] if c["cell_type"] == "code")
+        c = next(c for c in got["notebook"]["cells"] if c["cell_type"] == "code" and c["id"] != "setup")
         assert _sm(c).get("read_only") and c["outputs"] == code["outputs"]
         assert all(f.startswith("src:") for f in _sm(c)["ran"]["flights"])   # not here: kept as fingerprints
     mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": got["study_id"]}))
     assert mine["study_id"] != got["study_id"] and mine["format"] == "ipynb"
     if code is not None:
-        c = next(c for c in mine["notebook"]["cells"] if c["cell_type"] == "code")
+        c = next(c for c in mine["notebook"]["cells"] if c["cell_type"] == "code" and c["id"] != "setup")
         assert _sm(c)["ran"]["flights"] == [other] and not _sm(c).get("read_only")
         assert c["outputs"][0]["text"].strip() == "1"
     else:
-        c = next((c for c in mine["notebook"]["cells"] if c["cell_type"] == "code"), None)
+        c = next((c for c in mine["notebook"]["cells"] if c["cell_type"] == "code" and c["id"] != "setup"), None)
         assert c is None or _sm(c).get("ran_elsewhere")
 
 
@@ -272,10 +272,13 @@ def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_h
     assert (ws_dir / "studies" / "st-0123456789ab" / ".session-d.json").is_file()
     assert not (ws_dir / "studies" / "st-0123456789ab.json").exists()
     nb = _ok(rpc(h, "load_study", {"study_id": "st-0123456789ab"}))["notebook"]
-    assert [c["cell_type"] for c in nb["cells"]] == ["markdown", "markdown", "code", "markdown", "code"]
+    # D14: the setup cell first, bound to this workspace; the workspace in the metadata.
+    assert [c["cell_type"] for c in nb["cells"]] == ["code", "markdown", "markdown", "code", "markdown", "code"]
+    assert nb["cells"][0]["id"] == "setup" and f'eis.open("{ws_dir.name}")' in nb["cells"][0]["source"]
+    assert nb["metadata"]["slingology"]["workspace_id"] == ws_dir.name
     assert nb["metadata"]["slingology"]["status"] == "finished"
-    assert nb["cells"][2]["outputs"] == [{"output_type": "stream", "name": "stdout", "text": "1\n"}]
-    q = nb["cells"][4]
+    assert nb["cells"][3]["outputs"] == [{"output_type": "stream", "name": "stdout", "text": "1\n"}]
+    q = nb["cells"][5]
     assert q["source"].startswith("r = eis.cycling('full_power', 'rpm')") and "print(r)" in q["source"]
     stored_text = q["outputs"][0]["text"]
     assert stored_text.startswith(tool["question"]) and tool["finding"] in stored_text

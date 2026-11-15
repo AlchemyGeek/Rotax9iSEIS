@@ -98,8 +98,11 @@ class LogView:
 
     def _repr_mimebundle_(self, include=None, exclude=None) -> dict:
         import io
+        import matplotlib
         buf = io.StringIO()
-        self.fig.savefig(buf, format="svg", metadata={"Date": None}, bbox_inches="tight")
+        # The bench's salt everywhere (D14): the same SVG in JupyterLab as on the bench.
+        with matplotlib.rc_context({"svg.hashsalt": "slingology-eis"}):
+            self.fig.savefig(buf, format="svg", metadata={"Date": None}, bbox_inches="tight")
         title = self.ref.get("title") or f"Flight {self.ref['flight']}"
         return {"image/svg+xml": buf.getvalue(), LOGVIEW_MIME: dict(self.ref),
                 "text/plain": f"<log view: {title}, {self.ref.get('window_label') or ''}>"}

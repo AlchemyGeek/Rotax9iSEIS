@@ -9,9 +9,16 @@ finished), summary, inbox_candidate, engine, created, updated — and, when
 they apply, engine_type (D9), imported, converted_from.
 
 Cells are markdown and code. A code cell's `metadata.slingology` holds
-`ran` {engine, flights, at, ms, status, caps?} and, after a re-run whose
-outputs differ, `pending` {outputs, ran} until accepted or discarded (D4);
-an imported cell may carry `ran_elsewhere` and `read_only`. Outputs are
+`ran` {engine, flights, at, ms, status, digest, caps?} and, after a re-run
+whose outputs differ, `pending` {outputs, ran} until accepted or discarded
+(D4); an imported cell may carry `ran_elsewhere` and `read_only`.
+
+D14: every investigation begins with the setup cell (id `setup`,
+`from slingology_eis import eis; eis.open("<workspace id>")`), and the
+metadata names the workspace (`workspace_id`). `ran.digest` is a digest of
+the outputs EIS stored; a cell whose outputs no longer match it was run by
+a kernel outside EIS and saved in place — it is marked `ran_elsewhere:
+"external"` until a bench re-run or `accept_external`. Outputs are
 standard: `stream`, `execute_result`/`display_data` with `text/plain`,
 `text/html` (tables), `image/svg+xml` (figures), the log view's
 `application/vnd.slingology.logview+json` (§5.2), and `error`.
@@ -47,6 +54,8 @@ MAX_SOURCE_CHARS = 100_000
 FIGURE_MIMES = ("image/svg+xml", "image/png", LOGVIEW_MIME)
 _ID = re.compile(r"^st-[0-9a-f]{12}$")
 _ZIP_DATE = (1980, 1, 1, 0, 0, 0)
+SETUP_ID = "setup"
+_SETUP_OPEN = re.compile(r'eis\.open\(\s*(["\'])([^"\']*)\1')
 
 
 class NotebookError(Exception):
@@ -91,8 +100,9 @@ def text(src) -> str:
 
 def new(*, name: str, question: Optional[str] = None, kind: str = "investigation", author: str = "claude",
         inbox_candidate: Optional[str] = None, engine_type: Optional[str] = None,
-        study_id: Optional[str] = None) -> dict:
-    """A notebook whose first cell holds the question (§5.1)."""
+        study_id: Optional[str] = None, workspace_id: Optional[str] = None) -> dict:
+    """A notebook that begins with the setup cell (D14) when the workspace
+    is named, then the question (§5.1)."""
     if kind not in KINDS:
         raise NotebookError("BAD_PARAMS", f"a notebook's kind is one of {', '.join(KINDS)}")
     if author not in AUTHORS:
@@ -104,10 +114,13 @@ def new(*, name: str, question: Optional[str] = None, kind: str = "investigation
     if engine_type:
         m["engine_type"] = engine_type
     head = f"# {name}\n" + (f"\n**Question:** {question}\n" if question else "")
+    if workspace_id:
+        m["workspace_id"] = workspace_id
+    cells = ([setup_cell(workspace_id)] if workspace_id else []) + [markdown_cell("c1", head, role="question")]
     return {"nbformat": 4, "nbformat_minor": 5,
             "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
                          "language_info": {"name": "python"}, "slingology": m},
-            "cells": [markdown_cell("c1", head, role="question")]}
+            "cells": cells}
 
 
 def markdown_cell(cid: str, source: str, role: Optional[str] = None) -> dict:
@@ -123,6 +136,134 @@ def code_cell(cid: str, source: str, outputs: Optional[list] = None, ran: Option
     if ran:
         c["metadata"]["slingology"] = {"ran": ran}
     return c
+
+
+# ── D14: the setup cell and outputs written outside EIS ────────────────────
+
+def setup_source(workspace_id: str) -> str:
+    """The setup cell: `eis` bound to this workspace, and the names the
+    bench predefines for every cell (np, pd, plt, scipy, matplotlib), so a
+    notebook written on the bench runs in any kernel. On the bench it
+    changes nothing (already bound, already imported)."""
+    return ("# Setup: binds `eis` to this workspace and imports what the EIS bench predefines. A no-op on the\n"
+            "# bench; in JupyterLab (a kernel with slingology-eis[investigations]) it is the binding (Spec 16 D14).\n"
+            "import numpy as np, pandas as pd, scipy, matplotlib\n"
+            "import matplotlib.pyplot as plt\n"
+            f"from slingology_eis import eis\neis.open({json.dumps(workspace_id)})")
+
+
+def setup_cell(workspace_id: str) -> dict:
+    c = code_cell(SETUP_ID, setup_source(workspace_id))
+    c["metadata"]["slingology"] = {"role": "setup"}
+    return c
+
+
+def _is_setup(c: dict) -> bool:
+    return c.get("cell_type") == "code" and (c.get("id") == SETUP_ID or slmeta_get(c).get("role") == "setup")
+
+
+def slmeta_get(cell: dict) -> dict:
+    return (cell.get("metadata") or {}).get("slingology") or {}
+
+
+def ensure_setup(nb: dict, workspace_id: str) -> bool:
+    """The setup cell first and `workspace_id` in the metadata (D14) —
+    inserted into a notebook that predates them, re-pointed at this
+    workspace in one that came from another. True when anything changed."""
+    m = meta(nb)
+    changed = m.get("workspace_id") != workspace_id
+    m["workspace_id"] = workspace_id
+    cells = nb["cells"]
+    found = next((c for c in cells if _is_setup(c)), None)
+    if found is None:
+        if any(c.get("id") == SETUP_ID for c in cells):      # an unrelated cell took the id
+            raise NotebookError("BAD_PARAMS", f"cell id {SETUP_ID!r} is reserved for the setup cell")
+        cells.insert(0, setup_cell(workspace_id))
+        return True
+    src = text(found.get("source"))
+    mm = _SETUP_OPEN.search(src)
+    if mm and mm.group(2) != workspace_id:
+        found["source"] = src[:mm.start(2)] + workspace_id + src[mm.end(2):]
+        changed = True
+    return changed
+
+
+def _norm_output(o: dict) -> dict:
+    """An output as EIS and Jupyter both say it: multi-line strings joined,
+    execution counts and display metadata ignored (JupyterLab re-saves
+    them differently)."""
+    t = o.get("output_type")
+    if t == "stream":
+        return {"t": t, "name": o.get("name"), "text": text(o.get("text"))}
+    if t == "error":
+        return {"t": t, "ename": o.get("ename"), "evalue": o.get("evalue")}
+    data = {k: (v if isinstance(v, (dict, int, float, bool)) or v is None else text(v))
+            for k, v in (o.get("data") or {}).items()}
+    return {"t": "display", "data": data}      # execute_result and display_data say the same thing
+
+
+def _norm_outputs(outputs: Optional[list]) -> list:
+    out: list = []
+    for o in outputs or []:
+        n = _norm_output(o)
+        if n["t"] == "stream" and out and out[-1]["t"] == "stream" and out[-1]["name"] == n["name"]:
+            out[-1] = {**out[-1], "text": out[-1]["text"] + n["text"]}   # Jupyter splits a stream in chunks
+        else:
+            out.append(n)
+    return out
+
+
+def digest(outputs: Optional[list]) -> str:
+    import hashlib
+    body = json.dumps(_norm_outputs(outputs), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+
+
+def mark_external(nb: dict) -> list[str]:
+    """Cells whose outputs a kernel outside EIS wrote (their digest no
+    longer matches what EIS stored): marked ran elsewhere ("external").
+    A cell EIS wrote before digests existed gets one now."""
+    marked = []
+    for c in nb["cells"]:
+        if c.get("cell_type") != "code":
+            continue
+        sm = slmeta_get(c)
+        ran = sm.get("ran")
+        now = digest(c.get("outputs"))
+        if ran is None:
+            if c.get("outputs") and not sm.get("ran_elsewhere"):
+                slmeta(c)["ran_elsewhere"] = "external"
+                marked.append(c["id"])
+            continue
+        if "digest" not in ran:
+            ran["digest"] = now
+            continue
+        if ran["digest"] != now:
+            if sm.get("ran_elsewhere") != "external":
+                slmeta(c)["ran_elsewhere"] = "external"
+                marked.append(c["id"])
+        elif sm.get("ran_elsewhere") == "external":
+            slmeta(c).pop("ran_elsewhere")
+    return marked
+
+
+def accept_external(nb: dict, cell_ids: Optional[list] = None) -> list[str]:
+    """`study_accept source: external` (D14): the outputs a kernel outside
+    EIS wrote become the cells' outputs as they stand. The flights they
+    read are not known; `ran.flights` keeps what EIS last recorded."""
+    done = []
+    for c in nb["cells"]:
+        sm = slmeta_get(c)
+        if c.get("cell_type") == "code" and sm.get("ran_elsewhere") == "external" \
+                and (not cell_ids or c["id"] in cell_ids):
+            old = sm.get("ran") or {}
+            set_run(c, c.get("outputs") or [], {"engine": old.get("engine") or __version__,
+                                                "flights": old.get("flights") or [], "at": _now(), "ms": 0,
+                                                "status": "error" if any(o.get("output_type") == "error"
+                                                                         for o in c.get("outputs") or []) else "ok",
+                                                "source": "external"})
+            done.append(c["id"])
+    return done
 
 
 def save(ws_dir: Path, nb: dict) -> dict:
@@ -143,13 +284,28 @@ def save(ws_dir: Path, nb: dict) -> dict:
 
 
 def load(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) -> dict:
-    """The notebook; a Session D investigation study is converted first."""
+    """The notebook; a Session D investigation study is converted first.
+    D14: a notebook without the setup cell gets it (saved), and cells a
+    kernel outside EIS ran and saved in place are marked ran elsewhere."""
     if not exists(ws_dir, study_id):
         legacy = Path(ws_dir) / "studies" / f"{study_id}.json"
         if _ID.match(str(study_id or "")) and legacy.is_file() and is_session_d(json.loads(legacy.read_text())):
-            return convert(ws_dir, study_id, presets=presets)
-        raise NotebookError("NOT_FOUND", f"no notebook {study_id}")
-    return json.loads(path(ws_dir, study_id).read_text())
+            nb = convert(ws_dir, study_id, presets=presets)
+        else:
+            raise NotebookError("NOT_FOUND", f"no notebook {study_id}")
+    else:
+        try:
+            nb = json.loads(path(ws_dir, study_id).read_text())
+        except ValueError as e:
+            raise NotebookError("BAD_PARAMS", f"{study_id}: the notebook isn't valid JSON ({e})")
+        for c in nb.get("cells") or []:       # a Jupyter save may drop the empty metadata
+            c.setdefault("metadata", {})
+    before = json.dumps(nb, sort_keys=True)
+    ensure_setup(nb, Path(ws_dir).name)
+    mark_external(nb)
+    if json.dumps(nb, sort_keys=True) != before:
+        save(ws_dir, nb)
+    return nb
 
 
 def delete(ws_dir: Path, study_id: str) -> bool:
@@ -198,7 +354,7 @@ def find(nb: dict, cell_id: str) -> dict:
 def set_run(cell: dict, outputs: list, ran: dict) -> None:
     cell["outputs"] = outputs
     m = slmeta(cell)
-    m["ran"] = ran
+    m["ran"] = {**(ran or {}), "digest": digest(outputs)}
     for k in ("pending", "ran_elsewhere", "read_only"):
         m.pop(k, None)
 
@@ -539,11 +695,13 @@ def import_bytes(ws_dir: Path, data: bytes) -> dict:
         s.pop("pending", None)
         if c.get("outputs"):
             s["ran_elsewhere"] = True
+            s.setdefault("ran", {})["digest"] = digest(c.get("outputs"))
         touched = (s.get("ran") or {}).get("flights") or []
         if touched and not any(f in present for f in touched):
             s["read_only"] = True
         else:
             s.pop("read_only", None)
+    ensure_setup(nb, Path(ws_dir).name)
     save(ws_dir, nb)
     fdir = files_dir(ws_dir, sid)
     for rel, body in files.items():

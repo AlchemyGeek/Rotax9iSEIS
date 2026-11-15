@@ -102,7 +102,8 @@ def op_study_create(params: dict, ctx: dict) -> Any:
     try:
         nb = NBX.new(name=params.get("name"), question=params.get("question"),
                      kind=params.get("kind") or "investigation", author=params.get("author") or "claude",
-                     inbox_candidate=params.get("inbox_candidate"), engine_type=params.get("engine_type"))
+                     inbox_candidate=params.get("inbox_candidate"), engine_type=params.get("engine_type"),
+                     workspace_id=ctx["active_workspace_id"])
     except NBX.NotebookError as e:
         raise _err(e)
     if params.get("inbox_candidate"):
@@ -249,19 +250,28 @@ def _front_matter(text: str) -> tuple[dict, str]:
 
 # ── The bench (D3) ─────────────────────────────────────────────────────────
 
-def _run_code(ctx: dict, nb: dict, cell_id: str, source: str, timeout_s=None, memory_mb=None) -> dict:
+def eis_request(ctx: dict) -> dict:
+    """What the eis library binds to (D14): the workspace, its engine
+    profile, aircraft, notes, documents folders and channel assignments —
+    the same on the bench (each cell's request) and in a kernel outside EIS
+    (`eis.open`)."""
     engine_cfg, engine_name = H._current_engine(ctx)
+    ac = _aircraft(ctx)
+    return {"ws_dir": str(ctx["workspace_dir"]), "engine_cfg": engine_cfg, "engine_name": engine_name,
+            "aircraft": _aircraft_for_bench(ctx), "assignments": H._assignments(ctx),
+            "documents_dirs": list(ac.get("documents_dirs") or []), "data_root": str(_root(ctx)),
+            "notes": AC.read_notes(_root(ctx), ac["id"]) if ac.get("id") else ""}
+
+
+def _run_code(ctx: dict, nb: dict, cell_id: str, source: str, timeout_s=None, memory_mb=None) -> dict:
     m = NBX.meta(nb)
     study = {"study_id": m["id"], "name": m.get("name"), "question": m.get("question")}
-    ac = _aircraft(ctx)
+    r = eis_request(ctx)
     try:
-        return B.run_cell(source=source, cell_id=cell_id, ws_dir=ctx["workspace_dir"],
+        return B.run_cell(source=source, cell_id=cell_id, ws_dir=Path(r.pop("ws_dir")),
                           files_dir=NBX.files_dir(ctx["workspace_dir"], m["id"]),
-                          scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), engine_cfg=engine_cfg,
-                          engine_name=engine_name, aircraft=_aircraft_for_bench(ctx),
-                          assignments=H._assignments(ctx), study=study, cap=B.caps(timeout_s, memory_mb),
-                          documents_dirs=list(ac.get("documents_dirs") or []), data_root=_root(ctx),
-                          notes=AC.read_notes(_root(ctx), ac["id"]) if ac.get("id") else "")
+                          scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), study=study,
+                          cap=B.caps(timeout_s, memory_mb), **r)
     except B.BenchError as e:
         raise _err(e)
 
@@ -352,7 +362,7 @@ def op_study_cells_rerun(params: dict, ctx: dict) -> Any:
     from another machine."""
     H._require_active(ctx)
     nb = notebook(ctx, params.get("study_id"))
-    bench = H._FEATURES[ctx.get("host", "server")].get("bench", False)
+    bench = H._FEATURES[ctx.get("host", "server")].get("bench", False) and B.available()
     report, previews = [], {}
     for c in nb["cells"]:
         if c["cell_type"] != "code":
@@ -363,7 +373,8 @@ def op_study_cells_rerun(params: dict, ctx: dict) -> Any:
             continue
         got = _run_code(ctx, nb, c["id"], NBX.text(c["source"]))
         previews.update({f"{c['id']}:{k}": v for k, v in got["previews"].items()})
-        same = B.outputs_equal(got["outputs"], c.get("outputs"))
+        # Compared as the digest compares (D14): a JupyterLab save's lists of lines say the same thing.
+        same = NBX.digest(got["outputs"]) == NBX.digest(c.get("outputs"))
         if same:
             NBX.set_run(c, c.get("outputs") or [], got["ran"])
         else:
@@ -383,8 +394,14 @@ def _pending(params: dict, ctx: dict, fn) -> Any:
 
 
 def op_study_cells_accept(params: dict, ctx: dict) -> Any:
-    """Accept re-run outputs (all pending, or `cell_ids`): they become the cells' outputs."""
-    return _pending(params, ctx, NBX.accept)
+    """Accept re-run outputs (all pending, or `cell_ids`): they become the
+    cells' outputs. With `source: "external"` (D14), accept instead the
+    outputs a kernel outside EIS wrote and saved in place, as they stand."""
+    source = params.get("source") or "rerun"
+    if source not in ("rerun", "external"):
+        raise H.RpcError("BAD_PARAMS", "source is \"rerun\" (the bench's pending outputs) or \"external\" "
+                                       "(outputs a kernel outside EIS saved in the notebook)")
+    return _pending(params, ctx, NBX.accept_external if source == "external" else NBX.accept)
 
 
 def op_study_cells_discard(params: dict, ctx: dict) -> Any:

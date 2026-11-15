@@ -214,6 +214,3 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
     return {"outputs": outputs, "ran": ran, "previews": previews}
 
 
-def outputs_equal(a: Optional[list], b: Optional[list]) -> bool:
-    """Two runs' outputs say the same thing (figures are deterministic SVG)."""
-    return json.dumps(a or [], sort_keys=True) == json.dumps(b or [], sort_keys=True)

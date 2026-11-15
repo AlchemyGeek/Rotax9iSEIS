@@ -462,4 +462,10 @@ def test_a_notebook_travels_with_its_outputs(registry_server, tmp_path):
     got = rpc(url, "load_study", {"study_id": sid})
     assert got["ok"], got
     got = got["result"]
-    assert got["format"] == "ipynb" and got["notebook"]["cells"] == sent["cells"]
+    assert got["format"] == "ipynb"
+    cells = got["notebook"]["cells"]
+    assert [c["id"] for c in cells] == [c["id"] for c in sent["cells"]]
+    assert [(c.get("outputs"), c["source"]) for c in cells[1:]] == [(c.get("outputs"), c["source"]) for c in sent["cells"][1:]]
+    # D14: the setup cell is re-pointed at the workspace it arrived in.
+    new_ws = got["notebook"]["metadata"]["slingology"]["workspace_id"]
+    assert cells[0]["id"] == "setup" and f'eis.open("{new_ws}")' in cells[0]["source"]

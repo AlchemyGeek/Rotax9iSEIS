@@ -135,8 +135,10 @@ caveats and the per-slice rows. In a notebook each returns a `Result`: `print(r)
 
 Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS, JupyterLab or VS Code).
 
-- `study_create` — `{"name": "Takeoff rpm cycling", "question": "Is there an oscillation at takeoff?"}`; its
-  first cell holds the question. Pass `inbox_candidate` when the notebook answers an inbox item.
+- `study_create` — `{"name": "Takeoff rpm cycling", "question": "Is there an oscillation at takeoff?"}`. It
+  begins with the **setup cell** (`from slingology_eis import eis; eis.open("<workspace id>")`) — leave it
+  first and unchanged: it does nothing on the bench and binds `eis` when the owner runs the notebook in
+  JupyterLab — then a cell holding the question. Pass `inbox_candidate` when the notebook answers an inbox item.
 - `cell_append` — `{"kind": "markdown", "source": "…"}` for what you saw and what it means; `{"kind": "code",
   "source": "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r)"}` runs at once and keeps its output; `{"kind":
   "logview", "flight": "…", "start_s": 360, "end_s": 420, "channels": ["rpm", "map_inhg"], "marks": [[367,
@@ -144,6 +146,8 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
 - `code_run` — the same as a code cell (`cell_id` replaces one). Each cell starts afresh: re-load what you
   need. The last expression's value is shown, as in Jupyter. `FILES` is the only folder a cell may write.
 - `study_rerun` re-runs every code cell; outputs that changed wait for `study_accept` / `study_discard`.
+  Cells the owner ran in JupyterLab and saved are marked *ran elsewhere*; `study_accept` with `"source":
+  "external"` keeps those outputs as they are, or `study_rerun` recomputes them on the bench.
 - `study_finish` — `{"study_id": "…", "summary": "…"}` ends it. A finished notebook has:
   - the question (first cell) and a short plan;
   - the one-flight look, then the across-flights measurement, each as a cell whose output states the number;

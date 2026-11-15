@@ -309,7 +309,8 @@ def main(request_path: str) -> int:
 
     w = Workspace(req)
     from .eis_lib import EIS
-    eis = EIS(w, req)
+    from .. import eis       # D14: the importable module, bound to this workspace — the setup cell's no-op
+    eis._bind(EIS(w, req), Path(req["ws_dir"]).name, bench=True)
     outputs: list[dict] = []
 
     def show(obj, title=None):

@@ -188,7 +188,8 @@ def test_writing_tools(ws):
     assert res["status"] == "ok" and res["outputs"][0]["clipped"] and len(res["outputs"][0]["text"]) < 8100
     images = [c for c in out["content"] if c["type"] == "image"]
     assert len(images) == 1 and images[0]["mimeType"] == "image/png"
-    stored = _ok(rpc(h, "load_study", {"study_id": st}))["notebook"]["cells"][2]
+    stored = next(c for c in _ok(rpc(h, "load_study", {"study_id": st}))["notebook"]["cells"]
+                  if c["id"] == res["cell_id"])
     assert len(stored["outputs"][0]["text"]) == 10001          # the notebook keeps it whole (with the newline)
     refused, _ = _tool(server, "study_finish", {"study_id": st, "summary": "x"}, error=True)
     assert "FLOOR_RULE" in refused and stored["id"] in refused
@@ -197,8 +198,8 @@ def test_writing_tools(ws):
     assert rr["study"]["pending"] == 0 and all(c["identical"] for c in rr["cells"])
     assert _tool(server, "study_accept", {"study_id": st})[0]["cells"] == []
     read, _ = _tool(server, "study_read", {"study_id": st})
-    assert [c["kind"] for c in read["cells"]] == ["markdown", "code", "code", "markdown"]
-    assert read["cells"][2]["outputs"][-1] == {"text": "<Figure>", "figure": True}
+    assert [c["kind"] for c in read["cells"]] == ["code", "markdown", "code", "code", "markdown"]   # setup first
+    assert read["cells"][3]["outputs"][-1] == {"text": "<Figure>", "figure": True}
     cand = _ok(rpc(h, "inbox_list", {}))["candidates"]
     fin, _ = _tool(server, "study_finish", {"study_id": st, "summary": "It cycles.", "journal": True,
                                             **({"inbox_candidate": cand[0]["id"], "resolution": "watch"} if cand else {})})

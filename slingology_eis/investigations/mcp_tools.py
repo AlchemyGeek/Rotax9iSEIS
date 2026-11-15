@@ -637,6 +637,8 @@ def _pending_call(op: str):
         p = {"study_id": args["study_id"]}
         if args.get("cell_ids"):
             p["cell_ids"] = list(args["cell_ids"])
+        if args.get("source"):
+            p["source"] = args["source"]
         return call(op, p)
     return run
 
@@ -839,9 +841,13 @@ TOOLS: list[Tool] = [
          "study_accept or study_discard.", {"study_id": _S}, run_study_rerun, required=("study_id",), writes=True,
          images=code_run_images, ops=("study_cells_rerun",)),
     Tool("study_accept", "Accept re-run outputs",
-         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs. Example: "
-         "{\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
-         {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_accept"), required=("study_id",),
+         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs. With "
+         "source \"external\": accept instead the outputs a kernel outside EIS (JupyterLab) saved in the notebook, "
+         "as they stand (cells marked ran elsewhere). Example: {\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
+         {"study_id": _S, "cell_ids": _STRS,
+          "source": {"type": "string", "enum": ["rerun", "external"],
+                     "description": "rerun (default): the bench's pending outputs; external: outputs saved outside EIS"}},
+         _pending_call("study_cells_accept"), required=("study_id",),
          writes=True, ops=("study_cells_accept",)),
     Tool("study_discard", "Discard re-run outputs",
          "Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand. Example: "
