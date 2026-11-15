@@ -384,6 +384,17 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     setVisibleWindow([newStart, newEnd]);
   }
 
+  // Spec 16 §5.2 *Open flight*: a log view's channels, selected as given.
+  function showChannels(ids: string[]) {
+    const known = ids.filter((id) => channelRegistry.some((c) => c.id === id) || slotGroups.some((g) => g.id === id));
+    if (known.length === 0) return;
+    const capped = known.slice(0, maxSlots);
+    setActiveSlots(capped);
+    const basePreset = presets.find((p) => p.id === presetId);
+    setChartState(basePreset && sameSlotSet(basePreset.channels, capped) ? "preset" : "modified");
+    ensureLoaded(expandSlots(capped));
+  }
+
   function navigateTo(s: number, e: number) {
     setZoomWindow([s, e]);
     setVisibleWindow([s, e]);
@@ -454,7 +465,7 @@ export function useTimeline({ phases, usingFixture }: { phases: Phase[]; usingFi
     beginFlight, setupLive, setupFixture,
     // actions
     togglePickerChannel, selectPreset, revert, confirmSaveAsPreset, backFromInsight, stepZoom, resetZoom,
-    navigateTo, focusEvidence, focusMoment, findWorstMoment,
+    navigateTo, focusEvidence, focusMoment, findWorstMoment, showChannels,
   };
 }
 

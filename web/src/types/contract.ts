@@ -1038,6 +1038,8 @@ export interface HostCapabilities {
     download_url: boolean;
     folder_watching: boolean;
     research?: boolean; // Spec 06 §11 — absent on a host older than Research
+    investigations?: boolean; // Spec 16 — notebooks and the inbox (both hosts)
+    bench?: boolean; // Spec 16 D3/D8 — runs notebook code (server host only)
   };
 }
 
@@ -1702,6 +1704,15 @@ export interface StudySummary {
   tests: number;
   read_only: boolean;
   flights: number;
+  // Spec 16 §5.1 — an investigation notebook's row (absent on a hand study).
+  format?: "ipynb";
+  kind?: string | null;
+  author?: string | null;
+  question?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  cells?: number;
+  pending?: number;
 }
 
 export interface StudyImportResult {

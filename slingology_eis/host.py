@@ -2944,7 +2944,8 @@ def op_load_study(params: dict, ctx: dict) -> Any:
     nbx = _notebooks(ctx)
     sid = params.get("study_id")
     if nbx.exists(ctx["workspace_dir"], sid):
-        return nbx.read_view(nbx.load(ctx["workspace_dir"], sid))
+        nb = nbx.load(ctx["workspace_dir"], sid)
+        return {**nbx.read_view(nb), "files": nbx.markdown_images(ctx["workspace_dir"], nb)}
     return rs.load(ctx["workspace_dir"], sid)
 
 

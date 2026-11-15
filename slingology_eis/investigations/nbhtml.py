@@ -9,7 +9,12 @@ Safety: the page is opened from a file the user may have been sent, so
 nothing in it runs — SVG is shown through <img> (a data: URL, where
 scripts don't run), markdown and text are escaped, and `text/html` is used
 only for the tables EIS wrote (output metadata `slingology.table`);
-anything else shows as its text/plain.
+anything else shows as its text/plain; even an EIS table keeps only
+table tags (`sanitize_table`), since a received notebook can claim the mark.
+
+The page's renderer (web/src/lib/notebook.ts) is a port of this module,
+string for string; both are checked against one golden
+(web/src/fixtures/research-notebook.render.json).
 """
 from __future__ import annotations
 
@@ -132,6 +137,45 @@ def markdown(src: str, read_file=None) -> str:
 
 # ── Outputs ────────────────────────────────────────────────────────────────
 
+_TABLE_TAGS = {"table", "caption", "thead", "tbody", "tr", "th", "td", "p"}
+
+
+def sanitize_table(src: str) -> str:
+    """EIS's table HTML with every tag but the table's own dropped and every
+    attribute dropped (the table keeps class="eis-table"). Identity on what
+    the bench writes."""
+    out = []
+    for tok in re.split(r"(<[^>]*>)", src):
+        if tok.startswith("<"):
+            m = re.match(r"^<(/?)([a-zA-Z]+)\b", tok)
+            if not m or m.group(2).lower() not in _TABLE_TAGS:
+                continue
+            tag = m.group(2).lower()
+            out.append(f"</{tag}>" if m.group(1) else '<table class="eis-table">' if tag == "table" else f"<{tag}>")
+        else:
+            out.append(tok.replace(">", "&gt;"))
+    return "".join(out)
+
+
+def outputs_line(nb: dict) -> str:
+    """"outputs current for this workspace", or what is not (the page's header line)."""
+    pending = elsewhere = read_only = 0
+    for c in nb.get("cells") or []:
+        if c.get("cell_type") != "code":
+            continue
+        sm = (c.get("metadata") or {}).get("slingology") or {}
+        pending += bool(sm.get("pending"))
+        elsewhere += bool(sm.get("ran_elsewhere"))
+        read_only += bool(sm.get("read_only"))
+
+    def n(k: int, what: str) -> str:
+        return f"{k} cell{'' if k == 1 else 's'} {what}"
+    parts = ([n(pending, "with new outputs pending")] if pending else []) \
+        + ([n(elsewhere, "ran elsewhere")] if elsewhere else []) \
+        + ([n(read_only, "read-only (flights not here)")] if read_only else [])
+    return "outputs: " + " · ".join(parts) if parts else "outputs current for this workspace"
+
+
 def _img(svg: str, cls: str = "figure", alt: str = "figure") -> str:
     b64 = base64.b64encode(svg.encode("utf-8")).decode()
     return f'<img class="{cls}" alt="{html.escape(alt)}" src="data:image/svg+xml;base64,{b64}">'
@@ -156,7 +200,7 @@ def output(o: dict) -> str:
     if "image/png" in data:
         return f'<img class="figure" alt="figure" src="data:image/png;base64,{text(data["image/png"]).strip()}">'
     if "text/html" in data and ((o.get("metadata") or {}).get("slingology") or {}).get("table"):
-        return text(data["text/html"])
+        return sanitize_table(text(data["text/html"]))
     if "text/plain" in data:
         return "<pre>" + html.escape(text(data["text/plain"])) + "</pre>"
     return ""
@@ -170,7 +214,8 @@ def render(nb: dict, read_file=None) -> str:
     head = [f"<h1>{html.escape(m.get('name') or 'Notebook')}</h1>",
             '<p class="meta">' + " · ".join(html.escape(str(x)) for x in (
                 f"by {m.get('author') or 'user'}", status, f"engine {m.get('engine') or ''}",
-                (m.get("updated") or "")[:10]) if x) + "</p>"]
+                (m.get("updated") or "")[:10]) if x) + "</p>",
+            '<p class="meta outputs">' + html.escape(outputs_line(nb)) + "</p>"]
     if m.get("question"):
         head.append(f"<p><strong>Question:</strong> {_inline(m['question'])}</p>")
     if m.get("summary"):

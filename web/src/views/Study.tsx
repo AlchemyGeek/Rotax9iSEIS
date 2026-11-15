@@ -12,6 +12,7 @@ import { SignalSection } from "../components/research/SignalSection";
 import { CompareSection } from "../components/research/CompareSection";
 import { SliceRuleEditor, describeRule } from "../components/research/SliceRuleEditor";
 import { TestResultCard } from "../components/research/TestResultCard";
+import { NotebookView, isNotebookView, type NotebookStudyView } from "../components/research/NotebookView";
 import { BODY, BUTTON, CHIP, INPUT, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY, SELECT } from "../components/research/ui";
 import {
   DESCRIPTOR_NAMES, RESEARCH_CHANNELS, RESEARCH_TESTS, channelLabel, describeSelection, downloadText, fmtClock, takeStudySeed,
@@ -69,6 +70,8 @@ export function Study() {
   const isNew = !studyId || studyId === "new";
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Spec 16 §5.3: an investigation notebook renders as a notebook, not as a hand study.
+  const [notebookView, setNotebookView] = useState<NotebookStudyView | null>(null);
   const [pendingPresets, setPendingPresets] = useState<string[]>([]); // preset ids not yet resolved into rules
   const [suggestedPreset, setSuggestedPreset] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -112,6 +115,11 @@ export function Study() {
         } else {
           const doc = await client.loadStudy(studyId!);
           if (!live) return;
+          if (isNotebookView(doc)) {
+            setNotebookView(doc);
+            return;
+          }
+          setNotebookView(null);
           setDraft(fromDoc(doc));
           goTo(doc.signal?.flight && !(doc.slice_rules?.length || doc.hand_slices?.length) ? "signal" : "compare");
         }
@@ -319,6 +327,17 @@ export function Study() {
 
   const flightById = useMemo(() => new Map(flights.map((f) => [f.flight_id, f])), [flights]);
   const flightLabel = (id: string) => { const f = flightById.get(id); return f ? `${f.header.date}${f.source_filename ? ` · ${f.source_filename}` : ""}` : id; };
+
+  if (notebookView && notebookView.study_id === studyId) {
+    return (
+      <NavShell>
+        <div style={{ width: "100%", overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 10 }} data-testid="study-page">
+          <div><button type="button" onClick={() => navigate("/research")} style={LINK}>← Research</button></div>
+          <NotebookView view={notebookView} onChanged={setNotebookView} onDeleted={() => navigate("/research")} />
+        </div>
+      </NavShell>
+    );
+  }
 
   if (!draft) {
     return <NavShell><div style={{ padding: 24, ...MUTED }}>{error ?? "Loading…"}</div></NavShell>;

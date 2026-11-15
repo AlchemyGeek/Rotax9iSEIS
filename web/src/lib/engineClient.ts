@@ -274,8 +274,14 @@ export interface EngineClient {
   listStudies(): Promise<{ studies: StudySummary[] }>;
   deleteStudy(studyId: string): Promise<{ deleted: string }>;
   runStudy(studyId: string): Promise<Study>;
-  exportStudy(studyId: string): Promise<{ filename: string; size: number; download_url: string }>;
+  // An investigation notebook (Spec 16 §5.1) exports as "zip" (default) or "html"; a hand study as "eisstudy" (default) or "ipynb".
+  exportStudy(studyId: string, format?: "zip" | "html" | "eisstudy" | "ipynb"): Promise<{ filename: string; size: number; download_url: string }>;
   importStudy(file: File): Promise<StudyImportResult>;
+  // Spec 16 §5.1 — a notebook's re-run (D4 semantics) and its pending outputs; needs features.bench.
+  // `source: "external"` keeps outputs a kernel outside EIS saved in place (D14).
+  rerunStudyCells(studyId: string): Promise<NotebookRerunResult>;
+  acceptStudyCells(studyId: string, opts?: { cell_ids?: string[]; source?: "rerun" | "external" }): Promise<{ study: StudySummary; cells: string[] }>;
+  discardStudyCells(studyId: string, cellIds?: string[]): Promise<{ study: StudySummary; cells: string[] }>;
   runStudyOnMyFlights(studyId: string): Promise<Study>;
   getResearchProgress(): Promise<ResearchProgress>;
   // Spec 06 v0.6 §9 (Session C): Signal view and Compare.
@@ -284,6 +290,11 @@ export interface EngineClient {
   // Spec 06 §10.3 — a study's finding as a Journal entry, and its removal.
   noteStudyFinding(studyId: string, testIndex: number, note?: string): Promise<{ entry: JournalEntry }>;
   forgetStudyFinding(refId: string): Promise<{ removed: boolean }>;
+}
+
+export interface NotebookRerunResult {
+  study: StudySummary;
+  cells: { cell_id: string; ran: boolean; identical?: boolean; status?: string; ran_elsewhere?: boolean }[];
 }
 
 export interface SignalArgs {
@@ -789,8 +800,17 @@ export class LocalServerClient implements EngineClient {
   runStudy(studyId: string) {
     return this.rpc<Study>("run_study", { study_id: studyId });
   }
-  exportStudy(studyId: string) {
-    return this.rpc<{ filename: string; size: number; download_url: string }>("export_study", { study_id: studyId });
+  exportStudy(studyId: string, format?: "zip" | "html" | "eisstudy" | "ipynb") {
+    return this.rpc<{ filename: string; size: number; download_url: string }>("export_study", { study_id: studyId, ...(format ? { format } : {}) });
+  }
+  rerunStudyCells(studyId: string) {
+    return this.rpc<NotebookRerunResult>("study_cells_rerun", { study_id: studyId });
+  }
+  acceptStudyCells(studyId: string, opts: { cell_ids?: string[]; source?: "rerun" | "external" } = {}) {
+    return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_accept", { study_id: studyId, ...opts });
+  }
+  discardStudyCells(studyId: string, cellIds?: string[]) {
+    return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_discard", { study_id: studyId, ...(cellIds ? { cell_ids: cellIds } : {}) });
   }
   async importStudy(file: File) {
     const up = await this.uploadFile(file);

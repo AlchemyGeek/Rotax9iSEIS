@@ -423,6 +423,28 @@ def read_view(nb: dict) -> dict:
             "notebook": nb}
 
 
+_IMG_MIME = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+_MD_IMAGE = re.compile(r"!\[[^\]]*\]\((files/[^)\s]+)\)")
+
+
+def markdown_images(ws_dir, nb: dict, limit: int = 2_000_000) -> dict:
+    """The `files/…` images the markdown cells show, as data: URLs — the
+    page inlines them as the HTML export does (§5.3). Larger files are left
+    out (the page shows the reference)."""
+    import base64
+    folder = files_dir(ws_dir, meta(nb)["id"])
+    out = {}
+    for c in nb.get("cells") or []:
+        if c.get("cell_type") != "markdown":
+            continue
+        for ref in _MD_IMAGE.findall(text(c.get("source"))):
+            ext = "." + ref.rsplit(".", 1)[-1].lower() if "." in ref else ""
+            p = folder / ref.split("/", 1)[-1]
+            if ext in _IMG_MIME and ".." not in ref and p.is_file() and p.stat().st_size <= limit:
+                out[ref] = f"data:{_IMG_MIME[ext]};base64,{base64.b64encode(p.read_bytes()).decode()}"
+    return out
+
+
 # ── Session D studies (acceptance 15) ──────────────────────────────────────
 
 def is_session_d(doc: dict) -> bool:

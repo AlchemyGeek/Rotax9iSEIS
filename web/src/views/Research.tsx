@@ -5,6 +5,7 @@ import { InlineHelp } from "../components/InlineHelp";
 import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import type { SlicePresets, StudySummary } from "../types/contract";
 import { stashStudySeed } from "../lib/research";
+import { isNotebookView } from "../components/research/NotebookView";
 import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY } from "../components/research/ui";
 
 const client = getEngineClient();
@@ -21,6 +22,8 @@ const OPEN_QUESTIONS = [
   "Does cruise fuel flow at a given power setting depend on density altitude beyond what the engine's own map explains?",
   "Can the peak oil and coolant temperature of a flight be predicted from its airborne time and outside air temperature?",
 ];
+
+const KIND: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 0.3, color: "var(--text-tertiary)", textTransform: "uppercase" };
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "";
@@ -63,6 +66,14 @@ export function Research() {
     setImportNote(null);
     try {
       const res = await client.importStudy(file);
+      if (isNotebookView(res)) {
+        // Spec 16 §5.1: a notebook — cells whose flights are absent are read-only.
+        const ro = res.notebook.cells.filter((c) => c.metadata?.slingology?.read_only).length;
+        setImportNote(ro ? `Imported the notebook: ${ro} cell${ro === 1 ? "" : "s"} name flights not in this workspace and show the sender's outputs.` : "Imported the notebook.");
+        await load();
+        navigate(`/research/${res.study_id}`);
+        return;
+      }
       setImportNote(res.read_only
         ? `Imported read-only: none of its ${res.missing.length} flights are in this workspace.`
         : `Imported: ${res.matched.length} of ${res.matched.length + res.missing.length} flights are here.`);
@@ -82,9 +93,9 @@ export function Research() {
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Research</h1>
           <span style={BODY}>Ask a question about pieces of your flights — slices — and read the answer against a reference, never a verdict.</span>
           <span style={{ flexGrow: 1 }} />
-          <input ref={fileRef} type="file" accept=".eisstudy,.zip" style={{ display: "none" }} data-testid="import-study-input"
+          <input ref={fileRef} type="file" accept=".eisstudy,.zip,.ipynb" style={{ display: "none" }} data-testid="import-study-input"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportFile(f); e.target.value = ""; }} />
-          <button type="button" onClick={() => fileRef.current?.click()} style={BUTTON} disabled={importing || noWorkspace}>{importing ? "Importing…" : "Import a study…"}</button>
+          <button type="button" onClick={() => fileRef.current?.click()} style={BUTTON} disabled={importing || noWorkspace} title="A .eisstudy, a notebook's .zip or an .ipynb">{importing ? "Importing…" : "Import a study or notebook…"}</button>
           <button type="button" onClick={() => navigate("/research/new")} style={PRIMARY} disabled={noWorkspace} data-testid="new-study">New study</button>
         </div>
 
@@ -109,7 +120,16 @@ export function Research() {
                       {s.name}
                       {s.read_only && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "var(--severity-watch)" }}>SENDER'S RESULTS</span>}
                     </td>
-                    <td style={{ padding: "9px 8px", fontSize: 12, color: "var(--text-secondary)" }}>{s.finding ?? <span style={MUTED}>not run yet · {s.tests} question{s.tests === 1 ? "" : "s"}</span>}</td>
+                    <td style={{ padding: "9px 8px", whiteSpace: "nowrap", verticalAlign: "top" }} data-testid="study-kind">
+                      {s.format === "ipynb"
+                        ? <span style={KIND} title="An investigation notebook (Jupyter .ipynb)">notebook · {s.author === "claude" ? "Claude" : "you"}{s.status === "finished" ? " · finished" : ""}</span>
+                        : <span style={KIND} title="A study you built on this page">hand study</span>}
+                    </td>
+                    <td style={{ padding: "9px 8px", fontSize: 12, color: "var(--text-secondary)" }}>
+                      {s.format === "ipynb"
+                        ? (s.finding ?? <span style={MUTED}>{s.question ?? "open"}{s.pending ? ` · ${s.pending} cell${s.pending === 1 ? "" : "s"} pending` : ""}</span>)
+                        : (s.finding ?? <span style={MUTED}>not run yet · {s.tests} question{s.tests === 1 ? "" : "s"}</span>)}
+                    </td>
                     <td className="mono" style={{ ...MUTED, padding: "9px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{formatWhen(s.updated)}</td>
                   </tr>
                 ))}
