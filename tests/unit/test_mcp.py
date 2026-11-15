@@ -34,9 +34,10 @@ def ws(isolated_packaged_home):
     h = InProcess()
     _ok(rpc(h, "create_workspace", {"name": "MCP", "engine_model": "916iS"}))
     ids = [_import(h, f"2026-01-0{n}") for n in range(1, 8)]
-    md = "# Engine\n\n## Boost\n\nFive minutes.\n"
-    import base64
-    _ok(rpc(h, "document_add", {"content_base64": base64.b64encode(md.encode()).decode(), "filename": "om.md"}))
+    docs = isolated_packaged_home.parent / "mcp-docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "om.md").write_text("# Engine\n\n## Boost\n\nFive minutes.\n")
+    _ok(rpc(h, "aircraft_set", {"aircraft": {"documents_dirs": [str(docs)]}}))
     sid = _ok(rpc(h, "save_study", {"study": {"name": "S", "slice_rules": [FULL_POWER],
                                               "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))["study_id"]
     _ok(rpc(h, "run_study", {"study_id": sid}))

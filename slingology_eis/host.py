@@ -3196,8 +3196,7 @@ def _investigation_op(name: str):
 
 
 for _name in ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-              "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "document_add",
-              "document_remove", "inbox_scan", "inbox_list", "inbox_resolve"):
+              "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
     _OPS[_name] = _investigation_op(_name)
 
 
@@ -3291,7 +3290,9 @@ _HOST_ONLY: dict[str, set] = {
                               # Spec 16 D3/D8: the bench runs only beside a local engine.
                               "code_run",
                               # Spec 16 §4.4: reads every log once; the server host's.
-                              "flights_find")
+                              "flights_find",
+                              # Spec 16 D11: the owner's folders, read in place.
+                              "documents_list", "document_read")
 }
 
 

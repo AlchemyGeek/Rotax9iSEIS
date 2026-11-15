@@ -667,10 +667,14 @@ TOOLS: list[Tool] = [
          "documents folders; the owner's notes (notes.md) whole; its workspaces; the engine model and the "
          "Settings → Log channels assignments.", {}, run_aircraft_get, ops=("aircraft_get",)),
     Tool("documents_list", "Documents",
-         "The documents the user placed in the workspace's documents folder (manuals, service bulletins, notes).",
+         "The aircraft's documents — the Operators Manual, service bulletins, manuals, notes — read in place from "
+         "the folders the owner named (Settings → Aircraft → Documents folders; subfolders included): name, folder, "
+         "kind, pages, first line. With no folder set it says so.",
          {}, run_documents_list, ops=("documents_list",)),
     Tool("document_read", "Read a document",
-         "Pages of one document (at most 3 at a time), or the pages where a phrase occurs (find). Never a whole manual.",
+         "Pages of one document (at most 3 at a time), or the pages where a phrase occurs (find: case-insensitive, "
+         "accents ignored, with snippets). Never a whole manual. Examples: {\"name\": \"Bulletins/APL-SB-23.pdf\", "
+         "\"find\": \"hunting\"}, {\"name\": \"om.md\", \"page\": 5, \"pages\": 2}.",
          {"name": _S, "page": {"type": "integer", "minimum": 1}, "pages": {"type": "integer", "minimum": 1, "maximum": 3},
           "find": _S}, run_document_read, required=("name",), ops=("document_read",)),
     Tool("journal_list", "Journal",

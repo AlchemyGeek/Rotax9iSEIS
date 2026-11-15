@@ -6,7 +6,7 @@ host's own file doesn't grow by a feature's worth of code.
     code_run                                   (D3 — server host only)
     study_cells_append / _rerun / _accept / _discard, study_finish   (D4)
     aircraft_get / aircraft_set / list_aircraft (§4.4 — the registry's record, D10)
-    documents_list / document_read / document_add / document_remove
+    documents_list / document_read             (D11: the aircraft's documents_dirs, read in place)
     inbox_scan / inbox_list / inbox_resolve    (D5)
 
 `export_study` (Spec 06 §11) gains `format: "ipynb"`; it stays in host.py.
@@ -333,37 +333,34 @@ def op_list_aircraft(params: dict, ctx: dict) -> Any:
     return [{**ac, "workspaces": _with_workspaces(ctx, ac)} for ac in AC.list_aircraft(_root(ctx))]
 
 
+def _documents_dirs(ctx: dict) -> list[str]:
+    return list(_aircraft(ctx).get("documents_dirs") or [])
+
+
 def op_documents_list(params: dict, ctx: dict) -> Any:
+    """D11: the documents in the aircraft's documents_dirs, read in place
+    (PDF, Markdown, text; subfolders), with page counts from the index
+    cache. No folder set: an empty list and the setting to use."""
     H._require_active(ctx)
     try:
-        return DOC.list_documents(ctx["workspace_dir"])
+        out = DOC.list_documents(_documents_dirs(ctx), _root(ctx))
     except DOC.DocumentError as e:
         raise _err(e)
+    legacy = ctx["workspace_dir"] / "documents"
+    if legacy.is_dir() and any(p.is_file() and not p.name.startswith(".") for p in legacy.iterdir()):
+        out["legacy_note"] = (f"{legacy} (Session D's copy inside the workspace) is no longer read; add the folder "
+                              "where the originals live to Settings → Aircraft → Documents folders.")
+    return out
 
 
 def op_document_read(params: dict, ctx: dict) -> Any:
-    """A document a page at a time (or `find` a phrase): never whole."""
+    """A document a page at a time (≤ 3 pages, 12 000 characters), or the
+    pages where a phrase occurs (`find`: case-insensitive, diacritics
+    folded): never whole."""
     H._require_active(ctx)
     try:
-        return DOC.read_document(ctx["workspace_dir"], params.get("name"), page=params.get("page", 1),
+        return DOC.read_document(_documents_dirs(ctx), _root(ctx), params.get("name"), page=params.get("page", 1),
                                  pages=params.get("pages", 1), find=params.get("find"))
-    except DOC.DocumentError as e:
-        raise _err(e)
-
-
-def op_document_add(params: dict, ctx: dict) -> Any:
-    H._require_active(ctx)
-    content, filename = H._log_content(params, ctx)
-    try:
-        return {"document": DOC.add_document(ctx["workspace_dir"], filename, content)}
-    except DOC.DocumentError as e:
-        raise _err(e)
-
-
-def op_document_remove(params: dict, ctx: dict) -> Any:
-    H._require_active(ctx)
-    try:
-        return DOC.remove_document(ctx["workspace_dir"], params.get("name"))
     except DOC.DocumentError as e:
         raise _err(e)
 
@@ -448,6 +445,5 @@ def ipynb_export(ctx: dict, doc: dict) -> bytes:
 
 
 OPS = ("code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-       "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "document_add",
-       "document_remove", "inbox_scan", "inbox_list", "inbox_resolve")
+       "study_finish", "aircraft_get", "aircraft_set", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
 

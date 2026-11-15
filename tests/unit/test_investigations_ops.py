@@ -216,21 +216,63 @@ def test_aircraft(registry_server):
     assert len(every) == 1 and sorted(w["name"] for w in every[0]["workspaces"]) == ["A", "B"]
 
 
-def test_documents_paged(registry_server):
+def tiny_pdf(pages: list[str]) -> bytes:
+    """A minimal PDF, one line of Helvetica per page (enough for pypdf)."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", None, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode("latin-1")
+        objs.append(f"<< /Length {len(stream)} >>\nstream\n".encode("latin-1") + stream + b"\nendstream")
+        content = len(objs)
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content} 0 R "
+                    f"/Resources << /Font << /F1 3 0 R >> >> >>")
+        kids.append(len(objs))
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>"
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        body = o if isinstance(o, bytes) else o.encode("latin-1")
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(out)
+
+
+def test_documents_from_the_aircraft_folders(registry_server, tmp_path):
+    """D11 / acceptance 11 (engine clauses) on a temp folder: listed in place
+    (nothing copied), paged, found case-insensitively with diacritics
+    folded, re-indexed when a file changes, and no folder → the setting."""
     h = registry_server
     _ok(rpc(h, "create_workspace", {"name": "D", "engine_model": "916iS"}))
-    md = "# Engine\n\n## Boost\n\n" + "Boost is allowed for five minutes.\n" * 3 + "\n## Idle\n\nIdle rpm.\n"
-    add = _ok(rpc(h, "document_add", {"content_base64": base64.b64encode(md.encode()).decode(), "filename": "om.md"}))
-    assert add["document"]["name"] == "om.md"
-    docs = _ok(rpc(h, "documents_list", {}))["documents"]
-    assert [d["name"] for d in docs] == ["om.md"] and docs[0]["pages"] == 3
+    empty = _ok(rpc(h, "documents_list", {}))
+    assert empty["documents"] == [] and "Settings → Aircraft → Documents folders" in empty["message"]
+    folder = tmp_path / "Manuals"
+    (folder / "Bulletins").mkdir(parents=True)
+    md = "# Engine\n\n## Boost\n\n" + "Boost is allowed for five minutes.\n" * 3 + "\n## Idle\n\nIdle rpm. Régime de ralenti.\n"
+    (folder / "om.md").write_text(md)
+    (folder / "Bulletins" / "sb-23.pdf").write_bytes(tiny_pdf(["Governor overview", "Governor HUNTING at full power"]))
+    (folder / ".hidden.md").write_text("# no")
+    _ok(rpc(h, "aircraft_set", {"aircraft": {"documents_dirs": [str(folder)]}}))
+    listing = _ok(rpc(h, "documents_list", {}))
+    docs = {d["name"]: d for d in listing["documents"]}
+    assert sorted(docs) == ["Bulletins/sb-23.pdf", "om.md"] and docs["om.md"]["pages"] == 3
+    assert listing["folders"] == [{"path": str(folder), "label": "Manuals", "reachable": True}]
     p = _ok(rpc(h, "document_read", {"name": "om.md", "page": 2}))
     assert p["pages"][0]["title"] == "Engine › Boost" and "five minutes" in p["pages"][0]["text"]
-    f = _ok(rpc(h, "document_read", {"name": "om.md", "find": "idle"}))
-    assert [m["page"] for m in f["matches"]] == [3]
+    f = _ok(rpc(h, "document_read", {"name": "om.md", "find": "regime DE RALENTI"}))
+    assert [m["page"] for m in f["matches"]] == [3] and "Régime" in f["matches"][0]["snippet"]
+    if docs["Bulletins/sb-23.pdf"]["pages"] is not None:          # pypdf present (not under Pyodide)
+        hunt = _ok(rpc(h, "document_read", {"name": "Bulletins/sb-23.pdf", "find": "hunt"}))
+        assert [m["page"] for m in hunt["matches"]] == [2]
+    # Nothing was copied into the workspace or the data root, beyond the cache.
     assert not rpc(h, "document_read", {"name": "../registry.json"})["ok"]
-    _ok(rpc(h, "document_remove", {"name": "om.md"}))
-    assert _ok(rpc(h, "documents_list", {}))["documents"] == []
+    # A changed file is re-indexed on the next read.
+    (folder / "om.md").write_text(md + "\n## Shutdown\n\nCool down two minutes.\n")
+    assert _ok(rpc(h, "document_read", {"name": "om.md", "find": "cool down"}))["matches"][0]["page"] == 4
+    # The withdrawn copy operations are gone.
+    assert rpc(h, "document_add", {"filename": "x.md", "content_base64": ""})["error"]["code"] == "UNKNOWN_OP"
 
 
 # ── inbox (§6) ────────────────────────────────────────────────────────────
