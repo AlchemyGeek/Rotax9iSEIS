@@ -5,6 +5,7 @@ folder; a runaway cell is stopped at the cap with its partial output
 kept. In process (the envelope is the worker's, the same under HTTP);
 under Pyodide there is no bench at all (test_investigations_ops).
 """
+import math
 import sys
 
 import pytest
@@ -92,12 +93,43 @@ def test_runaway_stopped_with_partial_output(bench):
     assert cell["outputs"][-1]["ename"] == "Stopped" and "3 s cap" in cell["outputs"][-1]["evalue"]
 
 
+def _resident_mb(bench) -> float:
+    """The worker's peak resident size on an empty cell: the interpreter, the
+    bench's stack (numpy, pandas, scipy, matplotlib) and the workspace. It
+    differs by platform — over 400 MB on the Linux runner (F14)."""
+    cell = bench("import resource, sys\n"
+                 "r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n"
+                 "print(r / (1024 * 1024) if sys.platform == 'darwin' else r / 1024)")
+    assert cell["ran"]["status"] == "ok", cell
+    return float(cell["outputs"][0]["text"])
+
+
 def test_memory_cap(bench):
-    cell = bench("print('before', flush=True)\nimport numpy as np\nblocks = [np.ones(50_000_000) for _ in range(40)]",
-                 memory_mb=400, timeout_s=60)
+    """A cell past the cap is stopped and keeps what it printed (§4.5). The cap
+    is the worker's own baseline + 300 MB, so the cell always starts, and it
+    allocates far past the cap in 100 MB steps."""
+    cap = math.ceil(_resident_mb(bench) + 300)
+    cell = bench("print('before', flush=True)\nimport numpy as np\n"
+                 f"blocks = [np.ones(12_500_000) for _ in range({(cap + 2000) // 100})]",
+                 memory_mb=cap, timeout_s=60)
     assert cell["ran"]["status"] == "memory", cell["ran"]
-    assert cell["outputs"][0]["text"].strip() == "before"
-    assert cell["outputs"][-1]["ename"] == "Stopped" and "400 MB" in cell["outputs"][-1]["evalue"]
+    assert cell["outputs"][0]["text"].strip() == "before", cell["outputs"]
+    assert cell["outputs"][-1]["ename"] == "Stopped" and f"{cap} MB" in cell["outputs"][-1]["evalue"]
+
+
+def test_memory_stop_keeps_buffered_output(bench):
+    """What a cell printed into a buffered stream of its own is drained before
+    the stop, not lost with the process."""
+    cap = math.ceil(_resident_mb(bench) + 300)
+    cell = bench("import io, os, sys\n"
+                 "sys.stdout = io.TextIOWrapper(io.BufferedWriter(io.FileIO(os.dup(1), 'w'), 1 << 20))\n"
+                 "print('buffered before')\nimport numpy as np\n"
+                 f"blocks = [np.ones(12_500_000) for _ in range({(cap + 2000) // 100})]",
+                 memory_mb=cap, timeout_s=60)
+    assert cell["ran"]["status"] == "memory", cell["ran"]
+    assert cell["outputs"][0]["name"] == "stdout" and cell["outputs"][0]["text"].strip() == "buffered before", \
+        cell["outputs"]
+    assert cell["outputs"][-1]["ename"] == "Stopped"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="the kernel layer is macOS sandbox-exec")

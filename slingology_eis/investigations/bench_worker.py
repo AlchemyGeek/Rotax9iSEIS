@@ -49,10 +49,22 @@ def _peak_rss_mb() -> float:
     return r / (1024 * 1024) if sys.platform == "darwin" else r / 1024
 
 
-def _watchdog(cap_mb: float, stderr) -> None:
+def _drain(*streams) -> None:
+    """Flush what a cell printed into its streams down to fds 1 and 2, so a
+    stop keeps it (§4.5). The streams the cell has now come first: it may
+    have wrapped or replaced ours with buffered ones."""
+    for s in streams:
+        try:
+            s.flush()
+        except Exception:  # noqa: BLE001 — a stream the cell broke can't stop the stop
+            pass
+
+
+def _watchdog(cap_mb: float, stdout, stderr) -> None:
     while True:
         if _peak_rss_mb() > cap_mb:
             try:
+                _drain(sys.stdout, sys.stderr, stdout, stderr)
                 stderr.write(f"\n[stopped: memory passed the {cap_mb:.0f} MB cap]\n")
                 stderr.flush()
             finally:
@@ -287,7 +299,7 @@ def main(request_path: str) -> int:
     sys.stdout = io.TextIOWrapper(os.fdopen(1, "wb", buffering=0), encoding="utf-8", write_through=True)
     sys.stderr = io.TextIOWrapper(os.fdopen(2, "wb", buffering=0), encoding="utf-8", write_through=True)
     sys.dont_write_bytecode = True
-    threading.Thread(target=_watchdog, args=(float(caps["memory_mb"]), sys.stderr), daemon=True).start()
+    threading.Thread(target=_watchdog, args=(float(caps["memory_mb"]), sys.stdout, sys.stderr), daemon=True).start()
 
     import logging
     logging.getLogger("matplotlib").setLevel(logging.ERROR)   # the one-off font-cache notice isn't the cell's output
