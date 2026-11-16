@@ -309,26 +309,27 @@ The setup cell binds `eis` in any Jupyter kernel that has `slingology-eis[invest
 
 ## 7. The Claude Desktop extension (D6)
 
-- **Bundle**: standalone Python runtime, the EIS wheel with dependencies, the built web UI, the MCP server entry; one bundle per platform (macOS arm64, macOS x86-64; Windows later), built in CI beside the wheel and static site, attached to the GitHub release. Mechanics (manifest, runtime declaration, user configuration for the log folder) to be verified by Code against current Claude Desktop extension documentation and recorded here.
-- **Process**: Claude Desktop starts one process when a chat with the connection opens: MCP over stdio plus the EIS web server on 127.0.0.1:8420; stops it when Desktop does. Logging to a file under the data root.
-- **Data**: the server-mode data root (Spec 02 §5.8.1); a pip install and the extension share it. The extension's user configuration: the data root, the **aircraft** the MCP server opens (D10; one aircraft needs no choice), and the log folders; the same settings exist in the EIS pages — one registry. First run: tools answer *no workspace yet*; the pages show the first-workspace flow, which now also creates the aircraft record.
-- **Install**: one click in Claude Desktop's extensions from the release asset; the docs' Investigations page links it beside the sample workspace. Signing deferred.
+As built in Session F. The mechanics were checked on Nov 15 2026 against the MCP Bundle documentation (the `modelcontextprotocol/mcpb` repository's `MANIFEST.md` and `CLI.md`, CLI `@anthropic-ai/mcpb` 2.1.2) and Claude's *Build a desktop extension with MCPB* page:
 
-> **Interim (until Session E's bundle): running the server from a dev install.** Install the engine with the extra (`pip install -e ".[investigations]"` in the checkout's venv). In Claude Desktop → Settings → Developer → Edit Config, add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/`):
->
-> ```json
-> {
->   "mcpServers": {
->     "slingology-eis": {
->       "command": "/Users/<you>/src/Rotax9iSEIS/.venv/bin/slingology-eis",
->       "args": ["mcp"],
->       "env": { "SLINGOLOGY_EIS_HOME": "/Users/<you>/EIS-dev-data" }
->     }
->   }
-> }
-> ```
->
-> and restart Claude Desktop. `env` picks the data root (Spec 02 §5.8.1); leave it out to use the one the pages use. Add `"--serve"` to `args` to have the same process serve the pages on 127.0.0.1:8420 (don't, while `slingology-eis serve` is already running there). The server logs to Claude Desktop's MCP log (`~/Library/Logs/Claude/mcp-server-slingology-eis.log`). Check the surface without Claude: `slingology-eis mcp tools`, `slingology-eis mcp call flights_list '{"limit": 3}'`. This note is for development and goes when §7's bundle exists; it is not user documentation.
+- **Format.** An MCP Bundle (`.mcpb`, formerly `.dxt`) is a zip with `manifest.json` at its root, made with `mcpb pack` (which validates the manifest first). `manifest_version` 0.3. Server types are `node` (Node.js ships with Claude Desktop, and is the recommended language), `python` (every dependency bundled, under `server/lib` or a venv, run by a Python the user has), `uv` (the host installs the dependencies from `pyproject.toml`; the manifest's v0.4) and `binary`. EIS uses **`binary`**: the command is the bundled Python, so nothing depends on what the user has installed and the compiled stack (numpy, scipy, matplotlib) is the build's. `mcp_config` holds `command`, `args` and `env`, with substitutions `${__dirname}` (the unpacked extension), `${HOME}` and the like, and `${user_config.KEY}`, where a `multiple` setting expands to one argument per value.
+- **User configuration.** Declared under `user_config`, with types `string`, `number`, `boolean`, `directory` and `file`, and options `required`, `default`, `multiple` (directory and file only) and `sensitive`. Desktop draws the settings form from it. EIS declares three settings, all optional, so a first run needs none:
+  - `data_root` (directory): empty means the one the pages use, Spec 02 §5.8.1.
+  - `aircraft` (string): empty means the only aircraft, else the most recently opened (D10).
+  - `log_folders` (directory, multiple).
+- **Install.** The user double-clicks the `.mcpb`, drags it onto the Claude Desktop window, or uses Settings → Extensions → Advanced settings → *Install Extension…*. Each opens Desktop's install view (details, settings, install). Installation is per user. The Claude directory no longer lists extension bundles, so distribution is the release asset.
+- **Signing.** `mcpb sign` signs with a PEM certificate and key (`--self-signed` for development), and `mcpb verify` / `info` show a bundle's status. The documentation doesn't say how Desktop treats an unsigned bundle. Developer write-ups and user reports describe a warning with a way to install anyway, and some report Desktop builds where a local `.mcpb` install fails silently. **Signing is deferred.** The install walkthrough tells the user to expect the warning, and the owner's first install is the check on the current Desktop build.
+
+The bundle and process:
+
+- **Bundle.** One per architecture, `slingology-eis-<version>-macos-arm64.mcpb` and `…-macos-x86_64.mcpb` (Windows later). Each holds:
+  - a standalone CPython 3.12 (python-build-standalone; release and checksum pinned);
+  - the engine wheel with the `investigations` extra installed, the wheel carrying the built UI;
+  - the manifest and the icon.
+
+  The bundle is about 100 MB packed. No bytecode ships (it would add 40 MB): the first start writes it into the extension's folder, about 9 s, and later starts take 0.2 s. Built by `scripts/build_extension.py` on the target architecture. CI builds it on `macos-15` and `macos-15-intel` after the main job, keeps the bundles as artifacts and attaches them to the release on a `v*` tag. Developer note: `docs/extension-build.md`.
+- **Process.** Desktop runs `python3 -I -m slingology_eis.investigations.extension` with the configuration, which becomes `slingology-eis mcp serve --serve --port 8420 --log-file` plus the aircraft and folders. That is one process: MCP on stdio, and the EIS pages on 127.0.0.1:8420 on a thread. It ends when Desktop closes the connection. If 8420 is taken (`slingology-eis serve` already running), the pages aren't served from this process, a line in the log says so, and the tools carry on. Messages go to Desktop's MCP log and to `cache/mcp.log` under the data root (started afresh past 2 MB).
+- **Data.** The server-mode data root, shared with a pip install, so there is one registry. The configured log folders are linked to the workspace the tools open as soon as one exists: added, never removed (the pages own the list). First run: the tools answer *no workspace yet*, and the pages show the first-workspace flow.
+- **Install for the user.** The walkthrough *Install the extension* covers which file to download for the Mac, the unsigned warning, the settings and the first run. The website's inbox links to it where there is no bench.
 
 ## 8. Acceptance
 

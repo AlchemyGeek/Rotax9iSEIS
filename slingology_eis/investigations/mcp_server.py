@@ -16,7 +16,11 @@ stderr, so a stray print in the engine (or a library) lands on stderr.
 The data root is re-opened before every call, so a workspace the user
 switches to or creates in the EIS pages is the one the next tool sees.
 With `--serve`, the web server runs on a thread of the same process
-(Spec 16 §7's extension shape).
+(Spec 16 §7's extension shape); if its port is taken (another EIS already
+serves the pages) the MCP server carries on without it. `--log-folder`
+(repeatable; the extension's configuration) links folders to the workspace
+the tools open, once it exists. With `--log-file` the server's stderr is
+also written to `cache/mcp.log` under the data root.
 """
 from __future__ import annotations
 
@@ -61,6 +65,8 @@ class Server:
         self.ctx = ctx if ctx is not None else H.new_context(log_sources=DISK, host="server",
                                                              workspace_arg=workspace_arg)
         self.lock = threading.Lock()
+        self.pending_folders: list[str] = []
+        self._linked: set[str] = set()
 
     # ── the façade's view of the host ──
     def call_op(self, op: str, params: dict) -> Any:
@@ -124,7 +130,23 @@ class Server:
             return None
         if chosen is None and (self.aircraft_arg or self.aircraft_error):
             return None
-        return self.ctx.get("active_workspace_id")
+        ws_id = self.ctx.get("active_workspace_id")
+        if ws_id and self.pending_folders and ws_id not in self._linked:
+            self._link_folders(ws_id)
+        return ws_id
+
+    def _link_folders(self, ws_id: str) -> None:
+        """The extension's configured log folders (§7), linked to the workspace
+        the tools open — added, never removed (the pages own removal)."""
+        from pathlib import Path
+        from .. import workspace as ws
+        self._linked.add(ws_id)
+        for raw in self.pending_folders:
+            folder = Path(raw).expanduser()
+            if not folder.is_dir():
+                print(f"slingology-eis mcp: log folder {folder} isn't there; not linked", file=sys.stderr)
+                continue
+            ws.add_log_folder(self.ctx["workspace_dir"], str(folder), self.ctx["registry_path"])
 
     def call_tool(self, name: str, args: dict) -> dict:
         with self.lock:
@@ -217,16 +239,75 @@ def serve_stdio(server: Server, stdin=None, out=None) -> None:
             out.flush()
 
 
+class _Tee:
+    """stderr to Claude Desktop's MCP log and to the data root's file."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text: str) -> int:
+        for st in self.streams:
+            try:
+                st.write(text)
+                st.flush()
+            except (OSError, ValueError):
+                pass
+        return len(text)
+
+    def flush(self) -> None:
+        for st in self.streams:
+            try:
+                st.flush()
+            except (OSError, ValueError):
+                pass
+
+
+LOG_LIMIT = 2_000_000
+
+
+def _open_log_file():
+    """`cache/mcp.log` under the data root (started afresh past 2 MB)."""
+    from datetime import datetime, timezone
+    from .. import data_location
+    loc = data_location.resolve()
+    if loc.missing:
+        return None
+    path = loc.root / "cache" / "mcp.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = "w" if path.is_file() and path.stat().st_size > LOG_LIMIT else "a"
+        f = open(path, mode, encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+    f.write(f"\n── slingology-eis mcp {__version__} started {datetime.now(timezone.utc).isoformat(timespec='seconds')} "
+            f"(data root {loc.root}, {loc.source}) ──\n")
+    return f
+
+
+def _serve_pages(workspace_arg: Optional[str], port: int) -> None:
+    from ..server import run_server
+    try:
+        run_server(None, workspace_arg, port, True)
+    except OSError as e:
+        print(f"slingology-eis mcp: the pages aren't served from this process — port {port} on 127.0.0.1 is in use "
+              f"({e.strerror or e}); another EIS may already be serving them there. The tools work regardless.",
+              file=sys.stderr)
+
+
 def main(*, workspace_arg: Optional[str] = None, aircraft_arg: Optional[str] = None, serve: bool = False,
-         port: int = 8420) -> int:
+         port: int = 8420, log_folders: Optional[list[str]] = None, log_file: bool = False) -> int:
     # The protocol owns the real stdout; everything else written to fd 1 goes to stderr.
     proto = os.fdopen(os.dup(1), "w", encoding="utf-8", buffering=1)
     os.dup2(2, 1)
+    if log_file:
+        f = _open_log_file()
+        if f is not None:
+            sys.stderr = _Tee(sys.__stderr__, f)  # type: ignore[assignment]
     sys.stdout = sys.stderr
+    print(f"slingology-eis mcp {__version__}: stdio" + (f", pages on 127.0.0.1:{port}" if serve else ""), file=sys.stderr)
     if serve:
-        from ..server import run_server
-        threading.Thread(target=run_server, args=(None, workspace_arg, port, True), daemon=True,
-                         name="eis-http").start()
+        threading.Thread(target=_serve_pages, args=(workspace_arg, port), daemon=True, name="eis-http").start()
     server = Server(workspace_arg=workspace_arg, aircraft_arg=aircraft_arg)
+    server.pending_folders = [d for d in (log_folders or []) if d and d.strip()]
     serve_stdio(server, sys.stdin, proto)
     return 0

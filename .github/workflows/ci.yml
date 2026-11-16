@@ -4,7 +4,9 @@
 # lint and tests, the three-way conformance (in-process, HTTP, Pyodide in
 # Node — part of the Python suite), and the wheel and static-site builds,
 # kept as artifacts. On a tag v*: the wheel and the site zip are attached
-# to the GitHub release.
+# to the GitHub release. Spec 16 §7: the Claude Desktop extension (.mcpb),
+# built from that wheel on one macOS runner per architecture, kept as an
+# artifact and attached to the release beside them (unsigned).
 name: CI
 
 on:
@@ -92,3 +94,51 @@ jobs:
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --title "SlingologyEIS ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md."
           gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+
+  extension:
+    needs: build-and-test
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15         # Apple silicon
+            arch: arm64
+          - runner: macos-15-intel   # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: slingology-eis
+          path: artifacts/
+
+      # build_extension.py reads the tool list from the package and checks
+      # the bundled engine imports with its UI.
+      - name: Build the extension
+        run: |
+          pip install -e .
+          python scripts/build_extension.py --wheel artifacts/slingology_eis-*.whl --out ext --arch ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slingology-eis-extension-${{ matrix.arch }}
+          path: ext/*.mcpb
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "SlingologyEIS ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md."
+          gh release upload "$GITHUB_REF_NAME" ext/*.mcpb --clobber

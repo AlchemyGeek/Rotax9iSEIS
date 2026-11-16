@@ -893,8 +893,8 @@ def cmd_mcp(args) -> int:
     of acceptance 8: the same façade, the same JSON)."""
     from .investigations import mcp_server, mcp_tools
     if args.mcp_action in (None, "serve"):
-        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft,
-                               serve=args.serve, port=args.port)
+        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft or None,
+                               serve=args.serve, port=args.port, log_folders=args.log_folder, log_file=args.log_file)
     if args.mcp_action == "tools":
         if args.json:
             print(json.dumps([t.definition() for t in mcp_tools.TOOLS], indent=2, ensure_ascii=False))
@@ -1352,6 +1352,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8420, help="--serve: port on 127.0.0.1 (default: 8420)")
     p.add_argument("--aircraft", help="The aircraft (id or name) whose workspace the tools open (Spec 16 D10); "
                                       "default: the registry's only aircraft, else the most recently opened")
+    p.add_argument("--log-folder", action="append", default=[], metavar="DIR",
+                   help="serve: a log folder to link to the workspace the tools open (repeatable; added, never removed)")
+    p.add_argument("--log-file", action="store_true",
+                   help="serve: also write the server's messages to cache/mcp.log under the data root")
     p.set_defaults(func=cmd_mcp)
 
     return parser
