@@ -1,6 +1,6 @@
 # Spec 13 — Documentation System
 
-**Status:** Draft v0.2, 2026-10-19 — §11 Q1 (hosting) resolved by Spec 15 §7. v0.1, 2026-10-06: design only; no code written.
+**Status:** Draft v0.3, 2026-11-15 — the Investigations pages (Spec 16 v0.9, Session F): the concept page brought to what was built; walkthroughs *Install the extension*, *Set up your aircraft and documents*, *Your first investigation*, *Run a notebook in JupyterLab*; reference pages *Investigation tools* and *Investigation prompts* generated from the MCP server (`docs/tools/gen_investigation_reference.py`, a test fails while stale), *The eis library*, *The notebook format*; diagrams `research-investigation-loop`, `research-notebook`, `research-paths-out-v2`; their screenshots from a synthetic data root by `docs/tools/shoot_investigations.py` (§7's first script; §7's demo workspace still to come); a developer note `docs/extension-build.md`, outside the nav. v0.2, 2026-10-19 — §11 Q1 (hosting) resolved by Spec 15 §7. v0.1, 2026-10-06: design only; no code written.
 **Audience:** two readers — the *pilot* (non-technical, wants to get a result quickly) and the *researcher* (wants to understand and challenge how the analytics work). A third, the *contributor*, is served by the existing specs and is only linked, not written for here.
 **Depends on:** Spec 02 (results bundle — for the demo workspace), Spec 10 (topic register — drives generated reference pages), Spec 12 (Trends — the UI the pictorial tier documents). Should be written against the UI as it stands after Session B.
 
