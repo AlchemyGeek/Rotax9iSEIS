@@ -22,7 +22,7 @@ Open the study. Everything on the page — findings, charts, tables, notes — i
 
 ### 3. Import
 
-On your **Research** page, **Import a study…** and pick the file. The app matches the study's flights against your workspace.
+On your **Research** page, **Import a study or notebook…** and pick the file. The app matches the study's flights against your workspace.
 
 ### 4. Read it — as theirs
 

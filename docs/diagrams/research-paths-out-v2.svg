@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 260" role="img" aria-label="Three ways out of a finding. A finding, from a study you built by hand or a notebook Claude wrote, goes to a Journal entry that records it against the aircraft's history, to an evidence package for the person who can act on it, and to a shared study or notebook another owner can run on their own flights. A dashed arrow leads further, to a detector shared with every owner of the engine type, which is a later step." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<rect x="20" y="70" width="200" height="110" rx="8" fill="#14b8a6" opacity="0.08"/>
+<rect x="20" y="70" width="200" height="110" rx="8" fill="none" stroke="#14b8a6"/>
+<text x="120" y="98" text-anchor="middle" font-weight="600" font-size="12">A finding</text>
+<text x="120" y="122" text-anchor="middle" opacity="0.85">a study you built by hand</text>
+<text x="120" y="139" text-anchor="middle" opacity="0.6" font-size="10">or</text>
+<text x="120" y="156" text-anchor="middle" opacity="0.85">a notebook Claude wrote</text>
+<rect x="320" y="20" width="230" height="56" rx="6" fill="none" stroke="currentColor" opacity="0.7"/>
+<text x="435" y="43" text-anchor="middle" font-weight="600">Journal entry</text>
+<text x="435" y="60" text-anchor="middle" opacity="0.8" font-size="10">in the aircraft's history, with its date</text>
+<rect x="320" y="97" width="230" height="56" rx="6" fill="none" stroke="currentColor" opacity="0.7"/>
+<text x="435" y="120" text-anchor="middle" font-weight="600">Evidence package</text>
+<text x="435" y="137" text-anchor="middle" opacity="0.8" font-size="10">for the person who can act: a page, the tables</text>
+<rect x="320" y="174" width="230" height="56" rx="6" fill="none" stroke="currentColor" opacity="0.7"/>
+<text x="435" y="197" text-anchor="middle" font-weight="600">Shared study or notebook</text>
+<text x="435" y="214" text-anchor="middle" opacity="0.8" font-size="10">another owner runs it on their flights</text>
+<line x1="220" y1="105" x2="318" y2="50" stroke="#14b8a6" marker-end="url(#art)"/>
+<line x1="220" y1="125" x2="318" y2="125" stroke="#14b8a6" marker-end="url(#art)"/>
+<line x1="220" y1="145" x2="318" y2="200" stroke="#14b8a6" marker-end="url(#art)"/>
+<rect x="610" y="174" width="130" height="56" rx="6" fill="none" stroke="currentColor" stroke-dasharray="4 3" opacity="0.6"/>
+<text x="675" y="197" text-anchor="middle" opacity="0.85">A shared detector</text>
+<text x="675" y="214" text-anchor="middle" opacity="0.6" font-size="10">every owner; later</text>
+<line x1="550" y1="202" x2="608" y2="202" stroke="currentColor" stroke-dasharray="4 3" opacity="0.6" marker-end="url(#ar)"/>
+</svg>

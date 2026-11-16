@@ -108,12 +108,20 @@ nav:
       - Export and import: walkthroughs/export-import.md
       - Reproducing a takeoff investigation: walkthroughs/research-takeoff.md
       - Sharing a study: walkthroughs/research-sharing.md
+      - Install the extension: walkthroughs/install-extension.md
+      - Set up your aircraft and documents: walkthroughs/aircraft-documents.md
+      - Your first investigation: walkthroughs/first-investigation.md
+      - Run a notebook in JupyterLab: walkthroughs/notebook-jupyterlab.md
   - Reference:
       - Operators Manual limits by engine: reference/om-limits.md
       - Settings and their defaults: reference/settings.md
       - Research presets: reference/research-presets.md
       - Research questions and parameters: reference/research-questions.md
       - The study file: reference/research-study-file.md
+      - Investigation tools: reference/investigation-tools.md
+      - Investigation prompts: reference/investigation-prompts.md
+      - The eis library: reference/eis-library.md
+      - The notebook format: reference/notebook-format.md
       - Glossary: reference/glossary.md
       - The research paper: reference/research-paper.md
       - Further reading: reference/further-reading.md
