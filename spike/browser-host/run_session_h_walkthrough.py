@@ -7,9 +7,15 @@ synthetic logs (no private data; nothing here names a real flight).
            throwaway `slingology-eis serve`; the local pages open with the
            note, the log folder is linked and synced, the marks open their
            flights; the website's copy is marked as the copy.
+  three    D18 — the first-workspace page shows the three ways in both modes.
+           On a throwaway `serve`, Load from a folder on a copy of the log
+           folder (--logs, default data/logs) gives the same flights as
+           linking that folder; in the browser, a folder of synthetic logs
+           through the folder input; in a browser with no folder picker the
+           choice says so and offers files.
 
 Usage:
-    .venv/bin/python spike/browser-host/run_session_h_walkthrough.py move [--shots DIR]
+    .venv/bin/python spike/browser-host/run_session_h_walkthrough.py move|three [--shots DIR] [--logs DIR]
 
 `web/dist` must be the browser build (npm run build && npm run build:browser).
 The website's real origin can't be reproduced here (it is served from
@@ -204,9 +210,95 @@ def run_move(args, work: Path, step, shot, errors) -> None:
         proc.wait(timeout=10)
 
 
+def run_three(args, work: Path, step, shot, errors) -> None:
+    import shutil
+    logs = work / "Logs copy"
+    logs.mkdir()
+    for src in sorted(Path(args.logs).resolve().iterdir()):
+        if src.suffix.lower() == ".csv":
+            shutil.copy(src, logs / src.name)
+    n_logs = sum(1 for _ in logs.iterdir())
+    home = work / "three-home"
+    home.mkdir()
+    proc, local = start_eis(home)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel="chrome", headless=not args.headed)
+            page = browser.new_page(viewport={"width": 1400, "height": 1000}, color_scheme="dark")
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            # ── this computer (server mode) ──
+            page.goto(local + "/")
+            first = page.get_by_test_id("new-workspace")
+            first.wait_for(timeout=60000)
+            step("server: the first-workspace page shows the three ways",
+                 all(t in first.inner_text() for t in ("Create from logs", "Import a workspace", "Load from a folder"))
+                 and "Your first workspace" in first.inner_text())
+            shot(page, "h-three-server.png", first)
+            page.get_by_label("Workspace name").fill("From a folder")
+            page.get_by_test_id("new-ws-folder-path").fill(str(logs))
+            page.get_by_test_id("new-ws-folder").click()
+            analyse(page)
+            loaded = {r["flight_id"] for r in rpc(local, "list_flights", {})["result"]}
+            rpc(local, "create_workspace", {"name": "Linked", "engine_model": "916iS"})
+            rpc(local, "add_log_folder", {"path": str(logs)})
+            rpc(local, "scan_workspace", {})
+            linked = {r["flight_id"] for r in rpc(local, "list_flights", {})["result"]}
+            step("server: Load from a folder gives the same flights as linking the folder",
+                 loaded == linked and len(loaded) > 0, logs=n_logs, flights=len(loaded))
+            page.goto(local + "/#/research")
+            page.reload()
+            page.get_by_role("button", name="Linked").click(timeout=60000)
+            page.get_by_test_id("new-workspace-open").click()
+            dialog = page.get_by_test_id("new-workspace-dialog")
+            dialog.wait_for(timeout=30000)
+            step("server: + New workspace with a workspace open shows the same three",
+                 all(t in dialog.inner_text() for t in ("Create from logs", "Import a workspace", "Load from a folder")))
+            browser.close()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+    # ── the browser (website mode) ──
+    site = serve_site(Path(args.site))
+    url = f"http://localhost:{site.server_address[1]}/"
+    (work / "synth").mkdir()
+    synth = synthetic_folder(work / "synth")
+    with sync_playwright() as p:
+        for kind in ("input", "none"):
+            ctx = p.chromium.launch_persistent_context(str(work / f"profile-{kind}"), channel="chrome", headless=not args.headed,
+                                                       viewport={"width": 1400, "height": 1000}, color_scheme="dark")
+            ctx.add_init_script("delete window.showDirectoryPicker;")
+            if kind == "none":
+                ctx.add_init_script("delete HTMLInputElement.prototype.webkitdirectory;")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(url)
+            first = page.get_by_test_id("new-workspace")
+            first.wait_for(timeout=120000)
+            ok3 = all(t in first.inner_text() for t in ("Create from logs", "Import a workspace", "Load from a folder"))
+            if kind == "input":
+                step("browser: the first-workspace page shows the three ways", ok3 and page.get_by_test_id("move-mirror").count() == 0)
+                shot(page, "h-three-browser.png", first)
+                with page.expect_file_chooser() as fc:
+                    page.get_by_test_id("new-ws-folder").click()
+                fc.value.set_files(str(synth))
+                analyse(page)
+                step("browser: Load from a folder reads a folder of synthetic logs",
+                     page.get_by_test_id("flight-route-cell").count() == 2 and "My logs" in page.get_by_test_id("folder-row").first.inner_text())
+            else:
+                no = page.get_by_test_id("new-ws-no-folder")
+                step("browser without a folder picker: the choice says so and offers files",
+                     ok3 and no.count() == 1 and "can't open a folder" in no.inner_text()
+                     and page.get_by_test_id("new-ws-folder-files").count() == 1)
+                shot(page, "h-three-nofolder.png", page.get_by_test_id("new-ws-folder-card"))
+            ctx.close()
+    site.shutdown()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("part", choices=["move"])
+    ap.add_argument("part", choices=["move", "three"])
+    ap.add_argument("--logs", default=str(ROOT / "data" / "logs"))
     ap.add_argument("--site", default=str(ROOT / "web" / "dist"))
     ap.add_argument("--shots", default=None)
     ap.add_argument("--headed", action="store_true")
@@ -225,7 +317,7 @@ def main() -> int:
             (locator or page).screenshot(path=str(Path(args.shots) / name))
 
     try:
-        {"move": run_move}[args.part](args, work, step, shot, errors)
+        {"move": run_move, "three": run_three}[args.part](args, work, step, shot, errors)
     except Exception as e:  # noqa: BLE001 — report the step that broke, then fail
         step(f"walkthrough stopped: {type(e).__name__}: {str(e).splitlines()[0][:200]}", False)
     step("no page errors", not errors, errors=errors[:3])

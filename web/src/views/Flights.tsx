@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NewWorkspaceChoices } from "../components/NewWorkspace";
+import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NavShell } from "../components/NavShell";
 import { MixedAircraftNotice } from "../components/MixedAircraftNotice";
@@ -181,6 +183,8 @@ export function Flights() {
   const [rows, setRows] = useState<FlightTableRow[]>(fixtureFlights.rows);
   const [manifest, setManifest] = useState(fixtureManifest);
   const [isRegistryActive, setIsRegistryActive] = useState(false);
+  const [firstRun, setFirstRun] = useState(false);
+  const [importingWorkspace, setImportingWorkspace] = useState(false);
   const [usingFixture, setUsingFixture] = useState(true);
   // Starts true (not false) so the very first render — before refresh()
   // below has resolved — renders the loading gate further down instead
@@ -268,9 +272,13 @@ export function Flights() {
       // All four at once: in the browser host the engine answers one at a
       // time, and a gap between them lets other requests in ahead (step 6).
       const importInfoReply = client.getImportInfo().catch(() => ({ imported: false }) as ImportInfo);
-      const [active, statusList, exclusionsResult] = await Promise.all([
+      const [active, statusList, exclusionsResult, registry] = await Promise.all([
         client.getActiveWorkspace(), client.listFlightsWithStatus(), client.listExclusions(),
+        client.listWorkspaces().catch(() => null),
       ]);
+      // Spec 16 D18: no workspace at all (not the legacy one-folder mode) —
+      // this page is the first-workspace page.
+      setFirstRun(!active.active && Array.isArray(registry) && registry.length === 0 && statusList.rows.length === 0);
       setRows(statusList.rows);
       setManifest(active.active && active.manifest ? active.manifest : LEGACY_MANIFEST);
       setIsRegistryActive(active.active);
@@ -894,6 +902,20 @@ export function Flights() {
       </button>
     </span>
   );
+
+  // Spec 16 D18: no workspace yet — the first-workspace page is the three ways.
+  if (firstRun && !usingFixture) {
+    return (
+      <NavShell>
+        <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px" }}>
+          <div style={{ background: "var(--panel)", borderRadius: 12, padding: "18px 20px", maxWidth: 1100 }}>
+            <NewWorkspaceChoices first onImport={() => setImportingWorkspace(true)} />
+          </div>
+          {importingWorkspace && <ImportWorkspaceDialog onClose={() => setImportingWorkspace(false)} />}
+        </div>
+      </NavShell>
+    );
+  }
 
   return (
     <NavShell>
