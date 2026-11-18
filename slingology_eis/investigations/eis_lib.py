@@ -111,6 +111,13 @@ class LogView:
         return self._repr_mimebundle_()["text/plain"]
 
 
+_TREND_COLUMNS = ["rank", "metric_id", "reference_n", "reference_mean", "reference_std", "reference_min",
+                  "reference_max", "trend_slope_per_hour", "trend_r_squared", "trend_direction", "shift", "shift_z",
+                  "shift_direction", "recent_n", "recent_mean", "recent_hours", "shift_reference_n",
+                  "shift_reference_mean", "om_limit", "outliers", "shifts_recorded", "last_shift_at",
+                  "recent_flights", "flights"]
+
+
 class EIS:
     def __init__(self, ws, req: dict):
         self._ws = ws
@@ -120,8 +127,8 @@ class EIS:
         self.notes = req.get("notes") or ""
 
     def __repr__(self) -> str:
-        return "<eis: flights, find, load, slices, samples, cycling, coupling, groups, unusual, signal, compare, " \
-               "logview, document, aircraft, profile, notes>"
+        return "<eis: flights, find, metrics, trends, load, slices, samples, cycling, coupling, groups, unusual, " \
+               "signal, compare, logview, document, aircraft, profile, notes>"
 
     # ── flights ──
     def _flight_rows(self) -> list[dict]:
@@ -142,6 +149,65 @@ class EIS:
         got = fi.find([{"flight_id": r["flight_id"], "ident": r.get("ident"), "date": r["header"].get("date"),
                         "name": r.get("name"), "notes": r.get("notes")} for r in rows], description, limit=limit)
         return pd.DataFrame(got.get("candidates") or [])
+
+    # ── Trends (Spec 16 F18: the fleet_metrics and trends_summary code) ──
+    def _fleet(self) -> dict:
+        from .. import host as H
+        return H.op_get_fleet({}, {"workspace_dir": self._ws.dir})
+
+    def metrics(self, flights: Optional[list] = None, metrics: Optional[list] = None) -> pd.DataFrame:
+        """The per-flight metrics Trends is built from — fleet_metrics' rows,
+        one per flight in engine-hours order — with the conditions each was
+        flown in: date, local start, engine hours, cruise density altitude
+        (ft) and OAT (°C), log source, flight id and name. `flights` keeps
+        those flights; `metrics` chooses columns (default: all but limit_*).
+        Plot a metric against date or OAT before reaching for a test."""
+        from .mcp_tools import fleet_metric_rows, flight_row
+        rows, want, unknown = fleet_metric_rows(self._fleet(), metrics, flights)
+        if unknown:
+            raise ValueError(f"unknown metrics {unknown}; see eis.metrics().columns")
+        cond = {r["flight_id"]: r for r in (flight_row(f) for f in self._flight_rows())}
+        lead = ["flight_id", "name", "date", "start_local", "engine_hours", "cruise_da_ft", "cruise_oat_c", "source"]
+        want = [k for k in want if k not in lead]        # cruise_da_ft is a metric and a condition: one column
+        out = []
+        for r in rows:
+            c = cond.get(r["flight_id"], {})
+            out.append({"flight_id": r["flight_id"], "name": c.get("name"), "date": c.get("date") or r["date"],
+                        "start_local": c.get("start_local"), "engine_hours": r["engine_hours"],
+                        "cruise_da_ft": r["cruise_da_ft"] if "cruise_da_ft" in r else c.get("cruise_da_ft"),
+                        "cruise_oat_c": c.get("cruise_oat_c"), "source": c.get("source"),
+                        **{k: r.get(k) for k in want}})
+        return pd.DataFrame(out, columns=[*lead, *want])
+
+    def trends(self) -> pd.DataFrame:
+        """The Trends cards, ranked — trends_summary's change summary — one
+        row per metric: its reference (the baseline: n, mean, std, min, max),
+        trend over engine hours, the shift if one stands (recent window
+        against its reference, z, direction, the OM limit beside it), the
+        shifts recorded for it, and the flights it rests on."""
+        from .mcp_tools import trend_cards
+        fleet = self._fleet()
+        history = fleet.get("shift_history") or []
+        rows = []
+        for c in trend_cards(fleet):
+            b, t, sh = c.get("baseline") or {}, c.get("trend") or {}, c.get("shift") or {}
+            rec, ref = sh.get("recent") or {}, sh.get("reference") or {}
+            mine = [h for h in history if h.get("metric_id") == c["metric_id"]]
+            rows.append({
+                "rank": c.get("rank"), "metric_id": c["metric_id"],
+                "reference_n": b.get("n"), "reference_mean": b.get("mean"), "reference_std": b.get("std"),
+                "reference_min": b.get("min"), "reference_max": b.get("max"),
+                "trend_slope_per_hour": t.get("slope"), "trend_r_squared": t.get("r_squared"),
+                "trend_direction": t.get("direction"),
+                "shift": bool(sh), "shift_z": sh.get("shift_z"), "shift_direction": sh.get("direction"),
+                "recent_n": rec.get("n"), "recent_mean": rec.get("mean"), "recent_hours": (rec.get("hours_from"), rec.get("hours_to")) if rec else None,
+                "shift_reference_n": ref.get("n"), "shift_reference_mean": ref.get("mean"),
+                "om_limit": (sh.get("level") or {}).get("limit"),
+                "outliers": [o["flight_id"] for o in c.get("outliers") or []],
+                "shifts_recorded": len(mine), "last_shift_at": max((h.get("detected_at") or "" for h in mine), default=None) or None,
+                "recent_flights": rec.get("flight_ids") or [], "flights": c.get("flights") or [],
+            })
+        return pd.DataFrame(rows, columns=_TREND_COLUMNS)
 
     def load(self, flight: str, channels: Optional[list] = None, start_s=None, end_s=None) -> pd.DataFrame:
         return self._ws.load_flight(flight, channels, start_s, end_s)

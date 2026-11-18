@@ -285,15 +285,37 @@ def _metric_brief(m: dict) -> dict:
             "outliers": m.get("outliers") or [], "shift": s}
 
 
-def shape_fleet_metrics(args: dict, fleet: dict) -> dict:
-    metrics = fleet.get("metrics") or {}
-    want = list(args.get("metrics") or [k for k in sorted(metrics) if not k.startswith("limit_")])
-    unknown = [k for k in want if k not in metrics]
+def fleet_metric_rows(fleet: dict, metrics: Optional[list] = None, flights: Optional[list] = None) -> tuple[list, list, list]:
+    """The per-flight metrics table — fleet_metrics' rows and eis.metrics'
+    (Spec 16 F18: one code path): (rows ordered by engine hours, the
+    metric ids, the unknown ones). Default metrics: all but limit_*."""
+    have = fleet.get("metrics") or {}
+    want = list(metrics or [k for k in sorted(have) if not k.startswith("limit_")])
+    unknown = [k for k in want if k not in have]
     rows = [{k: r.get(k) for k in ("flight_id", "date", "engine_hours", *want)}
             for r in _fleet_points(fleet).values()]
-    if args.get("flights"):
-        rows = [r for r in rows if r["flight_id"] in set(args["flights"])]
+    if flights:
+        rows = [r for r in rows if r["flight_id"] in set(flights)]
     rows.sort(key=lambda r: (r["engine_hours"] is None, r["engine_hours"] or 0.0, r["flight_id"]))
+    return rows, want, unknown
+
+
+def trend_cards(fleet: dict) -> list:
+    """The Trends cards, ranked — trends_summary's change_summary and
+    eis.trends' rows (F18: one code path): each metric's reference
+    (baseline), trend and shift, with the flights it rests on."""
+    metrics = fleet.get("metrics") or {}
+    out = []
+    for c in fleet.get("change_summary") or []:
+        m = metrics.get(c["metric_id"])
+        brief = _metric_brief(m) if m else {"metric_id": c["metric_id"]}
+        out.append({**c, **brief, "flights": [p["flight_id"] for p in (m or {}).get("points") or []]})
+    return out
+
+
+def shape_fleet_metrics(args: dict, fleet: dict) -> dict:
+    metrics = fleet.get("metrics") or {}
+    rows, want, unknown = fleet_metric_rows(fleet, args.get("metrics"), args.get("flights"))
     out = page(rows, args, "rows")
     out.update({"metrics": [_metric_brief(metrics[k]) for k in want if k in metrics], "unknown_metrics": unknown,
                 "available_metrics": sorted(metrics), "excluded": fleet.get("excluded")})
@@ -305,11 +327,7 @@ def run_fleet_metrics(args: dict, call: Call) -> dict:
 
 
 def shape_trends(args: dict, fleet: dict) -> dict:
-    metrics = fleet.get("metrics") or {}
-    ranked = []
-    for c in fleet.get("change_summary") or []:
-        brief = _metric_brief(metrics[c["metric_id"]]) if c["metric_id"] in metrics else {"metric_id": c["metric_id"]}
-        ranked.append({**c, **brief})
+    ranked = [{k: v for k, v in c.items() if k != "flights"} for c in trend_cards(fleet)]
     return {"change_summary": ranked, "shift_history": fleet.get("shift_history") or [],
             "flights": len(fleet.get("flight_ids") or []), "excluded": fleet.get("excluded")}
 

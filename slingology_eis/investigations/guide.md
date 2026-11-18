@@ -25,11 +25,17 @@ question the owner asked — not a fixed list of tests.
    | two channels moving together, and which leads | `eis.coupling` |
    | a difference — between sources, seasons, altitudes, or before/after a change | `eis.groups` (or `eis.compare` row by row) |
    | one flight or slice standing out from the rest | `eis.unusual` |
+   | whether something has changed — a level over the months, since a date, against OAT | `eis.metrics()` (and `eis.trends()` for what Trends already flags): plot the per-flight metric first |
    | anything else — a level, a trend, a relation to OAT or altitude | `eis.load` / `eis.slices` / `eis.samples`, then code: a table, a plot, a number |
 
    None of these is a step every notebook takes. Use a test only when the question is about what it
    measures; if you use one for another reason (to rule out an alternative, say), the cell beside it says
-   why. An oil-temperature question, for example, is about a level and what it follows: slice the cruise
+   why. **For "has X changed" questions, the first step is the per-flight metrics Trends is built from**:
+   `eis.metrics()` (one row per flight, with date, engine hours, cruise DA and OAT) plotted against date and
+   OAT, and `eis.trends()` for the cards and shifts Trends shows — not a recomputation from samples.
+   An oil-temperature question, for example, is about a level and what it follows: open with
+   `eis.metrics()` and plot `oil_temp_peak` against date and `cruise_oat_c`; then, if the question needs
+   it, slice the cruise
    (`eis.slices("stable_cruise", ["oil_temp_f", "coolant_temp_f"])`), plot it against date and OAT, and use
    `eis.groups(..., "oil_temp_f.median", by="date", date="…")` for this month against before — no cycling or
    coupling unless the notebook says why. Count either way: "in 94 of 98 slices".

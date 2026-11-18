@@ -727,7 +727,10 @@ def _flight_summary(workspace_dir: Path, fa: FlightAnalysis) -> dict:
     return {
         "source": "AXIS" if via in ("axis", "aircraft_log") else "G3X",
         "facts": {k: (m.get(k) or {}).get("value")
-                  for k in ("duration_min", "airborne_min", "max_altitude_ft", "max_ias_kt")},
+                  # F18: the cruise density altitude and OAT, the conditions a
+                  # metric is read against (eis.metrics, flights_list).
+                  for k in ("duration_min", "airborne_min", "max_altitude_ft", "max_ias_kt",
+                            "cruise_da_ft", "cruise_oat_c")},
         "phase_min": phases,
         "events": len(fa.exceedances or []),
     }

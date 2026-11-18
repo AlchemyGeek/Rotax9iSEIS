@@ -22,6 +22,22 @@ eis.open("ws_2b59350ca5ac")
 | `eis.load(flight, channels=None, start_s=None, end_s=None)` | one flight's channels, 1 Hz, seconds from the log's start |
 | `eis.signal(flight, start_s=None, end_s=None, channels=None)` | what *Signal* shows on the Flight view, for one flight or window: descriptors, numbers with Operators Manual references, diagnostics |
 
+## Trends: the per-flight metrics
+
+What the Trends page is built from, as tables — the same numbers as the `fleet_metrics` and `trends_summary` tools. For a "has X changed" question, start here: plot the metric against date, engine hours or OAT before slicing anything.
+
+| Call | Returns |
+|---|---|
+| `eis.metrics(flights=None, metrics=None)` | one row per flight, in engine-hours order: flight id, name, local date and start time, engine hours, cruise density altitude (ft) and OAT (°C), log source, then every per-flight metric (`oil_temp_peak`, `cruise_fuel_flow`, `egt_spread`, …; all but the `limit_*` ones unless named in `metrics=`) |
+| `eis.trends()` | one row per Trends card, ranked: the metric, its reference (n, mean, std, min, max), its trend over engine hours, the shift if one stands (the recent flights against their reference, `shift_z`, direction, the OM limit beside it), the shifts recorded for it, and the flights it rests on |
+
+```python
+m = eis.metrics()
+m.plot(x="date", y="oil_temp_peak")            # a level over time
+m.plot.scatter(x="cruise_oat_c", y="oil_temp_peak")   # against what it follows
+eis.trends()[["rank", "metric_id", "reference_mean", "recent_mean", "shift_z"]]
+```
+
 ## Slices
 
 A **rule** is a preset id (`"full_power"`, `"governed_climb"`, `"stable_cruise"`, `"idle"`, `"warm_up"` — [Research presets](research-presets.md)) or a rule of your own.

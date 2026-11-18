@@ -7,7 +7,7 @@ The `eis` library, importable (Spec 16 D14, §5.4):
     print(r)
 
 The same functions a notebook cell has on the EIS bench — `flights`, `find`,
-`load`, `slices`, `samples`, `cycling`, `coupling`, `groups`, `unusual`,
+`metrics`, `trends`, `load`, `slices`, `samples`, `cycling`, `coupling`, `groups`, `unusual`,
 `compare`, `signal`, `logview`, `document`, `aircraft`, `profile`, `notes`
 (see `slingology_eis.investigations.eis_lib`) — and the same code: on the
 bench this module is bound before the cell runs, so a notebook's setup

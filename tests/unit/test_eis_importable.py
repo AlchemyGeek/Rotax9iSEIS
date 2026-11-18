@@ -135,3 +135,46 @@ def test_a_notebook_without_the_setup_cell_gets_it(ws):
     nb = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
     assert [c["id"] for c in nb["cells"]][:2] == ["setup", "c1"]
     assert json.loads(p.read_text())["cells"][0]["id"] == "setup"          # saved
+
+
+# ── F18: Trends in a cell — the same rows as fleet_metrics and trends_summary ──
+
+def test_spec16_24_eis_metrics_and_trends_are_the_tools_rows(ws):
+    from slingology_eis.investigations.mcp_tools import run_fleet_metrics, run_trends_summary
+    h, ids, ws_id, home = ws
+    call = lambda op, p: _ok(rpc(h, op, p))  # noqa: E731
+    eis.open(ws_id, data_root=home)
+
+    tool = run_fleet_metrics({"limit": 1000}, call)
+    m = eis.metrics()
+    assert list(m["flight_id"]) == [r["flight_id"] for r in tool["rows"]] and set(m["flight_id"]) == set(ids)
+    assert list(m.columns[:8]) == ["flight_id", "name", "date", "start_local", "engine_hours", "cruise_da_ft",
+                                   "cruise_oat_c", "source"]
+    want = [b["metric_id"] for b in tool["metrics"]]
+    assert list(m.columns[8:]) == [k for k in want if k != "cruise_da_ft"] and m.columns.is_unique
+    for row, r in zip(m.to_dict("records"), tool["rows"]):
+        assert row["engine_hours"] == r["engine_hours"]
+        for k in want:                                   # row for row, NaN for a missing value
+            assert (row[k] == r[k]) or (r[k] is None and row[k] != row[k]) or (r[k] is None and row[k] is None), (k, row[k], r[k])
+    # The conditions come from the flights' own facts.
+    facts = {f["flight_id"]: f["summary"]["facts"] for f in _ok(rpc(h, "list_flights", {"summary": True}))}
+    for row in m.to_dict("records"):
+        assert row["source"] in ("G3X", "AXIS")
+        oat = facts[row["flight_id"]].get("cruise_oat_c")
+        assert row["cruise_oat_c"] == oat or (oat is None and row["cruise_oat_c"] != row["cruise_oat_c"])
+
+    # Choosing flights and metrics, as the tool's arguments do.
+    some = run_fleet_metrics({"metrics": want[:2], "flights": ids[:2], "limit": 1000}, call)
+    sub = eis.metrics(flights=ids[:2], metrics=want[:2])
+    assert list(sub["flight_id"]) == [r["flight_id"] for r in some["rows"]] and list(sub.columns[8:]) == want[:2]
+    with pytest.raises(ValueError, match="unknown metrics"):
+        eis.metrics(metrics=["no_such_metric"])
+
+    summary = run_trends_summary({}, call)
+    t = eis.trends()
+    assert list(t["metric_id"]) == [c["metric_id"] for c in summary["change_summary"]]
+    for row, c in zip(t.to_dict("records"), summary["change_summary"]):
+        assert row["rank"] == c["rank"] and row["reference_n"] == c["baseline"]["n"]
+        assert row["reference_mean"] == c["baseline"]["mean"] and row["trend_slope_per_hour"] == c["trend"]["slope"]
+        assert row["shift"] == bool(c["shift"])
+        assert set(row["flights"]) <= set(ids)
