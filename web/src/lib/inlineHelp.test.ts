@@ -3,7 +3,8 @@ import { INLINE_HELP } from "./inlineHelp";
 
 // Spec 14 §9 criterion 15: every item in §7.4's "Gets help" column has
 // help, each one sentence, all of it in this one registry, and nothing
-// else. Spec 06 v1.0 retired the Research items with the hand-study page.
+// else. Spec 06 v1.0 retired the Research items with the hand-study page;
+// Spec 16 D15 adds the Flight view's Signal strips and window.
 // margin_min_f / consecutive_flights are in §7.4's list but have no
 // field on any topic card (engine constants; cylinder_rank ships with no
 // triggers), so there is nothing to attach their help to.
@@ -15,6 +16,7 @@ const EXPECTED = [
   "preview.counts",
   "journal.live_effect", "journal.change_notices",
   "flight.excluded_from_reference",
+  "signal.strips", "signal.window",
 ];
 
 // Every app source file, as text (Vite inlines these at test time).

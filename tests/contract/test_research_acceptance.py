@@ -375,3 +375,24 @@ def test_15_window_period_as_the_spec_states(app, oct24):
     """Spec 06 v0.9: item 15's range is 3.2–4.1 s — one segment's own period
     (3.4 s) sits below the set's IQR (item 2), measured the same way."""
     assert 3.2 <= _first_window(app, oct24)["descriptors"]["rpm"]["period_s"] <= 4.1
+
+
+def test_spec16_17_flight_view_read_out_on_the_first_takeoff(app, oct24):
+    """Spec 16 acceptance 17 (D15), engine clause: the Flight view's Signal
+    read-out — one analyze_signal over the chart's zoom, rpm and MAP, no
+    strips or values — on the 2026-10-24 first takeoff shows swing 170 rpm,
+    period 3.4 s and MAP correlation 0.92, the swing beside the OM line.
+    (The strips lit over each takeoff are item 14 above; the page clause
+    is in the walkthrough script.)"""
+    fid, segs = oct24
+    a, b = segs[0]["start_s"], segs[0]["end_s"]
+    r = app.call("analyze_signal", flight_id=fid, channels=["rpm", "map_inhg"], window={"start_s": a, "end_s": b},
+                 include_strips=False, include_values=False)
+    assert r["reference"] == "rpm" and r["strips"] == {} and "values" not in r
+    num = {m["label"]: m for ch in ("rpm", "map_inhg") for m in r["window"]["numbers"][ch]}
+    swing, period, corr = num["RPM swing"], num["RPM period"], num["MAP with the reference"]
+    print(swing["text"], "|", period["text"], "|", corr["text"], "|", [x.get("text") for x in swing["references"]])
+    assert round(swing["value"], -1) == 170 and swing["text"].startswith(f"{swing['value']:g} rpm")
+    assert any(x["kind"] == "om" for x in swing["references"])
+    assert round(period["value"], 1) == 3.4 and period["text"] == "3.4 s"
+    assert round(corr["value"], 2) == 0.92 and corr["text"].startswith("correlation 0.92")
