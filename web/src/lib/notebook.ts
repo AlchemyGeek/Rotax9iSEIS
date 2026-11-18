@@ -51,6 +51,8 @@ export interface NbMeta {
   question?: string;
   status?: string;
   summary?: string;
+  summaries?: { summary?: string; finished?: string | null }[];
+  reopened?: string;
   engine?: string;
   updated?: string;
   created?: string;
@@ -269,9 +271,22 @@ export function outputHtml(o: NbOutput): string {
 
 // ── The header's state line ─────────────────────────────────────────────────
 
+/** Spec 16 F17: open, finished, or *reopened* — finished before, a follow-up under way. */
+export function notebookStatus(m: NbMeta): string {
+  return m.status === "open" && m.reopened ? "reopened" : m.status || "open";
+}
+
+/** F17: the summaries a follow-up replaced, newest first, each with its
+ * date — the markup nbhtml.summary_history writes in the export. */
+export function summaryHistory(summaries: { summary?: string; finished?: string | null }[]): string {
+  const items = [...summaries].reverse().map((e) =>
+    `<div class="earlier"><p class="meta">Summary of ${escapeHtml((e.finished ?? "").slice(0, 10) || "undated")}</p>${markdown(e.summary ?? "")}</div>`);
+  return `<details class="summary-history"><summary>Earlier summaries (${summaries.length})</summary>${items.join("")}</details>`;
+}
+
 /** "by claude · finished · engine 1.0.2 · 2026-11-15" — the export's line. */
 export function metaLine(m: NbMeta): string {
-  return [`by ${m.author || "user"}`, m.status || "open", `engine ${m.engine ?? ""}`, (m.updated ?? "").slice(0, 10)]
+  return [`by ${m.author || "user"}`, notebookStatus(m), `engine ${m.engine ?? ""}`, (m.updated ?? "").slice(0, 10)]
     .filter(Boolean).map((x) => escapeHtml(String(x))).join(" · ");
 }
 

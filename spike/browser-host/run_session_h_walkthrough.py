@@ -13,9 +13,13 @@ synthetic logs (no private data; nothing here names a real flight).
            linking that folder; in the browser, a folder of synthetic logs
            through the folder input; in a browser with no folder picker the
            choice says so and offers files.
+  record   F17 — a notebook finished, followed up (a dated section) and
+           finished again on a throwaway `serve`, then followed up once more:
+           the page shows *reopened*, the summary and the earlier one with
+           its date; its zip imported on the website shows the same.
 
 Usage:
-    .venv/bin/python spike/browser-host/run_session_h_walkthrough.py move|three [--shots DIR] [--logs DIR]
+    .venv/bin/python spike/browser-host/run_session_h_walkthrough.py move|three|record [--shots DIR] [--logs DIR]
 
 `web/dist` must be the browser build (npm run build && npm run build:browser).
 The website's real origin can't be reproduced here (it is served from
@@ -295,9 +299,82 @@ def run_three(args, work: Path, step, shot, errors) -> None:
     site.shutdown()
 
 
+def run_record(args, work: Path, step, shot, errors) -> None:
+    folder = synthetic_folder(work)
+    home = work / "record-home"
+    home.mkdir()
+    proc, local = start_eis(home)
+    try:
+        ok = lambda r: r["result"] if r.get("ok") else (_ for _ in ()).throw(RuntimeError(json.dumps(r)[:300]))  # noqa: E731
+        ok(rpc(local, "create_workspace", {"name": "Record", "engine_model": "916iS"}))
+        ok(rpc(local, "add_log_folder", {"path": str(folder)}))
+        ok(rpc(local, "scan_workspace", {}))
+        sid = ok(rpc(local, "study_create", {"name": "Oil temperature in cruise",
+                                             "question": "Why is my oil warmer in cruise this month?"}))["study_id"]
+        cell = lambda src: ok(rpc(local, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": src}}))  # noqa: E731
+        cell("Oil runs about 6 °F warmer in cruise than last month.")
+        ok(rpc(local, "study_finish", {"study_id": sid, "summary": "Oil runs 6 °F warmer in cruise this month."}))
+        cell("## Follow-up — 2026-11-18\n\nAgainst OAT the rise follows the warmer days.")
+        ok(rpc(local, "code_run", {"study_id": sid, "source": "print('oil vs OAT: r = 0.8')"}))
+        ok(rpc(local, "study_finish", {"study_id": sid, "summary": "Oil runs warmer with OAT, not on its own."}))
+        cell("## Follow-up — 2026-11-19\n\nThe owner asks about the oil change.")
+        row = next(r for r in ok(rpc(local, "list_studies", {}))["studies"] if r["study_id"] == sid)
+        step("engine: appended after finishing, the notebook reads reopened", row["status"] == "reopened"
+             and len(row["summaries"]) == 1)
+        exp = ok(rpc(local, "export_study", {"study_id": sid, "format": "zip"}))
+        nbzip = work / exp["filename"]
+        nbzip.write_bytes(urllib.request.urlopen(local + exp["download_url"], timeout=60).read())
+
+        def check(page, mode):
+            page.get_by_test_id("nav-research").click(timeout=120000)
+            page.get_by_test_id("study-row").first.wait_for(timeout=60000)
+            listed = page.get_by_test_id("study-row").filter(has_text="Oil temperature in cruise").first.inner_text()
+            page.get_by_test_id("study-row").filter(has_text="Oil temperature in cruise").first.click()
+            page.get_by_test_id("notebook").wait_for(timeout=60000)
+            hist = page.get_by_test_id("nb-summary-history")
+            hist.locator("summary").click()
+            step(f"{mode}: the notebook says reopened, keeps its summary and the earlier one with its date",
+                 "reopened" in page.get_by_test_id("nb-meta").inner_text()
+                 and page.get_by_test_id("nb-reopened").count() == 1
+                 and "Oil runs warmer with OAT" in page.get_by_test_id("notebook-header").inner_text()
+                 and "Earlier summaries (1)" in hist.inner_text() and "Oil runs 6 °F warmer" in hist.inner_text()
+                 and "Summary of 20" in hist.inner_text(),
+                 listed_as=listed.split("\n")[1] if "\n" in listed else listed)
+            shot(page, f"h-record-{mode}.png", page.get_by_test_id("notebook-header"))
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel="chrome", headless=not args.headed)
+            page = browser.new_page(viewport={"width": 1400, "height": 1000}, color_scheme="dark")
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(local + "/")
+            check(page, "server")
+            browser.close()
+
+            site = serve_site(Path(args.site))
+            url = f"http://localhost:{site.server_address[1]}/"
+            ctx = p.chromium.launch_persistent_context(str(work / "profile-record"), channel="chrome", headless=not args.headed,
+                                                       viewport={"width": 1400, "height": 1000}, color_scheme="dark")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(url)
+            page.get_by_test_id("new-workspace").wait_for(timeout=120000)
+            page.get_by_label("Workspace name").fill("Website")
+            page.get_by_test_id("new-ws-create").click()
+            page.get_by_test_id("nav-research").click(timeout=120000)
+            page.get_by_test_id("import-study-input").set_input_files(str(nbzip))
+            page.get_by_test_id("notebook").wait_for(timeout=120000)
+            page.get_by_test_id("nav-research").click()
+            check(page, "browser")
+            ctx.close()
+            site.shutdown()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("part", choices=["move", "three"])
+    ap.add_argument("part", choices=["move", "three", "record"])
     ap.add_argument("--logs", default=str(ROOT / "data" / "logs"))
     ap.add_argument("--site", default=str(ROOT / "web" / "dist"))
     ap.add_argument("--shots", default=None)
@@ -317,7 +394,7 @@ def main() -> int:
             (locator or page).screenshot(path=str(Path(args.shots) / name))
 
     try:
-        {"move": run_move, "three": run_three}[args.part](args, work, step, shot, errors)
+        {"move": run_move, "three": run_three, "record": run_record}[args.part](args, work, step, shot, errors)
     except Exception as e:  # noqa: BLE001 — report the step that broke, then fail
         step(f"walkthrough stopped: {type(e).__name__}: {str(e).splitlines()[0][:200]}", False)
     step("no page errors", not errors, errors=errors[:3])

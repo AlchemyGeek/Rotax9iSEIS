@@ -500,3 +500,49 @@ def test_inbox_recurring_pattern_and_resolution(registry_server):
     assert st == ["new", "nothing-here"], moved["candidates"]
     bad = rpc(h, "inbox_resolve", {"candidate_id": c["id"], "status": "maybe"})
     assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
+
+
+# ── F17: the notebook is the record (acceptance 23's engine clauses) ───────
+
+def test_spec16_23_a_follow_up_reopens_the_notebook_and_keeps_the_earlier_summary(research_ws):
+    h, ids = research_ws
+    sid = _notebook(h, "Oil temperature in cruise")
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "Oil runs warmer."}}))
+    first = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Oil runs 6 °F warmer this month."}))["study"]
+    assert first["status"] == "finished" and first["summaries"] == []
+    cells = first["cells"]
+
+    def row():
+        return next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)
+
+    # A probe-only follow-up adds nothing: the notebook is as it was.
+    _ok(rpc(h, "list_flights", {}))
+    assert row()["status"] == "finished" and row()["cells"] == cells
+
+    # New analysis appended to a finished notebook opens it again.
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
+        "kind": "markdown", "source": "## Follow-up — 2026-11-18\n\nAgainst OAT, the rise follows the warmer days."}}))
+    assert row()["status"] == "reopened" and row()["summary"] == "Oil runs 6 °F warmer this month."
+    view = _ok(rpc(h, "load_study", {"study_id": sid}))
+    assert view["status"] == "reopened" and view["notebook"]["metadata"]["slingology"]["status"] == "open"
+    if _has_bench(h):
+        _bench_stack()
+        _ok(rpc(h, "code_run", {"study_id": sid, "source": "print(1 + 1)"}))
+        assert row()["status"] == "reopened"
+
+    # Finishing again: the new summary, the earlier one kept with its date.
+    again = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Oil runs warmer with OAT, not on its own."}))["study"]
+    assert again["status"] == "finished" and again["summary"] == "Oil runs warmer with OAT, not on its own."
+    assert [e["summary"] for e in again["summaries"]] == ["Oil runs 6 °F warmer this month."]
+    assert again["summaries"][0]["finished"][:2] == "20"
+    meta = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]["metadata"]["slingology"]
+    assert "reopened" not in meta and meta["summaries"] == again["summaries"]
+
+    # Re-running the cells as they are doesn't reopen it.
+    _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
+    assert row()["status"] == "finished"
+
+    # The export shows the history under the summary.
+    exp = _ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))
+    page = _download(h, exp["download_url"]).decode()
+    assert "Earlier summaries (1)" in page and "Oil runs 6 °F warmer this month." in page

@@ -188,3 +188,21 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
   (the one entry you may write there).
 
 Write the finding in the notebook as you go; the conversation is not where the owner will look for it later.
+
+### The notebook is the record
+
+**The conversation is scratch; the notebook is the record.**
+
+- **Analysis that supports a claim is a cell** — code and its output, with a markdown cell saying what it
+  shows. A look-around to decide where to go next is a **probe** (`question_run`, `signal_analyze`,
+  `series_get`, …) and stays in the conversation. If a probe's number ends up in what you tell the owner, put
+  the analysis behind it in the notebook as a cell first.
+- **A follow-up on a finished notebook.** When a later exchange changes what the notebook says — a new
+  measurement, an alternative ruled out, a different conclusion — append a dated section to the same notebook
+  (a markdown cell headed `## Follow-up — 2026-11-18`, then its cells) and `study_finish` again with the new
+  summary. Appending to a finished notebook opens it again (`studies_list` shows *reopened*); the earlier
+  summary is kept, with its date, as the notebook's history. A follow-up that only probes adds nothing.
+- **"Put that in the notebook" is an instruction**: when the owner says it, add the cells and finish again.
+- **Facts about the aircraft** — a part changed, a setting, a date — belong in the owner's notes
+  (`aircraft_get`), not in a notebook. You can't write them: ask the owner to add them in **Settings →
+  Aircraft**.

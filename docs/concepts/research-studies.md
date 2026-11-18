@@ -26,6 +26,10 @@ It is an ordinary Jupyter `.ipynb`: it opens in JupyterLab or VS Code, and runs 
 
 Notebooks live in the workspace and travel with a workspace export. On the Research page, **Re-run** (with EIS on your computer) runs every code cell again on your current flights; outputs that changed wait for you to **Accept** or **Discard**, cell by cell or all at once. That is the cheap way to ask the same question next season. **Delete…** removes a notebook and its files.
 
+## Following up
+
+The conversation is where you and Claude think out loud; the notebook is what stays. Analysis Claude relies on goes into the notebook as a cell; a quick look to decide where to go next stays in the chat. When you talk on after a notebook is finished and the answer changes — a new measurement, an alternative ruled out — Claude adds a dated *Follow-up* section to the same notebook and finishes it again. While it works the notebook reads *reopened*; afterwards the new summary is on top and the earlier one is kept beneath it, under *Earlier summaries*, with its date. Say "put that in the notebook" whenever you want something kept. Facts about the aircraft — a part changed, a setting — belong in your notes in **Settings → Aircraft**; Claude asks you to add them there.
+
 ## Sharing
 
 Two exports, on the notebook's page:

@@ -5,6 +5,7 @@ import { useCapabilities } from "../../lib/capabilities";
 import {
   cellFlags, cellMeta, logviewRef, markdown, metaLine, nbMeta, outputHtml, outputsLine, outputsState, text,
   type FileImages, type NbCell, type NbOutput, type Notebook,
+  summaryHistory,
 } from "../../lib/notebook";
 import { LogViewCell } from "./LogViewCell";
 import { BODY, BUTTON, MUTED, NOTICE, PANEL, PRIMARY } from "./ui";
@@ -155,6 +156,12 @@ export function NotebookView({ view, onChanged, onDeleted }: {
           <div style={MUTED}>This page shows the outputs as they were saved; re-running a notebook needs EIS on your computer (the Claude Desktop extension or a pip install).</div>
         )}
         {m.summary && <section className="summary"><Html html={"<h2>Summary</h2>" + markdown(m.summary)} /></section>}
+        {m.reopened && m.status === "open" && (
+          <div style={NOTICE} data-testid="nb-reopened">
+            Reopened {String(m.reopened).slice(0, 10)}: a follow-up is adding to this notebook. The summary above is from before it; Claude finishes again with a new one.
+          </div>
+        )}
+        {(m.summaries?.length ?? 0) > 0 && <Html className="summary-history" testid="nb-summary-history" html={summaryHistory(m.summaries!)} />}
       </header>
       {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
       {notice && <div style={NOTICE} data-testid="nb-notice">{notice}</div>}

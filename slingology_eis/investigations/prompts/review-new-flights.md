@@ -14,3 +14,8 @@ Review my new flights.
    `eis.unusual` — this review is about what stands out). For each open inbox candidate and each open
    question of mine: what it is, and whether it needs a closer look (*Investigate* takes a question).
 5. Finish with `study_finish`: what stands out, what needs a closer look, what doesn't — briefly.
+
+The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+to the same notebook and `study_finish` again.

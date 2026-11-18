@@ -32,6 +32,7 @@ header{border-bottom:1px solid #d6dae3;margin-bottom:1.5rem}
 header .meta{color:#5b6475;font-size:.9rem}
 .cell{margin:1rem 0}
 details.code summary{cursor:pointer;color:#5b6475;font-size:.85rem}
+details.summary-history{margin:.5rem 0 1rem}details.summary-history>summary{cursor:pointer;color:#5b6475;font-size:.9rem}details.summary-history .earlier{border-left:3px solid #d5d9e0;padding-left:.8rem;margin:.6rem 0;color:#3b4250}
 pre{background:#f5f6f8;padding:.6rem .8rem;overflow-x:auto;font-size:.85rem;border-radius:4px}
 pre.stderr{background:#fff4e5}
 pre.error{background:#fdecec}
@@ -206,11 +207,25 @@ def output(o: dict) -> str:
     return ""
 
 
+def summary_history(summaries: list) -> str:
+    """F17: the summaries a follow-up replaced, newest first, each with the
+    date it was written (the page renders the same markup)."""
+    items = []
+    for e in reversed(summaries):
+        when = (e.get("finished") or "")[:10] or "undated"
+        items.append(f'<div class="earlier"><p class="meta">Summary of {html.escape(when)}</p>'
+                     + markdown(e.get("summary") or "") + "</div>")
+    return ('<details class="summary-history"><summary>Earlier summaries (' + str(len(summaries)) + ")</summary>"
+            + "".join(items) + "</details>")
+
+
 def render(nb: dict, read_file=None) -> str:
     """`read_file(ref)` gives a files/ document's bytes (images a markdown
     cell shows are inlined)."""
     m = meta(nb)
     status = m.get("status") or "open"
+    if status == "open" and m.get("reopened"):
+        status = "reopened"      # F17: finished before, a follow-up under way
     head = [f"<h1>{html.escape(m.get('name') or 'Notebook')}</h1>",
             '<p class="meta">' + " · ".join(html.escape(str(x)) for x in (
                 f"by {m.get('author') or 'user'}", status, f"engine {m.get('engine') or ''}",
@@ -220,6 +235,8 @@ def render(nb: dict, read_file=None) -> str:
         head.append(f"<p><strong>Question:</strong> {_inline(m['question'])}</p>")
     if m.get("summary"):
         head.append("<section class=\"summary\"><h2>Summary</h2>" + markdown(m["summary"]) + "</section>")
+    if m.get("summaries"):
+        head.append(summary_history(m["summaries"]))
     body = []
     for c in nb.get("cells") or []:
         src = text(c.get("source"))

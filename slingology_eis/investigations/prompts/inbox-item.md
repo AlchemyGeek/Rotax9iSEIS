@@ -18,3 +18,8 @@ Look at inbox candidate {{candidate_id}} for me.
    altitude or temperature.
 5. Finish with `study_finish`, resolving the candidate (`resolution`: nothing-here, watch or acted) with a
    one-line note saying why.
+
+The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+to the same notebook and `study_finish` again.

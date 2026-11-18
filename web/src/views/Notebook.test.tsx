@@ -170,4 +170,23 @@ describe("the notebook on the Research page (§5.3)", () => {
     fireEvent.click(screen.getByTestId("nb-run-mine"));
     await waitFor(() => expect(state.calls.some((c) => c.op === "run_study_on_my_flights")).toBe(true));
   });
+
+  it("F17: a reopened notebook says so, and the summaries a follow-up replaced are kept under the summary", async () => {
+    const nb = state.view.notebook as { metadata: { slingology: Record<string, unknown> } };
+    Object.assign(nb.metadata.slingology, {
+      status: "open", reopened: "2026-11-18T09:00:00Z", summary: "Oil runs warmer with OAT.",
+      summaries: [{ summary: "A first look.", finished: "2026-11-10T10:00:00Z" },
+                  { summary: "Oil runs 6 °F warmer this month.", finished: "2026-11-15T10:00:00Z" }],
+    });
+    app();
+    await screen.findByTestId("notebook");
+    expect(screen.getByTestId("nb-meta").textContent).toContain("reopened");
+    expect(screen.getByTestId("nb-reopened").textContent).toContain("Reopened 2026-11-18");
+    const history = screen.getByTestId("nb-summary-history");
+    expect(history.textContent).toContain("Earlier summaries (2)");
+    const earlier = history.querySelectorAll(".earlier");
+    // Kept oldest first, shown newest first.
+    expect(earlier[0].textContent).toContain("Summary of 2026-11-15");
+    expect(earlier[1].textContent).toContain("A first look.");
+  });
 });

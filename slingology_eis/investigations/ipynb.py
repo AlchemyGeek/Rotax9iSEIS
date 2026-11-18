@@ -417,7 +417,10 @@ def summary(nb: dict) -> dict:
     return {"study_id": m["id"], "name": m.get("name"), "updated": m.get("updated"), "created": m.get("created"),
             "finding": (m.get("summary") or "").split("\n", 1)[0] or None, "tests": 0, "read_only": False,
             "flights": len(flights_of(nb)), "kind": m.get("kind"), "author": m.get("author"),
-            "question": m.get("question"), "status": m.get("status"), "summary": m.get("summary"),
+            # F17: an open notebook that was finished before reads *reopened*.
+            "question": m.get("question"),
+            "status": "reopened" if m.get("status") == "open" and m.get("reopened") else m.get("status"),
+            "summary": m.get("summary"), "summaries": m.get("summaries") or [],
             "cells": len(nb["cells"]), "format": "ipynb",
             "pending": sum(1 for c in nb["cells"] if ((c.get("metadata") or {}).get("slingology") or {}).get("pending"))}
 

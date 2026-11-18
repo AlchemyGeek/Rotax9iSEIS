@@ -40,6 +40,11 @@ Investigate a question about the engine in a notebook, following the EIS method.
        finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
        one of mine, so it and its marks are resolved.
 
+    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+    to the same notebook and `study_finish` again.
+
 ## Look at this inbox item
 
 Investigate one candidate the EIS detectors raised and resolve it.
@@ -61,6 +66,11 @@ Investigate one candidate the EIS detectors raised and resolve it.
        altitude or temperature.
     5. Finish with `study_finish`, resolving the candidate (`resolution`: nothing-here, watch or acted) with a
        one-line note saying why.
+
+    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+    to the same notebook and `study_finish` again.
 
 ## Before / after
 
@@ -85,6 +95,11 @@ Compare the engine before and after a change (a date, or the change in words).
     5. Say what changed and what did not, each with its numbers and the group sizes, and the caveats (fewer
        flights after, different seasons or sources). Finish with `study_finish`.
 
+    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+    to the same notebook and `study_finish` again.
+
 ## Review new flights
 
 A short review of the flights since the last study finding, the inbox, and anything that stands out.
@@ -101,3 +116,8 @@ A short review of the flights since the last study finding, the inbox, and anyth
        `eis.unusual` — this review is about what stands out). For each open inbox candidate and each open
        question of mine: what it is, and whether it needs a closer look (*Investigate* takes a question).
     5. Finish with `study_finish`: what stands out, what needs a closer look, what doesn't — briefly.
+
+    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+    to the same notebook and `study_finish` again.

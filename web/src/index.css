@@ -189,4 +189,9 @@ td {
 .nb figure.logview { margin: 6px 0; }
 .nb .logview figcaption { color: var(--text-tertiary); font-size: 13px; }
 .nb .flag { font-size: 13px; color: var(--severity-watch); margin: 4px 0; }
+/* Spec 16 F17: the summaries a follow-up replaced. */
+.nb details.summary-history { margin: 4px 0 10px; }
+.nb details.summary-history > summary { cursor: pointer; color: var(--text-tertiary); font-size: 13px; }
+.nb details.summary-history .earlier { border-left: 3px solid var(--border); padding-left: 12px; margin: 10px 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+.nb details.summary-history .earlier .meta { font-size: 12px; color: var(--text-tertiary); margin: 0 0 4px; }
 .nb .pending { border-left: 3px solid var(--severity-watch); padding-left: 10px; margin-top: 6px; }

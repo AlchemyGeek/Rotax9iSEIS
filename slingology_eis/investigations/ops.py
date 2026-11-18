@@ -81,6 +81,17 @@ def _save_nb(ctx: dict, nb: dict) -> dict:
         raise _err(e)
 
 
+def _reopen(nb: dict) -> None:
+    """Spec 16 F17: the notebook is the record. New analysis in a finished
+    notebook — a cell appended, or a code cell rewritten — opens it again;
+    it needs a fresh study_finish, which keeps the earlier summary as dated
+    history. Re-running the cells as they are does not reopen it."""
+    m = NBX.meta(nb)
+    if m.get("status") == "finished":
+        m["status"] = "open"
+        m["reopened"] = H._now_iso()
+
+
 def op_study_create(params: dict, ctx: dict) -> Any:
     """§5.1: a new investigation notebook, its first cell the question."""
     H._require_active(ctx)
@@ -335,6 +346,7 @@ def _append_code(ctx: dict, nb: dict, source: str, timeout_s=None, memory_mb=Non
     got = _run_code(ctx, nb, cell["id"], source, timeout_s, memory_mb)
     cell["source"] = source
     NBX.set_run(cell, got["outputs"], got["ran"])
+    _reopen(nb)
     _save_nb(ctx, nb)
     return {"study_id": NBX.meta(nb)["id"], "cell": cell, "previews": got["previews"]}
 
@@ -388,6 +400,7 @@ def op_study_cells_append(params: dict, ctx: dict) -> Any:
             raise H.RpcError("BAD_PARAMS", "a markdown cell needs source")
         new = NBX.markdown_cell(NBX.next_id(nb), src, role=cell.get("role"))
         nb["cells"].append(new)
+        _reopen(nb)
         _save_nb(ctx, nb)
         return {"study_id": NBX.meta(nb)["id"], "cell": new, "previews": {}}
     if kind == "code":
@@ -469,6 +482,12 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
         raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
                                        "saying what it shows; add one beside cell " + ", ".join(lacking))
     m = NBX.meta(nb)
+    # F17: a follow-up's summary replaces the earlier one; the earlier one
+    # stays, with the date it was written, as the notebook's history.
+    prev = (m.get("summary") or "").strip()
+    if prev and prev != summary.strip():
+        m["summaries"] = [*(m.get("summaries") or []), {"summary": prev, "finished": m.get("finished")}]
+    m.pop("reopened", None)
     m.update({"summary": summary.strip(), "status": "finished", "finished": H._now_iso()})
     resolved = None
     cand = params.get("inbox_candidate") or m.get("inbox_candidate")

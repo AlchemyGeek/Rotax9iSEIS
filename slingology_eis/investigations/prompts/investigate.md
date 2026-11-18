@@ -32,3 +32,8 @@ it), take that one. Otherwise it is a new question in my words.
 6. State the mechanism as a hypothesis, name the alternatives you ruled out with the cells that did it, and
    finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
    one of mine, so it and its marks are resolved.
+
+The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+to the same notebook and `study_finish` again.

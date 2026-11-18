@@ -19,3 +19,8 @@ Compare my engine before and after this change: {{change}}.
    MAP, fuel flow; for an oil change: oil temperature and pressure). Say why each measurement was chosen.
 5. Say what changed and what did not, each with its numbers and the group sizes, and the caveats (fewer
    flights after, different seasons or sources). Finish with `study_finish`.
+
+The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
+cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
+finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
+to the same notebook and `study_finish` again.

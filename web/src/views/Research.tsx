@@ -99,7 +99,7 @@ export function Research() {
                   <tr key={s.study_id} style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }} onClick={() => navigate(`/research/${s.study_id}`)} data-testid="study-row">
                     <td style={{ padding: "9px 8px", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{s.name}</td>
                     <td style={{ padding: "9px 8px", whiteSpace: "nowrap", verticalAlign: "top" }} data-testid="study-kind">
-                      <span style={KIND} title="A notebook (Jupyter .ipynb)">{s.author === "claude" ? "Claude" : "you"}{s.status === "finished" ? " · finished" : ""}</span>
+                      <span style={KIND} title="A notebook (Jupyter .ipynb)">{s.author === "claude" ? "Claude" : "you"}{s.status === "finished" || s.status === "reopened" ? ` · ${s.status}` : ""}</span>
                     </td>
                     <td style={{ padding: "9px 8px", fontSize: 12, color: "var(--text-secondary)" }}>
                       {s.finding ?? <span style={MUTED}>{s.question ?? "open"}{s.pending ? ` · ${s.pending} cell${s.pending === 1 ? "" : "s"} pending` : ""}</span>}
