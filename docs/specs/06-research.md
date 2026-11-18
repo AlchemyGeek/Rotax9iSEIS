@@ -1,7 +1,7 @@
 # Spec 06 — Research
 
 **Project:** SlingologyEIS
-**Status:** v0.13 — v0.12 built (Spec 16 Session E): `below_floor`, *peaks*, `skip_onset_s`, the `split` shorthand, local-time labels; v0.11 — §9.1 Signal view and §9.2 Compare restored as built (maintained, not extended), D8–D12 back in §3, acceptance 18 kept; v0.10 — item 15's period clause widened to 3.2–4.1 s, acceptance 14–17 pass in full; the Signal and Compare screens stay as built and are not extended (Spec 16 §3.1 S18). v0.9 — acceptance 14–17 re-checked in Spec 16 Session D. v0.8 — **Research is the instrument.** v1 (Sessions A and B) built on branch `research`: slices, descriptors, the four questions, studies, the manual Research UI. The v0.6 Signal/Compare *screens* are withdrawn; their engine operations (`analyze_signal`, `compare_rows`) stay as tools. AI-driven investigations, the Claude Desktop extension, notebook studies, the code tool and the inbox are owned by **Spec 16 — Investigations**. Decisions D1–D7 and Q1–Q13 closed. v0.7 — Session C (Signal view and Compare) built on `research` (§3.4).
+**Status:** v1.0 — **the instrument only** (owner, Nov 18 2026): the manual Research UI (hand studies, question forms, Signal view and Compare screens, `.eisstudy`) is retired; what remains is the engine's instrument — slices, descriptors, tests, result contract, `analyze_signal` (whose strips and window numbers move onto the Flight view), `compare_rows` (reached through `eis.compare`) — and the operations, used by Spec 16's notebooks, `eis` library, MCP tools and inbox scan. §0 says which sections stand and which are retired. v0.13 — v0.12 built (Spec 16 Session E): `below_floor`, *peaks*, `skip_onset_s`, the `split` shorthand, local-time labels; v0.11 — §9.1 Signal view and §9.2 Compare restored as built (maintained, not extended), D8–D12 back in §3, acceptance 18 kept; v0.10 — item 15's period clause widened to 3.2–4.1 s, acceptance 14–17 pass in full; the Signal and Compare screens stay as built and are not extended (Spec 16 §3.1 S18). v0.9 — acceptance 14–17 re-checked in Spec 16 Session D. v0.8 — **Research is the instrument.** v1 (Sessions A and B) built on branch `research`: slices, descriptors, the four questions, studies, the manual Research UI. The v0.6 Signal/Compare *screens* are withdrawn; their engine operations (`analyze_signal`, `compare_rows`) stay as tools. AI-driven investigations, the Claude Desktop extension, notebook studies, the code tool and the inbox are owned by **Spec 16 — Investigations**. Decisions D1–D7 and Q1–Q13 closed. v0.7 — Session C (Signal view and Compare) built on `research` (§3.4).
 **Suggested repo path:** `docs/specs/06-research.md`
 **Builds on:** Spec 01 (§7 operations envelope, §8.7 series, §9 extension model, §10 privacy), Spec 02 (§5.3 workspace layout, §7 export/import), Spec 03 (principle 6: the Explore → operational path; §4 navigation shell), Spec 10 (§4 admission criteria, §8 lifecycle, §10 proposals; D2/D7 items parked as "Research"), Spec 12 (§13 deferred change-point detection), Spec 14 (§4, Q3)
 **Revises:** Spec 03 §4 and §5 (Research becomes a destination; new view), Spec 02 §5.3 and §7.1 (a `studies/` document set, carried by export), Spec 01 §7 (Research operations), Spec 14 Q3 (closes: Research is designed)
@@ -11,6 +11,7 @@
 
 | Version | Change |
 |---|---|
+| 1.0 | **The instrument only** (owner, Nov 18 2026; Spec 16 D15–D16). The research model is Spec 16's: the user *looks* in EIS and *asks* Claude; EIS measures. Retired: §9 as screens (Signal view, Compare), §10 hand studies and `.eisstudy`, §12 (the Research page's study UI), §14.4–14.7, acceptance 6, 12, 14 (page side), 16–18, and the operations `save_study` / `load_study` / `list_studies` / `delete_study` / `export_study` / `import_study` / `run_study` / `run_study_on_my_flights` / `note_study_finding` / `forget_study_finding` for hand studies (notebooks have their own, Spec 16 §5). Kept: §4–§8 (slices, descriptors, tests, result contract), §11's `list_slice_presets` / `build_slices` / `get_slice_samples` / `run_test` / `analyze_signal` / `compare_rows` / `get_research_progress`, §14.1 (the scan), acceptance 1–5, 7–11, 13, 15 — as the engine's instrument behind `eis.*`, the MCP tools and the inbox. `analyze_signal`'s strips and window read-out move onto the Flight view (Spec 16 D15); the derived rule and Compare's screen go. Existing hand studies convert to notebooks on first load (a markdown cell per question with its §8 result and the `eis` call that reproduces it). The Research page becomes notebooks + inbox (Spec 16 §6). Spec 03 §5.10 revised accordingly. |
 | 0.13 | **v0.12 as built** (Spec 16 Session E, 2026-11-15). §7.1: `below_floor` is derived from the stored descriptors (period below the 3 s floor, prominence ≥ the threshold), not cached, so a cached slice answers it; the finding adds *; in N more, a cycle faster than the 1 Hz log can resolve (≈ 3 s)*, or leads with it when no slice has a prominent period; the evidence table gains the column *Faster than the log resolves*. On the owner's workspace (Spec 06 presets × channels): 515 of 515 slice descriptors identical, of 30 results 15 identical and 15 differing only in wording and the new field/column. §7.1 reference text: *the median slice peaks at* (a MAX limit); the Signal view's: *the window peaks at*. §7.3: `split` is `"<by>"` or `{"by": …}`; any other form is `BAD_PARAMS` naming every form. §9.1: `skip_onset_s` and the onset caveat (below). §11: research results label each slice and window `start_local` / `when` (the flight's local clock with the offset into the flight); definitions (rules, hand slices) are stored as given. Spec 16 acceptance 14's clause on the 2026-10-24 first takeoff: with the suggested skip the window's period is 3.22 s, prominent (0.29); skips from there to 30 s give 3.22–3.39 s, the periodogram 3.19–3.40 s — see Spec 16 v0.6 §8. |
 | 0.12 | **After the Spec 16 dry run** (owner and Claude, Nov 15 2026; Spec 16 §3.2). §8 finding text: a period below the 3 s floor whose prominence passes is described as *a cycle faster than the 1 Hz log can resolve (≈ 3 s)*, the row keeping `period_prominent: false` and gaining `below_floor: true` (F2); OM reference text says *peaks* where it said *top* (F3); `analyze_signal` gains `skip_onset_s` and a caveat suggesting it when the window opens on a monotone ramp larger than the swing (F4); `groups` accepts `split: "<by>"` as shorthand for `{"by": …}` (F1); slice and window labels carry local clock time with the offset into the flight (F9). Investigations' notebooks move to Spec 16 §5 (`.ipynb`, the `eis` library); hand studies, `.eisstudy` and the Research page are unchanged. |
 | 0.11 | **Signal and Compare restored as built** (owner, Nov 14 2026). §9.1 Signal view and §9.2 Compare are restored from v0.6 as built in Session C, each headed *maintained, not extended*, with §9.3 the aligned view; D8–D12 return to §3 with the note that they stand as built; Spec 16’s investigator reaches the same operations through the MCP tools; no further Research screens are built; acceptance 18 is kept and passes (`test_18_study_with_signal_rule_pin_and_question_round_trips` on the real logs, the page side in `web/src/views/ResearchSignalCompare.test.tsx`). This supersedes 0.8's withdrawal of the screens; the rest of the 0.8 cut stands. |
@@ -28,6 +29,10 @@
 **Note on numbering:** 06 was reserved for research mode since Spec 03 v0.8. 11 remains the paused "insights under the program principles" draft.
 
 ---
+
+## 0. Scope after v1.0 — what stands
+
+Spec 16 owns the research *model* (Claude investigates; EIS measures). This spec owns the **instrument**: how a slice is cut, what is measured on it, the four tests and their result contract, the sampling caveats, the operations. Sections **4–8, 11 (the kept operations), 14.1, 15 (kept items) and Appendix A stand**. Sections **9, 10, 12 and 14.4–14.7 are retired** and kept below for history only: their screens and documents are removed in Spec 16 Session G, and nothing new refers to them. Where a kept section mentions the study page, a hand study or `.eisstudy`, read *notebook* (Spec 16 §5).
 
 ## 1. Problem
 
@@ -321,6 +326,8 @@ Nothing in the contract is a verdict. The only shipped numbers are OM values alr
 
 ## 9. The three levels: Signal, Compare, Questions (D8)
 
+> **Retired in v1.0** (owner, Nov 18 2026; Spec 16 D15). Kept for history; removed in Spec 16 Session G. `analyze_signal`'s strips and window read-out live on in the Flight view; Compare lives on as `eis.compare` asked of Claude.
+
 Research works at three levels on the same per-slice descriptors (§6). v1 built the third; v1.1 (Session C) built the first two, which are maintained, not extended (D8–D12).
 
 | Level | Unit | Question it answers | Output |
@@ -369,6 +376,8 @@ Research works at three levels on the same per-slice descriptors (§6). v1 built
 - Charts follow Spec 03 §6.1 (ECharts) and Spec 07's channel presets; Research adds no new charting stack.
 
 ## 10. Studies (D3)
+
+> **Retired in v1.0** (owner, Nov 18 2026; Spec 16 D15). Kept for history; removed in Spec 16 Session G. `analyze_signal`'s strips and window read-out live on in the Flight view; Compare lives on as `eis.compare` asked of Claude.
 
 ### 10.1 Object
 
@@ -432,6 +441,8 @@ CLI: `slingology-eis research presets | slices | samples | test | signal | compa
 
 ## 12. UI (Spec 03 §4, §5 — new view)
 
+> **Retired in v1.0** (owner, Nov 18 2026; Spec 16 D15). Kept for history; removed in Spec 16 Session G. `analyze_signal`'s strips and window read-out live on in the Flight view; Compare lives on as `eis.compare` asked of Claude.
+
 - **Nav:** `Flights Trends Research Journal ⚙` — Research is the fourth everyday destination (D7; Spec 14 Q3 closed), shown when `get_capabilities().features.research` is true (Spec 03 v0.29 §4). Built: Spec 03 §5.10 describes the views as they are.
 - **Research home:** the workspace's studies (name, finding of its first test, updated date), the presets with a one-line question each, *New study*. Empty state: the presets, and a sentence on what Research is for.
 - **Study page**, top to bottom: selection (all flights / pick / split by) → slice rules and hand slices, with the slice count live → aligned view → tests (add a question; each renders the §8 contract) → references and notes → actions (Journal entry, evidence package, export). A study authored by the investigator (Spec 16) renders in the same view as a notebook.
@@ -467,6 +478,8 @@ Once the condition-dependence test (§7.5) exists, three studies ship as **examp
 A third Signal strip for a channel pair — rolling correlation at zero lag — "where do these move together?" Same sliding-window machinery as D10.
 
 ## 15. Acceptance criteria (tested against the project log set)
+
+> v1.0: items 6, 12, 14 (page side), 16, 17 and 18 are retired with the screens and hand studies they test; the engine clauses of 14 and 15 stand (`analyze_signal`), and 1–5, 7–11, 13 stand as tests of the instrument.
 
 1. The *Full-power segment* preset over the admitted N117ZS flights dated through 2026-10-28 (the investigation's logs; later flights don't move these numbers) produces the Appendix A slice set: 98 slices (duplicates removed by fingerprint), with the two extended Phase-1 blocks included.
 2. Test 7.1 on rpm reports median period 3.8 s (IQR within 3.5–4.1) and median swing 180 rpm, with ≥ 90 of 98 slices showing a prominent period; the finding sentence carries the count.
