@@ -168,24 +168,25 @@ td {
 
 /* Spec 16 §5.3 — an investigation notebook (lib/notebook.ts writes the same
    markup as the HTML export, nbhtml.py; these are its styles on the page). */
-.nb .cell { margin: 10px 0; font-size: 13px; line-height: 1.55; color: var(--text-primary); }
-.nb .cell.markdown h1 { font-size: 18px; margin: 14px 0 6px; }
-.nb .cell.markdown h2, .nb .summary h2 { font-size: 15px; margin: 12px 0 6px; }
-.nb .cell.markdown h3 { font-size: 13px; margin: 10px 0 4px; }
-.nb .cell.markdown p, .nb .summary p { margin: 6px 0; }
+.nb .cell { margin: 12px 0; font-size: 15px; line-height: 1.6; color: var(--text-primary); }
+.nb .cell.markdown h1 { font-size: 21px; margin: 16px 0 8px; }
+.nb .cell.markdown h2, .nb .summary h2 { font-size: 18px; margin: 14px 0 6px; }
+.nb .cell.markdown h3 { font-size: 15px; margin: 12px 0 4px; }
+.nb .summary { font-size: 15px; line-height: 1.6; }
+.nb .cell.markdown p, .nb .summary p { margin: 8px 0; }
 .nb .cell.markdown blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
 .nb .cell.markdown a { color: var(--link); }
-.nb code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.nb pre { background: var(--bg); padding: 8px 10px; overflow-x: auto; font-size: 12px; border-radius: 6px; margin: 6px 0; white-space: pre-wrap; }
+.nb code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.nb pre { background: var(--bg); padding: 8px 10px; overflow-x: auto; font-size: 13px; border-radius: 6px; margin: 6px 0; white-space: pre-wrap; }
 .nb pre.stderr { background: rgba(234, 179, 8, 0.08); }
 .nb pre.error { background: rgba(239, 68, 68, 0.08); }
-.nb details.code summary { cursor: pointer; color: var(--text-tertiary); font-size: 11px; }
-.nb table.eis-table { border-collapse: collapse; font-size: 12px; margin: 6px 0; }
-.nb table.eis-table th, .nb table.eis-table td { border: 1px solid var(--border); padding: 2px 8px; text-align: right; }
+.nb details.code summary { cursor: pointer; color: var(--text-tertiary); font-size: 13px; }
+.nb table.eis-table { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+.nb table.eis-table th, .nb table.eis-table td { border: 1px solid var(--border); padding: 3px 9px; text-align: right; }
 .nb table.eis-table th { background: var(--panel-control); }
 .nb table.eis-table caption { text-align: left; font-weight: 600; padding-bottom: 4px; }
 .nb img.figure { max-width: 100%; background: #fff; border-radius: 4px; }
 .nb figure.logview { margin: 6px 0; }
-.nb .logview figcaption { color: var(--text-tertiary); font-size: 11px; }
-.nb .flag { font-size: 11px; color: var(--severity-watch); margin: 4px 0; }
+.nb .logview figcaption { color: var(--text-tertiary); font-size: 13px; }
+.nb .flag { font-size: 13px; color: var(--severity-watch); margin: 4px 0; }
 .nb .pending { border-left: 3px solid var(--severity-watch); padding-left: 10px; margin-top: 6px; }

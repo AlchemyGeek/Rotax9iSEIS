@@ -101,7 +101,7 @@ function LiveLogView({ view, fa, onFail }: { view: LogViewRef; fa: FlightAnalysi
   return (
     <div data-testid="logview-live">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{logviewCaption(view)}</span>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{logviewCaption(view)}</span>
         {view.flight_date_local && <span className="mono" style={MUTED}>{view.flight_date_local} · {clock(view.start_s)}–{clock(view.end_s)} into the flight</span>}
         <span style={{ flexGrow: 1 }} />
         <button type="button" style={BUTTON} onClick={openFlight} data-testid="open-flight">Open flight</button>

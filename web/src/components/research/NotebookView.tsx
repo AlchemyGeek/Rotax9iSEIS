@@ -130,7 +130,7 @@ export function NotebookView({ view, onChanged, onDeleted }: {
     <div className="nb" data-testid="notebook" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <header style={{ ...PANEL, display: "flex", flexDirection: "column", gap: 6 }} data-testid="notebook-header">
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{m.name || "Notebook"}</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{m.name || "Notebook"}</h1>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-tertiary)" }}>NOTEBOOK</span>
           <span style={{ flexGrow: 1 }} />
           {bench && <button type="button" style={BUTTON} disabled={!!busy} onClick={() => void rerun()} data-testid="nb-rerun">{busy === "rerun" ? "Re-running…" : "Re-run"}</button>}
@@ -141,8 +141,8 @@ export function NotebookView({ view, onChanged, onDeleted }: {
             ? <button type="button" style={BUTTON} onClick={() => setConfirmDelete(true)}>Delete…</button>
             : <span style={BODY}>Delete this notebook and its files? <button type="button" style={BUTTON} onClick={() => void remove()} data-testid="nb-delete">Delete</button> <button type="button" style={BUTTON} onClick={() => setConfirmDelete(false)}>Keep</button></span>}
         </div>
-        <div className="meta" style={MUTED} data-testid="nb-meta" dangerouslySetInnerHTML={{ __html: metaLine(m) }} />
-        {m.question && <div style={BODY}><strong>Question:</strong> {m.question}</div>}
+        <div className="meta" style={{ ...MUTED, fontSize: 13 }} data-testid="nb-meta" dangerouslySetInnerHTML={{ __html: metaLine(m) }} />
+        {m.question && <div style={{ ...BODY, fontSize: 15, color: "var(--text-primary)" }}><strong>Question:</strong> {m.question}</div>}
         <div style={{ ...MUTED, color: state.pending || state.ranElsewhere || state.readOnly ? "var(--severity-watch)" : "var(--text-tertiary)" }} data-testid="nb-outputs">{outputsLine(state)}</div>
         {bench && (state.pending > 0 || state.ranElsewhere > 0) && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
