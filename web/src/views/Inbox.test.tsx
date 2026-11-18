@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resetCapabilities } from "../lib/capabilities";
-import { takeStudySeed } from "../lib/research";
 
 // Spec 16 §6 (D5, D8) — the inbox on Research home, both tiers: candidates
 // with their evidence, sensitivity and status; Run the question by hand;
@@ -96,18 +95,6 @@ describe("the inbox on Research home (§6)", () => {
     expect(table.querySelectorAll("tbody tr").length).toBe(2);
     fireEvent.click(within(table).getByText("2026-01-02"));
     expect((await screen.findByTestId("where")).textContent).toBe(`/flights/${FA}?window=600-660`);
-  });
-
-  it("Run the question by hand seeds a hand study: the preset, recent vs reference, the cycling question", async () => {
-    app();
-    const first = (await screen.findAllByTestId("inbox-candidate")).find((c) => c.dataset.status === "new")!;
-    fireEvent.click(within(first).getByTestId("inbox-run"));
-    expect((await screen.findByTestId("where")).textContent).toBe("/research/new");
-    const seed = takeStudySeed()!;
-    expect(seed.from).toBe("inbox");
-    expect(seed.slice_rules).toEqual(["full_power"]);
-    expect(seed.tests).toEqual([{ test_id: "cycling", params: {}, channels: ["rpm"] }]);
-    expect(seed.selection.split).toEqual({ by: "flights", groups: [{ label: "reference flights", flights: ["cccccccccccccccc"] }, { label: "recent flights", flights: [FA, FB] }] });
   });
 
   it("marks a candidate with a note; resolved ones fold away; the linked investigation opens", async () => {

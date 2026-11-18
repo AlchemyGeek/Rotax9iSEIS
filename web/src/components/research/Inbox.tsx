@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../../lib/engineClient";
 import { useCapabilities } from "../../lib/capabilities";
-import { seedFromInbox, stashStudySeed } from "../../lib/research";
 import { DOCS_URL } from "../NavShell";
 import type { InboxCandidate, InboxListing, InboxStatus } from "../../types/contract";
 import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY } from "./ui";
@@ -33,9 +32,9 @@ function sliceWindow(sliceId: string): { flight: string; window: string } | null
 
 // Spec 16 §6 (D5, D8) — the inbox on Research home, both tiers: what the
 // detectors raised over the recent flights (candidates, their evidence, the
-// sensitivity they fired at, their status). The pilot can run the question
-// by hand (a hand study over the preset), mark it (nothing here / watch /
-// acted, with a note) and open the study an investigation linked. Where no
+// sensitivity they fired at, their status). The pilot can mark it (nothing
+// here / watch / acted, with a note) and open the notebook an investigation
+// linked; following one up is an ask in Claude Desktop (D15). Where no
 // bench exists (the website) it invites installing EIS for Claude Desktop.
 // EIS never says what a candidate means.
 export function Inbox() {
@@ -54,18 +53,6 @@ export function Inbox() {
     }
   }
   useEffect(() => { void load(); }, []);
-
-  async function runByHand(c: InboxCandidate) {
-    let all: string[] = [];
-    try {
-      all = (await client.listFlights()).map((f) => f.flight_id);
-    } catch {
-      // the split falls back to none
-    }
-    stashStudySeed(seedFromInbox({ candidateId: c.id, kind: c.kind, preset: c.preset, presetName: c.preset_name, descriptors: c.descriptors,
-      summary: c.summary, recentFlightIds: c.window.flight_ids, allFlightIds: all }));
-    navigate("/research/new");
-  }
 
   async function mark(c: InboxCandidate, status: InboxStatus, note: string | null) {
     setError(null);
@@ -97,13 +84,13 @@ export function Inbox() {
       {listing && open.length === 0 && (
         <div style={BODY}>Nothing new. After each Sync EIS looks across the recent flights for a pattern that keeps coming back, a measurement that has moved, or slices that group apart.</div>
       )}
-      {open.map((c) => <Candidate key={c.id} c={c} onRun={() => void runByHand(c)} onMark={(s, n) => void mark(c, s, n)} onOpenStudy={() => navigate(`/research/${c.study_id}`)} />)}
+      {open.map((c) => <Candidate key={c.id} c={c} onMark={(s, n) => void mark(c, s, n)} onOpenStudy={() => navigate(`/research/${c.study_id}`)} />)}
       {resolved.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <button type="button" style={{ ...LINK, fontSize: 11 }} onClick={() => setShowResolved((v) => !v)} data-testid="inbox-show-resolved">
             {showResolved ? "Hide" : "Show"} resolved ({resolved.length})
           </button>
-          {showResolved && resolved.map((c) => <Candidate key={c.id} c={c} onRun={() => void runByHand(c)} onMark={(s, n) => void mark(c, s, n)} onOpenStudy={() => navigate(`/research/${c.study_id}`)} />)}
+          {showResolved && resolved.map((c) => <Candidate key={c.id} c={c} onMark={(s, n) => void mark(c, s, n)} onOpenStudy={() => navigate(`/research/${c.study_id}`)} />)}
         </div>
       )}
       {caps && !bench && listing && (
@@ -116,8 +103,8 @@ export function Inbox() {
   );
 }
 
-function Candidate({ c, onRun, onMark, onOpenStudy }: {
-  c: InboxCandidate; onRun: () => void; onMark: (s: InboxStatus, note: string | null) => void; onOpenStudy: () => void;
+function Candidate({ c, onMark, onOpenStudy }: {
+  c: InboxCandidate; onMark: (s: InboxStatus, note: string | null) => void; onOpenStudy: () => void;
 }) {
   const [marking, setMarking] = useState<InboxStatus | null>(null);
   const [note, setNote] = useState(c.note ?? "");
@@ -142,7 +129,6 @@ function Candidate({ c, onRun, onMark, onOpenStudy }: {
       {c.note && <div style={{ ...BODY, marginTop: 4, fontStyle: "italic" }} data-testid="inbox-note">“{c.note}”</div>}
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
         {c.study_id && <button type="button" style={PRIMARY} onClick={onOpenStudy} data-testid="inbox-open-study">Open the investigation</button>}
-        <button type="button" style={BUTTON} onClick={onRun} data-testid="inbox-run">Run the question by hand</button>
         {MARKS.map((m) => (
           <button key={m.status} type="button" title={m.hint} style={{ ...BUTTON, ...(c.status === m.status ? { borderColor: "var(--brand-tint)" } : {}) }}
             onClick={() => setMarking(m.status)} data-testid={`inbox-mark-${m.status}`}>{m.label}…</button>

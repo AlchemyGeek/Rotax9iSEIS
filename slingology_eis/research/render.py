@@ -1,7 +1,7 @@
 """
 Renderings of a §8 result that need no UI: plain text (the CLI, and the
 acceptance-9 rendering check), the evidence table as CSV, and a static
-SVG chart for the `.eisstudy` export and a read-only study.
+SVG chart (Spec 06 v1.0 retired the `.eisstudy` they were made for).
 """
 from __future__ import annotations
 

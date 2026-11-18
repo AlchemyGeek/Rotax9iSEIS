@@ -39,9 +39,8 @@ def ws(isolated_packaged_home):
     docs.mkdir(exist_ok=True)
     (docs / "om.md").write_text("# Engine\n\n## Boost\n\nFive minutes.\n")
     _ok(rpc(h, "aircraft_set", {"aircraft": {"documents_dirs": [str(docs)]}}))
-    sid = _ok(rpc(h, "save_study", {"study": {"name": "S", "slice_rules": [FULL_POWER],
-                                              "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))["study_id"]
-    _ok(rpc(h, "run_study", {"study_id": sid}))
+    sid = _ok(rpc(h, "study_create", {"name": "S", "question": "Does rpm cycle at full power?"}))["study_id"]
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "One flight first."}}))
     _ok(rpc(h, "inbox_scan", {}))
     ws_id = _ok(rpc(h, "get_active_workspace", {}))["registry_entry"]["id"]
     return h, ids, sid, ws_id, isolated_packaged_home

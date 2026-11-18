@@ -23,10 +23,13 @@ standard: `stream`, `execute_result`/`display_data` with `text/plain`,
 `text/html` (tables), `image/svg+xml` (figures), the log view's
 `application/vnd.slingology.logview+json` (§5.2), and `error`.
 
-Hand studies (Spec 06) keep their own document (`studies/st-*.json`);
-Session D's investigation studies — that document with a `cells` list —
-are converted here on first load (`convert`), the original kept beside
-the notebook as `.session-d.json`.
+A study still stored the old way (`studies/st-*.json`) is converted here
+on first load (`convert`): a Session D investigation (that document with a
+`cells` list), the original kept beside the notebook as `.session-d.json`;
+and a hand study (Spec 06 v1.0 retired them, Spec 16 D15) — a markdown
+cell per question with its §8 result text and the eis code that
+reproduces it, the stored output being the stored result — the original
+kept as `.hand-study.json`.
 """
 from __future__ import annotations
 
@@ -46,6 +49,7 @@ from .eis_lib import LOGVIEW_MIME
 
 NOTEBOOK = "notebook.ipynb"
 BACKUP = ".session-d.json"
+BACKUP_HAND = ".hand-study.json"
 KINDS = ("investigation", "question-for-type")
 AUTHORS = ("claude", "user")
 META_KEYS = ("id", "name", "kind", "author", "question", "status", "summary", "inbox_candidate", "engine",
@@ -289,7 +293,7 @@ def load(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) -> 
     kernel outside EIS ran and saved in place are marked ran elsewhere."""
     if not exists(ws_dir, study_id):
         legacy = Path(ws_dir) / "studies" / f"{study_id}.json"
-        if _ID.match(str(study_id or "")) and legacy.is_file() and is_session_d(json.loads(legacy.read_text())):
+        if _ID.match(str(study_id or "")) and legacy.is_file() and is_legacy(json.loads(legacy.read_text())):
             nb = convert(ws_dir, study_id, presets=presets)
         else:
             raise NotebookError("NOT_FOUND", f"no notebook {study_id}")
@@ -323,7 +327,8 @@ def list_ids(ws_dir: Path) -> list[str]:
 
 
 def convert_all(ws_dir: Path, *, presets: Optional[Callable] = None) -> list[str]:
-    """Convert every Session D investigation study still stored the old way."""
+    """Convert every study still stored the old way: Session D
+    investigations and hand studies."""
     d = Path(ws_dir) / "studies"
     done = []
     for p in sorted(d.glob("st-*.json")) if d.is_dir() else []:
@@ -331,7 +336,7 @@ def convert_all(ws_dir: Path, *, presets: Optional[Callable] = None) -> list[str
             doc = json.loads(p.read_text())
         except ValueError:
             continue
-        if is_session_d(doc) and not exists(ws_dir, p.stem):
+        if is_legacy(doc) and not exists(ws_dir, p.stem):
             convert(ws_dir, p.stem, presets=presets)
             done.append(p.stem)
     return done
@@ -447,6 +452,12 @@ def markdown_images(ws_dir, nb: dict, limit: int = 2_000_000) -> dict:
 
 # ── Session D studies (acceptance 15) ──────────────────────────────────────
 
+def is_legacy(doc: dict) -> bool:
+    """A study document stored the old way: a Session D investigation or a
+    hand study (a Spec 06 document with tests)."""
+    return isinstance(doc, dict) and bool(doc.get("study_id")) and (is_session_d(doc) or isinstance(doc.get("tests"), list))
+
+
 def is_session_d(doc: dict) -> bool:
     """A Session D investigation: the Spec 06 document with notebook cells,
     or a kind/author that isn't a hand study's."""
@@ -547,17 +558,25 @@ def convert(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) 
         p = fdir / ref.split("/", 1)[-1]
         return p.read_bytes() if p.is_file() else None
     prov = doc.get("provenance") or {}
+    hand = not is_session_d(doc)
+    tests = doc.get("tests") or []
     kind = doc.get("kind") if doc.get("kind") in KINDS else "investigation"
     nb = new(name=doc.get("name"), question=doc.get("question"), kind=kind,
              author=doc.get("author") if doc.get("author") in AUTHORS else "user",
              inbox_candidate=doc.get("inbox_candidate"), engine_type=doc.get("engine_type"), study_id=study_id)
     m = meta(nb)
-    m.update({"status": doc.get("status") or "open", "summary": doc.get("summary"),
+    if hand:
+        # A hand study's findings are its questions' findings (the list row showed the first).
+        findings = [t["result"]["finding"] for t in tests if (t.get("result") or {}).get("finding")]
+        status = "finished" if tests and len(findings) == len(tests) else "open"
+        summary = "\n".join(findings) or None
+    else:
+        status, summary = doc.get("status") or "open", doc.get("summary")
+    m.update({"status": status, "summary": summary,
               "engine": prov.get("engine") or __version__, "created": doc.get("created") or m["created"],
-              "converted_from": "session-d"})
+              "converted_from": "hand-study" if hand else "session-d"})
     if doc.get("finished"):
         m["finished"] = doc["finished"]
-    tests = doc.get("tests") or []
     cells = [nb["cells"][0]]
     n = 1
 
@@ -565,6 +584,10 @@ def convert(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) 
         nonlocal n
         n += 1
         return f"c{n}"
+    if hand:
+        cells.append(markdown_cell(cid(), _hand_intro(doc), role="converted"))
+        if (doc.get("notes") or "").strip():
+            cells.append(markdown_cell(cid(), "### Notes\n\n" + doc["notes"].strip() + "\n"))
     for c in doc.get("cells") or [{"kind": "question", "test_index": i} for i in range(len(tests))]:
         k = c.get("kind")
         if k == "markdown":
@@ -591,7 +614,10 @@ def convert(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) 
             ran = {"engine": ((r or {}).get("block") or {}).get("engine_version") or prov.get("engine") or __version__,
                    "flights": flights, "at": doc.get("updated") or m["created"], "ms": 0,
                    "status": "ok" if r else "error", "converted": "question"}
-            cells.append(code_cell(cid(), question_code(doc, t, presets), outputs, ran))
+            qcell = code_cell(cid(), question_code(doc, t, presets), outputs, ran)
+            if doc.get("read_only"):
+                slmeta(qcell)["read_only"] = True      # an imported hand study held the sender's results
+            cells.append(qcell)
         elif k in ("figure", "table"):
             ref = c.get("ref") or ""
             label = c.get("title") or ref
@@ -600,8 +626,42 @@ def convert(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) 
     nb["cells"] = cells
     save(ws_dir, nb)
     folder(ws_dir, study_id).mkdir(parents=True, exist_ok=True)
-    legacy.replace(folder(ws_dir, study_id) / BACKUP)
+    legacy.replace(folder(ws_dir, study_id) / (BACKUP_HAND if hand else BACKUP))
     return nb
+
+
+def _hand_intro(doc: dict) -> str:
+    """The first markdown of a converted hand study: what it was and what it
+    looked at (its slice set, and the Signal flight and window if it had
+    one) — the record the study page used to show above its questions."""
+    from ..research.rules import RuleError, describe_rule, normalise_rule
+    lines = ["*A study built by hand on the Research page, converted to a notebook (Spec 16 D15). Each question below "
+             "is its stored result and the `eis` call that reproduces it.*", ""]
+    rules = []
+    for r in doc.get("slice_rules") or []:
+        if isinstance(r, str):
+            rules.append(r)
+            continue
+        try:
+            rules.append(describe_rule(normalise_rule(r)))
+        except RuleError:
+            rules.append(str(r.get("name") or r.get("rule_id") or "a rule"))
+    sel = doc.get("selection") or {}
+    flights = "every flight" if sel.get("mode", "all") == "all" else f"{len(sel.get('flights') or [])} chosen flights"
+    if rules:
+        lines.append(f"- **Slices:** {'; '.join(rules)} — over {flights}.")
+    if doc.get("hand_slices"):
+        lines.append(f"- **Hand slices:** {len(doc['hand_slices'])}.")
+    if sel.get("split"):
+        lines.append(f"- **Split:** {json.dumps(sel['split'])}.")
+    sig = doc.get("signal") or {}
+    if sig.get("flight_id"):
+        w = sig.get("window") or {}
+        span = f", window {w.get('start_s')}–{w.get('end_s')} s" if w else ""
+        lines.append(f"- **Signal:** flight `{sig['flight_id']}`{span} ({', '.join(sig.get('channels') or [])}).")
+    if doc.get("read_only"):
+        lines.append("- **Imported:** none of its flights are in this workspace; the results are the sender's.")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 # ── Leaving and arriving (§5.1 export, S5 fingerprints) ────────────────────

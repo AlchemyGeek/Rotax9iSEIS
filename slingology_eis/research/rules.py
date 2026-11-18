@@ -127,7 +127,7 @@ def normalise_rule(rule: dict) -> dict:
 
 
 def _derived_from(d) -> Optional[dict]:
-    """Where a rule made by Signal view's *Make this a rule* came from
+    """Where a rule made by Signal view's *Make this a rule* (retired in Spec 06 v1.0; old rules still read) came from
     (§9.1): flight, window and channel. Provenance only — not part of the
     rule's body or hash."""
     if not d:

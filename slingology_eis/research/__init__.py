@@ -7,7 +7,7 @@ slices of many flights.
 - `descriptors` per-slice, per-channel numbers (§6) and the §7.0 window rule
 - `questions`   the four v1 tests (§7.1–7.4) returning the §8 contract
 - `slices`      building a slice set over a workspace's logs (§5.5)
-- `studies`     the saved study, its descriptor cache, `.eisstudy` (§10)
+- `studies`     a question's normalised form (hand studies retired in v1.0)
 - `render`      plain-text and SVG renderings of a result
 
 Research ships no rules and no verdicts (goal 4): the only built-in

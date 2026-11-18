@@ -116,7 +116,7 @@ def _set_params(args: dict) -> dict:
     """The slice-set parameters every Instrument tool shares (Spec 06 §11)."""
     p: dict = {"selection": _selection(args)}
     for a, k in (("slice_rules", "slice_rules"), ("hand_slices", "hand_slices"), ("channels", "channels"),
-                 ("reference", "reference"), ("study_id", "study_id"), ("windows", "windows")):
+                 ("reference", "reference"), ("windows", "windows")):
         if args.get(a) is not None:
             p[k] = args[a]
     return p
@@ -426,7 +426,7 @@ def shape_signal(args: dict, a: dict) -> dict:
                 diag[ch]["corr_at_best_lag"] = next((c.get("corr") for c in d["lag_curve"]
                                                      if c.get("lag_s") == d["best_lag_s"]), None)
         out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "when", "duration_s", "skip_onset_s", "context",
-                                               "descriptors", "windows", "numbers", "derived_rule", "caveats") if k in w}
+                                               "descriptors", "windows", "numbers", "caveats") if k in w}
         if w.get("when") and isinstance(out["window"].get("context"), dict):
             out["window"]["context"] = {k: v for k, v in out["window"]["context"].items() if k != "start_time"}
         out["window"]["diagnostics"] = diag
@@ -435,7 +435,7 @@ def shape_signal(args: dict, a: dict) -> dict:
 
 def run_signal_analyze(args: dict, call: Call) -> dict:
     p = {"flight_id": args["flight_id"], "include_values": False, "include_strips": bool(args.get("strips", True))}
-    for k in ("channels", "reference", "rule_channel", "references", "skip_onset_s"):
+    for k in ("channels", "reference", "references", "skip_onset_s"):
         if args.get(k) is not None:
             p[k] = args[k]
     if args.get("start_s") is not None or args.get("end_s") is not None:
@@ -676,7 +676,6 @@ _SET = {"slice_rules": _RULES,
                         "description": "Hand slices: {flight, start_s, end_s, label?}"},
         "flights": {**_STRS, "description": "Flight ids (default: every flight)"},
         "channels": {**_STRS, "description": "Channels (default rpm, map_inhg)"},
-        "study_id": {**_S, "description": "Use this study's descriptor cache"},
         "windows": {"type": "object", "description": "Per channel {window_s, lag_s} (default: the engine's)"}}
 # F1: the slice set's forms, with an example of each, for every tool that takes one.
 _SET_HELP = (" A slice set: `flights` (default every flight) and `slice_rules`, each a preset id (\"full_power\"), "
@@ -753,7 +752,7 @@ TOOLS: list[Tool] = [
          {"test_id": {"type": "string", "enum": ["cycling", "coupling", "groups", "unusual"]},
           "params": {"type": "object", "description": "Test parameters (Spec 06 §7)"}, "reference": _S, **_SET, **_PAGE},
          run_question_run, required=("test_id",), ops=("run_test",)),
-    Tool("signal_analyze", "Signal view",
+    Tool("signal_analyze", "Signal on one flight",
          "One flight's rolling strips, summarised as the runs where each channel cycles (lit), and a window's "
          f"descriptors, numbers with OM references and diagnostics (periods, the {PERIODOGRAM_PEAKS} strongest "
          "periodogram peaks, best lag) and caveats. Without a window, the window is derived from where the "
@@ -761,7 +760,7 @@ TOOLS: list[Tool] = [
          "period (a power change at its start buries the cycle; a caveat suggests a value when it sees one). "
          "Example: {\"flight_id\": \"1e10d971bd5da136\", \"start_s\": 600, \"end_s\": 662, \"channels\": "
          "[\"rpm\", \"map_inhg\"], \"skip_onset_s\": 16}.",
-         {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N, "reference": _S, "rule_channel": _S,
+         {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N, "reference": _S,
           "skip_onset_s": {"type": "number", "minimum": 0,
                            "description": "Seconds at the window's start left out of the descriptors (default 0)"},
           "strips": {"type": "boolean", "description": "Compute the rolling strips (default true)"}},
@@ -815,7 +814,7 @@ TOOLS: list[Tool] = [
          {}, run_studies_list, ops=("list_studies",)),
     Tool("study_read", "Read a study",
          "One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures "
-         "named, not drawn; pending re-run outputs flagged), or a hand study's definition and findings.",
+         "named, not drawn; pending re-run outputs flagged).",
          {"study_id": _S}, run_study_read, required=("study_id",), ops=("load_study",)),
     Tool("study_create", "Start a notebook",
          "Start an investigation notebook for a question; its first cell holds the question. Add cells with "

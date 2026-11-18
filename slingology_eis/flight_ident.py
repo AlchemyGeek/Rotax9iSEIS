@@ -626,9 +626,9 @@ def find(rows: list[dict], description: str, today: Optional[date] = None, limit
 
 # ── §4.7: every time a tool returns is local with its offset ───────────────
 
-# What the caller sends back as a definition (a derived rule's hand slice,
-# a study's slice set) stays as the engine gave it.
-_DEFINITIONS = ("derived_rule", "hand_slices", "slice_rules", "selection", "slice_set", "params")
+# What the caller sends back as a definition (a hand slice, a slice set)
+# stays as the engine gave it.
+_DEFINITIONS = ("hand_slices", "slice_rules", "selection", "slice_set", "params")
 _SLICE_ID = _re.compile(r"^([0-9a-f]{16}):.*:(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$")
 
 

@@ -113,63 +113,10 @@ def test_run_test_returns_the_contract(research_ws):
     c = _ok(rpc(h, "run_test", {"test_id": "coupling", "slice_rules": ["full_power"], "channels": ["rpm", "map_inhg"]}))
     assert c["block"]["summary"]["map_inhg"]["lag_mode_s"] == 0
 
-
-def test_study_lifecycle_export_import(research_ws, tmp_path):
-    h, ids = research_ws
-    study = {"name": "Takeoff rpm oscillation", "slice_rules": [FULL_POWER],
-             "tests": [{"test_id": "cycling", "channels": ["rpm"]},
-                       {"test_id": "unusual", "channels": ["rpm", "map_inhg"]}]}
-    saved = _ok(rpc(h, "save_study", {"study": study}))
-    sid = saved["study_id"]
-    ran = _ok(rpc(h, "run_study", {"study_id": sid}))
-    assert ran["tests"][0]["result"]["finding"].endswith("in 6 of 6 slices.")
-    assert ran["last_run"]["slices"] == 6 and sorted(ran["flights"]) == sorted(ids)
-    assert len(ran["cache"]["descriptors"]) == 6
-    assert ran["tests"][1]["result"]["block"]["summary"]["listed"][0].startswith(ids[-1])
-    listed = _ok(rpc(h, "list_studies", {}))["studies"]
-    assert [s["study_id"] for s in listed] == [sid] and listed[0]["finding"]
-    # Re-running from the descriptor cache gives the same results.
-    again = _ok(rpc(h, "run_study", {"study_id": sid}))
-    assert [t["result"]["block"]["summary"] for t in again["tests"]] == [t["result"]["block"]["summary"] for t in ran["tests"]]
-    exp = _ok(rpc(h, "export_study", {"study_id": sid}))
-    assert exp["filename"] == "Takeoff-rpm-oscillation.eisstudy" and exp["size"] > 0
-    data = h.download(exp["download_url"]) if isinstance(h, (InProcess, NodeHost)) else _http_download(h, exp["download_url"])
-    assert _ok(rpc(h, "delete_study", {"study_id": sid}))["deleted"] == sid
-    assert rpc(h, "load_study", {"study_id": sid})["error"]["code"] == "NOT_FOUND"
-    imported = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": exp["filename"]}))
-    assert not imported["read_only"] and sorted(imported["matched"]) == sorted(ids) and imported["missing"] == []
-    rerun = _ok(rpc(h, "run_study", {"study_id": imported["study"]["study_id"]}))
-    assert [t["result"]["block"]["summary"] for t in rerun["tests"]] == [t["result"]["block"]["summary"] for t in ran["tests"]]
-    assert [t["result"]["finding"] for t in rerun["tests"]] == [t["result"]["finding"] for t in ran["tests"]]
-
-
 def _http_download(base_url, path):
     import urllib.request
     with urllib.request.urlopen(f"{base_url}{path}", timeout=10) as resp:
         return resp.read()
-
-
-def test_read_only_import_and_run_on_my_flights(research_ws):
-    h, ids = research_ws
-    sid = _ok(rpc(h, "save_study", {"study": {"name": "S", "slice_rules": [FULL_POWER],
-                                              "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))["study_id"]
-    sent = _ok(rpc(h, "run_study", {"study_id": sid}))
-    exp = _ok(rpc(h, "export_study", {"study_id": sid}))
-    data = h.download(exp["download_url"]) if isinstance(h, (InProcess, NodeHost)) else _http_download(h, exp["download_url"])
-    # A second workspace holding none of these flights.
-    _ok(rpc(h, "create_workspace", {"name": "Other", "engine_model": "916iS"}))
-    other = _import(h, "2026-02-01")
-    got = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": "S.eisstudy"}))
-    assert got["read_only"] and got["matched"] == [] and sorted(got["missing"]) == sorted(ids)
-    st = got["study"]
-    assert st["read_only"]["label"] == "sender's results; none of these flights are in this workspace"
-    assert st["tests"][0]["result"]["finding"] == sent["tests"][0]["result"]["finding"]
-    d = rpc(h, "run_study", {"study_id": st["study_id"]})
-    assert not d["ok"] and d["error"]["code"] == "READ_ONLY"
-    mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": st["study_id"]}))
-    assert not mine.get("read_only") and mine["flights"] == [other]
-    assert mine["tests"][0]["result"]["finding"].endswith("in 1 of 1 slice.")
-
 
 def test_cli_json_is_the_operation_json(research_ws, capsys, monkeypatch):
     """Acceptance 7: the CLI prints exactly the operation's JSON."""
@@ -197,10 +144,12 @@ def test_cli_json_is_the_operation_json(research_ws, capsys, monkeypatch):
 
 def test_research_changes_no_flight_fleet_or_insight_result(research_ws):
     """Spec 06 §15 acceptance 10: Research adds nothing to Flight view,
-    Trends or Journal except through its explicit paths out (§10.3). The
-    flights' analyses and insights, the fleet analysis and the Journal read
-    the same before and after a study is built, run, noted and exported;
-    only the study-finding entry the user asked for appears."""
+    Trends or Journal except through its explicit paths out. The flights'
+    analyses and insights, the fleet analysis and the Journal read the same
+    before and after the instrument runs (slices, a test, compare, a flight's
+    signal) and a notebook is written and exported; only the study-finding
+    entry asked for (`study_finish journal`) appears, and the Journal's
+    Remove takes it away."""
     h, ids = research_ws
     def snapshot():
         flights = {fid: _ok(rpc(h, "get_flight", {"flight_id": fid})) for fid in ids}
@@ -208,40 +157,27 @@ def test_research_changes_no_flight_fleet_or_insight_result(research_ws):
         journal = [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]]
         return json.dumps(flights, sort_keys=True), json.dumps(fleet, sort_keys=True), journal
     before = snapshot()
-    saved = _ok(rpc(h, "save_study", {"study": {"name": "Untouched", "slice_rules": [FULL_POWER],
-                                                "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))
-    sid = saved["study_id"]
-    _ok(rpc(h, "run_study", {"study_id": sid}))
+    _ok(rpc(h, "build_slices", {"slice_rules": [FULL_POWER], "channels": ["rpm"]}))
+    _ok(rpc(h, "run_test", {"test_id": "cycling", "slice_rules": [FULL_POWER], "channels": ["rpm"]}))
+    _ok(rpc(h, "compare_rows", {"slice_rules": [FULL_POWER], "channels": ["rpm"]}))
+    _ok(rpc(h, "analyze_signal", {"flight_id": ids[0], "channels": ["rpm"], "include_values": False}))
+    sid = _ok(rpc(h, "study_create", {"name": "Untouched", "question": "Does rpm cycle?"}))["study_id"]
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "A look."}}))
     _ok(rpc(h, "export_study", {"study_id": sid}))
     after = snapshot()
     assert after[0] == before[0] and after[1] == before[1] and after[2] == before[2]
-    # §10.3: the one explicit path into the Journal, and its removal.
-    entry = _ok(rpc(h, "note_study_finding", {"study_id": sid, "test_index": 0}))["entry"]
-    assert entry["kind"] == "study_finding" and entry["ref_id"] == f"{sid}:0" and entry["what"].startswith("RPM cycles")
-    assert entry["where"]["study_id"] == sid
+    # The one explicit path into the Journal, and its removal.
+    fin = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "RPM cycles at full power.", "journal": True}))
+    entry = fin["journal_entry"]
+    assert entry["kind"] == "study_finding" and entry["where"]["study_id"] == sid
     kinds = [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]]
-    assert kinds == before[2] + [("study_finding", f"{sid}:0")]
-    assert _ok(rpc(h, "forget_study_finding", {"ref_id": f"{sid}:0"}))["removed"] is True
+    assert kinds == before[2] + [("study_finding", entry["ref_id"])]
+    assert _ok(rpc(h, "forget_study_finding", {"ref_id": entry["ref_id"]}))["removed"] is True
     assert [(e["kind"], e["ref_id"]) for e in _ok(rpc(h, "get_journal", {}))["entries"]] == before[2]
-    assert rpc(h, "note_study_finding", {"study_id": sid, "test_index": 5})["error"]["code"] == "BAD_PARAMS"
+    # Spec 06 v1.0: the hand-study operations are gone.
+    for op in ("save_study", "run_study", "note_study_finding"):
+        assert rpc(h, op, {})["error"]["code"] in ("UNKNOWN_OP", "NOT_FOUND", "BAD_PARAMS"), op
 
-
-def test_run_study_after_a_wider_build_reuses_the_cache(research_ws):
-    """The study page builds slices for the view's channels, then runs a
-    test on fewer: the cache holds more channels than the run asks for."""
-    h, _ids = research_ws
-    view = ["rpm", "map_inhg", "fuel_flow_gph"]
-    sid = _ok(rpc(h, "save_study", {"study": {"name": "S", "selection": {"mode": "all"}, "slice_rules": ["full_power"],
-                                              "tests": [{"test_id": "cycling", "params": {}, "channels": ["rpm"]}],
-                                              "view": {"anchor": "crossing", "channels": view}}}))["study_id"]
-    _ok(rpc(h, "build_slices", {"study_id": sid, "selection": {"mode": "all"}, "slice_rules": ["full_power"],
-                                "channels": view}))
-    for _ in range(2):
-        ran = _ok(rpc(h, "run_study", {"study_id": sid}))
-        assert ran["tests"][0]["result"]["finding"].endswith("in 6 of 6 slices.")
-
-
-# ── v1.1: Signal view and Compare (Spec 06 §9.1–9.2) ───────────────────────
 
 def _signal(h, fid, **params):
     return _ok(rpc(h, "analyze_signal", {"flight_id": fid, "channels": ["rpm", "map_inhg"], **params}))
@@ -275,7 +211,7 @@ def test_a_strip_value_is_the_descriptor_of_that_window(research_ws):
         (d["swing"], d["period_s"], d["period_prominence"], d["period_prominent"])
 
 
-def test_signal_window_numbers_diagnostics_and_derived_rule(research_ws):
+def test_signal_window_numbers_and_diagnostics(research_ws):
     h, ids = research_ws
     win = {"start_s": FP_START, "end_s": FP_START + FP_LEN}
     r = _signal(h, ids[0], window=win)["window"]
@@ -291,11 +227,7 @@ def test_signal_window_numbers_diagnostics_and_derived_rule(research_ws):
     assert len(dg["rpm"]["detrended"]) == FP_LEN and dg["rpm"]["acf"] and dg["rpm"]["periodogram"]["period_s"]
     assert dg["map_inhg"]["best_lag_s"] == 0 and any(p["lag_s"] == 0 for p in dg["map_inhg"]["lag_curve"])
     assert all("references" in m for m in r["numbers"]["rpm"])
-    rule = r["derived_rule"]
-    assert rule["derived_from"] == {"flight": ids[0], "start_s": FP_START, "end_s": FP_START + FP_LEN, "channel": "rpm"}
-    got = _ok(rpc(h, "build_slices", {"slice_rules": [rule], "channels": ["rpm"],
-                                      "selection": {"mode": "flights", "flights": [ids[0]]}}))["slices"]
-    assert len(got) == 1 and abs(got[0]["start_s"] - FP_START) <= 3 and abs(got[0]["end_s"] - FP_START - FP_LEN) <= 3
+    assert "derived_rule" not in r                     # Spec 06 v1.0: the derived rule is retired
 
 
 def test_analyze_signal_errors(research_ws):
@@ -328,42 +260,6 @@ def test_compare_rows_group_collapse_and_pin(research_ws):
                                        "hand_slices": [{"flight": ids[0], "start_s": FP_START, "end_s": FP_START + 20}],
                                        "selection": {"mode": "flights", "flights": [ids[0], ids[1]]}}))
     assert hand["row_count"] == 1 and [w["flight"] for w in hand["flights_without"]] == [ids[1]]
-
-
-def test_study_keeps_signal_compare_and_derived_rule(research_ws):
-    """Acceptance 18, engine side: a study with a Signal flight and window,
-    a derived rule, a pinned row and one question reopens with all four,
-    and the .eisstudy carries them."""
-    h, ids = research_ws
-    win = {"start_s": FP_START, "end_s": FP_START + FP_LEN}
-    rule = _signal(h, ids[0], window=win)["window"]["derived_rule"]
-    rows = _ok(rpc(h, "compare_rows", {"slice_rules": [rule], "channels": ["rpm"]}))["rows"]
-    study = {"name": "Signal study", "slice_rules": [rule],
-             "signal": {"flight": ids[0], "channels": ["rpm", "map_inhg"], "reference": "rpm", "window": win},
-             "compare": {"pinned": rows[0]["row_id"], "collapse": False, "channels": ["rpm"],
-                         "chart": {"x": "da_ft", "y": "rpm.swing", "colour": "source"}},
-             "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}
-    sid = _ok(rpc(h, "save_study", {"study": study}))["study_id"]
-    back = _ok(rpc(h, "load_study", {"study_id": sid}))
-    assert back["signal"] == {**study["signal"], "window": {"start_s": float(FP_START), "end_s": float(FP_START + FP_LEN)}}
-    assert back["compare"] == {**study["compare"], "reference": None}
-    assert back["slice_rules"][0]["derived_from"] == rule["derived_from"] and len(back["tests"]) == 1
-    exp = _ok(rpc(h, "export_study", {"study_id": sid}))
-    data = h.download(exp["download_url"]) if isinstance(h, (InProcess, NodeHost)) else _http_download(h, exp["download_url"])
-    imp = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": exp["filename"]}))
-    st = imp["study"]
-    assert st["signal"] == back["signal"] and st["compare"] == back["compare"]
-    assert st["slice_rules"][0]["derived_from"] == rule["derived_from"]
-    # Into a workspace without the flights: read-only, then Run this on my flights
-    # keeps the channels and the derived rule, drops the sender's flight and pin.
-    _ok(rpc(h, "create_workspace", {"name": "Other", "engine_model": "916iS"}))
-    _import(h, "2026-02-01")
-    ro = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(data).decode(), "filename": exp["filename"]}))
-    assert ro["read_only"] and ro["study"]["signal"]["flight"] == ids[0]
-    mine = _ok(rpc(h, "run_study_on_my_flights", {"study_id": ro["study"]["study_id"]}))
-    assert mine["signal"]["flight"] is None and mine["signal"]["channels"] == ["rpm", "map_inhg"]
-    assert mine["compare"]["pinned"] is None and mine["slice_rules"][0]["derived_from"]["flight"] == ids[0]
-
 
 def test_analyze_signal_window_only(research_ws):
     """Compare's diagnostics panel asks for one row's window without the

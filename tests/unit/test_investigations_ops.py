@@ -86,10 +86,6 @@ def test_code_run_keeps_a_cell(research_ws):
     view = _ok(rpc(h, "load_study", {"study_id": sid}))
     assert [c["id"] for c in view["notebook"]["cells"]] == ["setup", "c1", cell["id"]]
     assert view["notebook"]["cells"][1]["cell_type"] == "markdown"          # the question, after the setup cell
-    # A hand study takes no code.
-    hand = _ok(rpc(h, "save_study", {"study": {"name": "Hand", "slice_rules": ["full_power"]}}))
-    refused = rpc(h, "code_run", {"study_id": hand["study_id"], "source": "1"})
-    assert not refused["ok"] and "hand study" in refused["error"]["message"]
 
 
 def test_code_run_errors_are_outputs(research_ws):
@@ -242,22 +238,24 @@ def test_notebook_round_trip(research_ws):
         assert c is None or _sm(c).get("ran_elsewhere")
 
 
-def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_home):
-    """Acceptance 15: a Session D investigation (the Spec 06 document with
-    cells) becomes notebook.ipynb on first load — markdown kept, code kept
-    with its outputs, a question cell as markdown plus the eis code that
-    reproduces it; a hand study is untouched."""
+def test_old_studies_convert_on_first_load(research_ws, isolated_packaged_home):
+    """Acceptance 15 (Session D) and Spec 16 D15 / acceptance 17: a study
+    stored the old way becomes notebook.ipynb on first load. A Session D
+    investigation keeps its markdown, its code with outputs, and each
+    question cell as markdown plus the eis code that reproduces it. A hand
+    study (Spec 06 v1.0 retired them) becomes a markdown cell per question
+    with the eis code, its stored output the stored §8 result and its
+    finding the notebook's; it re-runs identically where there is a bench."""
     h, ids = research_ws
     if isinstance(h, NodeHost):
-        pytest.skip("writes the Session D document straight into the workspace folder")
+        pytest.skip("writes the old documents straight into the workspace folder")
     ws_dir = next(p.parent for p in (isolated_packaged_home / "workspaces").glob("*/manifest.json"))
     tool = _ok(rpc(h, "run_test", {"test_id": "cycling", "slice_rules": ["full_power"], "channels": ["rpm"]}))
     full = _ok(rpc(h, "list_slice_presets", {"engine": "916iS"}))["presets"][0]
-    full = {k: v for k, v in full.items() if k not in ("question", "status", "description")}
-    hand = _ok(rpc(h, "save_study", {"study": {"name": "Hand", "slice_rules": ["full_power"],
-                                                "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}}))
+    full_rule = {k: v for k, v in full.items() if k not in ("question", "status", "description", "isolates")}
+    (ws_dir / "studies").mkdir(exist_ok=True)
     doc = {"study_id": "st-0123456789ab", "name": "Old", "kind": "investigation", "author": "claude",
-           "question": "Why?", "selection": {"mode": "all"}, "slice_rules": [hand["slice_rules"][0]],
+           "question": "Why?", "selection": {"mode": "all"}, "slice_rules": [full_rule],
            "hand_slices": [], "references": [], "windows": {}, "provenance": {"engine": "1.0.2"},
            "tests": [{"test_id": "cycling", "channels": ["rpm"], "params": {}, "result": tool}],
            "cells": [{"id": "c1", "kind": "markdown", "source": "First."},
@@ -266,11 +264,22 @@ def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_h
                      {"id": "c3", "kind": "question", "test_index": 0}],
            "status": "finished", "summary": "It cycles."}
     (ws_dir / "studies" / "st-0123456789ab.json").write_text(json.dumps(doc))
+    groups = _ok(rpc(h, "run_test", {"test_id": "groups", "slice_rules": ["full_power"],
+                                     "params": {"descriptor": "rpm.swing", "split": {"by": "date", "date": "2026-01-04"}}}))
+    hand = {"study_id": "st-00000000abcd", "name": "Full-power swing by hand", "selection": {"mode": "all", "split": None},
+            "slice_rules": [full_rule], "hand_slices": [], "references": [], "windows": {}, "notes": "Looked after the SB.",
+            "provenance": {"engine": "1.0.2"}, "created": "2026-11-01T10:00:00+00:00", "updated": "2026-11-02T10:00:00+00:00",
+            "signal": {"flight_id": ids[0], "channels": ["rpm", "map_inhg"], "window": {"start_s": 600, "end_s": 660}},
+            "tests": [{"test_id": "cycling", "channels": ["rpm"], "params": {}, "result": tool},
+                      {"test_id": "groups", "channels": ["rpm"],
+                       "params": {"descriptor": "rpm.swing", "split": {"by": "date", "date": "2026-01-04"}},
+                       "result": groups}]}
+    (ws_dir / "studies" / "st-00000000abcd.json").write_text(json.dumps(hand))
     listed = {s["study_id"]: s for s in _ok(rpc(h, "list_studies", {}))["studies"]}
-    assert listed["st-0123456789ab"]["format"] == "ipynb" and listed[hand["study_id"]].get("format") is None
-    assert (ws_dir / "studies" / "st-0123456789ab" / "notebook.ipynb").is_file()
+    assert {listed[k]["format"] for k in ("st-0123456789ab", "st-00000000abcd")} == {"ipynb"}
     assert (ws_dir / "studies" / "st-0123456789ab" / ".session-d.json").is_file()
-    assert not (ws_dir / "studies" / "st-0123456789ab.json").exists()
+    assert (ws_dir / "studies" / "st-00000000abcd" / ".hand-study.json").is_file()
+    assert not list((ws_dir / "studies").glob("*.json"))
     nb = _ok(rpc(h, "load_study", {"study_id": "st-0123456789ab"}))["notebook"]
     # D14: the setup cell first, bound to this workspace; the workspace in the metadata.
     assert [c["cell_type"] for c in nb["cells"]] == ["code", "markdown", "markdown", "code", "markdown", "code"]
@@ -282,12 +291,27 @@ def test_session_d_study_converts_on_first_load(research_ws, isolated_packaged_h
     assert q["source"].startswith("r = eis.cycling('full_power', 'rpm')") and "print(r)" in q["source"]
     stored_text = q["outputs"][0]["text"]
     assert stored_text.startswith(tool["question"]) and tool["finding"] in stored_text
+    # The hand study: intro, notes, then per question its heading and the eis call with the stored result.
+    hv = _ok(rpc(h, "load_study", {"study_id": "st-00000000abcd"}))
+    hn = hv["notebook"]
+    hm = hn["metadata"]["slingology"]
+    assert hm["author"] == "user" and hm["converted_from"] == "hand-study" and hm["status"] == "finished"
+    assert hv["finding"] == tool["finding"] == listed["st-00000000abcd"]["finding"]     # the findings, unchanged
+    assert hm["summary"] == tool["finding"] + "\n" + groups["finding"]
+    kinds = [c["cell_type"] for c in hn["cells"]]
+    assert kinds == ["code", "markdown", "markdown", "markdown", "markdown", "code", "markdown", "code"], kinds
+    intro = hn["cells"][2]["source"]
+    assert "built by hand" in intro and "Signal:" in intro and ids[0] in intro and "every flight" in intro
+    assert "Looked after the SB." in hn["cells"][3]["source"]
+    from slingology_eis.research.render import render_text
+    qs = [c for c in hn["cells"] if c["cell_type"] == "code" and c["id"] != "setup"]
+    assert [c["outputs"][0]["text"] for c in qs] == [render_text(tool) + "\n", render_text(groups) + "\n"]
+    assert qs[1]["source"].startswith("r = eis.groups('full_power', 'rpm.swing', by={'by': 'date', 'date': '2026-01-04'})"), qs[1]["source"]
     if _has_bench(h):
         _bench_stack()
-        re = _ok(rpc(h, "study_cells_rerun", {"study_id": "st-0123456789ab"}))
-        assert next(c for c in re["cells"] if c["cell_id"] == q["id"])["identical"] is True, re
-    # The hand study is a hand study.
-    assert _ok(rpc(h, "load_study", {"study_id": hand["study_id"]}))["tests"][0]["test_id"] == "cycling"
+        for sid, cid in (("st-0123456789ab", q["id"]), ("st-00000000abcd", qs[0]["id"]), ("st-00000000abcd", qs[1]["id"])):
+            re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
+            assert next(c for c in re["cells"] if c["cell_id"] == cid)["identical"] is True, (sid, re)
 
 
 # ── guide (§4.6) ──────────────────────────────────────────────────────────

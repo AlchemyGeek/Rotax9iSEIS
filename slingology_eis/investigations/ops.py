@@ -22,29 +22,16 @@ from typing import Any
 from .. import __version__
 from .. import host as H
 from .. import workspace as ws
-from ..research import studies as rs
 from ..research.rules import RuleError
 from .. import aircraft as AC
 from . import bench as B
 from . import documents as DOC
 from . import inbox as IB
 from . import ipynb as NBX
-from . import notebook as NB
 
 
 def _err(e) -> H.RpcError:
     return H.RpcError(getattr(e, "code", "BAD_PARAMS"), getattr(e, "message", str(e)))
-
-
-def _load_editable(ctx: dict, study_id: str) -> dict:
-    doc = rs.load(ctx["workspace_dir"], study_id)
-    if doc.get("read_only"):
-        raise H.RpcError("READ_ONLY", "this study holds the sender's results; use Run this on my flights")
-    return doc
-
-
-def _save(ctx: dict, doc: dict) -> dict:
-    return rs.save(ctx["workspace_dir"], doc, engine_model=H._engine_model(ctx))
 
 
 def _mpl_dir(ctx: dict) -> Path:
@@ -75,17 +62,14 @@ def presets_of(ctx: dict):
 
 
 def notebook(ctx: dict, study_id) -> dict:
-    """The investigation notebook `study_id` (a Session D study converted
-    on this first load); a hand study or an unknown id is refused."""
+    """The investigation notebook `study_id` (a Session D or hand study is
+    converted on this first load); an unknown id is refused."""
     if not study_id:
         raise H.RpcError("BAD_PARAMS", "every executed cell belongs to a notebook: start one with study_create "
                                        "and pass its study_id")
     try:
         return NBX.load(ctx["workspace_dir"], study_id, presets=presets_of(ctx))
     except NBX.NotebookError as e:
-        if e.code == "NOT_FOUND" and (ctx["workspace_dir"] / "studies" / f"{study_id}.json").is_file():
-            raise H.RpcError("BAD_PARAMS", f"{study_id} is a hand study (Spec 06); cells are added to an "
-                                           "investigation notebook — start one with study_create")
         raise _err(e)
 
 
@@ -645,16 +629,6 @@ def op_inbox_resolve(params: dict, ctx: dict) -> Any:
                                         study_id=params.get("study_id"), note=params.get("note"))}
     except IB.InboxError as e:
         raise _err(e)
-
-
-# export_study's ipynb (host.py calls this)
-def ipynb_export(ctx: dict, doc: dict) -> bytes:
-    files = NB.files_dir(ctx["workspace_dir"], doc["study_id"])
-
-    def read(ref: str):
-        p = files / ref.split("/", 1)[-1]
-        return p.read_bytes() if p.is_file() else None
-    return NB.ipynb_bytes(doc, read)
 
 
 OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",

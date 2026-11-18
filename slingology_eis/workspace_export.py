@@ -70,10 +70,12 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("studies/*/files/*", "carried", "Notebook files: figures and tables a study's code wrote (Spec 16 §5)"),
     ("studies/*/notebook.ipynb", "carried", "Investigation notebooks, nbformat 4, outputs included (Spec 16 §5.1)"),
     ("studies/*/.session-d.json", "retired", "A Session D investigation study, kept beside the notebook it was converted to"),
-    # Spec 06 §10.2: studies travel; their tests' results and descriptor
-    # cache are derived, and are recomputed when the recipient runs them.
-    # A notebook's code-cell outputs travel (the website can't recompute them).
-    ("studies/*.json", "carried", "Research studies (Spec 06 §10), notebooks included (Spec 16 §5)"),
+    ("studies/*/.hand-study.json", "retired", "A hand study (Spec 06 v1.0 retired them), kept beside the notebook it was converted to"),
+    # A study still stored the old way (a hand study or a Session D
+    # investigation) travels as stored, its results included: the recipient
+    # converts it to a notebook on first load (Spec 16 D15), whose outputs
+    # are those results.
+    ("studies/*.json", "carried", "A study stored the old way, converted to a notebook on first load (Spec 16 D15)"),
     ("inbox.json", "carried", "Research inbox: candidates and their resolutions (Spec 16 §6)"),
     ("inbox_cache.json", "derived", "The inbox scan's descriptor cache (Spec 16 §6); recomputed"),
     # Spec 16 D10: the aircraft record is the registry's; the export writes
@@ -176,18 +178,6 @@ def _version_tuple(v: str) -> tuple:
 # ── Remapping (anonymisation) ────────────────────────────────────────────────
 
 _HEX16 = re.compile(r"\b[0-9a-f]{16}\b")
-
-
-def _study_for_export(study: Any) -> Any:
-    """A study travels as configuration (§7.1): its tests' results and
-    descriptor cache are derived and recomputed by the recipient — except
-    in a read-only study, whose whole content is the sender's results
-    (Spec 06 §10.2)."""
-    if not isinstance(study, dict) or study.get("read_only") or "nbformat" in study:
-        return study            # a notebook's outputs travel (the website can't recompute them)
-    out = {k: v for k, v in study.items() if k not in ("cache", "last_run")}
-    out["tests"] = [{k: v for k, v in t.items() if k != "result"} for t in study.get("tests") or []]
-    return out
 
 
 def _remap(obj: Any, ids: dict[str, str], names: dict[str, str]) -> Any:
@@ -477,8 +467,6 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
             docs[d["path"]] = (ws_dir / d["path"]).read_bytes() if _is_raw(d["path"]) else _read_json(ws_dir / d["path"])
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
-    for rel in [r for r in docs if r.startswith("studies/")]:
-        docs[rel] = _study_for_export(docs[rel])
     admission, dropped = await _admission_by_key_async(ws_dir, sources)
     if dropped:
         notes.append(f"{dropped} log admission entries left out: their files aren't in the workspace's folders.")

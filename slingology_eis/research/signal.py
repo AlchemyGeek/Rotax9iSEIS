@@ -22,9 +22,9 @@ detrended trace, the autocorrelation with the detected period marked, the
 periodogram with its peak, and for each channel beside the reference the
 correlation against lag with the best lag; the window's §6 descriptors
 with its resolved §7.0 windows, exactly as a hand slice over the window
-would get them; and a **derived rule** (*Make this a rule*): the reference
-channel's level band over the window and half its duration, an ordinary
-§5.1 rule, so Compare finds the matching window in other flights (D11).
+would get them; and each number beside its references (§8). (Spec 06
+v1.0: the derived rule and the Signal view are retired; the strips and
+the window read-out are the Flight view's Signal toggle, Spec 16 D15.)
 
 The log is read through the workspace's ``LogSource`` — a resumable
 coroutine with one file outstanding (Spec 04 D11).
@@ -41,11 +41,9 @@ from .. import workspace as ws
 from ..loader import load_log_bytes
 from . import descriptors as D
 from . import questions as Q
-from .rules import RuleError, describe_rule, normalise_rule
+from .rules import RuleError
 from .slices import CONTEXT_CHANNELS, _context, _grid, flight_log_bytes
 
-DERIVED_MERGE_GAP_S = 3          # as the full-power preset: a one-second dip doesn't split the window
-DERIVED_MIN_DURATION_FRACTION = 0.5   # half the window: a shorter instance of the same manoeuvre still matches
 DEFAULT_CHANNELS = ("rpm", "map_inhg")
 
 
@@ -88,44 +86,6 @@ def strip_window(lit_periods: list[float]) -> dict:
         return {"window_s": int(max(D.WINDOW_FLOOR_S, math.ceil(D.WINDOW_PERIODS * p))), "basis": "period",
                 "flight_period_s": D._r(p, 3)}
     return {"window_s": D.WINDOW_FLOOR_S, "basis": "floor", "flight_period_s": None}
-
-
-def _quantum(v: np.ndarray) -> float:
-    """The channel's reading step (rpm 10, a temperature 1), for rounding a
-    derived band outward; 0.1 when the readings aren't on a coarse grid."""
-    u = np.unique(v[np.isfinite(v)])
-    if len(u) < 2:
-        return 1.0
-    d = np.diff(u)
-    step = float(d[d > 0].min())
-    return step if step >= 1 else 0.1
-
-
-def derive_rule(channel: str, y: np.ndarray, filled: np.ndarray, start_s: int, end_s: int, flight_id: str,
-                when: Optional[str] = None, quantum: Optional[float] = None) -> dict:
-    """*Make this a rule* (§9.1): the channel's level band over the window —
-    from its lowest reading to its highest plus half the window's range,
-    rounded outward to the reading step — held for at least half the
-    window. The lower edge is what separates the manoeuvre from what
-    surrounds it; the upper edge leaves room for other flights' peaks."""
-    v = y[np.isfinite(y) & ~filled]
-    if len(v) < 2:
-        raise RuleError(f"the window holds no {Q.label(channel)} readings to derive a rule from")
-    q = quantum or _quantum(v)
-    lo, hi = float(v.min()), float(v.max())
-    lo_r = math.floor(lo / q) * q
-    hi_r = math.ceil((hi + (hi - lo) / 2) / q) * q
-    nd = 0 if q >= 1 else 1
-    duration = int(end_s - start_s)
-    rule = normalise_rule({
-        "name": f"{Q.label(channel)} {Q.fmt(round(lo_r, nd))}–{Q.fmt(round(hi_r, nd))}" + (f", like {when}" if when else ""),
-        "conditions": [{"channel": channel, "op": "between", "min": round(lo_r, nd), "max": round(hi_r, nd)}],
-        "min_duration_s": max(1, int(round(DERIVED_MIN_DURATION_FRACTION * duration))),
-        "merge_gap_s": DERIVED_MERGE_GAP_S,
-    })
-    rule = normalise_rule({**rule, "derived_from": {"flight": flight_id, "start_s": int(start_s), "end_s": int(end_s),
-                                                    "channel": channel}})
-    return {**rule, "description": describe_rule(rule)}
 
 
 def _diagnostics(y: np.ndarray, filled: np.ndarray, p1: dict) -> dict:
@@ -217,7 +177,7 @@ def onset_ramp(y, swing, max_s: int = 30) -> Optional[dict]:
 
 async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Optional[list] = None,
                          window: Optional[dict] = None, reference: Optional[str] = None,
-                         rule_channel: Optional[str] = None, windows: Optional[dict] = None,
+                         windows: Optional[dict] = None,
                          prominence_min: float = D.PROMINENCE_MIN, references: Optional[list] = None,
                          engine_cfg: Optional[dict] = None, assignments: Optional[dict] = None,
                          include_values: bool = True, include_strips: bool = True,
@@ -226,7 +186,7 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
     """§9.1 / §11 `analyze_signal`. `skip_onset_s` (Spec 16 §3.2 F4) leaves
     the window's first seconds out of its descriptors and diagnostics — a
     power change at the start of a takeoff window buries the period under
-    the ramp — while the window itself (and its derived rule) stays as
+    the ramp — while the window itself stays as
     given; a window whose start holds a ramp larger than the swing gets a
     caveat suggesting it."""
     fa = ws.load_flight_analysis(ws_dir, flight_id)
@@ -305,9 +265,7 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
                 diag[ch]["lag_curve"] = D.lag_curve(ref_y, y, w["lag_s"], f)
                 diag[ch]["best_lag_s"] = desc[ch].get("lag_s")
             per_ch[ch] = _numbers(ch, desc[ch], references or [], engine_cfg)
-        rc = rule_channel or (reference if reference in values else present[0])
-        when = f"{context.get('date')} {Q.fmt(a0)}–{Q.fmt(b)} s" if context.get("date") else None
-        rule = derive_rule(rc, values[rc][a0:b], filled[a0:b], a0, b, flight_id, when=when)
+        rc = reference if reference in values else present[0]
         for ch in present:
             desc[ch]["below_floor"] = D.below_floor(desc[ch], prominence_min)
         caveats = []
@@ -324,7 +282,7 @@ async def analyze_signal(ws_dir: Path, sources, flight_id: str, *, channels: Opt
             "start_s": a0, "end_s": b, "duration_s": b - a0, "skip_onset_s": skip,
             "context": _context(fa, info, df, values, row_of, a0, b, fa.phases),
             "descriptors": desc, "windows": resolved, "diagnostics": diag, "numbers": per_ch,
-            "derived_rule": rule, "caveats": caveats,
+            "caveats": caveats,
         }
     if on_progress:
         on_progress({"phase": "done", "done": 1, "total": 1})

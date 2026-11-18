@@ -1,7 +1,7 @@
 """
 Spec 06 Research — the engine pieces on synthetic data: slice rules
 (§5.1, §5.3, §5.4), descriptors and the §7.0 window rule (§6), the four
-tests and the §8 contract (§7.1–7.4), presets (§5.2) and studies (§10).
+tests and the §8 contract (§7.1–7.4), presets (§5.2). (Spec 06 v1.0 retired hand studies and their tests.)
 The real-data acceptance case is tests/contract/test_research_acceptance.py.
 """
 import json
@@ -14,7 +14,7 @@ from slingology_eis.limits import load_engine_config
 from slingology_eis.research import descriptors as D
 from slingology_eis.research import presets as P
 from slingology_eis.research import questions as Q
-from slingology_eis.research import studies as S
+
 from slingology_eis.research.render import check_no_verdicts, evidence_csv, chart_svg, render_text, verdict_words
 from slingology_eis.research.rules import (
     RuleError, apply_rule, describe_rule, normalise_hand_slice, normalise_rule, phase_rule, rule_hash,
@@ -288,82 +288,12 @@ def _study():
             "tests": [{"test_id": "cycling", "channels": ["rpm"]}],
             "notes": "n"}
 
-
-def test_study_save_load_list_delete(tmp_path):
-    doc = S.save(tmp_path, _study(), engine_model="916iS")
-    assert doc["study_id"].startswith("st-") and doc["provenance"]["engine_model"] == "916iS"
-    assert doc["hand_slices"][0]["offset_s"] == 0
-    assert (tmp_path / "studies" / f"{doc['study_id']}.json").is_file()
-    assert S.load(tmp_path, doc["study_id"])["name"] == "Takeoff rpm oscillation"
-    assert [s["study_id"] for s in S.list_all(tmp_path)] == [doc["study_id"]]
-    assert S.delete(tmp_path, doc["study_id"]) and S.list_all(tmp_path) == []
-    with pytest.raises(S.StudyError):
-        S.load(tmp_path, "../../etc/passwd")
-
-
-def test_study_import_read_only_without_flights_and_run_on_my_flights(tmp_path):
-    doc = S.normalise(_study())
-    doc["study_id"] = "st-0123456789ab"
-    doc["flights"] = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]
-    sent = Q.run("cycling", _fake_set([_fake_slice(i) for i in range(12)]), channels=["rpm"], engine_cfg=CFG)
-    doc["tests"][0]["result"] = sent
-    data = S.export_bytes(doc)
-    got = S.import_bytes(tmp_path, data, engine_model="916iS")
-    assert got["read_only"] and got["matched"] == [] and set(got["missing"]) == set(doc["flights"])
-    st = got["study"]
-    assert st["read_only"]["label"] == S.READ_ONLY_LABEL
-    assert st["tests"][0]["result"] == sent       # the sender's cached results, as sent
-    with pytest.raises(S.StudyError) as e:
-        S.save(tmp_path, st)
-    assert e.value.code == "READ_ONLY"
-    mine = S.for_my_flights(st)
-    assert mine["selection"]["mode"] == "all" and mine["hand_slices"] == [] and "result" not in mine["tests"][0]
-    assert mine["slice_rules"] == st["slice_rules"] and mine["references"] == st["references"]
-
-
-def test_study_import_with_some_flights_pins_them(tmp_path):
-    (tmp_path / "flights" / "aaaaaaaaaaaaaaaa").mkdir(parents=True)
-    doc = S.normalise(_study())
-    doc["flights"] = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]
-    doc["tests"][0]["result"] = Q.run("cycling", _fake_set([_fake_slice(i) for i in range(12)]), channels=["rpm"], engine_cfg=CFG)
-    got = S.import_bytes(tmp_path, S.export_bytes(doc))
-    assert not got["read_only"] and got["matched"] == ["aaaaaaaaaaaaaaaa"] and got["missing"] == ["bbbbbbbbbbbbbbbb"]
-    st = got["study"]
-    assert st["selection"] == {"mode": "flights", "flights": ["aaaaaaaaaaaaaaaa"], "split": None}
-    assert "result" not in st["tests"][0]          # recomputed here, never shown as this workspace's
-
-
-def test_eisstudy_is_a_zip_with_evidence(tmp_path):
-    import io, zipfile
-    slices = [_fake_slice(i) for i in range(12)]
-    r = Q.run("cycling", _fake_set(slices), channels=["rpm"], engine_cfg=CFG)
-    doc = S.normalise(_study())
-    doc["tests"][0]["result"] = r
-    with zipfile.ZipFile(io.BytesIO(S.export_bytes(doc))) as z:
-        names = z.namelist()
-        assert names == ["study.json", "evidence/01-cycling.csv", "charts/01-cycling.svg"]
-        assert json.loads(z.read("study.json"))["format"] == "eisstudy"
-    with pytest.raises(S.StudyError):
-        S.parse_export(b"not a zip")
-
-
 def test_a_flat_window_has_no_period():
     """A constant series detrends to rounding noise; it has no period on
     any numpy build (Spec 04 parity for Signal view's strips)."""
     from slingology_eis.research.descriptors import dominant_period
     out = dominant_period(np.full(12, 4990.0))
     assert out["period_s"] is None and out["period_prominent"] is False
-
-
-def test_derived_rule_band_and_duration():
-    from slingology_eis.research.signal import derive_rule
-    y = np.array([5560, 5700, 5820, 5690, 5580, 5710, 5830, 5700] * 5, dtype=float)
-    r = derive_rule("rpm", y, np.zeros(len(y), bool), 100, 140, "f" * 16)
-    c = r["conditions"][0]
-    assert (c["op"], c["min"], c["max"]) == ("between", 5560, 5970)
-    assert r["min_duration_s"] == 20 and r["merge_gap_s"] == 3
-    assert r["derived_from"] == {"flight": "f" * 16, "start_s": 100, "end_s": 140, "channel": "rpm"}
-
 
 def test_strip_value_is_the_window_descriptor():
     from slingology_eis.research import descriptors as D

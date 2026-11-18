@@ -48,30 +48,6 @@ export const INLINE_HELP = {
   "flight.excluded_from_reference":
     "This flight is still analysed, but it no longer shapes what normal looks like for your other flights.",
 
-  // Research (Spec 06 §12) — each test's question, and the reference.
-  "research.test.cycling":
-    "Looks for a repeating up-and-down in one channel across the slices and reports how often it repeats and how far it swings — a shape, not a judgement of the engine.",
-  "research.test.coupling":
-    "Measures how closely two channels rise and fall together and which one moves first; moving together does not say which one causes the other.",
-  "research.test.groups":
-    "Compares one measurement between two groups of slices (before and after a date, two altitude bands, two log sources) and shows how far apart they sit; small groups are flagged.",
-  "research.test.unusual":
-    "Ranks the slices by how far each one sits from the others on many measurements — it finds slices that differ, which is not the same as slices that are wrong.",
-  "research.reference":
-    "A number to read a result against — the Operators Manual value where one applies, the spread across your own slices, or a value you type in with its source — because Research never adds a verdict of its own.",
-  "research.slice_rule":
-    "A rule picks the stretches of every selected flight where its conditions hold for long enough — the slices every question is then asked about.",
-  "research.selection":
-    "Which flights the slices come from; a split names two groups so the groups question can compare them.",
-  // Research v1.1 (Spec 06 §9) — Signal view and Compare.
-  "research.strips":
-    "Each strip reads the channel through a short sliding window: the upper one how far it swings, the lower one how often it repeats — coloured only where a repeat stands out clearly, so a bright stretch shows where to look, not whether anything is wrong.",
-  "research.window":
-    "The seconds the numbers below describe — drag across the chart or a strip to change them; they are the same numbers a slice over those seconds carries everywhere else in Research.",
-  "research.derived_rule":
-    "Turns this window into a rule — the channel held within the band it covered here, for about as long — so Compare can find the same kind of moment in your other flights; you can adjust the band before adding it.",
-  "research.pinning":
-    "Pinning a row makes it the one every other row is measured from: the table adds each row's difference from it and the chart marks it.",
 } as const;
 
 export type InlineHelpId = keyof typeof INLINE_HELP;

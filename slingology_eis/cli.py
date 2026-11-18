@@ -1000,8 +1000,6 @@ def _research_set_params(args) -> dict:
         params["channels"] = list(args.channel)
     if getattr(args, "reference_channel", None):
         params["reference"] = args.reference_channel
-    if getattr(args, "study", None):
-        params["study_id"] = args.study
     return params
 
 
@@ -1083,8 +1081,6 @@ def cmd_research_signal(args) -> int:
         params["window"] = {"start_s": float(a), "end_s": float(b)}
     if args.reference_channel:
         params["reference"] = args.reference_channel
-    if args.rule_channel:
-        params["rule_channel"] = args.rule_channel
     if args.references:
         params["references"] = json.loads(Path(args.references).read_text())
     r = _research_op(args, "analyze_signal", params)
@@ -1104,7 +1100,6 @@ def cmd_research_signal(args) -> int:
             for m in win["numbers"][ch]:
                 refs = "; ".join(x.get("text") or "" for x in m["references"] if x.get("text"))
                 lines.append(f"  {m['label']}: {m['text']}" + (f" — beside: {refs}" if refs else ""))
-        lines.append(f"Derived rule: {win['derived_rule']['description']}")
     return _research_print(args, r, "\n".join(lines))
 
 
@@ -1134,33 +1129,30 @@ def cmd_research_compare(args) -> int:
 
 
 def cmd_research_study(args) -> int:
-    from .research.render import render_text
+    """Notebooks (Spec 16 §5; Spec 06 v1.0 retired hand studies): list,
+    show, delete, export (zip or html), import (a notebook zip or .ipynb),
+    fork (Run this on my flights)."""
     action = args.action
     if action == "list":
         r = _research_op(args, "list_studies", {})
-        text = "\n".join(f"{s['study_id']}  {s['name']}" + ("  [read-only]" if s["read_only"] else "")
-                         + (f"\n    {s['finding']}" if s.get("finding") else "") for s in r["studies"]) or "No studies."
+        text = "\n".join(f"{s['study_id']}  {s['name']}" + (f"\n    {s['finding']}" if s.get("finding") else "")
+                         for s in r["studies"]) or "No notebooks."
         return _research_print(args, r, text)
-    if action == "save":
-        if not args.target:
-            raise CliUsageError("research study save FILE.json")
-        return _research_print(args, _research_op(args, "save_study", {"study": json.loads(Path(args.target).read_text())}))
     if action == "import":
         if not args.target:
-            raise CliUsageError("research study import FILE.eisstudy")
-        data = Path(args.target).read_bytes()
-        r = _research_op(args, "import_study", {"content": data})
-        text = (f"Imported as {r['study']['study_id']}: {len(r['matched'])} flights here, {len(r['missing'])} missing"
-                + (" — read-only (sender's results; none of these flights are in this workspace)" if r["read_only"] else ""))
-        return _research_print(args, r, text)
+            raise CliUsageError("research study import NOTEBOOK.zip|NOTEBOOK.ipynb")
+        r = _research_op(args, "import_study", {"content": Path(args.target).read_bytes()})
+        return _research_print(args, r, f"Imported as {r['study_id']}")
     if not args.target:
         raise CliUsageError(f"research study {action} STUDY_ID")
-    op = {"show": "load_study", "run": "run_study", "delete": "delete_study", "export": "export_study",
+    op = {"show": "load_study", "delete": "delete_study", "export": "export_study",
           "fork": "run_study_on_my_flights"}[action]
-    r = _research_op(args, op, {"study_id": args.target})
-    if action in ("show", "run", "fork"):
-        text = "\n\n".join(render_text(t["result"]) for t in r.get("tests") or [] if t.get("result")) or r["name"]
-        return _research_print(args, r, text)
+    params = {"study_id": args.target}
+    if action == "export" and args.format:
+        params["format"] = args.format
+    r = _research_op(args, op, params)
+    if action in ("show", "fork"):
+        return _research_print(args, r, f"{r['study_id']}  {r.get('name') or ''}")
     if action == "export":
         return _research_print(args, r, f"Wrote {r['download_url']} ({r['size']} bytes)")
     return _research_print(args, r, f"Deleted {args.target}")
@@ -1178,7 +1170,6 @@ def _add_research_parser(sub, common) -> None:
         if channels:
             p.add_argument("--channel", action="append", metavar="CHANNEL", help="Channel(s); repeatable")
         p.add_argument("--reference-channel", metavar="CHANNEL", help="Coupling reference channel (default rpm)")
-        p.add_argument("--study", metavar="STUDY_ID", help="Use this study's definition and descriptor cache")
 
     p = rs.add_parser("presets", parents=[common], help="Shipped slice rules for the engine profile")
     p.set_defaults(func=cmd_research_presets)
@@ -1210,7 +1201,6 @@ def _add_research_parser(sub, common) -> None:
     p.add_argument("--channel", action="append", metavar="CHANNEL", help="Channel(s); repeatable (default rpm, map_inhg)")
     p.add_argument("--window", metavar="START:END", help="The window, in seconds from the log's start")
     p.add_argument("--reference-channel", metavar="CHANNEL", help="Reference channel for correlation (default rpm)")
-    p.add_argument("--rule-channel", metavar="CHANNEL", help="Channel the derived rule is made from (default: the reference)")
     p.add_argument("--references", metavar="FILE", help="JSON list of user references")
     p.set_defaults(func=cmd_research_signal)
 
@@ -1221,10 +1211,11 @@ def _add_research_parser(sub, common) -> None:
     p.add_argument("--csv", action="store_true", help="Print the rows as CSV")
     p.set_defaults(func=cmd_research_compare)
 
-    p = rs.add_parser("study", parents=[common], help="Studies: list, show, save, run, delete, export, import, fork")
-    p.add_argument("action", choices=["list", "show", "save", "run", "delete", "export", "import", "fork"])
-    p.add_argument("target", nargs="?", help="STUDY_ID, or a file for save/import")
-    p.add_argument("--out", metavar="DIR", help="export: folder to write the .eisstudy into (default: current folder)")
+    p = rs.add_parser("study", parents=[common], help="Notebooks: list, show, delete, export, import, fork")
+    p.add_argument("action", choices=["list", "show", "delete", "export", "import", "fork"])
+    p.add_argument("target", nargs="?", help="STUDY_ID, or a notebook .zip / .ipynb for import")
+    p.add_argument("--format", choices=["zip", "html"], help="export: the notebook folder as a zip (default) or one page")
+    p.add_argument("--out", metavar="DIR", help="export: folder to write the file into (default: current folder)")
     p.set_defaults(func=cmd_research_study)
 
 

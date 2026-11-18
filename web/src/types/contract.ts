@@ -1616,7 +1616,6 @@ export interface SignalWindow {
   windows: Record<string, { window_s: number; lag_s: number; basis: string; median_period_s?: number | null }>;
   diagnostics: Record<string, SignalDiagnostics>;
   numbers: Record<string, SignalMagnitude[]>;
-  derived_rule: SliceRule & { derived_from: NonNullable<SliceRule["derived_from"]> };
 }
 
 export interface SignalResult {

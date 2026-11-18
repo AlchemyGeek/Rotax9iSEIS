@@ -32,7 +32,7 @@ Every result is `{engine_version, workspace_id, result}`. Tools marked **writes*
 | [`document_read`](#document_read) |  | Pages of one document (at most 3 at a time), or the pages where a phrase occurs (find: case-insensitive, accents ignored, with snippets) |
 | [`journal_list`](#journal_list) |  | The Journal entries as the UI shows them; 50 per page. |
 | [`studies_list`](#studies_list) |  | The studies in the workspace: kind, author, question, status, finding. |
-| [`study_read`](#study_read) |  | One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged), or a hand study's definition and findings. |
+| [`study_read`](#study_read) |  | One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged). |
 | [`study_create`](#study_create) | writes | Start an investigation notebook for a question; its first cell holds the question |
 | [`cell_append`](#cell_append) | writes | Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight view |
 | [`study_rerun`](#study_rerun) | writes | Re-run every code cell of a notebook against this workspace; outputs that differ wait as pending until study_accept or study_discard. |
@@ -141,7 +141,6 @@ The slices a selection and slice rules make, each with its local time, context a
 | `hand_slices` | list of object | Hand slices: {flight, start_s, end_s, label?} |
 | `flights` | list of string | Flight ids (default: every flight) |
 | `channels` | list of string | Channels (default rpm, map_inhg) |
-| `study_id` | string | Use this study's descriptor cache |
 | `windows` | object | Per channel {window_s, lag_s} (default: the engine's) |
 | `offset` | integer (minimum 0) | First row (default 0) |
 | `limit` | integer (minimum 1, maximum 50) | Rows (≤ 50) |
@@ -156,7 +155,6 @@ The 1 Hz samples of slices, aligned at an anchor (crossing, start, end, peak:CHA
 | `hand_slices` | list of object | Hand slices: {flight, start_s, end_s, label?} |
 | `flights` | list of string | Flight ids (default: every flight) |
 | `channels` | list of string | Channels (default rpm, map_inhg) |
-| `study_id` | string | Use this study's descriptor cache |
 | `windows` | object | Per channel {window_s, lag_s} (default: the engine's) |
 | `slice_ids` | list of string |  |
 | `anchor` | string |  |
@@ -174,7 +172,6 @@ A Spec 06 test over a slice set — cycling, coupling, groups or unusual — wit
 | `hand_slices` | list of object | Hand slices: {flight, start_s, end_s, label?} |
 | `flights` | list of string | Flight ids (default: every flight) |
 | `channels` | list of string | Channels (default rpm, map_inhg) |
-| `study_id` | string | Use this study's descriptor cache |
 | `windows` | object | Per channel {window_s, lag_s} (default: the engine's) |
 | `offset` | integer (minimum 0) | First row (default 0) |
 | `limit` | integer (minimum 1, maximum 50) | Rows (≤ 50) |
@@ -190,7 +187,6 @@ One flight's rolling strips, summarised as the runs where each channel cycles (l
 | `start_s` | number |  |
 | `end_s` | number |  |
 | `reference` | string |  |
-| `rule_channel` | string |  |
 | `skip_onset_s` | number (minimum 0) | Seconds at the window's start left out of the descriptors (default 0) |
 | `strips` | boolean | Compute the rolling strips (default true) |
 
@@ -204,7 +200,6 @@ One row per slice, grouped by flight, with deltas to a pinned row; 50 rows per p
 | `hand_slices` | list of object | Hand slices: {flight, start_s, end_s, label?} |
 | `flights` | list of string | Flight ids (default: every flight) |
 | `channels` | list of string | Channels (default rpm, map_inhg) |
-| `study_id` | string | Use this study's descriptor cache |
 | `windows` | object | Per channel {window_s, lag_s} (default: the engine's) |
 | `reference` | string |  |
 | `pinned` | string |  |
@@ -272,7 +267,7 @@ No parameters.
 
 ## `study_read`
 
-One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged), or a hand study's definition and findings.
+One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged).
 
 | Parameter | Type | |
 |---|---|---|

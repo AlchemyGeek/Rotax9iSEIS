@@ -52,24 +52,13 @@ import type {
   WorkspaceRegistryEntry,
   WorkspaceRulesResult,
   WorkspaceSettings,
-  HandSlice,
-  CompareResult,
-  ResearchProgress,
-  ResearchTestId,
-  ResearchTestResult,
   SignalResult,
-  SlicePresets,
-  SliceRule,
-  SliceSamples,
-  SliceSetResult,
-  Study,
-  StudyImportResult,
-  StudySelection,
   StudySummary,
   FlightFindResult, AircraftView, AircraftRecord, AircraftWorkspaceRef, InboxStatus, InboxCandidate, InboxListing,
   UserReference,
 } from "../types/contract";
 import { targetLabel } from "../types/contract";
+import type { NotebookStudyView } from "../components/research/NotebookView";
 
 // A server older than the Spec 09 v0.18 web (engine before the CAS-events
 // change) names a filter's target with a top-level limit_id and no
@@ -264,20 +253,13 @@ export interface EngineClient {
   // from the topic register, not a frontend metric list (D3).
   getTrendsPanels(): Promise<{ panels: TrendsPanel[] }>;
 
-  // Spec 06 §11 — Research. Gated by get_capabilities().features.research.
-  // A slice rule may be given as a preset id ("full_power") or "phase:<PHASE>".
-  listSlicePresets(): Promise<SlicePresets>;
-  buildSlices(args: SliceBuildArgs): Promise<SliceSetResult>;
-  getSliceSamples(args: SliceBuildArgs & { slice_ids?: string[]; channels: string[]; anchor?: string }): Promise<SliceSamples>;
-  runTest(args: SliceBuildArgs & { test_id: ResearchTestId; channels?: string[]; params?: Record<string, unknown>; references?: UserReference[] }): Promise<ResearchTestResult>;
-  saveStudy(study: Omit<Partial<Study>, "slice_rules"> & { slice_rules?: (SliceRule | string)[] }): Promise<Study>;
-  loadStudy(studyId: string): Promise<Study>;
+  // Spec 16 §5 — notebooks (Spec 06 v1.0 retired hand studies and their operations).
+  loadStudy(studyId: string): Promise<NotebookStudyView>;
   listStudies(): Promise<{ studies: StudySummary[] }>;
   deleteStudy(studyId: string): Promise<{ deleted: string }>;
-  runStudy(studyId: string): Promise<Study>;
-  // An investigation notebook (Spec 16 §5.1) exports as "zip" (default) or "html"; a hand study as "eisstudy" (default) or "ipynb".
-  exportStudy(studyId: string, format?: "zip" | "html" | "eisstudy" | "ipynb"): Promise<{ filename: string; size: number; download_url: string }>;
-  importStudy(file: File): Promise<StudyImportResult>;
+  // A notebook (Spec 16 §5.1) exports as "zip" (default) or "html".
+  exportStudy(studyId: string, format?: "zip" | "html"): Promise<{ filename: string; size: number; download_url: string }>;
+  importStudy(file: File): Promise<NotebookStudyView>;
   // Spec 16 §5.1 — a notebook's re-run (D4 semantics) and its pending outputs; needs features.bench.
   // `source: "external"` keeps outputs a kernel outside EIS saved in place (D14).
   rerunStudyCells(studyId: string): Promise<NotebookRerunResult>;
@@ -294,13 +276,10 @@ export interface EngineClient {
   inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ candidate: InboxCandidate }>;
   acceptStudyCells(studyId: string, opts?: { cell_ids?: string[]; source?: "rerun" | "external" }): Promise<{ study: StudySummary; cells: string[] }>;
   discardStudyCells(studyId: string, cellIds?: string[]): Promise<{ study: StudySummary; cells: string[] }>;
-  runStudyOnMyFlights(studyId: string): Promise<Study>;
-  getResearchProgress(): Promise<ResearchProgress>;
-  // Spec 06 v0.6 §9 (Session C): Signal view and Compare.
+  runStudyOnMyFlights(studyId: string): Promise<NotebookStudyView>;
+  // Spec 16 D15 — the Flight view's Signal toggle: one flight's strips, and a window's read-out.
   analyzeSignal(args: SignalArgs): Promise<SignalResult>;
-  compareRows(args: SliceBuildArgs & { pinned?: string | null; collapse?: boolean }): Promise<CompareResult>;
-  // Spec 06 §10.3 — a study's finding as a Journal entry, and its removal.
-  noteStudyFinding(studyId: string, testIndex: number, note?: string): Promise<{ entry: JournalEntry }>;
+  // The Journal's Remove for a notebook's study finding (study_finish journal).
   forgetStudyFinding(refId: string): Promise<{ removed: boolean }>;
 }
 
@@ -314,20 +293,10 @@ export interface SignalArgs {
   channels?: string[];
   window?: { start_s: number; end_s: number } | null;
   reference?: string | null;
-  rule_channel?: string;
   references?: UserReference[];
   include_strips?: boolean;
   include_values?: boolean;
-}
-
-export interface SliceBuildArgs {
-  study_id?: string;
-  selection?: StudySelection;
-  slice_rules?: (SliceRule | string)[];
-  hand_slices?: HandSlice[];
-  channels?: string[];
-  reference?: string;
-  windows?: Record<string, unknown>;
+  skip_onset_s?: number;
 }
 
 export class EngineRpcError extends Error {
@@ -784,24 +753,9 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{ panels: TrendsPanel[] }>("get_trends_panels", {});
   }
 
-  // Spec 06 §11 — Research.
-  listSlicePresets() {
-    return this.rpc<SlicePresets>("list_slice_presets", {});
-  }
-  buildSlices(args: SliceBuildArgs) {
-    return this.rpc<SliceSetResult>("build_slices", args);
-  }
-  getSliceSamples(args: SliceBuildArgs & { slice_ids?: string[]; channels: string[]; anchor?: string }) {
-    return this.rpc<SliceSamples>("get_slice_samples", args);
-  }
-  runTest(args: SliceBuildArgs & { test_id: ResearchTestId; channels?: string[]; params?: Record<string, unknown>; references?: UserReference[] }) {
-    return this.rpc<ResearchTestResult>("run_test", args);
-  }
-  saveStudy(study: Omit<Partial<Study>, "slice_rules"> & { slice_rules?: (SliceRule | string)[] }) {
-    return this.rpc<Study>("save_study", { study });
-  }
+  // Spec 16 §5 — notebooks.
   loadStudy(studyId: string) {
-    return this.rpc<Study>("load_study", { study_id: studyId });
+    return this.rpc<NotebookStudyView>("load_study", { study_id: studyId });
   }
   listStudies() {
     return this.rpc<{ studies: StudySummary[] }>("list_studies", {});
@@ -809,10 +763,7 @@ export class LocalServerClient implements EngineClient {
   deleteStudy(studyId: string) {
     return this.rpc<{ deleted: string }>("delete_study", { study_id: studyId });
   }
-  runStudy(studyId: string) {
-    return this.rpc<Study>("run_study", { study_id: studyId });
-  }
-  exportStudy(studyId: string, format?: "zip" | "html" | "eisstudy" | "ipynb") {
+  exportStudy(studyId: string, format?: "zip" | "html") {
     return this.rpc<{ filename: string; size: number; download_url: string }>("export_study", { study_id: studyId, ...(format ? { format } : {}) });
   }
   rerunStudyCells(studyId: string) {
@@ -854,22 +805,13 @@ export class LocalServerClient implements EngineClient {
   }
   async importStudy(file: File) {
     const up = await this.uploadFile(file);
-    return this.rpc<StudyImportResult>("import_study", { upload_id: up.upload_id });
+    return this.rpc<NotebookStudyView>("import_study", { upload_id: up.upload_id });
   }
   runStudyOnMyFlights(studyId: string) {
-    return this.rpc<Study>("run_study_on_my_flights", { study_id: studyId });
-  }
-  getResearchProgress() {
-    return this.rpc<ResearchProgress>("get_research_progress", {});
+    return this.rpc<NotebookStudyView>("run_study_on_my_flights", { study_id: studyId });
   }
   analyzeSignal(args: SignalArgs) {
     return this.rpc<SignalResult>("analyze_signal", args);
-  }
-  compareRows(args: SliceBuildArgs & { pinned?: string | null; collapse?: boolean }) {
-    return this.rpc<CompareResult>("compare_rows", args);
-  }
-  noteStudyFinding(studyId: string, testIndex: number, note?: string) {
-    return this.rpc<{ entry: JournalEntry }>("note_study_finding", { study_id: studyId, test_index: testIndex, note });
   }
   forgetStudyFinding(refId: string) {
     return this.rpc<{ removed: boolean }>("forget_study_finding", { ref_id: refId });

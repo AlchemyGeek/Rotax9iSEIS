@@ -1,7 +1,8 @@
 """
 Spec 06 §15 — the acceptance case, reproduced from the app alone
-(Session A: items 1–7, 9, 11–13; Session C: 14–18), against the private
-log set.
+(Session A: items 1–5, 7, 9, 11, 13; Session C: 14–15's engine clauses),
+against the private log set. Spec 06 v1.0 retired 6, 12, 16–18 and 15's
+derived rule with the hand studies, Signal view and Compare screens.
 
 The acceptance set is the investigation's: every admitted flight dated
 through 2026-10-28 (Appendix A — the logs the investigation read; flights
@@ -173,52 +174,6 @@ def _subset_folder(tmp_path: Path, names: list[str]) -> Path:
     for n in names:
         os.symlink((LOGS_DIR / n).resolve(), d / n)
     return d
-
-
-def test_6_and_12_study_round_trip(app, results, tmp_path):
-    study = {"name": "Takeoff rpm oscillation", "selection": app.selection, "slice_rules": [FULL_POWER],
-             "references": REFS, "tests": STUDY_TESTS}
-    sid = app.call("save_study", study=study)["study_id"]
-    ran = app.call("run_study", study_id=sid)
-    for t in ran["tests"]:
-        assert t["result"]["finding"] == results[t["test_id"]]["finding"]
-    exp = app.call("export_study", study_id=sid)
-    data = app.files[exp["filename"]]
-    app.call("delete_study", study_id=sid)
-    imp = json.loads(serialize.dumps(host.reply({"op": "import_study", "request_id": "t",
-                                                  "params": {"content": data}}, app.ctx)))["result"]
-    assert not imp["read_only"] and imp["missing"] == []
-    again = app.call("run_study", study_id=imp["study"]["study_id"])
-    assert [t["result"]["finding"] for t in again["tests"]] == [t["result"]["finding"] for t in ran["tests"]]
-    assert ([t["result"]["block"]["summary"] for t in again["tests"]]
-            == [t["result"]["block"]["summary"] for t in ran["tests"]])
-
-    # A workspace holding some of the logs: G3X only.
-    g3x = sorted(p.name for p in LOGS_DIR.glob("log_*.csv"))
-    other = _Host(tmp_path / "home2")
-    other.workspace("G3X only", _subset_folder(tmp_path / "a", g3x))
-    part = json.loads(serialize.dumps(host.reply({"op": "import_study", "request_id": "t",
-                                                   "params": {"content": data}}, other.ctx)))["result"]
-    assert part["matched"] and part["missing"] and not part["read_only"]
-    pr = other.call("run_study", study_id=part["study"]["study_id"])
-    assert pr["last_run"]["slices"] == 84 and pr["last_run"]["by_source"] == {"G3X": 84}
-
-    # 12: a study about flights this workspace has none of opens read-only.
-    axis_only = {"mode": "flights", "flights": sorted({s["flight"] for s in app.call(
-        "build_slices", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm"])["slices"]
-        if s["context"]["source"] == "AXIS"})}
-    sid2 = app.call("save_study", study={**study, "name": "AXIS takeoffs", "selection": axis_only,
-                                          "tests": [STUDY_TESTS[0]]})["study_id"]
-    sent = app.call("run_study", study_id=sid2)
-    data2 = app.files[app.call("export_study", study_id=sid2)["filename"]]
-    ro = json.loads(serialize.dumps(host.reply({"op": "import_study", "request_id": "t",
-                                                 "params": {"content": data2}}, other.ctx)))["result"]
-    assert ro["read_only"] and ro["matched"] == []
-    assert ro["study"]["read_only"]["label"] == "sender's results; none of these flights are in this workspace"
-    assert ro["study"]["tests"][0]["result"]["finding"] == sent["tests"][0]["result"]["finding"]
-    mine = other.call("run_study_on_my_flights", study_id=ro["study"]["study_id"])
-    assert not mine.get("read_only") and mine["last_run"]["by_source"] == {"G3X": 84}
-
 
 # ── 7. CLI and browser give the operation's JSON ──────────────────────────
 
@@ -420,79 +375,3 @@ def test_15_window_period_as_the_spec_states(app, oct24):
     """Spec 06 v0.9: item 15's range is 3.2–4.1 s — one segment's own period
     (3.4 s) sits below the set's IQR (item 2), measured the same way."""
     assert 3.2 <= _first_window(app, oct24)["descriptors"]["rpm"]["period_s"] <= 4.1
-
-
-def test_15_derived_rule_recovers_the_segment(app, oct24):
-    fid, segs = oct24
-    rule = _first_window(app, oct24)["derived_rule"]
-    got = app.call("build_slices", selection={"mode": "flights", "flights": [fid]}, slice_rules=[rule],
-                   channels=["rpm"])["slices"]
-    a, b = segs[0]["start_s"], segs[0]["end_s"]
-    match = [s for s in got if s["start_s"] < b and s["end_s"] > a]
-    assert len(match) == 1 and abs(match[0]["start_s"] - a) <= 3 and abs(match[0]["end_s"] - b) <= 3
-
-
-@pytest.fixture(scope="module")
-def compare(app):
-    return app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"])
-
-
-def test_16_compare_rows_are_the_slice_descriptors(app, compare, slice_set):
-    assert compare["row_count"] == 98 and compare["flight_count"] == 59
-    assert len(compare["flights_without"]) == len(app.flights) - 59
-    assert [r["slice_id"] for r in compare["rows"]] == [s["slice_id"] for s in slice_set["slices"]]
-    for r, s in zip(compare["rows"], slice_set["slices"]):
-        for ch in ("rpm", "map_inhg"):
-            assert r["values"][ch] == {k: s["descriptors"][ch][k] for k in r["values"][ch]}
-    col = app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"],
-                   collapse=True)
-    assert col["row_count"] == 59 and sum(r["count"] for r in col["rows"]) == 98
-
-
-def test_17_pinned_kawo_row_and_swing_against_da(app, compare, oct24, results):
-    fid, segs = oct24
-    p = app.call("compare_rows", selection=app.selection, slice_rules=[FULL_POWER], channels=["rpm", "map_inhg"],
-                 pinned=segs[0]["slice_id"])
-    rows = p["rows"]
-    assert sum(1 for r in rows if r["pinned"]) == 1
-    assert all("swing" in r["delta"]["rpm"] and "period_s" in r["delta"]["rpm"] for r in rows)
-    high = [r for r in rows if (r["da_ft"] or 0) >= 6000]
-    assert len(high) == 2 and all(r["delta"]["rpm"]["swing"] <= -90 for r in high)
-    # The chart's data, swing against DA, banded as acceptance 4 bands it.
-    def med(xs):
-        xs = sorted(xs)
-        k = len(xs) // 2
-        return xs[k] if len(xs) % 2 else (xs[k - 1] + xs[k]) / 2
-    bands = {"below 3,500 ft DA": [], "at 3,500–6,000 ft DA": [], "at 6,000 ft DA and above": []}
-    for r in rows:
-        da = r["da_ft"]
-        key = ("below 3,500 ft DA" if da < 3500 else "at 3,500–6,000 ft DA" if da < 6000 else "at 6,000 ft DA and above")
-        bands[key].append(r["values"]["rpm"]["swing"])
-    g = results["groups"]["block"]["summary"]["groups"]
-    for k, xs in bands.items():
-        assert len(xs) == g[k]["n"] and med(xs) == g[k]["median"]
-
-
-def test_18_study_with_signal_rule_pin_and_question_round_trips(app, oct24):
-    fid, segs = oct24
-    w = _first_window(app, oct24)
-    study = {"name": "Oct 24 takeoff", "selection": app.selection, "slice_rules": [w["derived_rule"]],
-             "signal": {"flight": fid, "channels": ["rpm", "map_inhg", "fuel_flow_gph"], "reference": "rpm",
-                        "window": {"start_s": segs[0]["start_s"], "end_s": segs[0]["end_s"]}},
-             "compare": {"pinned": segs[0]["slice_id"], "channels": ["rpm", "map_inhg"],
-                         "chart": {"x": "da_ft", "y": "rpm.swing", "colour": "source"}},
-             "tests": [{"test_id": "cycling", "channels": ["rpm"]}]}
-    sid = app.call("save_study", study=study)["study_id"]
-    ran = app.call("run_study", study_id=sid)
-    for doc in (app.call("load_study", study_id=sid), ran):
-        assert doc["signal"]["flight"] == fid and doc["signal"]["window"]["start_s"] == segs[0]["start_s"]
-        assert doc["slice_rules"][0]["derived_from"]["flight"] == fid
-        assert doc["compare"]["pinned"] == segs[0]["slice_id"] and len(doc["tests"]) == 1
-    data = app.files[app.call("export_study", study_id=sid)["filename"]]
-    imp = json.loads(serialize.dumps(host.reply({"op": "import_study", "request_id": "t",
-                                                  "params": {"content": data}}, app.ctx)))["result"]
-    st = imp["study"]
-    assert st["signal"] == ran["signal"] and st["compare"] == ran["compare"]
-    assert st["slice_rules"] == ran["slice_rules"] and [t["test_id"] for t in st["tests"]] == ["cycling"]
-    again = app.call("run_study", study_id=st["study_id"])
-    assert again["tests"][0]["result"]["finding"] == ran["tests"][0]["result"]["finding"]
