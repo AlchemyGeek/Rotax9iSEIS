@@ -135,6 +135,10 @@ def dominant_period(y: np.ndarray, filled: Optional[np.ndarray] = None,
         # "peaks" differ between numpy builds (Spec 04 parity), so say none.
         return out
     yd = detrend(y)
+    if np.nanmax(np.abs(yd)) <= 1e-9 * max(1.0, float(np.nanmax(np.abs(y)))):
+        # A straight line likewise: detrended it is rounding noise, whose
+        # "period" depends on the CPU's floating-point path (a CI flake).
+        return out
     # Rounded so that a tie between neighbouring lags is a tie on every
     # numpy build (Spec 04 parity); 1e-10 is far below any real difference.
     r = np.round(_acf(yd, max_lag + 1), 10)
