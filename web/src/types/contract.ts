@@ -1052,6 +1052,7 @@ export interface HostCapabilities {
     research?: boolean; // Spec 06 §11 — absent on a host older than Research
     investigations?: boolean; // Spec 16 — notebooks and the inbox (both hosts)
     bench?: boolean; // Spec 16 D3/D8 — runs notebook code (server host only)
+    move_workspace?: boolean; // Spec 16 D17 — the website offers Move my workspace (browser host only)
     documents?: boolean; // Spec 16 D11 — reads the aircraft's documents folders (server host only)
   };
 }

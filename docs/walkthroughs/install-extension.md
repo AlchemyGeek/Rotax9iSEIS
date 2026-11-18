@@ -46,6 +46,7 @@ Open a new chat in Claude Desktop. The first time, EIS takes a few seconds longe
 While Claude Desktop is open, the **EIS pages** are at **http://127.0.0.1:8420/** in your browser. Open them:
 
 - With no workspace yet, they show the first-workspace steps — the same as on the website ([Open the app and your first workspace](first-workspace.md)). Creating the workspace also creates the aircraft.
+- **Been using the website?** Keep Claude Desktop open, go back to the website and press **Move my workspace to EIS on this computer** — on **Research**, or in **Settings → App**. It sends your questions and marks, notes, journal and decisions (not the logs) and opens the EIS pages here with the workspace selected. Then, on **Flights**, add the folder that holds your logs and **Sync**: the flights are analysed here, and your marks open them. The website keeps its copy, marked *this is now the copy*; from now on you work at http://127.0.0.1:8420/. If EIS here already has a workspace, the moved one is added beside it — never merged.
 - If you already run EIS on your computer (`slingology-eis serve`), the pages are served by that one; the extension leaves it alone and Claude's tools still work.
 
 ## 5. Check that Claude sees EIS

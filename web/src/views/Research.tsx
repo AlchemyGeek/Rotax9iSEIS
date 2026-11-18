@@ -4,6 +4,7 @@ import { NavShell, DOCS_URL } from "../components/NavShell";
 import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import type { StudySummary } from "../types/contract";
 import { Inbox } from "../components/research/Inbox";
+import { MoveWorkspaceBanner } from "../components/MoveWorkspace";
 import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE } from "../components/research/ui";
 
 const client = getEngineClient();
@@ -80,6 +81,7 @@ export function Research() {
         {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
         {importNote && <div style={NOTICE}>{importNote}</div>}
 
+        {!noWorkspace && <MoveWorkspaceBanner />}
         {!noWorkspace && <Inbox />}
 
         <section style={PANEL}>

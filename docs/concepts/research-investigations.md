@@ -19,7 +19,7 @@ An investigation is that loop, done by your Claude with EIS as its instrument. Y
 
 - **The Claude Desktop app** on a Mac, with your own Claude account. EIS runs no AI itself and holds no key: the conversation is yours, on your account.
 - **The EIS extension** for Claude Desktop — one file, one install ([Install the extension](../walkthroughs/install-extension.md)). It carries the EIS engine, runs the EIS pages on your computer at `http://127.0.0.1:8420/` while Claude Desktop is open, and gives Claude its connection to them.
-- **Your logs** in a folder EIS can read, as on the website.
+- **Your logs** in a folder EIS can read, as on the website. If you started on the website, its **Move my workspace to EIS on this computer** button brings your questions, marks and decisions across ([Install the extension](../walkthroughs/install-extension.md), step 4); after the move you work at `http://127.0.0.1:8420/`, and the website's workspace is the copy.
 - **Context worth giving it**, in **Settings → Aircraft** ([Set up your aircraft and documents](../walkthroughs/aircraft-documents.md)): the aircraft's configuration and **notes** on what was changed and when, which Claude reads before every investigation; and **documents folders** with your copies of the Operators Manual, service bulletins and the propeller and controller manuals, which Claude reads in place and cites by page. EIS never ships the manuals and never copies them.
 
 ## How it goes

@@ -2250,6 +2250,8 @@ def test_get_capabilities(server):
     assert caps["features"] == {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
                                 "persistent_storage_status": False, "download_url": True, "folder_watching": False,
                                 "research": True, "investigations": True, "documents": True,
+                                # Spec 16 D17: the website offers the move; a server receives it.
+                                "move_workspace": False,
                                 # Spec 16 S6: a server host under Pyodide has no worker processes.
                                 "bench": not isinstance(server, NodeHost)}
 

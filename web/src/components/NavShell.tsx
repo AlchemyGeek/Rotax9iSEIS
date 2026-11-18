@@ -8,6 +8,7 @@ import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
 import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
 import { setTheme, useTheme } from "../lib/theme";
 import { useCapabilities } from "../lib/capabilities";
+import { dismissMovedNote, takeMovedNote } from "../lib/moveWorkspace";
 
 const client = getEngineClient();
 
@@ -84,6 +85,7 @@ function WorkspaceSwitcher() {
   // Until the server answers, show no workspace at all — not the sample
   // registry's name, nor "+ New workspace" for someone who has some.
   const [loaded, setLoaded] = useState(false);
+  const caps = useCapabilities();
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +209,13 @@ function WorkspaceSwitcher() {
               >
                 Import workspace…
               </button>
+              {caps && caps.features.move_workspace !== true && (
+                // Spec 16 D17: the first run on this computer points back to the website's button.
+                <div data-testid="move-mirror" style={{ fontSize: 11, color: "var(--text-tertiary)", maxWidth: 220 }}>
+                  Been using the website? Open it and press <em>Move my workspace</em>.{" "}
+                  <a href={`${DOCS_URL}app/`} target="_blank" rel="noreferrer">Open the website</a>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -450,7 +459,25 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
           </NavLink>
         </div>
       </div>
+      <MovedNote />
       <div style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>{children}</div>
+    </div>
+  );
+}
+
+// Spec 16 D17: the local pages just after Move my workspace — one line,
+// until dismissed (this tab only).
+function MovedNote() {
+  const [moved, setMoved] = useState<string | null>(() => takeMovedNote());
+  if (!moved) return null;
+  return (
+    <div data-testid="moved-note" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 28px", fontSize: 12,
+      background: "var(--brand-fill)", borderBottom: "1px solid var(--border)", color: "var(--text-primary)" }}>
+      <span style={{ flexGrow: 1 }}>
+        Your workspace is here now, moved from the website. Link your log folder on <a href="#/flights">Flights</a> and Sync to see its flights.
+      </span>
+      <button type="button" onClick={() => { dismissMovedNote(); setMoved(null); }} aria-label="Dismiss"
+        style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14 }}>×</button>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { StoragePanel } from "../components/StoragePanel";
 import { AircraftSettings } from "../components/settings/AircraftSettings";
 import { ResearchSettings } from "../components/settings/ResearchSettings";
 import { useCapabilities } from "../lib/capabilities";
+import { MoveWorkspaceBanner } from "../components/MoveWorkspace";
 import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
@@ -973,6 +974,7 @@ export function Settings() {
                 </div>
               </div>
 
+              <MoveWorkspaceBanner />
               {/* Spec 02 v0.11 §7.2 / Spec 03 v0.19 §5.7: share the whole
                   workspace; import one as a new workspace. */}
               <div style={PANEL_STYLE} data-testid="workspace-share">

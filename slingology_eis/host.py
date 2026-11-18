@@ -3029,13 +3029,17 @@ def op_forget_study_finding(params: dict, ctx: dict) -> Any:
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
                "persistent_storage_status": False, "download_url": True, "folder_watching": False,
-               "research": True, "investigations": True, "bench": True, "documents": True},
+               "research": True, "investigations": True, "bench": True, "documents": True,
+               "move_workspace": False},
     # Spec 16 D8: the website renders notebooks and keeps an inbox, but has
     # no bench — code_run is a server-host operation — and reads no
     # documents folders (D11: documents_list / document_read).
     "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
                 "persistent_storage_status": True, "download_url": False, "folder_watching": False,
-                "research": True, "investigations": True, "bench": False, "documents": False},
+                "research": True, "investigations": True, "bench": False, "documents": False,
+                # Spec 16 D17: the website offers to move its workspace to an
+                # EIS running on this computer (the local server receives it).
+                "move_workspace": True},
 }
 
 
