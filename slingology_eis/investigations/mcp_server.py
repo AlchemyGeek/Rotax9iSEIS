@@ -20,7 +20,11 @@ With `--serve`, the web server runs on a thread of the same process
 serves the pages) the MCP server carries on without it. `--log-folder`
 (repeatable; the extension's configuration) links folders to the workspace
 the tools open, once it exists. With `--log-file` the server's stderr is
-also written to `cache/mcp.log` under the data root.
+also written to `cache/mcp.log` under the data root, with one line per
+message the client sends: the method, the tool or prompt it names, and
+`ok`, `tool error` or the JSON-RPC error code — never arguments or
+results (Spec 16 F15). Each line carries the process id: Claude Desktop
+starts two server processes per launch (§7).
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ import json
 import os
 import sys
 import threading
+import time
 from typing import Any, Optional
 
 from .. import __version__
@@ -163,14 +168,26 @@ class Server:
         if method is None:
             return None  # a response to something we never send
         if mid is None:
+            _log_request(method, None, None, "notification")
             return None  # a notification: initialized, cancelled, …
+        started = time.monotonic()
+        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
         try:
-            result = self._method(method, msg.get("params") or {})
+            result = self._method(method, params)
         except _RpcFail as e:
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": e.code, "message": e.message}}
+            reply = {"jsonrpc": "2.0", "id": mid, "error": {"code": e.code, "message": e.message}}
         except Exception as e:  # noqa: BLE001 — a request always answers
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": f"{type(e).__name__}: {e}"}}
-        return {"jsonrpc": "2.0", "id": mid, "result": result}
+            reply = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": f"{type(e).__name__}: {e}"}}
+        else:
+            reply = {"jsonrpc": "2.0", "id": mid, "result": result}
+        if "error" in reply:
+            outcome = f"error {reply['error']['code']}"
+        else:
+            outcome = "tool error" if isinstance(reply["result"], dict) and reply["result"].get("isError") else "ok"
+        named = params.get("name") if method in ("tools/call", "prompts/get") else None
+        _log_request(method, mid, named if isinstance(named, str) else None, outcome,
+                     int((time.monotonic() - started) * 1000))
+        return reply
 
     def _method(self, method: str, params: dict) -> Any:
         if method == "initialize":
@@ -207,6 +224,26 @@ class Server:
                 raise _RpcFail(-32602, f"Unknown tool: {name}")
             return self.call_tool(name, params.get("arguments") or {})
         raise _RpcFail(-32601, f"Method not found: {method}")
+
+
+_REQUEST_LOG = None   # cache/mcp.log when --log-file; one line per client message
+
+
+def _log_request(method: str, mid, name: Optional[str], outcome: str, ms: Optional[int] = None) -> None:
+    """`<UTC time> pid <pid> <method>[ <name>] #<id> → <outcome> (<ms> ms)` —
+    no parameters, arguments or results."""
+    f = _REQUEST_LOG
+    if f is None:
+        return
+    from datetime import datetime, timezone
+    line = (f"{datetime.now(timezone.utc).isoformat(timespec='milliseconds')} pid {os.getpid()} {method}"
+            + (f" {name}" if name else "") + (f" #{mid}" if mid is not None else "")
+            + f" → {outcome}" + (f" ({ms} ms)" if ms is not None else "") + "\n")
+    try:
+        f.write(line)
+        f.flush()
+    except (OSError, ValueError):
+        pass
 
 
 class _RpcFail(Exception):
@@ -280,7 +317,7 @@ def _open_log_file():
     except OSError:
         return None
     f.write(f"\n── slingology-eis mcp {__version__} started {datetime.now(timezone.utc).isoformat(timespec='seconds')} "
-            f"(data root {loc.root}, {loc.source}) ──\n")
+            f"pid {os.getpid()} (data root {loc.root}, {loc.source}) ──\n")
     return f
 
 
@@ -299,10 +336,12 @@ def main(*, workspace_arg: Optional[str] = None, aircraft_arg: Optional[str] = N
     # The protocol owns the real stdout; everything else written to fd 1 goes to stderr.
     proto = os.fdopen(os.dup(1), "w", encoding="utf-8", buffering=1)
     os.dup2(2, 1)
+    global _REQUEST_LOG
     if log_file:
         f = _open_log_file()
         if f is not None:
             sys.stderr = _Tee(sys.__stderr__, f)  # type: ignore[assignment]
+            _REQUEST_LOG = f
     sys.stdout = sys.stderr
     print(f"slingology-eis mcp {__version__}: stdio" + (f", pages on 127.0.0.1:{port}" if serve else ""), file=sys.stderr)
     if serve:

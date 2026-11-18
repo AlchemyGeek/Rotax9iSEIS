@@ -86,6 +86,25 @@ def _resolve_symlinks(tree: Path) -> None:
                 shutil.copy2(real, p)
 
 
+def manifest_prompts() -> list[dict]:
+    """The manifest's `prompts` (MCPB manifest 0.3: name, description,
+    argument names, text), from investigations/prompts/*.md — the files the
+    server's prompts/list and prompts/get read, so the two can't drift.
+    Claude Desktop refuses prompts/get for a prompt the manifest doesn't
+    declare (Spec 16 F15). The schema is strict: titles and each argument's
+    description and `required` stay with the server's prompts/list. The
+    text's `{{name}}` placeholders become the manifest's `${arguments.name}`."""
+    from slingology_eis.investigations.ops import list_prompts
+    out = []
+    for p in list_prompts():
+        names = [a["name"] for a in p.get("arguments") or []]
+        text = p["text"]
+        for n in names:
+            text = text.replace("{{" + n + "}}", "${arguments." + n + "}")
+        out.append({"name": p["name"], "description": p["description"], "arguments": names, "text": text})
+    return out
+
+
 def manifest(version: str) -> dict:
     from slingology_eis.investigations import mcp_tools as T
     py = "${__dirname}/python/bin/python3"
@@ -123,6 +142,8 @@ def manifest(version: str) -> dict:
         },
         "tools": [{"name": t.name, "description": t.description.split(". ")[0].rstrip(".") + "."} for t in T.TOOLS],
         "tools_generated": False,
+        "prompts": manifest_prompts(),
+        "prompts_generated": True,
         "user_config": {
             "data_root": {
                 "type": "directory", "title": "EIS data folder",

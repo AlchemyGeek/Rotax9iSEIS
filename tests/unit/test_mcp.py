@@ -239,7 +239,7 @@ def test_jsonrpc_methods(ws):
     prompts = server.handle({"jsonrpc": "2.0", "id": 10, "method": "prompts/list"})["result"]["prompts"]
     assert [p["name"] for p in prompts] == ["investigate", "inbox-item", "before-after", "review-new-flights"]
     assert prompts[0]["arguments"] == [{"name": "question", "description": prompts[0]["arguments"][0]["description"],
-                                        "required": True}]
+                                        "required": False}]                # F15: optional
     got = server.handle({"jsonrpc": "2.0", "id": 11, "method": "prompts/get",
                          "params": {"name": "investigate", "arguments": {"question": "Does rpm hunt at takeoff?"}}})
     text = got["result"]["messages"][0]["content"]["text"]
@@ -248,7 +248,10 @@ def test_jsonrpc_methods(ws):
         args = {a["name"]: "x" for a in p["arguments"]}
         assert server.handle({"jsonrpc": "2.0", "id": 12, "method": "prompts/get",
                               "params": {"name": p["name"], "arguments": args}})["result"]["messages"]
-    missing = server.handle({"jsonrpc": "2.0", "id": 13, "method": "prompts/get", "params": {"name": "investigate"}})
+    bare = server.handle({"jsonrpc": "2.0", "id": 13, "method": "prompts/get", "params": {"name": "investigate"}})
+    text = bare["result"]["messages"][0]["content"]["text"]                 # no question: guide, then ask
+    assert "If the question above is empty" in text and "ask me what to investigate" in text and "{{" not in text
+    missing = server.handle({"jsonrpc": "2.0", "id": 14, "method": "prompts/get", "params": {"name": "inbox-item"}})
     assert missing["error"]["code"] == -32602
     newer = server.handle({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {"protocolVersion": "2099-01-01"}})
     assert newer["result"]["protocolVersion"] == M.LATEST

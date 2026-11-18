@@ -4,12 +4,16 @@ title: Investigate
 description: Investigate a question about the engine in a notebook, following the EIS method.
 arguments:
   - name: question
-    description: The question, in your words (e.g. "Is there an oscillation during takeoff and initial climb?")
-    required: true
+    description: The question, in your words (e.g. "Is there an oscillation during takeoff and initial climb?"); leave it empty and Claude asks
+    required: false
 ---
 Investigate this question about my engine with SlingologyEIS:
 
 > {{question}}
+
+If the question above is empty, I haven't given one yet: call `guide` first, then ask me what to investigate —
+you may suggest what my open inbox candidates (`inbox_list`) and recent flights point to — and wait for my
+answer before going on.
 
 1. Call `guide` first and follow its method and writing rules.
 2. Find the flight or flights the question names with `flights_find` (or `flights_list`), and read
