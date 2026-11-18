@@ -3182,7 +3182,8 @@ def _investigation_op(name: str):
 
 
 for _name in ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-              "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve"):
+              "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
+              "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete"):
     _OPS[_name] = _investigation_op(_name)
 
 

@@ -3,13 +3,28 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resetCapabilities } from "../lib/capabilities";
 
-// Spec 16 §6 (D5, D8) — the inbox on Research home, both tiers: candidates
-// with their evidence, sensitivity and status; Run the question by hand;
-// Mark nothing here / watch / acted with a note; the linked study opens;
-// the install invitation where there is no bench. Synthetic candidates.
+// Spec 16 §6 (D5, D8, D16) — the inbox on Research home, both tiers: the
+// owner's questions with their marks (each opening its flight at the
+// window), Unassigned, edit / move / delete, the same statuses; candidates
+// with their evidence, sensitivity and status; Mark nothing here / watch /
+// acted with a note; the linked study opens; the install invitation and
+// the question's hand-off line where there is no bench. Synthetic data.
 
 const FA = "aaaaaaaaaaaaaaaa", FB = "bbbbbbbbbbbbbbbb";
-const state = vi.hoisted(() => ({ bench: true, calls: [] as { op: string; params: unknown }[], candidates: [] as Record<string, unknown>[] }));
+type P = { id: string; question_id: string | null; flight: string; start_s: number; end_s: number; channels: string[]; note: string | null; created: string; flight_here?: boolean; date?: string; when?: string; status?: string; study_id?: string | null };
+type Q = { id: string; title: string; status: string; study_id: string | null; note: string | null; created: string; updated: string; resolved_at: string | null };
+const state = vi.hoisted(() => ({ bench: true, calls: [] as { op: string; params: unknown }[], candidates: [] as Record<string, unknown>[],
+  questions: [] as Q[], pins: [] as P[] }));
+
+function pinsListing() {
+  const of = (qid: string | null) => state.pins.filter((p) => p.question_id === qid);
+  const qs = state.questions.map((q) => {
+    const ps = of(q.id);
+    return { ...q, pins: ps, pin_count: ps.length, newest_note: [...ps].reverse().find((p) => p.note)?.note ?? null };
+  });
+  const open = state.questions.filter((q) => q.status === "new" || q.status === "investigating");
+  return { questions: qs, unassigned: of(null), counts: {}, pins: state.pins.length, newest_open: open.at(-1)?.id ?? null };
+}
 
 function candidate(id: string, extra: Record<string, unknown> = {}) {
   return {
@@ -41,6 +56,41 @@ vi.mock("../lib/engineClient", async () => {
       const counts = { new: 0, investigating: 0, "nothing-here": 0, watch: 0, acted: 0 } as Record<string, number>;
       for (const c of state.candidates) counts[c.status as string]++;
       return { candidates: state.candidates, counts, last_scan: { at: "2026-01-04T00:00:00Z", sensitivity: "normal", flights: 3, parameters: {} } };
+    },
+    pinsList: async () => { rec("pins_list", null); return pinsListing(); },
+    pinEdit: async (args: { pin_id: string; note?: string | null; question?: string | { title: string } | null }) => {
+      rec("pin_edit", args);
+      const p = state.pins.find((x) => x.id === args.pin_id)!;
+      if ("note" in args) p.note = args.note ?? null;
+      if ("question" in args) {
+        const t = args.question;
+        if (t && typeof t === "object") {
+          const q = { id: `q-new${state.questions.length}`, title: t.title, status: "new", study_id: null, note: null, created: "2026-01-05T00:00:00Z", updated: "", resolved_at: null };
+          state.questions.push(q);
+          p.question_id = q.id;
+        } else p.question_id = t ?? null;
+      }
+      return { pin: p, question: null };
+    },
+    pinDelete: async (id: string) => { rec("pin_delete", id); state.pins = state.pins.filter((p) => p.id !== id); return { deleted: id }; },
+    questionResolve: async (args: { question_id: string; status: string; note: string | null }) => {
+      rec("question_resolve", args);
+      const q = state.questions.find((x) => x.id === args.question_id)!;
+      Object.assign(q, { status: args.status, note: args.note });
+      return { question: q };
+    },
+    questionEdit: async (args: { question_id: string; title: string }) => {
+      rec("question_edit", args);
+      const q = state.questions.find((x) => x.id === args.question_id)!;
+      q.title = args.title;
+      return { question: q };
+    },
+    questionDelete: async (id: string) => {
+      rec("question_delete", id);
+      state.questions = state.questions.filter((q) => q.id !== id);
+      let n = 0;
+      for (const p of state.pins) if (p.question_id === id) { p.question_id = null; n++; }
+      return { deleted: id, pins_unassigned: n };
     },
     inboxResolve: async (args: { candidate_id: string; status: string; note: string | null }) => {
       rec("inbox_resolve", args);
@@ -75,6 +125,12 @@ beforeEach(() => {
   state.bench = true;
   state.calls = [];
   state.candidates = [candidate("ib-1"), candidate("ib-2", { status: "watch", study_id: "st-linked", note: "Pending the bulletin." })];
+  state.questions = [{ id: "q-rough", title: "rough climbs", status: "new", study_id: null, note: null, created: "2026-01-04T00:00:00Z", updated: "", resolved_at: null }];
+  state.pins = [
+    { id: "p-1", question_id: "q-rough", flight: FA, start_s: 100.4, end_s: 160, channels: ["rpm", "map_inhg"], note: "rpm wanders in the climb", created: "2026-01-04T00:00:01Z", flight_here: true, date: "2026-01-02", when: "2026-01-02 10:01:40–10:02:40 PST (+01:40–+02:40 into the flight)" },
+    { id: "p-2", question_id: "q-rough", flight: FB, start_s: 120, end_s: 170, channels: ["rpm"], note: "again, less", created: "2026-01-04T00:00:02Z", flight_here: true, date: "2026-01-03" },
+    { id: "p-3", question_id: null, flight: FB, start_s: 10, end_s: 40, channels: [], note: null, created: "2026-01-04T00:00:03Z", flight_here: true, date: "2026-01-03" },
+  ];
   resetCapabilities();
   sessionStorage.clear();
 });
@@ -126,5 +182,84 @@ describe("the inbox on Research home (§6)", () => {
     await screen.findAllByTestId("inbox-candidate");
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.queryByTestId("inbox-install")).toBeNull();
+  });
+});
+
+describe("the owner's questions in the inbox (D16)", () => {
+  it("one question with its two marks beside the candidates, each opening its flight at the window with its channels", async () => {
+    app();
+    const q = await screen.findByTestId("question");
+    expect(q.dataset.status).toBe("new");
+    expect(within(q).getByTestId("question-title").textContent).toBe("rough climbs");
+    expect(q.textContent).toContain("2 marks");
+    const pins = within(q).getAllByTestId("pin");
+    expect(pins.map((p) => within(p).getByTestId("pin-note").textContent)).toEqual(["“rpm wanders in the climb”", "“again, less”"]);
+    expect(pins[0].textContent).toContain("+01:40–+02:40 into the flight");
+    expect(pins[0].textContent).toContain("RPM, MAP");
+    // Unassigned holds the loose mark; the candidates are still there.
+    expect(within(screen.getByTestId("questions-unassigned")).getAllByTestId("pin").length).toBe(1);
+    expect((await screen.findAllByTestId("inbox-candidate")).length).toBe(2);
+    fireEvent.click(within(pins[0]).getByTestId("pin-open"));
+    expect((await screen.findByTestId("where")).textContent).toBe(`/flights/${FA}?window=100-160&channels=rpm,map_inhg`);
+  });
+
+  it("a question takes the candidates' statuses with a note", async () => {
+    app();
+    const q = await screen.findByTestId("question");
+    fireEvent.click(within(q).getByTestId("question-mark-nothing-here"));
+    fireEvent.change(within(q).getByLabelText("Note"), { target: { value: "the governor, known" } });
+    fireEvent.click(within(q).getByTestId("question-mark-confirm"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "question_resolve")?.params).toMatchObject({ question_id: "q-rough", status: "nothing-here", note: "the governor, known" }));
+    await waitFor(() => expect(screen.queryByTestId("question")).toBeNull());       // resolved ones fold away
+    fireEvent.click(screen.getByTestId("questions-show-resolved"));
+    expect(screen.getByTestId("question").dataset.status).toBe("nothing-here");
+  });
+
+  it("edit a mark's note, move a mark to a new question, delete a mark, rename and delete a question", async () => {
+    app();
+    const loose = within(await screen.findByTestId("questions-unassigned")).getByTestId("pin");
+    fireEvent.click(within(loose).getByTestId("pin-edit"));
+    fireEvent.change(within(loose).getByLabelText("Mark note"), { target: { value: "a dip at 30 s" } });
+    fireEvent.click(within(loose).getByTestId("pin-note-save"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_edit")?.params).toEqual({ pin_id: "p-3", note: "a dip at 30 s" }));
+    const again = within(await screen.findByTestId("questions-unassigned")).getByTestId("pin");
+    fireEvent.click(within(again).getByTestId("pin-move"));
+    fireEvent.change(within(again).getByLabelText("Move to"), { target: { value: "__new__" } });
+    fireEvent.change(within(again).getByLabelText("New question title"), { target: { value: "dips" } });
+    fireEvent.click(within(again).getByTestId("pin-move-confirm"));
+    await waitFor(() => expect(state.calls.filter((c) => c.op === "pin_edit").at(-1)?.params).toEqual({ pin_id: "p-3", question: { title: "dips" } }));
+    await waitFor(() => expect(screen.getAllByTestId("question").length).toBe(2));
+    expect(screen.queryByTestId("questions-unassigned")).toBeNull();
+    const rough = screen.getAllByTestId("question").find((x) => x.dataset.question === "q-rough")!;
+    fireEvent.click(within(within(rough).getAllByTestId("pin")[1]).getByTestId("pin-delete"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_delete")?.params).toBe("p-2"));
+    const r2 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
+    fireEvent.click(within(r2).getByTestId("question-rename"));
+    fireEvent.change(within(r2).getByLabelText("Question title"), { target: { value: "rough climbs in summer" } });
+    fireEvent.click(within(r2).getByText("Save"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "question_edit")?.params).toEqual({ question_id: "q-rough", title: "rough climbs in summer" }));
+    const r3 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
+    fireEvent.click(within(r3).getByTestId("question-delete"));
+    expect(r3.textContent).toContain("Its marks stay, unassigned.");
+    fireEvent.click(within(r3).getByTestId("question-delete-confirm"));
+    await waitFor(() => expect(within(screen.getByTestId("questions-unassigned")).getAllByTestId("pin").length).toBe(1));
+  });
+
+  it("on the website the question waits, with the hand-off line and the install link", async () => {
+    state.bench = false;
+    app();
+    const line = await screen.findByTestId("questions-handoff");
+    expect(line.textContent).toContain("“rough climbs” is waiting for Claude.");
+    expect(line.textContent).toContain("Investigate");
+    expect(line.querySelector("a")!.getAttribute("href")).toContain("walkthroughs/install-extension/");
+    state.bench = true;
+  });
+
+  it("with a bench there is no hand-off line; with no marks the inbox says how to mark", async () => {
+    state.questions = [];
+    state.pins = [];
+    app();
+    expect((await screen.findByTestId("questions-empty")).textContent).toContain("Mark for Claude");
+    expect(screen.queryByTestId("questions-handoff")).toBeNull();
   });
 });

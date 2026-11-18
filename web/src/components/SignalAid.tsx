@@ -1,3 +1,4 @@
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import { channelLabel } from "../lib/research";
@@ -103,12 +104,14 @@ export function readoutRows(w: SignalWindow, channels: string[]): { channel: str
   }));
 }
 
-export function SignalAid({ flightId, chartChannels, visibleWindow, fullEnd, enabled }: {
+export function SignalAid({ flightId, chartChannels, visibleWindow, fullEnd, enabled, actions }: {
   flightId: string;
   chartChannels: string[];
   visibleWindow: [number, number];
   fullEnd: number;
   enabled: boolean;
+  // Spec 16 D16: Mark for Claude sits in the same row, after the toggle.
+  actions?: React.ReactNode;
 }) {
   const [on, setOn] = useState(false);
   const channels = useMemo(() => signalChannels(chartChannels), [chartChannels]);
@@ -144,7 +147,7 @@ export function SignalAid({ flightId, chartChannels, visibleWindow, fullEnd, ena
     return () => clearTimeout(t);
   }, [on, zoomed, flightId, channels, w0, w1]);
 
-  if (!enabled) return null;
+  if (!enabled) return actions ? <div style={{ marginTop: 10 }}>{actions}</div> : null;
   const present = strips ? strips.channels.filter((c) => strips.strips[c]) : [];
 
   return (
@@ -160,6 +163,7 @@ export function SignalAid({ flightId, chartChannels, visibleWindow, fullEnd, ena
         {on && <InlineHelp id="signal.strips" />}
         {on && !strips && !stripError && <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Reading the log…</span>}
         {on && stripError && <span style={{ fontSize: 11, color: "var(--severity-warning)" }} data-testid="signal-error">{stripError}</span>}
+        {actions && <span style={{ marginLeft: "auto" }}>{actions}</span>}
       </div>
 
       {on && strips && (

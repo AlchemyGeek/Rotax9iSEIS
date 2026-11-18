@@ -6,7 +6,7 @@ The tools the EIS extension gives Claude (Spec 16 §4.2). Claude calls them; you
 
 Every result is `{engine_version, workspace_id, result}`. Tools marked **writes** change something in the workspace (a notebook, the inbox, the workspace used for the conversation); the others only read. None reaches the internet. A refusal is an error whose text says why and what to ask instead.
 
-31 tools, in the order Claude sees them.
+33 tools, in the order Claude sees them.
 
 | Tool | | What it does |
 |---|---|---|
@@ -41,6 +41,8 @@ Every result is `{engine_version, workspace_id, result}`. Tools marked **writes*
 | [`study_finish`](#study_finish) | writes | End an investigation with its summary (what was found, what it means, what to do) |
 | [`inbox_list`](#inbox_list) |  | The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence and status; scans first when there are new flights |
 | [`inbox_resolve`](#inbox_resolve) | writes | Set a candidate's status — investigating, nothing-here, watch, acted (or new) — with its study and a note |
+| [`pins_list`](#pins_list) |  | The owner's questions and marks (Mark for Claude on the Flight view): each question with its status, notebook and marks — flight, window (start_s, end_s and the local time), the channels shown, the owner's note — and the unassigned marks |
+| [`question_resolve`](#question_resolve) | writes | Set one of the owner's questions' status — investigating, nothing-here, watch, acted (or new) — with its notebook and a note; its marks take the resolution |
 
 ## `guide`
 
@@ -277,7 +279,7 @@ One study: a notebook's metadata (question, status, summary) and its cells with 
 
 *Writes.*
 
-Start an investigation notebook for a question; its first cell holds the question. Add cells with cell_append and code_run, end with study_finish. Example: {"name": "Full-power rpm cycling", "question": "Why does rpm hunt at full power?"}.
+Start an investigation notebook for a question; its first cell holds the question. Add cells with cell_append and code_run, end with study_finish. With question_id (one of the owner's questions, pins_list) the notebook opens with the owner's marks: each mark's note, then a log view of its window. Example: {"name": "Full-power rpm cycling", "question": "Why does rpm hunt at full power?"}, or {"name": "Rough climbs", "question_id": "q-1a2b3c4d"}.
 
 | Parameter | Type | |
 |---|---|---|
@@ -285,6 +287,7 @@ Start an investigation notebook for a question; its first cell holds the questio
 | `question` | string |  |
 | `kind` | `investigation` \| `question-for-type` |  |
 | `inbox_candidate` | string | The inbox candidate this investigates (marked investigating) |
+| `question_id` | string | The owner's question this takes up (pins_list): marked investigating, and a markdown cell with each mark's note followed by its log view |
 | `engine_type` | string |  |
 
 ## `cell_append`
@@ -346,13 +349,14 @@ Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.
 
 *Writes.*
 
-End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate and notes the finding in the Journal (the one Journal entry Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "resolution": "watch", "journal": true}.
+End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "journal": true}.
 
 | Parameter | Type | |
 |---|---|---|
 | `study_id` | string | required |
 | `summary` | string | required |
 | `inbox_candidate` | string |  |
+| `question` | string | The owner's question this answers (pins_list); it and its marks take the resolution |
 | `resolution` | `investigating` \| `nothing-here` \| `watch` \| `acted` |  |
 | `note` | string |  |
 | `journal` | boolean |  |
@@ -375,6 +379,27 @@ Set a candidate's status — investigating, nothing-here, watch, acted (or new) 
 | Parameter | Type | |
 |---|---|---|
 | `candidate_id` | string | required |
+| `status` | `new` \| `investigating` \| `nothing-here` \| `watch` \| `acted` | required |
+| `study_id` | string |  |
+| `note` | string |  |
+
+## `pins_list`
+
+The owner's questions and marks (Mark for Claude on the Flight view): each question with its status, notebook and marks — flight, window (start_s, end_s and the local time), the channels shown, the owner's note — and the unassigned marks. A mark is where to look and a sentence, not a finding. newest_open names the question to take up when the owner asks without saying which. Example: {"status": ["new", "investigating"]}.
+
+| Parameter | Type | |
+|---|---|---|
+| `status` | string or list of string |  |
+
+## `question_resolve`
+
+*Writes.*
+
+Set one of the owner's questions' status — investigating, nothing-here, watch, acted (or new) — with its notebook and a note; its marks take the resolution. study_finish with question does this as it ends a notebook. Example: {"question_id": "q-1a2b3c4d", "status": "watch", "study_id": "st-…"}.
+
+| Parameter | Type | |
+|---|---|---|
+| `question_id` | string | required |
 | `status` | `new` \| `investigating` \| `nothing-here` \| `watch` \| `acted` | required |
 | `study_id` | string |  |
 | `note` | string |  |

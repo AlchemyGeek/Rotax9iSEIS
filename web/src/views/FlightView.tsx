@@ -22,6 +22,7 @@ import { RuleEditorPanel } from "../components/RuleEditorPanel";
 import { useTimeline } from "../lib/useTimeline";
 import { useCapabilities } from "../lib/capabilities";
 import { SignalAid } from "../components/SignalAid";
+import { MarkForClaude } from "../components/MarkForClaude";
 import { flightFacts } from "../lib/flightFacts";
 import { buildEventRows, insightEventId, type EventRow } from "../lib/flightEvents";
 import { REFERENCE_DERIVED_TOPICS, topicCardModel } from "../lib/topicRoster";
@@ -656,7 +657,11 @@ export function FlightView() {
               emptyText="No timeline available for this flight (its source log wasn't retained by the server)."
               below={flightId && (
                 <SignalAid flightId={flightId} chartChannels={tl.activeChannelIds} visibleWindow={tl.visibleWindow}
-                  fullEnd={tl.fullEnd} enabled={caps?.features.research === true && !usingFixture} />
+                  fullEnd={tl.fullEnd} enabled={caps?.features.research === true && !usingFixture}
+                  actions={caps?.features.investigations === true && !usingFixture ? (
+                    <MarkForClaude flightId={flightId} window={tl.visibleWindow} channels={tl.activeChannelIds}
+                      zoomed={tl.fullEnd > 0 && (tl.visibleWindow[0] > 1 || tl.visibleWindow[1] < tl.fullEnd - 1)} />
+                  ) : undefined} />
               )}
             />
 

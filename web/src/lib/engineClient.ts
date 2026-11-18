@@ -54,7 +54,7 @@ import type {
   WorkspaceSettings,
   SignalResult,
   StudySummary,
-  FlightFindResult, AircraftView, AircraftRecord, AircraftWorkspaceRef, InboxStatus, InboxCandidate, InboxListing,
+  FlightFindResult, AircraftView, AircraftRecord, AircraftWorkspaceRef, InboxStatus, InboxCandidate, InboxListing, OwnerQuestion, Pin, PinQuestionTarget, PinsListing,
   UserReference,
 } from "../types/contract";
 import { targetLabel } from "../types/contract";
@@ -274,6 +274,14 @@ export interface EngineClient {
   listAircraft(): Promise<(AircraftRecord & { workspaces: AircraftWorkspaceRef[] })[]>;
   inboxList(args?: { status?: InboxStatus[]; scan?: "auto" | "never" | "always" }): Promise<InboxListing>;
   inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ candidate: InboxCandidate }>;
+  // Spec 16 D16 — Mark for Claude (both hosts).
+  flightPin(args: { flight_id: string; start_s: number; end_s: number; channels: string[]; note: string | null; question: PinQuestionTarget }): Promise<{ pin: Pin; question: OwnerQuestion | null; where: string }>;
+  pinsList(args?: { status?: InboxStatus[] }): Promise<PinsListing>;
+  questionResolve(args: { question_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ question: OwnerQuestion }>;
+  questionEdit(args: { question_id: string; title?: string; note?: string | null }): Promise<{ question: OwnerQuestion }>;
+  questionDelete(questionId: string): Promise<{ deleted: string; pins_unassigned: number }>;
+  pinEdit(args: { pin_id: string; note?: string | null; question?: PinQuestionTarget; channels?: string[] }): Promise<{ pin: Pin; question: OwnerQuestion | null }>;
+  pinDelete(pinId: string): Promise<{ deleted: string }>;
   acceptStudyCells(studyId: string, opts?: { cell_ids?: string[]; source?: "rerun" | "external" }): Promise<{ study: StudySummary; cells: string[] }>;
   discardStudyCells(studyId: string, cellIds?: string[]): Promise<{ study: StudySummary; cells: string[] }>;
   runStudyOnMyFlights(studyId: string): Promise<NotebookStudyView>;
@@ -796,6 +804,27 @@ export class LocalServerClient implements EngineClient {
   }
   inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }) {
     return this.rpc<{ candidate: InboxCandidate }>("inbox_resolve", args);
+  }
+  flightPin(args: { flight_id: string; start_s: number; end_s: number; channels: string[]; note: string | null; question: PinQuestionTarget }) {
+    return this.rpc<{ pin: Pin; question: OwnerQuestion | null; where: string }>("flight_pin", args);
+  }
+  pinsList(args: { status?: InboxStatus[] } = {}) {
+    return this.rpc<PinsListing>("pins_list", args);
+  }
+  questionResolve(args: { question_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }) {
+    return this.rpc<{ question: OwnerQuestion }>("question_resolve", args);
+  }
+  questionEdit(args: { question_id: string; title?: string; note?: string | null }) {
+    return this.rpc<{ question: OwnerQuestion }>("question_edit", args);
+  }
+  questionDelete(questionId: string) {
+    return this.rpc<{ deleted: string; pins_unassigned: number }>("question_delete", { question_id: questionId });
+  }
+  pinEdit(args: { pin_id: string; note?: string | null; question?: PinQuestionTarget; channels?: string[] }) {
+    return this.rpc<{ pin: Pin; question: OwnerQuestion | null }>("pin_edit", args);
+  }
+  pinDelete(pinId: string) {
+    return this.rpc<{ deleted: string }>("pin_delete", { pin_id: pinId });
   }
   acceptStudyCells(studyId: string, opts: { cell_ids?: string[]; source?: "rerun" | "external" } = {}) {
     return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_accept", { study_id: studyId, ...opts });

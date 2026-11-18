@@ -611,11 +611,20 @@ def run_study_read(args: dict, call: Call) -> dict:
 
 def run_study_create(args: dict, call: Call) -> dict:
     p = {"name": args["name"], "author": "claude"}
-    for k in ("question", "kind", "inbox_candidate", "engine_type"):
+    for k in ("question", "kind", "inbox_candidate", "engine_type", "question_id"):
         if args.get(k):
             p[k] = args[k]
     view = call("study_create", p)
-    return {k: view.get(k) for k in ("study_id", "name", "kind", "author", "question", "status", "inbox_candidate")}
+    out = {k: view.get(k) for k in ("study_id", "name", "kind", "author", "question", "status", "inbox_candidate")}
+    if args.get("question_id"):
+        # D16: the cells written from the owner's marks — a note, then its log view.
+        cells = (view.get("notebook") or {}).get("cells") or []
+        out["question_id"] = args["question_id"]
+        out["cells"] = [{"cell_id": c.get("id"), "kind": c.get("cell_type"),
+                         "source": (c["source"] if isinstance(c.get("source"), str) else "".join(c.get("source") or []))[:400]}
+                        for c in cells if ((c.get("metadata") or {}).get("slingology") or {}).get("role") == "pin"
+                        or "eis.logview(" in (c["source"] if isinstance(c.get("source"), str) else "".join(c.get("source") or []))]
+    return out
 
 
 def run_cell_append(args: dict, call: Call) -> dict:
@@ -644,9 +653,21 @@ def _pending_call(op: str):
 
 
 def run_study_finish(args: dict, call: Call) -> dict:
-    p = {k: args[k] for k in ("study_id", "summary", "inbox_candidate", "resolution", "note", "journal", "finding")
-         if args.get(k) is not None}
+    p = {k: args[k] for k in ("study_id", "summary", "inbox_candidate", "question", "resolution", "note", "journal",
+                              "finding") if args.get(k) is not None}
     return call("study_finish", p)
+
+
+def run_pins_list(args: dict, call: Call) -> dict:
+    p = {}
+    if args.get("status"):
+        p["status"] = args["status"]
+    return call("pins_list", p)
+
+
+def run_question_resolve(args: dict, call: Call) -> dict:
+    return call("question_resolve", {k: args[k] for k in ("question_id", "status", "study_id", "note")
+                                     if args.get(k) is not None})
 
 
 def run_inbox_list(args: dict, call: Call) -> dict:
@@ -818,10 +839,14 @@ TOOLS: list[Tool] = [
          {"study_id": _S}, run_study_read, required=("study_id",), ops=("load_study",)),
     Tool("study_create", "Start a notebook",
          "Start an investigation notebook for a question; its first cell holds the question. Add cells with "
-         "cell_append and code_run, end with study_finish. Example: {\"name\": \"Full-power rpm cycling\", "
-         "\"question\": \"Why does rpm hunt at full power?\"}.",
+         "cell_append and code_run, end with study_finish. With question_id (one of the owner's questions, "
+         "pins_list) the notebook opens with the owner's marks: each mark's note, then a log view of its window. "
+         "Example: {\"name\": \"Full-power rpm cycling\", \"question\": \"Why does rpm hunt at full power?\"}, "
+         "or {\"name\": \"Rough climbs\", \"question_id\": \"q-1a2b3c4d\"}.",
          {"name": _S, "question": _S, "kind": {"type": "string", "enum": ["investigation", "question-for-type"]},
           "inbox_candidate": {**_S, "description": "The inbox candidate this investigates (marked investigating)"},
+          "question_id": {**_S, "description": "The owner's question this takes up (pins_list): marked investigating, "
+                                               "and a markdown cell with each mark's note followed by its log view"},
           "engine_type": _S}, run_study_create, required=("name",), writes=True, ops=("study_create",)),
     Tool("cell_append", "Add a cell",
          "Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; "
@@ -856,10 +881,13 @@ TOOLS: list[Tool] = [
     Tool("study_finish", "Finish a notebook",
          "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
          "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
-         "resolves its inbox candidate and notes the finding in the Journal (the one Journal entry Claude may "
-         "write). Reports the flights the cells read and the inbox's open candidates. Example: {\"study_id\": "
-         "\"…\", \"summary\": \"…\", \"resolution\": \"watch\", \"journal\": true}.",
+         "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
+         "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
+         "Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: "
+         "{\"study_id\": \"…\", \"summary\": \"…\", \"question\": \"q-1a2b3c4d\", \"resolution\": \"watch\", "
+         "\"journal\": true}.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
+          "question": {**_S, "description": "The owner's question this answers (pins_list); it and its marks take the resolution"},
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
           "note": _S, "journal": {"type": "boolean"}, "finding": _S}, run_study_finish,
          required=("study_id", "summary"), writes=True, ops=("study_finish",)),
@@ -874,6 +902,21 @@ TOOLS: list[Tool] = [
                                          "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
           "study_id": _S, "note": _S}, run_inbox_resolve, required=("candidate_id", "status"), writes=True,
          ops=("inbox_resolve",)),
+    Tool("pins_list", "The owner's questions",
+         "The owner's questions and marks (Mark for Claude on the Flight view): each question with its status, "
+         "notebook and marks — flight, window (start_s, end_s and the local time), the channels shown, the owner's "
+         "note — and the unassigned marks. A mark is where to look and a sentence, not a finding. newest_open names "
+         "the question to take up when the owner asks without saying which. Example: {\"status\": [\"new\", "
+         "\"investigating\"]}.",
+         {"status": {"anyOf": [_S, _STRS]}}, run_pins_list, ops=("pins_list",)),
+    Tool("question_resolve", "Resolve a question",
+         "Set one of the owner's questions' status — investigating, nothing-here, watch, acted (or new) — with its "
+         "notebook and a note; its marks take the resolution. study_finish with question does this as it ends a "
+         "notebook. Example: {\"question_id\": \"q-1a2b3c4d\", \"status\": \"watch\", \"study_id\": \"st-…\"}.",
+         {"question_id": _S, "status": {"type": "string",
+                                        "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
+          "study_id": _S, "note": _S}, run_question_resolve, required=("question_id", "status"), writes=True,
+         ops=("question_resolve",)),
 ]
 
 # ── Session tools (D10): which workspace this conversation's tools see ──

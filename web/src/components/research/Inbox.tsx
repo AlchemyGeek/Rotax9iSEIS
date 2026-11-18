@@ -1,14 +1,17 @@
+import type React from "react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../../lib/engineClient";
 import { useCapabilities } from "../../lib/capabilities";
 import { DOCS_URL } from "../NavShell";
-import type { InboxCandidate, InboxListing, InboxStatus } from "../../types/contract";
+import type { InboxCandidate, InboxListing, InboxStatus, PinsListing } from "../../types/contract";
+import { Questions } from "./Questions";
 import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE, PRIMARY } from "./ui";
 
 const client = getEngineClient();
 
 const OPEN: InboxStatus[] = ["new", "investigating"];
+const SUBHEAD: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", color: "var(--text-tertiary)", marginTop: 4 };
 const STATUS_LABEL: Record<InboxStatus, string> = {
   new: "new", investigating: "investigating", "nothing-here": "nothing here", watch: "watching", acted: "acted on",
 };
@@ -30,7 +33,8 @@ function sliceWindow(sliceId: string): { flight: string; window: string } | null
   return m ? { flight: m[1], window: `${Math.floor(Number(m[2]))}-${Math.ceil(Number(m[3]))}` } : null;
 }
 
-// Spec 16 §6 (D5, D8) — the inbox on Research home, both tiers: what the
+// Spec 16 §6 (D5, D8, D16) — the inbox on Research home, both tiers: the
+// owner's questions and their marks (Questions), then what the
 // detectors raised over the recent flights (candidates, their evidence, the
 // sensitivity they fired at, their status). The pilot can mark it (nothing
 // here / watch / acted, with a note) and open the notebook an investigation
@@ -42,6 +46,7 @@ export function Inbox() {
   const caps = useCapabilities();
   const bench = caps?.features.bench === true;
   const [listing, setListing] = useState<InboxListing | null>(null);
+  const [pins, setPins] = useState<PinsListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
 
@@ -52,7 +57,14 @@ export function Inbox() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
-  useEffect(() => { void load(); }, []);
+  async function loadPins() {
+    try {
+      setPins(await client.pinsList());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+  useEffect(() => { void loadPins(); void load(); }, []);
 
   async function mark(c: InboxCandidate, status: InboxStatus, note: string | null) {
     setError(null);
@@ -65,13 +77,14 @@ export function Inbox() {
   }
 
   const cands = listing?.candidates ?? [];
+  const newestOpen = pins?.questions.find((q) => q.id === pins.newest_open) ?? null;
   const open = cands.filter((c) => OPEN.includes(c.status) || c.status === "watch");
   const resolved = cands.filter((c) => !open.includes(c));
 
   return (
     <section style={PANEL} data-testid="inbox">
       <div style={{ ...PANEL_TITLE, display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span>Inbox {listing && <span style={MUTED}>({open.length})</span>}</span>
+        <span>Inbox</span>
         {listing?.last_scan && (
           <span style={{ ...MUTED, fontWeight: 400 }} data-testid="inbox-scan">
             looked at {listing.last_scan.flights} flights on {new Date(listing.last_scan.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · {listing.last_scan.sensitivity} sensitivity
@@ -79,6 +92,16 @@ export function Inbox() {
           </span>
         )}
       </div>
+      {/* Spec 16 D16: the owner's questions first, beside what the scan raised. */}
+      <div style={SUBHEAD}>Your questions {pins && <span style={MUTED}>({pins.questions.filter((q) => OPEN.includes(q.status) || q.status === "watch").length})</span>}</div>
+      {pins && <Questions listing={pins} onChanged={loadPins} onError={setError} />}
+      {caps && !bench && pins && newestOpen && (
+        <div style={{ ...NOTICE, marginTop: 6, marginBottom: 6 }} data-testid="questions-handoff">
+          “{newestOpen.title}” is waiting for Claude. Install EIS for Claude Desktop on your computer, then choose <em>Investigate</em> in a new chat — with no text it takes this question and opens a notebook with your marks.{" "}
+          <a href={`${DOCS_URL}walkthroughs/install-extension/`} target="_blank" rel="noopener noreferrer" style={LINK}>How to install</a>
+        </div>
+      )}
+      <div style={{ ...SUBHEAD, marginTop: 12 }}>Raised by EIS {listing && <span style={MUTED}>({open.length})</span>}</div>
       {!listing && !error && <div style={MUTED}>Looking across the recent flights…</div>}
       {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
       {listing && open.length === 0 && (

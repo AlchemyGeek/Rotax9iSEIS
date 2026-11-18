@@ -78,6 +78,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("studies/*.json", "carried", "A study stored the old way, converted to a notebook on first load (Spec 16 D15)"),
     ("inbox.json", "carried", "Research inbox: candidates and their resolutions (Spec 16 §6)"),
     ("inbox_cache.json", "derived", "The inbox scan's descriptor cache (Spec 16 §6); recomputed"),
+    ("pins.json", "carried", "The owner's questions and their pins, Mark for Claude (Spec 16 D16); flights by fingerprint"),
     # Spec 16 D10: the aircraft record is the registry's; the export writes
     # its fields as aircraft.json (no documents_dirs, no notes). A
     # workspace-level aircraft.json is Session D's, migrated on open.
@@ -465,6 +466,9 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     for d in documents:
         if d["class"] == "carried" and d["path"] not in ("settings.json", "exclusions.json"):
             docs[d["path"]] = (ws_dir / d["path"]).read_bytes() if _is_raw(d["path"]) else _read_json(ws_dir / d["path"])
+    if isinstance(docs.get("pins.json"), dict):   # Spec 16 D16: flights by fingerprint (S5)
+        from .investigations import pins as _pins
+        docs["pins.json"] = _pins.for_export(docs["pins.json"], ws_dir)
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
     admission, dropped = await _admission_by_key_async(ws_dir, sources)

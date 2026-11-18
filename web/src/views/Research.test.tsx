@@ -30,7 +30,7 @@ vi.mock("../lib/engineClient", async () => {
     getFleet: async () => ({ shift_history: [] }),
     listStudies: async () => { rec("list_studies", null); return { studies: state.studies }; },
     inboxList: async () => ({ candidates: [], scan: null, sensitivity: "normal" }),
-    pinsList: async () => ({ questions: [], pins: [] }),
+    pinsList: async () => ({ questions: [], unassigned: [], counts: {}, pins: 0, newest_open: null }),
     loadStudy: async (id: string) => {
       if (id !== nbFixture.study_id) throw new actual.EngineRpcError("NOT_FOUND", `no study ${id}`);
       return nbFixture;

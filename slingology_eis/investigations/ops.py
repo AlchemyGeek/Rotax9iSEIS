@@ -27,6 +27,7 @@ from .. import aircraft as AC
 from . import bench as B
 from . import documents as DOC
 from . import inbox as IB
+from . import pins as PN
 from . import ipynb as NBX
 
 
@@ -96,6 +97,38 @@ def op_study_create(params: dict, ctx: dict) -> Any:
                        study_id=NBX.meta(nb)["id"], note=None)
         except IB.InboxError as e:
             raise _err(e)
+    qid = params.get("question_id")
+    if qid:
+        # D16: the owner's question — linked, taken up (investigating), and a
+        # log view per pin, each after a markdown cell holding the owner's note.
+        try:
+            doc = PN.load(ctx["workspace_dir"])
+            q = PN.question(doc, qid)
+            pins = PN.pins_of(doc, qid)
+        except PN.PinsError as e:
+            raise _err(e)
+        m = NBX.meta(nb)
+        m["question_id"] = qid
+        if not params.get("question"):
+            m["question"] = q["title"]
+        nb = _save_nb(ctx, nb)
+        for p in pins:
+            note = p.get("note") or "*(no note)*"
+            when = _pin_when(ctx, p)
+            nb["cells"].append(NBX.markdown_cell(NBX.next_id(nb), f"**The owner's mark** — {when}\n\n> {note}",
+                                                 role="pin"))
+            src = logview_source({"flight": p["flight"], "start_s": p["start_s"], "end_s": p["end_s"],
+                                  "channels": p.get("channels") or ["rpm", "map_inhg"], "title": note[:80]})
+            if H._FEATURES[ctx.get("host", "server")].get("bench", False) and B.available():
+                _append_code(ctx, nb, src)
+            else:   # the website: the cell waits for a bench to run it
+                nb["cells"].append(NBX.code_cell(NBX.next_id(nb), src))
+                _save_nb(ctx, nb)
+        try:
+            PN.resolve(ctx["workspace_dir"], qid, "investigating", study_id=m["id"])
+        except PN.PinsError as e:
+            raise _err(e)
+        nb = notebook(ctx, m["id"])
     return NBX.read_view(_save_nb(ctx, nb))
 
 
@@ -169,8 +202,34 @@ def _guide_workspace(ctx: dict) -> tuple[str, dict]:
     text = (f"**{entry.name if entry else wid}** (`{wid}`), engine {entry.engine_model if entry else ''}: "
             f"{n} flights, {span} (local dates). Inbox: {len(open_)} open candidate"
             f"{'' if len(open_) == 1 else 's'} ({sum(1 for c in open_ if c['status'] == 'new')} new).\n")
-    return text, {"workspace_id": wid, "flights": n, "first": min(dates) if dates else None,
-                  "last": max(dates) if dates else None, "inbox_open": len(open_)}
+    q_text, qs = _guide_questions(ctx)
+    return text + q_text, {"workspace_id": wid, "flights": n, "first": min(dates) if dates else None,
+                           "last": max(dates) if dates else None, "inbox_open": len(open_),
+                           "questions_open": len(qs["open"]), "pins_unassigned": qs["unassigned"]}
+
+
+def _guide_questions(ctx: dict) -> tuple[str, dict]:
+    """D16: the owner's open questions, each with its pin count and the
+    newest pin's note, and how many marks are loose — what *Investigate*
+    with no text takes up (the first listed is the newest)."""
+    doc = PN.load(ctx["workspace_dir"])
+    open_ = [q for q in PN.listing(doc, list(IB.OPEN))["questions"]]
+    newest = PN.newest_open(doc)
+    if newest:
+        open_.sort(key=lambda q: q["id"] != newest["id"])
+    loose = len(PN.pins_of(doc, None))
+    if not open_ and not loose:
+        return "\nThe owner's questions: none open, no marks.\n", {"open": [], "unassigned": 0}
+    lines = ["", "The owner's open questions (marked on the Flight view; `pins_list` gives the windows; "
+                 "`study_create question_id` opens a notebook with a log view per mark):", ""]
+    for q in open_:
+        lines.append(f"- `{q['id']}` **{q['title']}** — {q['status']}, {q['pin_count']} mark"
+                     f"{'' if q['pin_count'] == 1 else 's'}"
+                     + (f"; newest note: \"{q['newest_note']}\"" if q.get("newest_note") else "")
+                     + (" *(newest)*" if newest and q["id"] == newest["id"] else ""))
+    if loose:
+        lines.append(f"- {loose} unassigned mark{'' if loose == 1 else 's'} (no question)")
+    return "\n".join(lines) + "\n", {"open": [q["id"] for q in open_], "unassigned": loose}
 
 
 def op_guide(params: dict, ctx: dict) -> Any:
@@ -421,6 +480,17 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
                 resolved = IB.resolve(ctx["workspace_dir"], cand, status, study_id=m["id"], note=params.get("note"))
             except IB.InboxError as e:
                 raise _err(e)
+    question = None
+    qid = params.get("question") or m.get("question_id")
+    if qid:
+        # D16: the question answered takes the study's resolution, and so
+        # do its pins; with none given it is *watch* (the owner decides more).
+        m["question_id"] = qid
+        try:
+            question = PN.resolve(ctx["workspace_dir"], qid, params.get("resolution") or "watch",
+                                  study_id=m["id"], note=params.get("note"))
+        except PN.PinsError as e:
+            raise _err(e)
     _save_nb(ctx, nb)
     entry = None
     if params.get("journal"):
@@ -430,7 +500,7 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
             where={"study_id": m["id"], "test_index": None, "study_name": m.get("name")}, note=params.get("note"))
     open_ = [c for c in IB.load(ctx["workspace_dir"])["candidates"] if c.get("status") in IB.OPEN]
     flights = NBX.flights_of(nb)
-    return {"study": NBX.summary(nb), "inbox_candidate": resolved, "journal_entry": entry,
+    return {"study": NBX.summary(nb), "inbox_candidate": resolved, "question": question, "journal_entry": entry,
             "flights": len(flights), "flight_ids": flights,
             "inbox": {"open": len(open_), "new": sum(1 for c in open_ if c.get("status") == "new"),
                       "unresolved_here": bool(cand) and not params.get("resolution")}}
@@ -631,6 +701,117 @@ def op_inbox_resolve(params: dict, ctx: dict) -> Any:
         raise _err(e)
 
 
+# ── The owner's questions and pins (D16, §6) ───────────────────────────────
+
+def _pin_when(ctx: dict, p: dict) -> str:
+    """'2026-10-24 "First flight", 2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight); rpm, map_inhg'."""
+    d = _describe_pin(ctx)(p)
+    head = (d["date"] or str(p.get("flight"))) + (f" \u201c{d['flight_name']}\u201d" if d["flight_name"] else "")
+    from .. import flight_ident as fi
+    when = d["when"] or fi.window_label(None, p["start_s"], p["end_s"])
+    return f"{head}, {when}" + (f"; {', '.join(p['channels'])}" if p.get("channels") else "")
+
+
+def _describe_pin(ctx: dict):
+    from .. import flight_ident as fi
+    names = fi.load_names(ctx["workspace_dir"])
+    present = set(ws.list_flight_ids(ctx["workspace_dir"]))
+
+    def describe(p: dict) -> dict:
+        fid = p.get("flight")
+        here = fid in present
+        ident = fi.load(ctx["workspace_dir"], fid) if here else None
+        fa = ws.load_flight_analysis(ctx["workspace_dir"], fid) if here else None
+        return {"flight_here": here,
+                "date": (ident or {}).get("local_date") or ((fa.header or {}).get("date") if fa else None),
+                "flight_name": (names.get(fid) or {}).get("name") if here else None,
+                "when": fi.window_label(ident, p["start_s"], p["end_s"]) if here else None,
+                "route": "–".join((ident or {}).get("route") or []) or None}
+    return describe
+
+
+def _pins_call(fn):
+    try:
+        return fn()
+    except PN.PinsError as e:
+        raise _err(e)
+
+
+def op_flight_pin(params: dict, ctx: dict) -> Any:
+    """D16 *Mark for Claude*: a pin — flight, window, the channels shown, a
+    note — under a question (`question`: an id, {"title": …} for a new one,
+    or null for unassigned). Stores where to look and a sentence, never
+    analysis. Returns the pin, its question and where it went."""
+    H._require_active(ctx)
+    fid = params.get("flight_id")
+    if not fid or fid not in set(ws.list_flight_ids(ctx["workspace_dir"])):
+        raise H.RpcError("NOT_FOUND", f"no flight {fid} in this workspace")
+    question = params.get("question")
+    if question is None and params.get("question_id"):
+        question = params["question_id"]
+    if question is None and params.get("question_title"):
+        question = {"title": params["question_title"]}
+    pin, q = _pins_call(lambda: PN.pin(ctx["workspace_dir"], fid, params.get("start_s"), params.get("end_s"),
+                                       channels=params.get("channels"), note=params.get("note"), question=question))
+    pin = {**pin, **_describe_pin(ctx)(pin)}
+    n = len(PN.pins_of(PN.load(ctx["workspace_dir"]), q["id"])) if q else None
+    where = (f"under \u201c{q['title']}\u201d ({n} mark{'' if n == 1 else 's'}) in Research \u2192 Inbox"
+             if q else "in Research \u2192 Inbox, under Unassigned")
+    return {"pin": pin, "question": q, "where": where}
+
+
+def op_pins_list(params: dict, ctx: dict) -> Any:
+    """D16: the owner's questions (optionally of some statuses), each with
+    its pins (flight, window, channels, note, and the flight's date, name
+    and local window), and the unassigned pins. `newest_open` names the
+    question *Investigate* takes when asked with no text."""
+    H._require_active(ctx)
+    doc = PN.load(ctx["workspace_dir"])
+    st = params.get("status")
+    out = _pins_call(lambda: PN.listing(doc, [st] if isinstance(st, str) else st, describe=_describe_pin(ctx)))
+    newest = PN.newest_open(doc)
+    out["newest_open"] = newest["id"] if newest else None
+    return out
+
+
+def op_question_resolve(params: dict, ctx: dict) -> Any:
+    """D16: a question's status (new, investigating, nothing-here, watch,
+    acted), its notebook and a note; its pins take the resolution."""
+    H._require_active(ctx)
+    return {"question": _pins_call(lambda: PN.resolve(ctx["workspace_dir"], params.get("question_id"),
+                                                      params.get("status"), study_id=params.get("study_id"),
+                                                      note=params.get("note")))}
+
+
+def op_pin_edit(params: dict, ctx: dict) -> Any:
+    """A pin's note, channels, window, or question (`question`: an id,
+    {"title": …} for a new one, or null to leave it unassigned); only the
+    keys given change."""
+    H._require_active(ctx)
+    changes = {k: params[k] for k in ("note", "channels", "start_s", "end_s", "question") if k in params}
+    pin, q = _pins_call(lambda: PN.edit_pin(ctx["workspace_dir"], params.get("pin_id"), **changes))
+    return {"pin": pin, "question": q}
+
+
+def op_pin_delete(params: dict, ctx: dict) -> Any:
+    H._require_active(ctx)
+    return {"deleted": _pins_call(lambda: PN.delete_pin(ctx["workspace_dir"], params.get("pin_id")))["id"]}
+
+
+def op_question_edit(params: dict, ctx: dict) -> Any:
+    H._require_active(ctx)
+    return {"question": _pins_call(lambda: PN.edit_question(ctx["workspace_dir"], params.get("question_id"),
+                                                            title=params.get("title"), note=params.get("note")))}
+
+
+def op_question_delete(params: dict, ctx: dict) -> Any:
+    """The question goes; its pins stay, unassigned."""
+    H._require_active(ctx)
+    q, n = _pins_call(lambda: PN.delete_question(ctx["workspace_dir"], params.get("question_id")))
+    return {"deleted": q["id"], "pins_unassigned": n}
+
+
 OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
-       "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve")
+       "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
+       "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete")
 

@@ -26,8 +26,8 @@ from tests.unit.test_research_ops import FULL_POWER, FP_START, _import, _ok
 from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noqa: F401 — fixture
 
 WRITING = {"code_run", "study_create", "cell_append", "study_rerun", "study_accept", "study_discard", "study_finish",
-           "inbox_resolve", "workspace_use"}
-TOOL_COUNT = 31
+           "inbox_resolve", "question_resolve", "workspace_use"}
+TOOL_COUNT = 33
 
 
 @pytest.fixture
@@ -101,6 +101,7 @@ def _read_cases(ids, sid):
         ("studies_list", {}, None),
         ("study_read", {"study_id": sid}, T.shape_study),
         ("inbox_list", {}, None),
+        ("pins_list", {}, None),
     ]
 
 
@@ -207,6 +208,22 @@ def test_writing_tools(ws):
         assert fin["inbox_candidate"]["status"] == "watch"
         res, _ = _tool(server, "inbox_resolve", {"candidate_id": cand[0]["id"], "status": "nothing-here"})
         assert res["candidate"]["status"] == "nothing-here"
+
+    # D16: the owner's marks reach Claude — study_create with the question opens with them, and
+    # study_finish naming it resolves it and its pins; question_resolve sets it directly.
+    q = _ok(rpc(h, "flight_pin", {"flight_id": ids[0], "start_s": FP_START, "end_s": FP_START + 40,
+                                  "channels": ["rpm"], "note": "rpm wanders", "question": {"title": "rough climbs"}}))["question"]
+    listed, seen = _tool(server, "pins_list", {"status": "new"})
+    assert seen == [("pins_list", {"status": "new"})] and listed["newest_open"] == q["id"]
+    made, seen = _tool(server, "study_create", {"name": "Rough climbs", "question_id": q["id"]})
+    assert seen == [("study_create", {"name": "Rough climbs", "author": "claude", "question_id": q["id"]})]
+    assert made["question_id"] == q["id"] and made["question"] == "rough climbs"
+    assert [c["kind"] for c in made["cells"]] == ["markdown", "code"] and "> rpm wanders" in made["cells"][0]["source"]
+    fin, _ = _tool(server, "study_finish", {"study_id": made["study_id"], "summary": "It wanders.", "question": q["id"]})
+    assert fin["question"]["status"] == "watch" and fin["question"]["study_id"] == made["study_id"]
+    res, seen = _tool(server, "question_resolve", {"question_id": q["id"], "status": "acted", "note": "prop balanced"})
+    assert seen == [("question_resolve", {"question_id": q["id"], "status": "acted", "note": "prop balanced"})]
+    assert res["question"]["status"] == "acted"
 
 
 def test_annotations_mark_writing_tools():

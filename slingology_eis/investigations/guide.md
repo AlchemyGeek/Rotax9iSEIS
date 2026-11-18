@@ -130,6 +130,9 @@ caveats and the per-slice rows. In a notebook each returns a `Result`: `print(r)
   "pages": 2}` (at most 3 pages). Notebook: `eis.document("om.pdf").find("boost")`, `.page(45)`.
 - `trends_summary`, `fleet_metrics` — what Trends shows; `journal_list` — what the owner noted.
 - `inbox_list` — what the detectors raised since the last look; `inbox_resolve` sets a candidate's status.
+- `pins_list` — the owner's questions and marks: on the Flight view the owner selects a window and marks it
+  *for Claude* with a note, under a question (§6 of this guide lists the open ones). A mark is where to look
+  and one sentence — what the owner saw, not a finding. `question_resolve` sets a question's status.
 
 ## 3. The notebook
 
@@ -138,7 +141,9 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
 - `study_create` — `{"name": "Takeoff rpm cycling", "question": "Is there an oscillation at takeoff?"}`. It
   begins with the **setup cell** (`from slingology_eis import eis; eis.open("<workspace id>")`) — leave it
   first and unchanged: it does nothing on the bench and binds `eis` when the owner runs the notebook in
-  JupyterLab — then a cell holding the question. Pass `inbox_candidate` when the notebook answers an inbox item.
+  JupyterLab — then a cell holding the question. Pass `inbox_candidate` when the notebook answers an inbox item,
+  and `question_id` when it takes up one of the owner's questions: the notebook then opens with each mark — the
+  owner's note, then a log view of its window — so start from what the owner saw and work outward.
 - `cell_append` — `{"kind": "markdown", "source": "…"}` for what you saw and what it means; `{"kind": "code",
   "source": "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r)"}` runs at once and keeps its output; `{"kind":
   "logview", "flight": "…", "start_s": 360, "end_s": 420, "channels": ["rpm", "map_inhg"], "marks": [[367,
@@ -155,7 +160,8 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
     refuses otherwise and names the cell);
   - the mechanism as a hypothesis, the alternatives ruled out (each with its cell);
   - a summary: what was found, what it means, what to do — no verdict words without their references.
-  With `resolution` it resolves the inbox candidate; with `journal: true` it notes the finding in the
-  owner's Journal (the one entry you may write there).
+  With `resolution` it resolves the inbox candidate; with `question` the owner's question it answers (and its
+  marks; `resolution` defaults to watch); with `journal: true` it notes the finding in the owner's Journal
+  (the one entry you may write there).
 
 Write the finding in the notebook as you go; the conversation is not where the owner will look for it later.

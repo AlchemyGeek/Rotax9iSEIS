@@ -1820,3 +1820,52 @@ export interface InboxListing {
   counts: Record<InboxStatus, number>;
   last_scan: { at: string; sensitivity: string; flights: number; parameters: Record<string, unknown>; [k: string]: unknown } | null;
 }
+
+// Spec 16 D16 — Mark for Claude: the owner's questions and their pins.
+// A pin is where to look and a sentence; it stores no analysis.
+export interface Pin {
+  id: string;
+  question_id: string | null;
+  flight: string;              // a flight_id; "src:<key>" while an imported flight isn't here yet
+  start_s: number;
+  end_s: number;
+  channels: string[];
+  note: string | null;
+  created: string;
+  status?: InboxStatus;        // the question's resolution, once resolved
+  study_id?: string | null;
+  // added by pins_list / flight_pin: the flight's labels
+  flight_here?: boolean;
+  date?: string | null;
+  flight_name?: string | null;
+  when?: string | null;
+  route?: string | null;
+}
+
+export interface OwnerQuestion {
+  id: string;
+  title: string;
+  status: InboxStatus;
+  study_id: string | null;
+  note: string | null;
+  created: string;
+  updated: string;
+  resolved_at: string | null;
+}
+
+export interface OwnerQuestionWithPins extends OwnerQuestion {
+  pins: Pin[];
+  pin_count: number;
+  newest_note: string | null;
+}
+
+export interface PinsListing {
+  questions: OwnerQuestionWithPins[];
+  unassigned: Pin[];
+  counts: Record<InboxStatus, number>;
+  pins: number;
+  newest_open: string | null;
+}
+
+/** A pin's question: an id, a new one by title, or none (unassigned). */
+export type PinQuestionTarget = string | { title: string } | null;
