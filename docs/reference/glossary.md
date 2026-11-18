@@ -4,8 +4,6 @@
 
 **Analysis line** — The first line of every topic card: this flight's number, your usual, and the Operators Manual limit. Always present; never a judgement.
 
-**Anchor** — The moment every slice in an aligned view is drawn from: the rule's crossing (default), slice start or end, a channel's peak, or a phase boundary.
-
 **Blip** — An engine-computer alert shorter than three seconds. Counted, never an event.
 
 **Breach** — An event that a filter on that limit does not cover. Shown as an ordinary event, marked *beyond your filter*.
@@ -48,7 +46,9 @@
 
 **Flight** — A log the app has admitted: airborne for at least ten minutes, without a long gap, not a duplicate.
 
-**Hand slice** — A slice marked by hand: one flight and a window, usually the chart's zoom via *Research this window*.
+**Hand slice** — A slice of one flight and a window, named directly rather than cut by a rule — usually one of your marks.
+
+**Inbox** — The panel on Research home holding your questions with their marks, and the patterns EIS's own scan raised across recent flights, each with a status.
 
 **Insight** — A short statement on a topic card that something about this flight is worth your attention. Appears only when a trigger fires.
 
@@ -62,9 +62,13 @@
 
 **Log** — A file your Garmin avionics wrote during one power-up: a G3X log, its Garmin Pilot export, an AXIS card log or an aircraft log.
 
+**Mark** — A window of one flight, the channels shown and a sentence of what you saw, saved for Claude with *Mark for Claude* under one of your questions (or *Unassigned*). It holds no measurement.
+
 **Merge gap** — In a slice rule, the longest dip in the conditions that does not split a slice in two.
 
 **n_min** — How many other flights the reference needs before a comparison is made. Default 10.
+
+**Notebook** — An investigation as a Jupyter `.ipynb`: the question, Claude's narrative, code with its outputs, figures, tables and log views. Listed on the Research page; re-runs on your flights with EIS on your computer.
 
 **OAT band** — One of four outside-air-temperature conditions (cold, mild, warm, hot) within which thermal metrics are compared.
 
@@ -78,6 +82,8 @@
 
 **Preset** — A slice rule the app ships, measured against real logs: full-power segment, governed climb, stable cruise, idle, warm-up. Copy and edit freely.
 
+**Question (yours)** — A title that gathers your marks, listed in the inbox with a status (*new*, *investigating*, *nothing here*, *watching*, *acted on*). *Investigate* with no text takes the newest open one.
+
 **Read-only study** — An imported study none of whose flights are in the workspace. Shows the sender's results under a clear label; *Run this on my flights* makes a study of yours from it.
 
 **Recent window** — The newest flights Trends compares against the reference: at least the last 10 engine hours, at least 5 flights, at most 15.
@@ -88,7 +94,7 @@
 
 **Reference** — What the app has learned from your own flights about what each metric usually is on this engine: average and spread, by condition where it matters. Also *your usual*.
 
-**Research** — The app's third question: within a flight, does each signal behave as it should, and on every flight? Slices, four questions, studies.
+**Research** — The app's third question: within a flight, does each signal behave as it should, and on every flight? You look and mark in EIS, ask Claude, and read the notebook; Claude investigates, EIS measures.
 
 **Rolling** — A reference that includes every earlier contributing flight and grows as you fly. The default.
 
@@ -116,9 +122,9 @@
 
 **Storage** — Where the app keeps your workspaces when it runs in your browser: the browser's private storage for the site, on this device. Shown under *Settings → App*. Logs are never kept there.
 
-**Strip** — In Signal view, a band under a channel coloured second by second: the **swing** strip shows how far the channel moved within a short sliding window, and the **period** strip shows how often it repeated, coloured only where a repeat stands out. A strip's value is what a slice of that window would carry.
+**Strip** — With **Signal** on in the Flight view, a band under a channel shaded along the flight: the **swing** strip shows how far the channel moves within a short sliding window, and the repeat strip lights where a period stands out.
 
-**Study** — A saved Research session: selection, slice rules and hand slices, questions and settings, references, notes, and cached measurements. Lives in the workspace; travels as a `.eisstudy`.
+**Study** — A notebook: an investigation saved in the workspace, with its question, narrative, code and outputs. Travels as a `.zip` or an `.ipynb`; see *Notebook*.
 
 **Swing** — Bottom-to-top of a channel within a short window, as a median over the slice; the size of a cycle.
 
@@ -132,7 +138,7 @@
 
 **Unverified / not yet validated** — The topic runs on this engine model but no data from such an aircraft has yet confirmed it behaves sensibly.
 
-**Window (Signal view)** — The seconds of one flight that Signal view's numbers and diagnostics describe, set by dragging across the chart or a strip, or by the chart's zoom through *Research this window*. *Make this a rule* turns it into a slice rule.
+**Window (Signal)** — The seconds of one flight the chart is zoomed to; with Signal on, its numbers appear beside their references, and *Mark for Claude* marks it.
 
 **Workspace** — The app's view of one aircraft: its log folders plus everything derived and every decision made. Lives in the browser it was made in (or, when the app runs as a program, in its data folder); moves by export and import.
 

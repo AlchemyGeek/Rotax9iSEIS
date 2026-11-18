@@ -36,7 +36,7 @@ What the measurement changed, and why some flights have several slices:
 
 ## Windows the questions use with these presets
 
-The questions size their measurement windows from the data (see [Research questions and parameters](research-questions.md)). On the full-power set they resolve to the floors — a 12-second swing window and a ±10-second lag search; on the stable-cruise set, whose slices are long and have no dominant period, to 142 seconds and ±71 seconds.
+The questions size their measurement windows from the data (see [What EIS measures](what-eis-measures.md)). On the full-power set they resolve to the floors — a 12-second swing window and a ±10-second lag search; on the stable-cruise set, whose slices are long and have no dominant period, to 142 seconds and ±71 seconds.
 
 ## Changing a preset
 

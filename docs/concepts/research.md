@@ -1,7 +1,7 @@
 # Research: the third question
 
 <div class="in-brief" markdown>
-**In brief.** The app asks three questions of your engine. *Did a value cross an Operators Manual line?* — that is **Limits and events**. *Has a value been drifting over the months?* — that is **Trends**. **Research** asks the third: *within a flight, does each signal behave the way it should — and does it do so on every flight?* Research is an **instrument**: pieces of flights, measurements, four plain questions, and studies that keep the evidence. You can work the instrument by hand on this website. With the Claude Desktop extension, your own Claude works it for you — you ask about a flight in words, and the investigation appears in EIS as a notebook. Either way Research never tells you something is wrong; it shows what the data does and leaves the judgement to you.
+**In brief.** The app asks three questions of your engine. *Did a value cross an Operators Manual line?* — that is **Limits and events**. *Has a value been drifting over the months?* — that is **Trends**. **Research** asks the third: *within a flight, does each signal behave the way it should — and does it do so on every flight?* It works one way: **Claude investigates; EIS measures.** You **look** at a flight in EIS with *Signal* on, **mark** what looks odd for Claude, **ask** in Claude Desktop, and **read** the notebook Claude writes back into EIS. EIS never tells you something is wrong; it measures, and keeps the evidence.
 </div>
 
 ## Three questions, three blind spots
@@ -15,53 +15,40 @@ Each question sees what the other two cannot.
 
 - A **limit** is a line. A signal that stays under it is invisible to the limit checker, however oddly it moves.
 - A **trend** compares your engine with its own past. A behaviour your engine has had since the first flight is, to Trends, normal.
-- **Research** looks at the *shape* of a signal within a flight — steady or cycling, leading or lagging, like the others or not — and asks the same of every flight you have.
+- **Research** looks at the *shape* of a signal within a flight — steady or swinging, leading or lagging, like the other flights or not — and asks the same of every flight you have.
 
-The case that made this page necessary: one aircraft's rpm cycled up and down by about 180 rpm every four seconds on nearly every takeoff, for 145 engine hours. It stayed inside every limit, so no event fired. It never changed, so no trend moved. A test pilot, an instructor and the owner all flew behind it without noticing; it was felt once, in calm air, and found by asking Claude to line up every full-power segment of every flight, look at them together, read the engine's manual, and test what it found. That loop — look, measure, read, hypothesise, eliminate, write up — is what Research is for. The app is the instrument the loop uses; the investigator is you, or your Claude.
+The case that made this page necessary: one aircraft's rpm cycled up and down by about 180 rpm every four seconds on nearly every takeoff, for 145 engine hours. It stayed inside every limit, so no event fired. It never changed, so no trend moved. It was felt once, in calm air, and found by asking Claude to line up every full-power segment of every flight, read the engine's manual, and test what it found. That loop — look, measure, read, hypothesise, eliminate, write up — is what Research is for. Claude does the loop; EIS is the instrument it uses and the record it keeps.
 
-## Two ways to use it
+## Look, mark, ask, read
 
-**By hand, on this website.** Choose a preset, see the slices lined up, ask one of the four questions, read the result, save the study. No install, nothing leaves your browser. The pages below describe the instrument.
+<figure class="diagram">
+--8<-- "diagrams/research-investigation-loop.svg"
+<figcaption>You look and mark in EIS; you ask in Claude Desktop; Claude works through EIS and writes the notebook.</figcaption>
+</figure>
 
-**With Claude, through the Desktop extension.** Install the EIS extension in Claude Desktop — one step, and it also runs the EIS pages on your computer. Then ask Claude about your engine in words. Claude works the same instrument through its tools, writes code against your logs where no tool fits, reads the manuals you give it, and writes the investigation into EIS as a **notebook** — narrative, code, figures, tables — that you can reopen, re-run and share. An **inbox** on the Research page collects patterns that recur across your recent flights, found by the app without any AI, for Claude to look into when you ask or on a schedule you set. See [Investigations](research-investigations.md).
+1. **Look.** Open a flight and turn on **Signal** under its chart. Under each channel a strip shows how far it swings, second by second, and where it repeats. Zoom to a stretch and its numbers appear beside their Operators Manual references: the swing, the period, how the other channels move with it.
+2. **Mark.** Something looks odd? With the chart zoomed to it, **Mark for Claude**: a sentence of what you see, and the question it belongs to — a new one with a title, one you already have, or none for now. A mark keeps where to look and your note; nothing is measured. Your questions and their marks gather in the **inbox** on the Research page ([Mark something for Claude](../walkthroughs/mark-for-claude.md)).
+3. **Ask.** In Claude Desktop, choose the **Investigate** prompt. With no text it takes your newest open question and starts from your marks; or ask in your own words. Claude finds the flights, measures across them, reads your manuals and notes, and steers by what you say ([Investigations](research-investigations.md)).
+4. **Read.** The notebook appears on the Research page as Claude writes it: the question, what was seen on one flight, what was measured across the flights with its numbers and references, the hypothesis and the alternatives ruled out, and what it means for you. Keep it, re-run it next season, export it, share it ([Notebooks you keep and share](research-studies.md)).
 
-## What the instrument is made of
+Asking needs the EIS extension in Claude Desktop, on your computer. On the website you can look, mark and read; your questions wait in the inbox, and the page says how to hand them to Claude.
 
-Six ideas, each with its own page. Research works at three levels: one flight (**Signal**), every flight (**Compare**), and the set as a whole (**Questions**).
+## What EIS measures
 
-| Idea | In one line | Page |
-|---|---|---|
-| **Slice** | A piece of one flight — all takeoffs, all climbs, or one window you mark — and the unit everything else works on | [Slices: pieces of flights](research-slices.md) |
-| **Aligned view** | Many slices on one time axis, lined up at the moment that matters, so your eye can compare them | [Seeing slices together](research-aligned-view.md) |
-| **Signal view** | One flight with a swing strip and a period strip under each channel: where it swings and repeats, a window's numbers, and *Make this a rule* | [Signal view: one flight, looked at closely](research-signal.md) |
-| **Compare** | The same measurement on every flight, one row per slice grouped by flight, a pinned reference row, and a chart against conditions | [Compare: the same moment on every flight](research-compare.md) |
-| **Question** | One of four things you can ask of a set of slices, phrased as you would ask it | [Is it steady, or cycling?](research-cycling.md) · [Do these move together?](research-together.md) · [Are these two groups different?](research-groups.md) · [Which slices are unusual?](research-unusual.md) |
-| **Study** | Your selection, slices, questions, references and notes, saved and shareable | [Studies: saving and sharing](research-studies.md) |
+Claude chooses what to measure; the numbers are EIS's. The instrument cuts flights into **slices** — every takeoff, every climb, the window you marked — measures each one (level, spread, swing, period, how channels move together), and answers four kinds of question with a count and a reference beside every number: *is it steady?*, *do these move together?*, *are these groups different?*, *which flights stand out?* Claude uses those when the question is one of them, and writes its own code against your logs when it is not. [What EIS measures](../reference/what-eis-measures.md) is the fine print.
 
-Every answer comes in the same shape — [Reading a result](research-results.md) — and every answer has somewhere to go afterwards — [From a finding to action](research-action.md). Studies, hand-made or Claude-made, are [notebooks you keep and share](research-studies.md).
+## The inbox
 
-<!-- screenshot: research-home.png — the Research page: presets with their questions, saved studies with their first finding -->
+You don't have to notice something to start. When the Research page opens after new flights, EIS runs its own scan — no AI — over the recent flights and keeps only patterns that hold across many of them. Those wait in the inbox beside your own questions, with the same statuses: *new*, *investigating*, *nothing here*, *watching*, *acted on*.
 
 ## What Research does not do
 
-It brings no rules of its own. The only numbers the app contributes to a result are Operators Manual values already in your engine profile; everything else is measured from your own flights or typed in by you, with its source. It declares nothing *abnormal*, *faulty* or *detected*. It changes nothing elsewhere in the app until you take a finding somewhere — into the Journal, into an evidence package, or to another owner.
+It brings no rules of its own. The only numbers the app contributes are Operators Manual values already in your engine profile; everything else is measured from your own flights or named with its source. It declares nothing *abnormal*, *faulty* or *detected*. It changes nothing elsewhere in the app until you take a finding somewhere — into the Journal, or to the person who can act on it ([From a finding to action](research-action.md)).
 
-That restraint is deliberate. A repeating shape in a signal may be a problem, a characteristic of the installation, or nothing. Research gives you the evidence to ask the right person; it does not pretend to be that person.
-
-## Getting there
-
-From **Research** in the top bar, or from the thing that made you wonder:
-
-- *Research this window* on a flight's chart — the study opens in Signal view on that flight, with the window you were zoomed into;
-- *Research this* on a Trends card that shows a change — a study split into before and after;
-- *Research this* on a row of the Events table — the event's window, across every flight with that limit.
-
-## What to do with this
-
-If something felt odd on a flight and you have the Desktop extension, ask Claude about it — that is the whole method. On the website, [Reproducing a takeoff investigation](../walkthroughs/research-takeoff.md) shows the instrument worked by hand on the real case.
+A repeating shape in a signal may be a problem, a characteristic of the installation, or nothing. Research gives you the evidence to ask the right person; it does not pretend to be that person.
 
 ## How it works
 
-Research runs on the same engine as the rest of the app and reads your logs again to cut slices — the normal analysis keeps only per-flight results — so the first build of a study over a whole workspace takes some seconds, with progress shown; a saved study keeps its measurements and reopens at once. Everything the page does is an operation that the command line can run and that Claude can call as a tool: the website and the investigator use one instrument.
+Everything Research does is an operation of the EIS engine, the same on the website and on your computer; Claude reaches the same operations as tools through the extension, so a number in a notebook is the number the page would show. Cutting slices reads the logs again — the normal analysis keeps only per-flight results — so a first measurement over a whole workspace takes some seconds.
 
-The instrument is [Spec 06 — Research](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/06-research.md); investigations are [Spec 16 — Investigations](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/16-investigations.md). The case that shaped both is the owner's [takeoff RPM/MAP oscillation investigation](../research/2026-10-takeoff-rpm-oscillation.md).
+The instrument is [Spec 06 — Research](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/06-research.md); investigations, marks and the inbox are [Spec 16 — Investigations](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/16-investigations.md). The case that shaped both is the owner's [takeoff RPM/MAP oscillation investigation](../research/2026-10-takeoff-rpm-oscillation.md).

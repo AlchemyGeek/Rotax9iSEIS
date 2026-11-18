@@ -20,7 +20,7 @@ eis.open("ws_2b59350ca5ac")
 | `eis.flights()` | one row per flight, oldest first: local date and start time with the zone, route, takeoffs and landings, the pilot's name, engine hours, source, flight facts |
 | `eis.find("the Oct 24 flight with three landings")` | the flights a description in words names, best first, with what matched (`limit=10`) |
 | `eis.load(flight, channels=None, start_s=None, end_s=None)` | one flight's channels, 1 Hz, seconds from the log's start |
-| `eis.signal(flight, start_s=None, end_s=None, channels=None)` | the Signal view's analysis of one flight or window: descriptors, numbers with Operators Manual references, diagnostics |
+| `eis.signal(flight, start_s=None, end_s=None, channels=None)` | what *Signal* shows on the Flight view, for one flight or window: descriptors, numbers with Operators Manual references, diagnostics |
 
 ## Slices
 
@@ -32,9 +32,9 @@ A **rule** is a preset id (`"full_power"`, `"governed_climb"`, `"stable_cruise"`
 | `eis.samples(rule, channels=None, flights=None, anchor="crossing")` | the slices' 1 Hz samples aligned at an anchor (`crossing`, `start`, `end`, `peak:CHANNEL`) |
 | `eis.compare(rule, channels=None, flights=None, pinned=None, collapse=False)` | one row per slice, grouped by flight, with deltas to a pinned row |
 
-## The four questions
+## The four tests
 
-Each returns a **Result** — the same answer the Research page shows ([Research questions](research-questions.md)):
+Each returns a **Result** — the same answer as the matching tool ([What EIS measures](what-eis-measures.md)):
 
 | Call | Asks |
 |---|---|

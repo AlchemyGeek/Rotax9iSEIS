@@ -6,8 +6,9 @@
 Builds a throwaway data root from synthetic flights only (the test suite's
 generator: a climb, cruise and a minute of full power with rpm and manifold
 pressure cycling together) — no real log, tail number, airport or time — then:
-an aircraft record with notes, an inbox scan, a short notebook written
-through the MCP tools as Claude would write it, and a flight name. It starts
+an aircraft record with notes, an inbox scan, the owner's marks under two
+questions (Spec 16 D16), a short notebook written through the MCP tools as
+Claude would write it — taking up one of the questions — and a flight name. It starts
 `slingology-eis serve` on a free port against that root and shoots the pages
 in the installed Chrome (Playwright). The data root is deleted afterwards.
 
@@ -83,8 +84,15 @@ class Demo:
         self.rpc("flight_set_name", {"flight_id": ids[6], "name": "After the prop balance"})
         inbox = self.tool("inbox_list", {})
         cand = next((c["id"] for c in inbox["candidates"] if c["kind"] == "recurring"), None)
-        st = self.tool("study_create", {"name": "Full-power rpm cycle", "question":
-                                        "Does rpm cycle at full power, on every flight, and does manifold pressure move with it?",
+        # The owner's marks: two full-power windows under one question, one under another.
+        m1 = self.rpc("flight_pin", {"flight_id": ids[0], "start_s": 110, "end_s": 190, "channels": ["rpm", "map_inhg"],
+                                     "note": "rpm and MAP swing together at full power", "question": {"title": "rpm swing at full power"}})
+        qid = m1["question"]["id"]
+        self.rpc("flight_pin", {"flight_id": ids[2], "start_s": 110, "end_s": 190, "channels": ["rpm", "map_inhg"],
+                                "note": "the same, a little less", "question": qid})
+        self.rpc("flight_pin", {"flight_id": ids[7], "start_s": 200, "end_s": 300, "channels": ["oil_temp_f"],
+                                "note": "oil looks warm after the climb", "question": {"title": "oil warmer in cruise?"}})
+        st = self.tool("study_create", {"name": "Full-power rpm cycle", "question_id": qid,
                                         **({"inbox_candidate": cand} if cand else {})})
         sid = st["study_id"]
         self.tool("cell_append", {"study_id": sid, "kind": "markdown", "source":
@@ -100,10 +108,10 @@ class Demo:
                                    "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step; the swing is 180 rpm on 8 and 60 rpm on 2. "
                                    "A hypothesis to test next: the governor and the boost control acting on each other.",
                                    **({"inbox_candidate": cand, "resolution": "investigating"} if cand else {})})
-        return {"ids": ids, "study_id": sid}
+        return {"ids": ids, "study_id": sid, "question_id": qid}
 
 
-def shoot(url: str, out: Path, study_id: str, headed: bool) -> list[str]:
+def shoot(url: str, out: Path, study_id: str, headed: bool, flight: str = "") -> list[str]:
     from playwright.sync_api import sync_playwright
     shots = []
     with sync_playwright() as p:
@@ -120,7 +128,24 @@ def shoot(url: str, out: Path, study_id: str, headed: bool) -> list[str]:
             (locator or page).screenshot(path=str(target))
             shots.append(name)
 
+        # Spec 16 D15–D16: Signal on a flight, a window's numbers, and Mark for Claude.
+        page.set_viewport_size({"width": 1100, "height": 1400})   # the timeline with the read-out is tall
+        go(f"/flights/{flight}?window=124-176&channels=rpm,map_inhg", "signal-toggle")   # inside the full-power minute
+        time.sleep(10)   # the second channel's series arrives late on a fresh server
+        page.get_by_test_id("signal-toggle").click()
+        page.get_by_test_id("signal-window").wait_for(timeout=120000)
+        time.sleep(2)
+        save("flight-signal.png", page.locator("#timeline"))
+        page.get_by_test_id("mark-open").click()
+        page.get_by_test_id("mark-dialog").wait_for(timeout=30000)
+        page.get_by_label("Note").fill("rpm wanders by about 100 at full power, MAP with it")
+        page.get_by_label("Open question", exact=True).select_option(label="rpm swing at full power (2 marks)")
+        time.sleep(0.5)
+        save("mark-for-claude.png", page.get_by_test_id("mark-for-claude"))
+        page.set_viewport_size({"width": 1100, "height": 820})
+
         go("/research", "inbox")
+        page.get_by_test_id("question").first.wait_for(timeout=60000)
         save("investigations-inbox.png", page.get_by_test_id("inbox"))
         page.get_by_test_id("inbox-candidate").first.get_by_test_id("inbox-evidence-toggle").click()
         time.sleep(0.5)
@@ -166,7 +191,7 @@ def main() -> int:
             except OSError:
                 time.sleep(0.5)
         made = demo.build()
-        shots = shoot(f"http://127.0.0.1:{port}/", Path(args.out), made["study_id"], args.headed)
+        shots = shoot(f"http://127.0.0.1:{port}/", Path(args.out), made["study_id"], args.headed, made["ids"][0])
         print("\n".join(shots))
     finally:
         server.terminate()

@@ -1,56 +1,52 @@
-# Studies: notebooks you keep and share
+# Notebooks you keep and share
 
 <div class="in-brief" markdown>
-**In brief.** A **study** is a notebook: the question, the flights and slices it looked at, the questions asked and their results, figures and tables, your notes — and, when Claude did the work, the code it ran and what it wrote. Studies are saved in the workspace and listed on the Research page with their first finding. A study refers to flights by their fingerprint, never by file, so it travels: export it as a `.eisstudy`, and another owner imports it and runs *your* investigation on *their* flights. Opened without any of its flights, it shows the sender's results read-only — clearly labelled as theirs — with one button: **Run this on my flights**.
+**In brief.** Every investigation is a **notebook**: the question, Claude's narrative, the code it ran against your logs with each output, figures, tables, and log views of the windows that matter — with your marks at the top when it took up one of your questions. Notebooks are saved in the workspace and listed on the Research page with who wrote them and their finding. A notebook refers to flights by their fingerprint, never by file, so it travels: export it, and another owner imports it, reads your investigation, and with EIS on their computer runs it on *their* flights.
 </div>
 
-## What a study holds
+## What a notebook holds
 
-Definitions and record, not data. A study stores:
+- the **question** and, when it was one of yours, your **marks** — each note, then a log view of its window;
+- Claude's **markdown**: what it saw, what it measured and why, the hypothesis, the alternatives ruled out, what it means and what to do;
+- **code cells** with their outputs — numbers, tables, figures — so you can read what was done and disagree with it;
+- **log views** — the Flight view's chart for a window, with *Open flight*;
+- files Claude wrote (a CSV, a figure) beside the notebook;
+- a header: who wrote it, its status, the engine version, and whether its outputs are current for this workspace.
 
-- the **selection** — all flights, or chosen ones, and any split (by source, altitude band, temperature band, date);
-- the **slice rules** (a preset or your edit of one), phase slices, and **hand slices** (a flight and a window);
-- the **questions** asked, each with its channels and settings;
-- your **references** — label, channel, value, source;
-- your **notes**;
-- when Claude investigated: its narrative, the **code cells** it ran against your logs and their outputs, the figures and tables it made — so you can read what it did, re-run it, and disagree with it;
-- and, for speed, each slice's measurements, so the study reopens instantly.
+It does not hold your logs. A log view draws its window from the flight in your workspace; where that flight is absent, it shows the picture saved with the notebook.
 
-It does not store the logs or the second-by-second samples. The aligned view reads the slices' flights again when you open it; everything else is already there.
+<figure class="diagram">
+--8<-- "diagrams/research-notebook.svg"
+<figcaption>A notebook on the Research page: header and summary, then narrative, code folded away, outputs and log views.</figcaption>
+</figure>
 
-<!-- diagram: research-notebook.svg — a notebook study: narrative, code, figure, table cells; made by hand or by Claude; saved, exported, imported read-only, run on my flights -->
+It is an ordinary Jupyter `.ipynb`: it opens in JupyterLab or VS Code, and runs there against your workspace ([Run a notebook in JupyterLab](../walkthroughs/notebook-jupyterlab.md)).
 
-## Saving
+## Keeping
 
-**Save** on the study page writes it into the active workspace. The Research page lists studies by name with their first finding and date; open, rename, delete there. Studies are part of the workspace, so a workspace export carries them along with your decisions.
+Notebooks live in the workspace and travel with a workspace export. On the Research page, **Re-run** (with EIS on your computer) runs every code cell again on your current flights; outputs that changed wait for you to **Accept** or **Discard**, cell by cell or all at once. That is the cheap way to ask the same question next season. **Delete…** removes a notebook and its files.
 
-<!-- screenshot: research-home-studies.png — the Research page listing saved studies with their first findings -->
+## Sharing
 
-## Sharing a study
+Two exports, on the notebook's page:
 
-**Export** writes a `.eisstudy` file: the study, its cached measurements, the per-slice table as CSV and a chart image. It is small, and it names flights only by fingerprint — a code derived from each log, meaningless to anyone who does not hold the same log.
+- **Export notebook (.zip)** — the notebook and its files. Flights are named by fingerprint — a code derived from each log, meaningless to anyone who does not hold the same log.
+- **Export as a page (.html)** — one self-contained page anyone can open in a browser, with no EIS at all: the narrative, outputs, figures and log-view pictures. The one to send a mechanic or a manufacturer.
 
-Someone who receives it chooses **Import a study** on their Research page. The app matches the study's flights against their workspace:
+Someone who receives the `.zip` (or a bare `.ipynb`) chooses **Import a notebook…** on their Research page. EIS matches its flights against their workspace: cells whose flights are here are live; cells whose flights are absent show the sender's outputs, read-only, and say so.
 
-- **Some flights match** (you shared your logs with them too): the study opens as a normal study over those flights; the ones they lack are listed and simply contribute no slices.
-- **None match** (the usual case between two owners): the study opens **read-only**.
+## *Run this on my flights*
 
-## Read-only studies and *Run this on my flights*
+An imported notebook has one more button: **Run this on my flights.** It copies the notebook as a new one in your workspace — *… — my flights* — and, with EIS on your computer, runs every code cell against your own flights and keeps the outputs. Now the same measurements are about your engine, beside the sender's.
 
-A read-only study shows everything the sender saw — findings, charts, tables — under a label that cannot be missed: **Sender's results — none of these flights are in this workspace.** Every control is visible but disabled, so the page reads the same as the sender's; nothing in it is about your engine.
-
-One button is live: **Run this on my flights.** It creates a new study in your workspace with the sender's rules, questions, references and settings, over your own flights, and runs it. Now the same finding sentence is about your engine, and the two can be set side by side.
-
-<!-- screenshot: research-read-only.png — an imported study with the read-only label and the single enabled action -->
-
-This is how a finding spreads without anyone's logs moving: *here is the rule that found the oscillation on my aircraft — run it on yours.* The receiving owner's data never leaves their machine, and the sender's never had to.
+This is how a finding spreads without anyone's logs moving: *here is the notebook that found the oscillation on my aircraft — run it on yours.* The receiving owner's data never leaves their machine, and the sender's never had to.
 
 ## What to do with this
 
-Save a study the moment it says something, even something dull; the measurements are cheap to keep and the comparison next season is free. Before sending one, open it yourself from a fresh workspace to see what the recipient sees. When you receive one, run it on your flights before reading the sender's conclusions too closely.
+Keep a notebook even when it says something dull; re-running it next season is free. Before sending one, export it as a page and read it as the recipient will. When you receive one, run it on your flights before reading the sender's conclusions too closely.
 
 ## How it works
 
-Studies live as documents in the workspace's `studies/` folder and are carried by workspace export like every other decision. The cache of measurements is keyed to each flight's fingerprint and the engine version; if either changes, the affected entries are recomputed, never trusted. Import always creates a new study; a read-only study re-exports the sender's file unchanged. *Run this on my flights* copies the definitions and nothing else.
+Notebooks live in the workspace's `studies/<id>/` folder (`notebook.ipynb` and `files/`) and are carried by workspace export. Their EIS metadata — author, status, question, summary, the inbox item or question it answered — sits in the notebook's own metadata ([The notebook format](../reference/notebook-format.md)). Import always creates a new notebook. Notebooks made before Research became notebook-only open as notebooks, converted on first load.
 
-Spec 06 §10 defines studies, their file and the read-only state.
+[Spec 16 — Investigations](https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/16-investigations.md) §5 defines the notebook, its export and import.

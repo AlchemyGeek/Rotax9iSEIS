@@ -49,4 +49,4 @@ Open it from Research.
 
 If the investigation came from the inbox, the candidate now shows **Open the investigation**; mark it *Watch*, *Acted* (say what was done) or *Nothing here*.
 
-The same case worked by hand is [Reproducing a takeoff investigation](research-takeoff.md).
+The original case, from a look at one flight to the notebook, is [Reproducing a takeoff investigation](research-takeoff.md).

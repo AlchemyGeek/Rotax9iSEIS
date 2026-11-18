@@ -1,105 +1,57 @@
 # Reproducing a takeoff investigation
 
-*Twenty minutes. This repeats, inside the app, the investigation that found a 180-rpm, four-second cycle on nearly every takeoff of one aircraft — a behaviour that lived inside every limit and never changed, so neither the Flight view nor Trends could have shown it. Any workspace with a season of flights will do; the numbers below are the original aircraft's (60 flights, April to October), and the sample workspace reproduces them exactly. The original write-up is [here](../research/2026-10-takeoff-rpm-oscillation.md).*
+*Twenty minutes. This repeats, with EIS and Claude, the investigation that found a 180-rpm, four-second cycle on nearly every takeoff of one aircraft — a behaviour that lived inside every limit and never changed, so neither the Flight view's events nor Trends could have shown it. Any workspace with a season of flights will do; the numbers below are the original aircraft's (60 flights, April to October). The original write-up is [here](../research/2026-10-takeoff-rpm-oscillation.md). You need the [extension installed](install-extension.md) for steps 4–6.*
 
 ## What you will do
 
-Cut every takeoff out of every flight, line them up, and ask four questions: is rpm steady, does manifold pressure move with it, does it depend on altitude, and which takeoffs are unlike the rest. Then take the finding somewhere.
+Look at one flight with Signal on, mark the takeoffs that look odd, ask Claude with *Investigate*, and read the notebook it writes.
 
-## 1. Open Research
+## 1. Look at the flight it was felt on
 
-**Research** in the top bar. If this is your first visit the page shows the five presets, each with the question it was made for, and nothing else.
+Open the three-takeoff AXIS flight of 2026-10-24 (§2.3 of the [write-up](../research/2026-10-takeoff-rpm-oscillation.md)) — **Flights**, or *Find a flight* with *Oct 24 three landings*. Choose rpm and manifold pressure on the chart, and press **Signal** under it.
 
-<!-- screenshot: wt-takeoff-01-home.png — the Research page before any study exists -->
+The swing strip under rpm brightens over the three full-power segments and stays dim through taxi and cruise; the repeat strip lights over the same three stretches, and the line above it reads a period of three to four seconds. Something repeats at takeoff power, and only there.
 
-## 2. Start from the full-power preset
+## 2. Read one takeoff's numbers
 
-Under *Start from a preset*, choose **Full-power segment** — *rpm at or above 5,550 for at least 15 seconds, gaps under 3 s bridged*. A new study opens over all your flights with that rule in place, and the slice count fills in while the logs are read, with a progress bar:
+Drag across the first takeoff. Under the chart: rpm swings about 170 rpm peak to peak, beside the Operators Manual's takeoff-rpm line it approaches; it repeats every three to four seconds; and manifold pressure moves with it, correlation high at zero lag. Two signals in step is a mechanism, not a wobble — but this is one takeoff on one flight.
 
-> 98 slices from 59 of 60 flights (84 G3X, 14 AXIS)
+## 3. Mark it — and the others
 
-Why 98 from 60? Touch-and-go sessions: one flight contributed nine takeoffs. The one flight without a slice never reached full power.
+Press **Mark for Claude…**, write *rpm and MAP swing together at full power*, choose **A new question** and call it *takeoff rpm oscillation*. **Mark**.
 
-<!-- screenshot: wt-takeoff-02-slices.png — the study page with the rule, the slice count and the slice list -->
+Zoom to the second and third takeoffs and mark each under the same question (it is offered first). If you remember another flight where it felt the same, mark that too. **Research** shows the question in the inbox with its marks ([Mark something for Claude](mark-for-claude.md)).
 
-## 3. Look before you ask
+## 4. Ask
 
-Start with one flight. Open **Signal** at the top of the study and choose the flight the pilot first felt it on: the three-takeoff AXIS flight of 2026-10-24 in the [write-up](../research/2026-10-takeoff-rpm-oscillation.md) (§2.3). Rpm and manifold pressure stack with the phases shaded. Under each, the **swing** and **period** strips light up over the three full-power segments and stay dark through taxi and cruise. The period strip is coloured only where a repeat stands out, and over the takeoffs it reads three to four seconds.
+In Claude Desktop, open a new chat, choose **Investigate** from **+**, and send it with no text. Claude takes *takeoff rpm oscillation*, opens a notebook with your three marks — your note, then a log view of each takeoff — and starts from what you saw. In the chat you will see it:
 
-Drag across the first takeoff. The window's numbers give a swing of about 170 rpm, shown beside the Operators Manual's rpm limit as headroom. Manifold pressure moves in step with rpm: the correlation at zero lag is high, and the best lag is zero. The diagnostics show the autocorrelation peaking at the period, and the periodogram agrees. **Make this a rule** proposes rpm held within the band that takeoff covered, for at least half as long. Use it, and the rule finds the same three segments on this flight.
+- read your aircraft notes and find the flight;
+- cut every full-power segment of every flight — on the original aircraft, 98 slices from 59 of 60 flights (touch-and-go sessions give several each);
+- ask whether rpm cycles across them — *in 93 of 98 slices, every 3.8 s, swing 180 rpm*;
+- ask whether manifold pressure and fuel flow move with it — MAP in step, fuel flow a second behind;
+- read the boost schedule in your Operators Manual, and the governor's band in the controller manual if it is in your documents folders;
+- test the hypothesis against density altitude — the swing fades at high density altitude, where the boost control has reached its ceiling.
 
-<!-- screenshot: wt-takeoff-03a-signal.png — Signal view on the 2026-10-24 flight, strips lit over three takeoffs, the first takeoff windowed -->
+Each of those is a cell in the notebook, with its output.
 
-Now the set. Under **Compare**, the full-power preset already gives one row per takeoff, grouped by flight. Pin the 2026-10-24 first takeoff, and every other row shows its difference from it. The ones that swing least sit at high density altitude, which step 8 measures.
+## 5. Steer
 
-<!-- screenshot: wt-takeoff-03b-compare.png — Compare rows with the 2026-10-24 takeoff pinned, swing against density altitude -->
+Ask what you would ask a colleague. *"Is it the same on G3X and AXIS logs?"* — Claude will say the G3X damps manifold pressure, so the coupling shows weaker there. *"Which takeoffs don't cycle?"* — the two clean ones were high-altitude departures. *"What does the controller manual say about its governing band?"*
 
-Switch Compare to its **Aligned view** tab. The aligned view draws every slice from the moment rpm passed 5,550 — *Align on: crossing* — so takeoffs coincide whatever the ground roll before them. With 98 slices it shows small multiples; set **Channels** to rpm and manifold pressure and move the cursor. In nearly every panel the two traces rise and fall together, about every four seconds. You have seen the finding; the questions put numbers on it.
+## 6. Read the notebook
 
-<!-- screenshot: wt-takeoff-03-aligned.png — small multiples of the full-power set, rpm and MAP stacked -->
+On the Research page the notebook opens with the question and Claude's summary: what was found, with counts and references; the mechanism, stated as a hypothesis; the alternatives ruled out, each with the cell that did it; and what to do. Your question in the inbox now reads *watching*, with *Open the investigation*.
 
-## 4. Is rpm steady?
-
-The preset study already carries **Is this signal steady, or is it cycling?** on RPM. Press **Run**.
-
-> RPM cycles every 3.8 s (IQR 3.6–3.9), swing 180 rpm (170–190), in 93 of 98 slices (AXIS 13 of 14, G3X 80 of 84).
-
-Read the count first: 93 of 98 is a characteristic, not an incident. Below the sentence: every slice's swing by log source; the magnitude beside the Operators Manual's rpm limit, drawn on the chart; and the caveats, including the window the app chose (12 s — the floor for once-a-second logs) and the reminder that a repeating shape is not a judgement.
-
-<!-- screenshot: wt-takeoff-04-cycling.png — the cycling result in its five parts -->
-
-## 5. Open the table
-
-*Show the per-slice table*: all 98 slices with duration, density altitude, OAT, engine hours, phases, source, swing, period and prominence. Sort by swing. **Download CSV** keeps it — this table is what the propeller manufacturer worked from.
-
-## 6. Add a reference
-
-In **Your references**, add one — label *Airmaster governing band*, channel RPM, kind band, value 100, source *AP3/4/5 Operator's Manual V5-1A*. **Save**, then **Run** again. The magnitude now also reads against ±100 rpm, and a 180-rpm swing beside a ±100-rpm band is a comparison you can make yourself. The app brought the Operators Manual line; you brought the 100.
-
-## 7. Who leads?
-
-**Add a question** → **Do these two move together, and who leads?** — channel RPM, compare with manifold pressure. Add fuel flow as a second comparison. **Run**.
-
-> Manifold pressure follows RPM with no delay (median correlation 0.93 on AXIS slices, 0.2 on G3X slices); fuel flow follows 1 s behind.
-
-The split by source is the recorder, not the engine: the caveat explains that the G3X damps its manifold-pressure channel. The lockstep points at a loop between the engine's boost control and the propeller governor, and the one-second fuel-flow lag says fuel is following, not leading — which rules out the engine computer's speed limiter.
-
-<!-- screenshot: wt-takeoff-05-together.png — the move-together result with the per-source split -->
-
-## 8. Does it depend on altitude?
-
-In the selection, set **Split by** → *DA band* with **Band edges** `3500, 6000`. **Add a question** → **Are these two groups different?** on the descriptor *rpm swing*. **Run**.
-
-> Swing is 180 rpm below 3,500 ft DA, 130 rpm at 3,500–6,000 ft and 75 rpm at 6,000 ft and above (92 / 4 / 2 slices — small groups).
-
-Two slices is a small group and the card says so. It was still the decisive clue: at high density altitude the boost control sits at its ceiling and has nothing left to feed back, and the cycle fades.
-
-<!-- screenshot: wt-takeoff-06-groups.png — the two-group result by DA band with the small-group caution -->
-
-## 9. Which takeoffs are unlike the rest?
-
-**Add a question** → **Which of these slices is unusual?** **Run**. The two slices listed as standing out on rpm swing are the two *clean* high-altitude takeoffs. On this aircraft the oscillation was the norm; *unusual* means different, not wrong. Click one to open it in the Flight view and see where it was flown.
-
-<!-- screenshot: wt-takeoff-07-unusual.png — the unusual-slice list with the two high-altitude takeoffs -->
-
-## 10. Save
-
-Give the study a name — *Takeoff rpm oscillation* — and **Save**. It appears on the Research page with its first finding, and reopens instantly.
-
-## 11. Take it somewhere
-
-- **Note this finding in the Journal** on the first question: a *Research finding* entry with the sentence and a link back.
-- **Evidence package**: findings, magnitudes, caveats and the per-slice tables in one file — what the manufacturer needed to recognise the behaviour from one email.
-- **Export .eisstudy**: the rule and the questions for another owner of the same engine. Imported without your flights it opens read-only with *Run this on my flights* — see [Sharing a study](research-sharing.md).
-
-<!-- screenshot: wt-takeoff-08-journal.png — the Research finding entry in the Journal -->
+- Ask Claude to note the finding in the Journal, so the date is kept.
+- **Export as a page (.html)** for the person who can act on it ([From a finding to action](../concepts/research-action.md)).
+- **Export notebook (.zip)** for another owner of the same engine ([Sharing a notebook](research-sharing.md)).
 
 ## What happened next
 
-The owner sent the plot and the table to the propeller controller's manufacturer, who recognised a known behaviour of that controller with this engine and offered a firmware update. The same study will be the before/after test: once the update is flown, set **Split by** → *date* at the update and ask the groups question on rpm swing again — see [Are these two groups different?](../concepts/research-groups.md). A walkthrough for that comparison follows once the update has been flown.
+The owner sent the plot and the per-takeoff table to the propeller controller's manufacturer, who recognised a known behaviour of that controller with this engine and offered a firmware update. Once the update is flown, the **Before / after** prompt with its date compares the takeoffs on each side.
 
 ## Where to go next
 
-- [Research: the third question](../concepts/research.md) — why neither Limits nor Trends could see this.
-- [Reading a result](../concepts/research-results.md) — the five parts, and why there is no verdict.
-- [From a finding to action](../concepts/research-action.md) — writing to a manufacturer.
+- [Investigations](../concepts/research-investigations.md) — what Claude does, and what stays true.
+- [What EIS measures](../reference/what-eis-measures.md) — the slices and tests behind the numbers.

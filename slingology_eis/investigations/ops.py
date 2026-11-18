@@ -704,12 +704,14 @@ def op_inbox_resolve(params: dict, ctx: dict) -> Any:
 # ── The owner's questions and pins (D16, §6) ───────────────────────────────
 
 def _pin_when(ctx: dict, p: dict) -> str:
-    """'2026-10-24 "First flight", 2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight); rpm, map_inhg'."""
+    """'“First flight” 2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight) · `rpm`, `map_inhg`' —
+    the date once (the window label carries it), the channels as the ids code uses."""
     d = _describe_pin(ctx)(p)
-    head = (d["date"] or str(p.get("flight"))) + (f" \u201c{d['flight_name']}\u201d" if d["flight_name"] else "")
     from .. import flight_ident as fi
-    when = d["when"] or fi.window_label(None, p["start_s"], p["end_s"])
-    return f"{head}, {when}" + (f"; {', '.join(p['channels'])}" if p.get("channels") else "")
+    name = f"\u201c{d['flight_name']}\u201d " if d["flight_name"] else ""
+    when = d["when"] or f"{d['date'] or p.get('flight')}, {fi.window_label(None, p['start_s'], p['end_s'])}"
+    chans = ", ".join(f"`{c}`" for c in p.get("channels") or [])
+    return f"{name}{when}" + (f" \u00b7 {chans}" if chans else "")
 
 
 def _describe_pin(ctx: dict):
