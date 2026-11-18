@@ -1,6 +1,6 @@
 # SlingologyEIS — Backlog
 
-Last updated: November 16, 2026 (P9 — website → extension hand-off; owner's ask)
+Last updated: November 18, 2026 (P9 withdrawn into Spec 16 D17, Session G; owner's ask)
 Toolkit version: 1.0.2 · Research paper: Edition 0.4 (draft for review)
 
 Open work, organised by the spec or area that owns it. Everything completed is in
@@ -61,18 +61,6 @@ and imports it. Needs the zip served from the Pages site beside the app (no cros
 until then the docs link to the release asset and the pilot imports it by hand.
 
 ---
-
-### P9. Moving a website workspace into the extension
-**Type:** code · **Owner:** Spec 16 §2.1 ("a smoother hand-off is a later concern"), Spec 02 §7
-A user who has worked on the website and then installs the Claude Desktop extension starts with
-an empty data root; the website's workspace stays in browser storage under the website's origin,
-which the pages at 127.0.0.1:8420 cannot read. Today the hand-off is export on the website, import
-in the extension's pages, link the log folder, Sync — and nothing says so. Two steps:
-(a) **signpost** — the extension's first-workspace flow and the install walkthrough say *been using
-the website? export there, import here*, linking both (owner's decision, Nov 16 2026: do this
-first); (b) **one click** — the website detects the local server (a fetch to 127.0.0.1:8420) and
-offers *move your workspace to EIS on your computer*, exporting and importing in one step through
-the local server's import operation. (b) waits for the first user who needs it.
 
 ## 2. Screens, workflows and program direction
 
