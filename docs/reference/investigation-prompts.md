@@ -30,9 +30,11 @@ Investigate a question about the engine in a notebook, following the EIS method.
     3. Start a notebook with `study_create`: for one of my questions pass its `question_id`, and the notebook opens
        with my marks — my note, then a log view of the window — so start from what I saw; otherwise the
        question as I asked it.
-    4. Look at one flight first (a log view of the window, `signal_analyze`), then across all my flights with a
-       slice rule and the questions (`eis.cycling`, `eis.coupling`, `eis.groups`, `eis.unusual`), each as a
-       notebook cell whose output states the number.
+    4. Look at one flight first (a log view of the window, `eis.load`), then across all my flights with a slice
+       rule, measuring what the question is about — the guide's table says which instrument fits (a test only
+       when the question is about steadiness, coupling, a difference or an outlier; otherwise load, slice, plot
+       and look). Each measurement is a notebook cell whose output states the number; a test used for another
+       reason says why beside it.
     5. Read what my manuals say about it (`documents_list`, `document_read`) and cite the pages.
     6. State the mechanism as a hypothesis, name the alternatives you ruled out with the cells that did it, and
        finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
@@ -53,9 +55,10 @@ Investigate one candidate the EIS detectors raised and resolve it.
     1. Call `guide` first and follow its method.
     2. Read the candidate with `inbox_list`: its preset, measurement, the slices involved and the evidence.
     3. Start a notebook with `study_create`, passing `inbox_candidate: "{{candidate_id}}"`.
-    4. Look at one of its slices in one flight (a log view), then measure across the flights (the same preset,
-       the same measurement) and check the obvious alternatives: one log source only, one flight only, the 1 Hz
-       sampling floor, altitude or temperature.
+    4. Look at one of its slices in one flight (a log view), then measure across the flights what the candidate
+       raised (the same preset, the same measurement — the guide's table names its instrument) and check the
+       alternatives that fit it: one log source only, one flight only, the 1 Hz sampling floor for a period,
+       altitude or temperature.
     5. Finish with `study_finish`, resolving the candidate (`resolution`: nothing-here, watch or acted) with a
        one-line note saying why.
 
@@ -75,9 +78,10 @@ Compare the engine before and after a change (a date, or the change in words).
     2. If I gave the change in words, find its date in my notes (`aircraft_get`) or the Journal (`journal_list`);
        if you can't, ask me.
     3. Start a notebook with `study_create`.
-    4. For the conditions that matter (full power, governed climb, stable cruise), compare the slices before and
-       after with `groups` split by date — `eis.groups("full_power", "rpm.swing", by="date", date="…")` — and the
-       other measurements that could have changed (rpm period, MAP, fuel flow).
+    4. For the conditions the change could affect (full power, governed climb, stable cruise), compare the
+       slices before and after with `groups` split by date — `eis.groups("full_power", "rpm.swing", by="date",
+       date="…")` — for the measurements the change could have moved (for a propeller: rpm, its swing and period,
+       MAP, fuel flow; for an oil change: oil temperature and pressure). Say why each measurement was chosen.
     5. Say what changed and what did not, each with its numbers and the group sizes, and the caveats (fewer
        flights after, different seasons or sources). Finish with `study_finish`.
 
@@ -91,8 +95,9 @@ A short review of the flights since the last study finding, the inbox, and anyth
 
     1. Call `guide` first.
     2. Find the flights since my last study finding (`journal_list` shows the study findings; `flights_list` with
-       `date_from`), and read the inbox (`inbox_list`).
+       `date_from`), and read the inbox (`inbox_list`) and the questions I marked (`pins_list`).
     3. Start a short notebook with `study_create` ("Review of flights since …").
-    4. For each new flight: one line on where it went and anything that stands out (events, `unusual` slices,
-       Trends shifts). For each open inbox candidate: what it is, and whether it needs a closer look.
+    4. For each new flight: one line on where it went and anything that stands out (events, Trends shifts, and
+       `eis.unusual` — this review is about what stands out). For each open inbox candidate and each open
+       question of mine: what it is, and whether it needs a closer look (*Investigate* takes a question).
     5. Finish with `study_finish`: what stands out, what needs a closer look, what doesn't — briefly.

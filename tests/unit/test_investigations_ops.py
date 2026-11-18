@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 Spec 16 §4.3 Investigations operations, run the three ways every host
 operation is (Spec 04 §9.6): in process, over HTTP, and under Pyodide in
@@ -341,6 +342,33 @@ def test_guide(research_ws):
     g3 = _ok(rpc(h, "guide", {}))
     assert "engine_model_mismatch" in g3["flags"]
     assert "This workspace's profile is Rotax 915 iS; the aircraft record says Rotax 916 iS" in g3["document"]
+
+
+def test_spec16_20_the_tests_are_instruments_not_steps():
+    """Acceptance 20 (F16), the clause CI can hold: what Claude is told. The
+    guide's method names each test with the question it fits and says none
+    is a step; an oil-temperature question is worked with load/slice/plot
+    and groups, no cycling or coupling unless the notebook says why; and no
+    prompt lists the four tests as steps to take whatever the question.
+    (That a notebook from *Investigate* follows it is the owner's check in
+    Claude Desktop — the session report's checklist.)"""
+    import re
+    from slingology_eis.investigations import ops as O
+    guide = (Path(O.__file__).parent / "guide.md").read_text(encoding="utf-8")
+    method = guide[guide.index("## 1. The method"):guide.index("## 2. The tool map")]
+    for test, about in (("eis.cycling", "steady"), ("eis.coupling", "two channels moving together"),
+                        ("eis.groups", "a difference"), ("eis.unusual", "standing out")):
+        row = next(line for line in method.splitlines() if f"`{test}`" in line)
+        assert about in row, (test, row)
+    assert "None of these is a step every notebook takes" in method
+    assert "the cell beside it says\n   why" in method or "the cell beside it says why" in " ".join(method.split())
+    oil = " ".join(method[method.index("An oil-temperature question"):].split())
+    assert "no cycling or coupling unless the notebook says why" in oil and "eis.groups" in oil and "oil_temp_f" in oil
+    four = re.compile(r"eis\.cycling.{0,40}eis\.coupling.{0,40}eis\.groups.{0,40}eis\.unusual", re.S)
+    for pr in O.list_prompts():
+        assert not four.search(pr["text"]), f"{pr['name']} lists the four tests as steps"
+    inv = next(pr for pr in O.list_prompts() if pr["name"] == "investigate")["text"]
+    assert "a test only\n   when the question is about" in inv or "a test only when the question is about" in " ".join(inv.split())
 
 
 # ── aircraft and documents (§4.4) ─────────────────────────────────────────

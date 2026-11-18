@@ -13,8 +13,9 @@ Compare my engine before and after this change: {{change}}.
 2. If I gave the change in words, find its date in my notes (`aircraft_get`) or the Journal (`journal_list`);
    if you can't, ask me.
 3. Start a notebook with `study_create`.
-4. For the conditions that matter (full power, governed climb, stable cruise), compare the slices before and
-   after with `groups` split by date — `eis.groups("full_power", "rpm.swing", by="date", date="…")` — and the
-   other measurements that could have changed (rpm period, MAP, fuel flow).
+4. For the conditions the change could affect (full power, governed climb, stable cruise), compare the
+   slices before and after with `groups` split by date — `eis.groups("full_power", "rpm.swing", by="date",
+   date="…")` — for the measurements the change could have moved (for a propeller: rpm, its swing and period,
+   MAP, fuel flow; for an oil change: oil temperature and pressure). Say why each measurement was chosen.
 5. Say what changed and what did not, each with its numbers and the group sizes, and the caveats (fewer
    flights after, different seasons or sources). Finish with `study_finish`.

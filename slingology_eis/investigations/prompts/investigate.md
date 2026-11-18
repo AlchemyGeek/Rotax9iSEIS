@@ -23,9 +23,11 @@ it), take that one. Otherwise it is a new question in my words.
 3. Start a notebook with `study_create`: for one of my questions pass its `question_id`, and the notebook opens
    with my marks — my note, then a log view of the window — so start from what I saw; otherwise the
    question as I asked it.
-4. Look at one flight first (a log view of the window, `signal_analyze`), then across all my flights with a
-   slice rule and the questions (`eis.cycling`, `eis.coupling`, `eis.groups`, `eis.unusual`), each as a
-   notebook cell whose output states the number.
+4. Look at one flight first (a log view of the window, `eis.load`), then across all my flights with a slice
+   rule, measuring what the question is about — the guide's table says which instrument fits (a test only
+   when the question is about steadiness, coupling, a difference or an outlier; otherwise load, slice, plot
+   and look). Each measurement is a notebook cell whose output states the number; a test used for another
+   reason says why beside it.
 5. Read what my manuals say about it (`documents_list`, `document_read`) and cite the pages.
 6. State the mechanism as a hypothesis, name the alternatives you ruled out with the cells that did it, and
    finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
