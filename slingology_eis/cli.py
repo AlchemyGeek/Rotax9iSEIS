@@ -330,6 +330,9 @@ def _write_workspace(
         d = flights_dir / fa.flight_id
         d.mkdir(parents=True, exist_ok=True)
         (d / "analysis.json").write_text(_json_serialize.dumps(fa.to_dict(), indent=2))
+        if getattr(fa, "ident", None):        # Spec 16 §4.4: the facts computed with the analysis
+            from . import flight_ident as _fi
+            _fi.save(workspace_dir, fa, fa.ident)
         src = (source_paths or {}).get(fa.flight_id)
         if src is not None:
             dest = d / src.name
@@ -884,7 +887,337 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_mcp(args) -> int:
+    """Spec 16 §4: the MCP server over stdio; `tools` lists the surface,
+    `call TOOL JSON` runs one tool and prints its result (the CLI parity
+    of acceptance 8: the same façade, the same JSON)."""
+    from .investigations import mcp_server, mcp_tools
+    if args.mcp_action in (None, "serve"):
+        return mcp_server.main(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft or None,
+                               serve=args.serve, port=args.port, log_folders=args.log_folder, log_file=args.log_file)
+    if args.mcp_action == "tools":
+        if args.json:
+            print(json.dumps([t.definition() for t in mcp_tools.TOOLS], indent=2, ensure_ascii=False))
+        else:
+            for t in mcp_tools.TOOLS:
+                mark = " ✎" if t.writes else ""
+                print(f"  {t.name + mark:<18} {', '.join(t.ops):<22} {t.description.split('. ')[0]}")
+        return 0
+    if not args.tool:
+        raise CliUsageError("mcp call TOOL [JSON_ARGUMENTS]")
+    try:
+        tool_args = json.loads(args.arguments) if args.arguments else {}
+    except ValueError as e:
+        raise CliUsageError(f"arguments are a JSON object: {e}")
+    server = mcp_server.Server(workspace_arg=getattr(args, "workspace", None), aircraft_arg=args.aircraft)
+    out = server.call_tool(args.tool, tool_args)
+    if out.get("isError"):
+        print(out["content"][0]["text"], file=sys.stderr)
+        return 1
+    print(out["content"][0]["text"])   # the tool's text block, byte for byte
+    return 0
+
+
 # ── argument parsing ──────────────────────────────────────────────────────
+
+# ── research (Spec 06 §11): the same operations as the page ─────────────
+
+def _research_rule_arg(text: str):
+    """--rule: a preset id ("full_power"), "phase:CLIMB", a JSON file, or inline JSON."""
+    t = text.strip()
+    if t.startswith("{"):
+        return json.loads(t)
+    p = Path(t).expanduser()
+    if p.suffix.lower() == ".json" and p.is_file():
+        return json.loads(p.read_text())
+    return t
+
+
+def _research_hand_arg(text: str) -> dict:
+    """--hand FLIGHT:START:END[:LABEL]"""
+    parts = text.split(":", 3)
+    if len(parts) < 3:
+        raise CliUsageError(f"--hand is FLIGHT:START_S:END_S[:LABEL], got {text!r}")
+    h = {"flight": parts[0], "start_s": float(parts[1]), "end_s": float(parts[2])}
+    if len(parts) == 4:
+        h["label"] = parts[3]
+    return h
+
+
+def _research_kv(items: Optional[list]) -> dict:
+    out = {}
+    for it in items or []:
+        if "=" not in it:
+            raise CliUsageError(f"--param is KEY=VALUE, got {it!r}")
+        k, v = it.split("=", 1)
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            out[k] = v
+    return out
+
+
+def _research_context(args):
+    from . import host as _host
+    out_dir = Path(getattr(args, "out", None) or ".")
+
+    def deliver(path: Path, filename: str) -> str:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / filename
+        dest.write_bytes(Path(path).read_bytes())
+        return str(dest)
+
+    def progress(stream: str, update: dict) -> None:
+        if update.get("active") and update.get("total") and not getattr(args, "quiet", False):
+            print(f"\r  slicing {update.get('done', 0)}/{update['total']} flights", end="", file=sys.stderr)
+        elif not update.get("active") and not getattr(args, "quiet", False):
+            print("", file=sys.stderr, end="")
+
+    return _host, _host.new_context(log_sources=_DISK_SOURCES, host="server",
+                                    workspace_arg=getattr(args, "workspace", None),
+                                    emit_progress=progress, deliver_file=deliver)
+
+
+def _research_op(args, op: str, params: dict):
+    _host, ctx = _research_context(args)
+    reply = _host.reply({"op": op, "request_id": "cli", "params": params}, ctx)
+    if not getattr(args, "quiet", False):
+        print("", file=sys.stderr)
+    if not reply["ok"]:
+        raise CliOperationError(f"{reply['error']['code']}: {reply['error']['message']}")
+    return reply["result"]
+
+
+def _research_set_params(args) -> dict:
+    params: dict = {}
+    if getattr(args, "rule", None):
+        params["slice_rules"] = [_research_rule_arg(r) for r in args.rule]
+    if getattr(args, "hand", None):
+        params["hand_slices"] = [_research_hand_arg(h) for h in args.hand]
+    if getattr(args, "flight", None):
+        params["selection"] = {"mode": "flights", "flights": list(args.flight)}
+    if getattr(args, "channel", None):
+        params["channels"] = list(args.channel)
+    if getattr(args, "reference_channel", None):
+        params["reference"] = args.reference_channel
+    return params
+
+
+def _research_print(args, result, text: Optional[str] = None) -> int:
+    if args.json or text is None:
+        # The operation's own JSON, exactly as the page receives it (Spec 06 acceptance 7).
+        print(_json_serialize.dumps(result))
+    else:
+        print(text)
+    return 0
+
+
+def cmd_research_presets(args) -> int:
+    r = _research_op(args, "list_slice_presets", {"engine": args.engine} if getattr(args, "engine", None) else {})
+    text = "\n".join([f"{r['engine']} presets ({r['status']})"] + (([r["note"]]) if r.get("note") else [])
+                     + [f"  {p['rule_id']:<16} {p['description']}" for p in r["presets"]])
+    return _research_print(args, r, text)
+
+
+def cmd_research_slices(args) -> int:
+    r = _research_op(args, "build_slices", _research_set_params(args))
+    lines = [f"{r['count']} slices from {r['flights_with_slices']} of {r['flights_selected']} flights "
+             f"({', '.join(f'{k} {v}' for k, v in r['by_source'].items())})"]
+    for ch, w in r["windows"].items():
+        lines.append(f"  {ch}: window {w['window_s']} s, lag ±{w['lag_s']} s ({w['basis']})")
+    for s in r["slices"]:
+        c = s["context"]
+        lines.append(f"  {c.get('start_time')}  {c.get('source'):<4}  {s['end_s'] - s['start_s']:>4} s  {s['slice_id']}")
+    if r["missing_flights"]:
+        lines.append(f"Not in this workspace: {len(r['missing_flights'])} flights")
+    return _research_print(args, r, "\n".join(lines))
+
+
+def cmd_research_samples(args) -> int:
+    params = _research_set_params(args)
+    params["slice_ids"] = list(args.slice or [])
+    params["anchor"] = args.anchor
+    return _research_print(args, _research_op(args, "get_slice_samples", params))
+
+
+def cmd_research_test(args) -> int:
+    from .research.render import render_text
+    params = _research_set_params(args)
+    tparams = _research_kv(args.param)
+    if args.descriptor:
+        tparams["descriptor"] = args.descriptor
+    if args.split_by:
+        split = {"by": args.split_by}
+        if args.edges:
+            split["edges"] = [float(x) for x in args.edges.split(",")]
+        if args.date:
+            split["date"] = args.date
+        tparams["split"] = split
+    params.update({"test_id": args.test_id, "params": tparams})
+    if args.references:
+        params["references"] = json.loads(Path(args.references).read_text())
+    r = _research_op(args, "run_test", params)
+    return _research_print(args, r, render_text(r))
+
+
+def _runs(flags: list) -> list[tuple[int, int]]:
+    out, start = [], None
+    for i, f in enumerate(list(flags) + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            out.append((start, i))
+            start = None
+    return out
+
+
+def cmd_research_signal(args) -> int:
+    from .research.questions import fmt, label
+    params: dict = {"flight_id": args.flight_id}
+    if args.channel:
+        params["channels"] = list(args.channel)
+    if args.window:
+        a, _, b = args.window.partition(":")
+        params["window"] = {"start_s": float(a), "end_s": float(b)}
+    if args.reference_channel:
+        params["reference"] = args.reference_channel
+    if args.references:
+        params["references"] = json.loads(Path(args.references).read_text())
+    r = _research_op(args, "analyze_signal", params)
+    lines = [f"Flight {r['flight_id']} ({r.get('date')}, {r.get('source')}), {r['duration_s']} s"]
+    for ch in r["channels"]:
+        w = r["strip_windows"][ch]
+        lit = [(a, b) for a, b in _runs(r["strips"][ch]["prominent"]) if b - a >= w["window_s"]]
+        lines.append(f"  {label(ch)}: strips on {w['window_s']} s windows ({w['basis']}); period prominent over "
+                     f"{w['lit_seconds']} s ({fmt(100 * w['lit_share'], nd=1)} %)")
+        for a, b in lit:
+            sw = [x for x in r["strips"][ch]["swing"][a:b] if x is not None]
+            lines.append(f"    {a}–{b} s: swing up to {fmt(max(sw) if sw else None)}")
+    win = r.get("window")
+    if win:
+        lines.append(f"Window {win['start_s']}–{win['end_s']} s:")
+        for ch in r["channels"]:
+            for m in win["numbers"][ch]:
+                refs = "; ".join(x.get("text") or "" for x in m["references"] if x.get("text"))
+                lines.append(f"  {m['label']}: {m['text']}" + (f" — beside: {refs}" if refs else ""))
+    return _research_print(args, r, "\n".join(lines))
+
+
+def cmd_research_compare(args) -> int:
+    from .research.compare import rows_csv
+    from .research.questions import fmt
+    params = _research_set_params(args)
+    if args.pin:
+        params["pinned"] = args.pin
+    if args.collapse:
+        params["collapse"] = True
+    r = _research_op(args, "compare_rows", params)
+    if args.csv and not args.json:
+        sys.stdout.write(rows_csv(r))
+        return 0
+    ch = r["channels"][0] if r["channels"] else None
+    lines = [f"{r['row_count']} rows, {r['flight_count']} flights" + (" (collapsed)" if r["collapsed"] else "")
+             + (f"; {len(r['flights_without'])} flights without a match" if r["flights_without"] else "")]
+    for row in r["rows"]:
+        v = row["values"].get(ch) or {}
+        d = (row.get("delta") or {}).get(ch) or {}
+        pin = " *" if row.get("pinned") else ""
+        lines.append(f"  {row.get('start_time')}  {row.get('source') or '':<4} DA {fmt(row.get('da_ft')):>6}  "
+                     f"swing {fmt(v.get('swing')):>5}  period {fmt(v.get('period_s'), nd=1):>4}"
+                     + (f"  Δswing {fmt(d.get('swing')):>5}" if d else "") + pin)
+    return _research_print(args, r, "\n".join(lines))
+
+
+def cmd_research_study(args) -> int:
+    """Notebooks (Spec 16 §5; Spec 06 v1.0 retired hand studies): list,
+    show, delete, export (zip or html), import (a notebook zip or .ipynb),
+    fork (Run this on my flights)."""
+    action = args.action
+    if action == "list":
+        r = _research_op(args, "list_studies", {})
+        text = "\n".join(f"{s['study_id']}  {s['name']}" + (f"\n    {s['finding']}" if s.get("finding") else "")
+                         for s in r["studies"]) or "No notebooks."
+        return _research_print(args, r, text)
+    if action == "import":
+        if not args.target:
+            raise CliUsageError("research study import NOTEBOOK.zip|NOTEBOOK.ipynb")
+        r = _research_op(args, "import_study", {"content": Path(args.target).read_bytes()})
+        return _research_print(args, r, f"Imported as {r['study_id']}")
+    if not args.target:
+        raise CliUsageError(f"research study {action} STUDY_ID")
+    op = {"show": "load_study", "delete": "delete_study", "export": "export_study",
+          "fork": "run_study_on_my_flights"}[action]
+    params = {"study_id": args.target}
+    if action == "export" and args.format:
+        params["format"] = args.format
+    r = _research_op(args, op, params)
+    if action in ("show", "fork"):
+        return _research_print(args, r, f"{r['study_id']}  {r.get('name') or ''}")
+    if action == "export":
+        return _research_print(args, r, f"Wrote {r['download_url']} ({r['size']} bytes)")
+    return _research_print(args, r, f"Deleted {args.target}")
+
+
+def _add_research_parser(sub, common) -> None:
+    p_r = sub.add_parser("research", parents=[common], help="Research: slices, tests and studies (Spec 06)")
+    rs = p_r.add_subparsers(dest="research_command", required=True)
+
+    def set_args(p, channels=True):
+        p.add_argument("--rule", action="append", metavar="RULE",
+                       help="Slice rule: a preset id (full_power), phase:CLIMB, a JSON file or inline JSON; repeatable")
+        p.add_argument("--hand", action="append", metavar="FLIGHT:START:END[:LABEL]", help="A hand slice; repeatable")
+        p.add_argument("--flight", action="append", metavar="FLIGHT_ID", help="Select these flights (default: all)")
+        if channels:
+            p.add_argument("--channel", action="append", metavar="CHANNEL", help="Channel(s); repeatable")
+        p.add_argument("--reference-channel", metavar="CHANNEL", help="Coupling reference channel (default rpm)")
+
+    p = rs.add_parser("presets", parents=[common], help="Shipped slice rules for the engine profile")
+    p.set_defaults(func=cmd_research_presets)
+
+    p = rs.add_parser("slices", parents=[common], help="Build a slice set (build_slices)")
+    set_args(p)
+    p.add_argument("--all", action="store_true", help="All flights (the default)")
+    p.set_defaults(func=cmd_research_slices)
+
+    p = rs.add_parser("samples", parents=[common], help="Aligned samples of slices (get_slice_samples)")
+    set_args(p)
+    p.add_argument("--slice", action="append", metavar="SLICE_ID", help="Slice id; repeatable (default: all)")
+    p.add_argument("--anchor", default="crossing", help="crossing, start, end, peak:CHANNEL or phase:PHASE")
+    p.set_defaults(func=cmd_research_samples)
+
+    p = rs.add_parser("test", parents=[common], help="Run a test: cycling, coupling, groups or unusual (run_test)")
+    p.add_argument("test_id", choices=["cycling", "coupling", "groups", "unusual"])
+    set_args(p)
+    p.add_argument("--param", action="append", metavar="KEY=VALUE", help="Test parameter (JSON value); repeatable")
+    p.add_argument("--descriptor", help="groups: channel.descriptor, e.g. rpm.swing")
+    p.add_argument("--split-by", choices=["da_band", "oat_band", "engine_hours", "source", "date", "rule"])
+    p.add_argument("--edges", help="Band edges for --split-by, comma-separated")
+    p.add_argument("--date", help="--split-by date: the date (YYYY-MM-DD)")
+    p.add_argument("--references", metavar="FILE", help="JSON list of user references")
+    p.set_defaults(func=cmd_research_test)
+
+    p = rs.add_parser("signal", parents=[common], help="One flight's rolling strips and window diagnostics (analyze_signal)")
+    p.add_argument("flight_id", metavar="FLIGHT_ID")
+    p.add_argument("--channel", action="append", metavar="CHANNEL", help="Channel(s); repeatable (default rpm, map_inhg)")
+    p.add_argument("--window", metavar="START:END", help="The window, in seconds from the log's start")
+    p.add_argument("--reference-channel", metavar="CHANNEL", help="Reference channel for correlation (default rpm)")
+    p.add_argument("--references", metavar="FILE", help="JSON list of user references")
+    p.set_defaults(func=cmd_research_signal)
+
+    p = rs.add_parser("compare", parents=[common], help="One row per slice, grouped by flight (compare_rows)")
+    set_args(p)
+    p.add_argument("--pin", metavar="ROW_ID", help="Pin this row (a slice id, or a flight id) as the reference")
+    p.add_argument("--collapse", action="store_true", help="One row per flight (median, count)")
+    p.add_argument("--csv", action="store_true", help="Print the rows as CSV")
+    p.set_defaults(func=cmd_research_compare)
+
+    p = rs.add_parser("study", parents=[common], help="Notebooks: list, show, delete, export, import, fork")
+    p.add_argument("action", choices=["list", "show", "delete", "export", "import", "fork"])
+    p.add_argument("target", nargs="?", help="STUDY_ID, or a notebook .zip / .ipynb for import")
+    p.add_argument("--format", choices=["zip", "html"], help="export: the notebook folder as a zip (default) or one page")
+    p.add_argument("--out", metavar="DIR", help="export: folder to write the file into (default: current folder)")
+    p.set_defaults(func=cmd_research_study)
+
 
 def _common_options(suppress_defaults: bool) -> argparse.ArgumentParser:
     """The options every command takes, before or after its name.
@@ -995,9 +1328,26 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="Analyse the matched flights without asking")
     p.set_defaults(func=cmd_import_workspace)
 
+    _add_research_parser(sub, common)
+
     p = sub.add_parser("serve", parents=[common], help="Start the local server + UI (Spec 04 §9.2 adapter)")
     p.add_argument("--port", type=int, default=8420, help="Port to bind on 127.0.0.1 (default: 8420)")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("mcp", parents=[common], help="The MCP server for Claude (Spec 16 §4): stdio; tools; call")
+    p.add_argument("mcp_action", nargs="?", choices=["serve", "tools", "call"], default="serve",
+                   help="serve (default): the stdio server; tools: list the tools; call: run one tool")
+    p.add_argument("tool", nargs="?", help="call: the tool's name")
+    p.add_argument("arguments", nargs="?", help="call: the tool's arguments as a JSON object")
+    p.add_argument("--serve", action="store_true", help="Also start the web server in the same process")
+    p.add_argument("--port", type=int, default=8420, help="--serve: port on 127.0.0.1 (default: 8420)")
+    p.add_argument("--aircraft", help="The aircraft (id or name) whose workspace the tools open (Spec 16 D10); "
+                                      "default: the registry's only aircraft, else the most recently opened")
+    p.add_argument("--log-folder", action="append", default=[], metavar="DIR",
+                   help="serve: a log folder to link to the workspace the tools open (repeatable; added, never removed)")
+    p.add_argument("--log-file", action="store_true",
+                   help="serve: also write the server's messages to cache/mcp.log under the data root")
+    p.set_defaults(func=cmd_mcp)
 
     return parser
 

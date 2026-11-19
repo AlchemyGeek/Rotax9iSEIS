@@ -1,6 +1,6 @@
 # SlingologyEIS — Backlog
 
-Last updated: November 5, 2026 (1.0.2: the Garmin Pilot aircraft log)
+Last updated: November 18, 2026 (1.1.0 release: P5 done, P9 the Investigations follow-ups; owner's ask)
 Toolkit version: 1.0.2 · Research paper: Edition 0.4 (draft for review)
 
 Open work, organised by the spec or area that owns it. Everything completed is in
@@ -39,11 +39,21 @@ engine's row-counting paths (airborne minutes, phase minutes, overboost blocks, 
 durations, cruise dwell, smoothing windows) stay correct. The honest long-term fix is
 `elapsed_s` arithmetic throughout. Hardening, not urgent.
 
-### P5. Web test hygiene
-**Type:** code
-`npx vitest run` exits 1 on an unhandled `scrollIntoView is not a function` from jsdom
-(`Trends.tsx`'s panel scroll after a setTimeout) while all 169 tests pass. Stub it in the
-test setup or guard the call.
+### P5. Web test hygiene — done (1.1.0)
+`npx vitest run` exits 0 (298 tests) since the `research` branch's Session F.
+
+### P9. Investigations — after 1.1.0
+**Type:** code/release · **Owner:** Spec 16 (§9 open questions, §3.2 F13)
+- **Sign the extension bundle** (Apple Developer ID + Desktop's signing step) so the install stops
+  warning; until then the README says it is unsigned.
+- **Windows bundle** (Spec 16 Q4) after the macOS bundles have been used by someone other than the
+  owner.
+- **F13** `flights_find` weighs airport-*name* hits below code hits; short names match only in
+  capitals ("prop balance" matched five airports).
+- **Q7** time zone at irregular zone boundaries (a lat/lon → zone table) when a user's flights
+  need it; **Q8** opening another install's workspace folder in place, if wanted.
+- **Website → extension**: D17's *Move my workspace* exists; the website could also offer it on the
+  install page itself once someone converts.
 
 ### P6. Documentation site — next steps
 **Type:** docs · **Owner:** Spec 13

@@ -1,3 +1,4 @@
+import type React from "react";
 import type { Phase } from "../types/contract";
 import type { Timeline } from "../lib/useTimeline";
 import { ChannelTimeline, type EventMarker } from "./ChannelTimeline";
@@ -15,7 +16,7 @@ const ZOOM_BUTTON: React.CSSProperties = {
 // picker, the chart with phase tint (and, on a flight, event markers) and
 // the phase caption. Shared by Flight view and Log preview.
 export function TimelinePanel({
-  tl, phases, availableChannels, startUtc, hasPhaseWarning, markers, worst, emptyText,
+  tl, phases, availableChannels, startUtc, hasPhaseWarning, markers, worst, emptyText, below,
 }: {
   tl: Timeline;
   phases: Phase[];
@@ -25,6 +26,8 @@ export function TimelinePanel({
   markers?: EventMarker[];
   worst?: { x_s: number; label: string } | null;
   emptyText: string;
+  // Spec 16 D15: the Signal aid's strips sit under the chart, on its x frame.
+  below?: React.ReactNode;
 }) {
   const { visibleWindow } = tl;
 
@@ -155,6 +158,7 @@ export function TimelinePanel({
             markers={markers}
             worst={worst}
           />
+          {below}
         </>
       ) : (
         <div style={{ fontSize: 12, color: "var(--text-tertiary)", padding: "16px 0" }}>{emptyText}</div>

@@ -138,15 +138,37 @@ def main() -> int:
             chart = page.locator("canvas, svg").count()
             step("a flight opens and its chart renders", chart > 0, canvases_or_svgs=chart)
 
-            edit = page.get_by_role("button", name="Edit rules…").first
-            edit.click()
-            page.locator("select").filter(has_text="limit").first.select_option("warning")
+            # A card whose rule has an editable severity: which card comes first
+            # depends on the flight (the newest flight's may have none).
+            def edit_a_severity():
+                for i in range(page.get_by_role("button", name="Edit rules…").count()):
+                    page.get_by_role("button", name="Edit rules…").nth(i).click()
+                    sev = page.locator('select[aria-label="severity"]')
+                    try:
+                        sev.first.wait_for(timeout=3000)
+                    except Exception:   # noqa: BLE001 — no severity on this rule
+                        page.get_by_role("button", name="Cancel").click()
+                        continue
+                    sev.first.select_option("warning" if sev.first.input_value() != "warning" else "watch")
+                    return True
+                return False
+
+            edited, tried = edit_a_severity(), 1
+            while not edited and tried < 10:
+                page.goto(url + "#/flights")
+                page.locator("tr").filter(has_text="20").nth(tried).locator("td").nth(1).click()
+                page.wait_for_url("**/#/flights/*", timeout=30000)
+                page.get_by_text("Timeline").first.wait_for(timeout=60000)
+                time.sleep(1)
+                edited, tried = edit_a_severity(), tried + 1
+            if not edited:
+                raise SystemExit("no rule with an editable severity on the first 10 flights' cards")
             page.get_by_role("button", name="Apply to all flights").click()
             page.get_by_text("Rule changed").first.wait_for(timeout=60000)
-            step("a rule edited on a card", True)
+            step("a rule edited on a card", True, flights_tried=tried)
 
             page.goto(url + "#/journal")
-            page.get_by_text("Rule: limit_exceedances").first.wait_for(timeout=30000)
+            page.get_by_text("Rule:").first.wait_for(timeout=30000)
             step("Journal lists the rule edit", True)
             page.goto(url + "#/trends")
             page.get_by_text("cylinder balance").first.wait_for(timeout=60000)

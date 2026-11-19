@@ -403,7 +403,7 @@ def analyze_flight(
         channel_assignments=applied or None,
     )
 
-    return FlightAnalysis(
+    fa = FlightAnalysis(
         flight_id=fid,
         analysis_key=analysis_key,
         source_keys=[skey],
@@ -420,6 +420,15 @@ def analyze_flight(
         available_channels=available_channels,
         limits=limits,
     )
+    # Spec 16 §4.4: the flight's identification (route, local times,
+    # takeoffs and landings) from the same frame — facts, not analysis: not
+    # part of the analysis document; save_flight_analysis writes it beside.
+    try:
+        from .flight_ident import compute as _identify
+        fa.ident = _identify(df, fa.phases)
+    except Exception:   # noqa: BLE001 — a flight that won't identify is still analysed
+        fa.ident = None
+    return fa
 
 
 def with_flight_id(fa: "FlightAnalysis", flight_id: str) -> "FlightAnalysis":

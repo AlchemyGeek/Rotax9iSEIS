@@ -1,0 +1,76 @@
+{
+ "meta_line": "by claude · finished · engine 1.0.2 · 2026-01-02",
+ "outputs_line": "outputs: 1 cell with new outputs pending · 1 cell ran elsewhere · 1 cell read-only (flights not here)",
+ "summary": "<p>RPM swings <strong>180 rpm</strong> about the setpoint.</p>\n<p>Watch it.</p>",
+ "cells": {
+  "setup": {
+   "outputs": [],
+   "flags": []
+  },
+  "c1": {
+   "markdown": "<h2>Question</h2>\n<p>Is there a cycle in <strong>rpm</strong> at full power?</p>"
+  },
+  "c2": {
+   "markdown": "<h1>Plan</h1>\n<ol><li>Look at <em>one</em> flight first.</li><li>Then every <code>full_power</code> slice.</li></ol>\n<ul><li>swing about the setpoint</li><li>period</li></ul>\n<table class=\"eis-table\"><thead><tr><th>measure</th><th>value</th></tr></thead><tbody><tr><td>swing</td><td>180 rpm</td></tr></tbody></table>\n<blockquote>A hypothesis, not a conclusion.</blockquote>\n<pre><code>r = eis.cycling(&quot;full_power&quot;, &quot;rpm&quot;)</code></pre>\n<p>See <a href=\"https://example.org/docs?a=1&amp;b=2\">the docs</a> and <a href=\"#\">this</a>); &lt;script&gt;alert('x')&lt;/script&gt; stays text.</p>\n<p><img class=\"figure\" alt=\"chart\" src=\"data:image/svg+xml;base64,PHN2Zy8+\"></p>"
+  },
+  "c3": {
+   "outputs": [
+    "<pre class=\"stdout\">RPM cycles every 3.8 s\nin 9 of 10 slices &lt;ok&gt;\n</pre>",
+    "<pre class=\"stderr\">a warning &amp; more\n</pre>"
+   ],
+   "flags": []
+  },
+  "c4": {
+   "outputs": [
+    "<table class=\"eis-table\"><caption>Slices</caption><thead><tr><th>slice</th><th>rpm swing</th></tr></thead><tbody><tr><td>s1</td><td>180</td></tr><tr><td>s2</td><td>176 &lt; 180</td></tr></tbody></table><p>3 more rows not kept</p>"
+   ],
+   "flags": []
+  },
+  "c5": {
+   "outputs": [
+    "<pre>&lt;b&gt;plain fallback&lt;/b&gt;</pre>"
+   ],
+   "flags": []
+  },
+  "c6": {
+   "outputs": [
+    "<img class=\"figure\" alt=\"&lt;Figure rpm swing&gt;\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjxwb2x5bGluZSBwb2ludHM9IjAsMzAgMjAsMTAgNDAsMzAgNjAsMTAgODAsMzAgMTAwLDEwIDEyMCwzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzMzIi8+PC9zdmc+\">"
+   ],
+   "flags": []
+  },
+  "c7": {
+   "markdown": "<p>The figure above shows the swing per slice.</p>"
+  },
+  "c8": {
+   "outputs": [
+    "<img class=\"figure\" alt=\"figure\" src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\">"
+   ],
+   "flags": [
+    "ran elsewhere"
+   ]
+  },
+  "c9": {
+   "markdown": "<p>The log view below is the first takeoff.</p>"
+  },
+  "c10": {
+   "outputs": [
+    "<figure class=\"logview\"><img class=\"figure\" alt=\"First takeoff\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjxwb2x5bGluZSBwb2ludHM9IjAsMzAgMjAsMTAgNDAsMzAgNjAsMTAgODAsMzAgMTAwLDEwIDEyMCwzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzMzIi8+PC9zdmc+\"><figcaption>First takeoff</figcaption></figure>"
+   ],
+   "flags": []
+  },
+  "c11": {
+   "outputs": [
+    "<pre class=\"error\">ZeroDivisionError\ndivision by zero</pre>"
+   ],
+   "flags": []
+  },
+  "c12": {
+   "outputs": [
+    "<pre class=\"stdout\">sender&#x27;s result\n</pre>"
+   ],
+   "flags": [
+    "read-only"
+   ]
+  }
+ }
+}

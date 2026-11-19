@@ -64,10 +64,32 @@ DOCUMENTS: list[tuple[str, str, str]] = [
     ("filters.json", "carried", "Filters (Spec 09 §9)"),
     ("journal.json", "carried", "Journal entries and their records (Spec 14 §6)"),
     ("annotations.json", "carried", "Annotations, including acknowledged insights"),
+    # Spec 16 §5: a notebook's files (the figures and tables its code cells
+    # wrote) travel with it, as they are; listed before studies/*.json,
+    # which fnmatch would otherwise match too.
+    ("studies/*/files/*", "carried", "Notebook files: figures and tables a study's code wrote (Spec 16 §5)"),
+    ("studies/*/notebook.ipynb", "carried", "Investigation notebooks, nbformat 4, outputs included (Spec 16 §5.1)"),
+    ("studies/*/.session-d.json", "retired", "A Session D investigation study, kept beside the notebook it was converted to"),
+    ("studies/*/.hand-study.json", "retired", "A hand study (Spec 06 v1.0 retired them), kept beside the notebook it was converted to"),
+    # A study still stored the old way (a hand study or a Session D
+    # investigation) travels as stored, its results included: the recipient
+    # converts it to a notebook on first load (Spec 16 D15), whose outputs
+    # are those results.
+    ("studies/*.json", "carried", "A study stored the old way, converted to a notebook on first load (Spec 16 D15)"),
+    ("inbox.json", "carried", "Research inbox: candidates and their resolutions (Spec 16 §6)"),
+    ("inbox_cache.json", "derived", "The inbox scan's descriptor cache (Spec 16 §6); recomputed"),
+    ("pins.json", "carried", "The owner's questions and their pins, Mark for Claude (Spec 16 D16); flights by fingerprint"),
+    # Spec 16 D10: the aircraft record is the registry's; the export writes
+    # its fields as aircraft.json (no documents_dirs, no notes). A
+    # workspace-level aircraft.json is Session D's, migrated on open.
+    ("aircraft.json", "retired", "Session D's per-workspace aircraft document; now the registry's aircraft record"),
+    ("documents/*", "local", "The user's own documents (manuals, bulletins; Spec 16 §4.2): their copies, not shared"),
     ("exclusions.json", "carried", "Log admission record, re-keyed by source_key (§7.5)"),
     ("manifest.json", "manifest", "Workspace name and engine model go into provenance; log_folders are local"),
     ("flights/*/sources.json", "manifest", "Per-flight sources: the flight manifest"),
     ("flights/*/analysis.json", "derived", "Flight analysis"),
+    ("flights/*/ident.json", "derived", "Flight identification: route, local times, takeoffs and landings (Spec 16 §4.4); recomputed"),
+    ("flight_names.json", "carried", "The names and notes the pilot gave flights (Spec 16 §4.4)"),
     ("fleet/analysis.json", "derived", "Fleet analysis: baselines, models, trends"),
     ("flights/*/*", "log", "An uploaded log's own copy"),
     ("logs/*", "log", "Logs extracted from an imported export zip (Spec 02 v0.14); linked as a log folder"),
@@ -80,7 +102,7 @@ DOCUMENTS: list[tuple[str, str, str]] = [
 _IGNORED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
 # WorkspaceSettings fields that travel; the rest are device- or view-local.
-_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases", "channel_assignments")
+_CARRIED_SETTINGS = ("active_engine_profile", "aircraft_aliases", "channel_assignments", "research_sensitivity")
 
 # §7.6 (and Spec 02 v0.12): columns blanked in anonymised copies — GPS
 # position, and the navigation and radio columns that place the aircraft.
@@ -107,6 +129,12 @@ class ImportRefused(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_raw(rel: str) -> bool:
+    """A carried document that travels as bytes, not JSON: a notebook's
+    files (Spec 16 §5)."""
+    return fnmatch.fnmatchcase(rel, "studies/*/files/*") and ".." not in rel.split("/")
 
 
 def classify(rel: str) -> Optional[tuple[str, str]]:
@@ -437,7 +465,10 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     docs: dict[str, Any] = {}
     for d in documents:
         if d["class"] == "carried" and d["path"] not in ("settings.json", "exclusions.json"):
-            docs[d["path"]] = _read_json(ws_dir / d["path"])
+            docs[d["path"]] = (ws_dir / d["path"]).read_bytes() if _is_raw(d["path"]) else _read_json(ws_dir / d["path"])
+    if isinstance(docs.get("pins.json"), dict):   # Spec 16 D16: flights by fingerprint (S5)
+        from .investigations import pins as _pins
+        docs["pins.json"] = _pins.for_export(docs["pins.json"], ws_dir)
     sdict = settings.to_dict()
     docs["settings.json"] = {k: sdict[k] for k in _CARRIED_SETTINGS if k in sdict}
     admission, dropped = await _admission_by_key_async(ws_dir, sources)
@@ -504,6 +535,14 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
                      "blanked; file names neutral; flight ids recomputed. Dates, times, engine hours and your "
                      "own text are unchanged.")
 
+    # Spec 16 §4.4: the aircraft's fields travel; its documents_dirs and notes don't.
+    from . import aircraft as _aircraft
+    ac = _aircraft.of_workspace(ws_dir.parent.parent, manifest.id)
+    if ac is not None:
+        docs["aircraft.json"] = _aircraft.exported(ac)
+        if anonymise:   # an engine serial and a pilot-chosen name can identify the aircraft
+            docs["aircraft.json"].update(engine_serial="", name=_aircraft.engine_label(ac["engine_model"]))
+
     workspace_json = {
         "format": FORMAT, "format_version": FORMAT_VERSION,
         "provenance": {
@@ -522,7 +561,7 @@ async def export_workspace_async(ws_dir: Path, out_dir: Path, include_logs: bool
     with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("workspace.json", json.dumps(workspace_json, indent=2))
         for rel, obj in sorted(docs.items()):
-            z.writestr(rel, json.dumps(obj, indent=2))
+            z.writestr(rel, obj if isinstance(obj, bytes) else json.dumps(obj, indent=2))
     if include_logs:
         path = out_dir / f"{safe}.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
@@ -608,7 +647,8 @@ def _parse_eisworkspace(data: bytes, label: str) -> tuple[dict, dict]:
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             names = z.namelist()
             workspace = json.loads(z.read("workspace.json"))
-            documents = {n: json.loads(z.read(n)) for n in names if n != "workspace.json" and n.endswith(".json")}
+            documents = {n: (z.read(n) if _is_raw(n) else json.loads(z.read(n))) for n in names
+                         if n != "workspace.json" and (n.endswith((".json", ".ipynb")) or _is_raw(n))}
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
         raise ImportRefused(f"{label} isn't a workspace export ({e}).") from e
     if workspace.get("format") != FORMAT:
@@ -724,7 +764,7 @@ def summarize(contents: ExportContents) -> dict:
 # ── Import ───────────────────────────────────────────────────────────────────
 
 def import_workspace(registry_path: Path, workspaces_root: Path, contents: ExportContents,
-                     name: Optional[str] = None) -> ws.WorkspaceManifest:
+                     name: Optional[str] = None, aircraft_id: Optional[str] = None) -> ws.WorkspaceManifest:
     """§7.4 steps 2–3: a new workspace holding the export's documents and
     its sender manifest; an export folder's logs/ is linked. Never
     touches an existing workspace."""
@@ -735,23 +775,34 @@ def import_workspace(registry_path: Path, workspaces_root: Path, contents: Expor
     engine_model = prov.get("engine_model") or ""
     ws.check_engine_model(engine_model, prov.get("workspace_name") or "")
     name = (name or f"{prov.get('workspace_name') or 'Workspace'} (imported)").strip()
-    manifest = ws.create_workspace(registry_path, workspaces_root, name, engine_model)
-    ws_dir = workspaces_root / manifest.id
     docs = copy.deepcopy(contents.documents)
+    # Spec 16 §4.4: the sender's aircraft fields seed (or find) the aircraft.
+    ac_fields = docs.pop("aircraft.json", None)
+    ac_fields = ac_fields if isinstance(ac_fields, dict) else None
+    manifest = ws.create_workspace(registry_path, workspaces_root, name, engine_model, aircraft_id=aircraft_id,
+                                   aircraft_fields=ac_fields)
+    ws_dir = workspaces_root / manifest.id
 
     carried_settings = docs.pop("settings.json", {}) or {}
     settings = ws.load_workspace_settings(ws_dir)
     settings.active_engine_profile = carried_settings.get("active_engine_profile") or settings.active_engine_profile
     settings.aircraft_aliases = carried_settings.get("aircraft_aliases") or []
     settings.channel_assignments = carried_settings.get("channel_assignments") or {}   # Spec 02 v0.15 §7.1
+    if carried_settings.get("research_sensitivity") in ("quiet", "normal", "curious"):   # Spec 16 §6
+        settings.research_sensitivity = carried_settings["research_sensitivity"]
     ws.save_workspace_settings(ws_dir, settings)
     carried = {p for p, c, _n in DOCUMENTS if c == "carried"} - {"settings.json", "exclusions.json"}
     for rel, obj in docs.items():
-        if rel not in carried:
+        if not any(fnmatch.fnmatchcase(rel, pattern) for pattern in carried):
             continue   # only documents the export format carries
         target = ws_dir / rel
+        if not target.resolve().is_relative_to(ws_dir.resolve()):
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(obj, indent=2))
+        if isinstance(obj, bytes):
+            target.write_bytes(obj)
+        else:
+            target.write_text(json.dumps(obj, indent=2))
     record = {
         "imported_at": _now(), "provenance": prov,
         "manifest": contents.workspace.get("manifest", []),

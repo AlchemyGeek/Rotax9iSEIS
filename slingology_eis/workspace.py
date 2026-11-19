@@ -176,6 +176,8 @@ class WorkspaceRegistryEntry:
     last_opened_at: str = ""
     log_folder_count: int = 0
     flight_count: int = 0
+    # Spec 16 D10: the aircraft this workspace belongs to (aircraft.py).
+    aircraft_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -185,6 +187,8 @@ class WorkspaceRegistryEntry:
         }
         if self.primary_tail_number is not None:
             d["primary_tail_number"] = self.primary_tail_number
+        if self.aircraft_id is not None:
+            d["aircraft_id"] = self.aircraft_id
         return d
 
     @classmethod
@@ -194,6 +198,7 @@ class WorkspaceRegistryEntry:
             primary_tail_number=d.get("primary_tail_number"),
             created_at=d.get("created_at", ""), last_opened_at=d.get("last_opened_at", ""),
             log_folder_count=d.get("log_folder_count", 0), flight_count=d.get("flight_count", 0),
+            aircraft_id=d.get("aircraft_id"),
         )
 
 
@@ -434,6 +439,10 @@ class WorkspaceSettings:
     # {"channel": "co_ppm", "ignore_value": 254} (Spec 14 v0.15 §5.3): one
     # sentinel that is not a reading.
     channel_assignments: dict = field(default_factory=dict)
+    # Spec 16 §6 (D5): the Research inbox's three-position sensitivity,
+    # "quiet" | "normal" | "curious" (Settings → Research). Only the user
+    # changes it; the investigator may propose a change in a notebook.
+    research_sensitivity: str = "normal"
 
     def to_dict(self) -> dict:
         d = {
@@ -447,6 +456,8 @@ class WorkspaceSettings:
             d["trends_detail_strips"] = self.trends_detail_strips
         if self.channel_assignments:
             d["channel_assignments"] = self.channel_assignments
+        if self.research_sensitivity != "normal":
+            d["research_sensitivity"] = self.research_sensitivity
         return d
 
     @classmethod
@@ -457,6 +468,8 @@ class WorkspaceSettings:
             aircraft_aliases=d.get("aircraft_aliases") or [],
             trends_detail_strips=d.get("trends_detail_strips") or {},
             channel_assignments=d.get("channel_assignments") or {},
+            research_sensitivity=d.get("research_sensitivity") if d.get("research_sensitivity") in
+            ("quiet", "normal", "curious") else "normal",
         )
 
 
@@ -547,6 +560,8 @@ def create_workspace(
     name: str,
     engine_model: str,
     primary_tail_number: Optional[str] = None,
+    aircraft_id: Optional[str] = None,
+    aircraft_fields: Optional[dict] = None,
 ) -> WorkspaceManifest:
     """
     Spec 02 §5.2/§5.3/§6.1. `engine_model` is required and locked here —
@@ -588,6 +603,12 @@ def create_workspace(
     save_manifest(ws_dir, manifest)
     save_selection(ws_dir, FleetSelection())
     save_workspace_settings(ws_dir, WorkspaceSettings(active_engine_profile=engine_model))
+    # Spec 16 D10: every workspace belongs to an aircraft.
+    from . import aircraft as _aircraft
+    root = registry_path.parent
+    _aircraft.ensure(root)
+    ac = _aircraft.for_new_workspace(root, engine_model, aircraft_id, aircraft_fields)
+    _aircraft.assign(root, ws_id, ac["id"])
     return manifest
 
 
@@ -607,6 +628,8 @@ def delete_workspace(registry_path: Path, workspaces_root: Path, workspace_id: s
         raise ValueError(f"no workspace {workspace_id!r}")
     registry.workspaces = [w for w in registry.workspaces if w.id != workspace_id]
     save_registry(registry_path, registry)
+    from . import aircraft as _aircraft
+    _aircraft.unassign(registry_path.parent, workspace_id)
 
     app_settings = load_app_settings(registry_path)
     if app_settings.last_active_workspace_id == workspace_id:
@@ -672,8 +695,18 @@ def load_flight_analysis(ws_dir: Path, flight_id: str) -> Optional[FlightAnalysi
     return FlightAnalysis(**json.loads(f.read_text()))
 
 
+# The engine's own documents in flights/<id>/; anything else there is an
+# uploaded log's copy.
+FLIGHT_DOCUMENTS = ("analysis.json", "sources.json", "ident.json")
+
+
 def save_flight_analysis(ws_dir: Path, fa: FlightAnalysis) -> None:
     _write_json(ws_dir / "flights" / fa.flight_id / "analysis.json", fa.to_dict())
+    # Spec 16 §4.4: identification computed with the analysis (no second read).
+    ident = getattr(fa, "ident", None)
+    if ident:
+        from . import flight_ident as _flight_ident
+        _flight_ident.save(ws_dir, fa, ident)
 
 
 def list_flight_ids(ws_dir: Path) -> list[str]:
@@ -2113,6 +2146,12 @@ async def scan_workspace_async(
         migrate_limit_annotations(ws_dir, fa, fresh)
         result.reanalyzed_flight_ids.append(fid)
 
+    # Spec 16 §4.4: flight identification facts (route, local times,
+    # takeoffs and landings) for every flight lacking them — new,
+    # re-analysed, or stored before they existed. Facts, not analysis.
+    from . import flight_ident as _flight_ident
+    await _flight_ident.ensure_async(ws_dir, sources)
+
     # Update manifest + registry.
     if manifest.primary_tail_number is None and primary_ident:
         manifest.primary_tail_number = primary_ident
@@ -2533,7 +2572,7 @@ def source_filename(ws_dir: Path, flight_id: str) -> Optional[str]:
     if imp is not None and imp.log_folder_path == UPLOADED_SOURCE and (d / imp.filename).is_file():
         return imp.filename   # the analysed one of two kept copies (an AXIS pair, v0.16)
     if d.is_dir():
-        others = [p.name for p in d.iterdir() if p.name not in ("analysis.json", "sources.json")]
+        others = [p.name for p in d.iterdir() if p.name not in FLIGHT_DOCUMENTS]
         if others:
             return others[0]
     return imp.filename if imp else None

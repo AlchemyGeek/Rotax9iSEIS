@@ -41,11 +41,13 @@ interface ChartSessionValue {
 
 const ChartSessionContext = createContext<ChartSessionValue | null>(null);
 
-export function ChartSessionProvider({ children }: { children: ReactNode }) {
-  const [initialized, setInitialized] = useState(false);
-  const [activeSlots, setActiveSlots] = useState<string[]>([]);
+/** `initialSlots`: a chart of its own (Spec 16 §5.2, a notebook's log view)
+ *  that starts on these channels and leaves the app's selection alone. */
+export function ChartSessionProvider({ children, initialSlots }: { children: ReactNode; initialSlots?: string[] }) {
+  const [initialized, setInitialized] = useState(initialSlots !== undefined);
+  const [activeSlots, setActiveSlots] = useState<string[]>(initialSlots ?? []);
   const [presetId, setPresetId] = useState<string | null>(null);
-  const [chartState, setChartState] = useState<ChartState>("preset");
+  const [chartState, setChartState] = useState<ChartState>(initialSlots !== undefined ? "modified" : "preset");
   const [channelColors, setChannelColors] = useState<Record<string, string>>({});
   const [insightSnapshot, setInsightSnapshot] = useState<InsightSnapshot | null>(null);
   const [insightLabel, setInsightLabel] = useState<string | undefined>(undefined);

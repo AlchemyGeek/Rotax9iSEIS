@@ -35,7 +35,8 @@ ENV_VAR = "SLINGOLOGY_EIS_HOME"
 
 # What a data root is made of (§5.8.1). Copied, checked and counted as a
 # unit; anything else in the folder is not ours.
-ROOT_ITEMS = ("registry.json", "settings.json", "workspaces")
+# Spec 16 v0.5: the aircraft records (D10) and the document index cache (D11).
+ROOT_ITEMS = ("registry.json", "settings.json", "workspaces", "aircraft", "cache")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGED_HOME = Path.home() / "SlingologyEIS"

@@ -15,19 +15,140 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
-## 1.0.2 — unreleased
+## 1.1.0 — November 18, 2026
+
+**Investigations: Claude investigates, EIS measures.** SlingologyEIS gains a third way in beside the
+browser and the local server: a **Claude Desktop extension** (one `.mcpb` file, nothing else to
+install) that lets your own Claude investigate your engine with EIS's instruments, write the
+investigation as a Jupyter notebook you can read in the app or run in JupyterLab, and read the
+Operators Manual and service bulletins from your own folders. The app itself learns to *look* —
+period and swing strips on the flight chart, *Mark for Claude* on any window — and an **inbox**
+raises recurring patterns from your flights for you or Claude to take up. Flights now carry their
+route, resolved from GPS; documents and settings belong to the aircraft; and the **1.0.2** aircraft
+log work, never released on its own, ships here.
+
+**Existing workspaces:** the engine version moves to 1.1.0, so the next Sync offers to re-analyse
+every stored flight; say yes once. Of the 124 test logs only the aircraft log's result changes
+(1.0.2 below); the flights' *analysis* is otherwise identical, and the re-analysis is what fills in
+the new flight facts — route, local times, takeoffs and landings, cruise DA and OAT.
+
+**The acceptance case** is the N117ZS takeoff rpm oscillation: a 180 rpm swing every 3.8 s about
+the governor's 5,700 rpm setpoint, in 94 of 100 full-power segments since April 2026, manifold
+pressure in step at zero lag, fuel flow a second behind — found by hand in October, reproduced by
+Claude through the tools in November, written up as a notebook with the OM's rpm-scheduled boost
+target plotted over the samples (`docs/research/2026-10-takeoff-rpm-oscillation.md`).
+
+### Investigations (Spec 16 v1.0, Spec 06 v1.1)
+
+- **The Claude Desktop extension.** `slingology-eis-<version>-macos-{arm64,x86_64}.mcpb` on the
+  release: a standalone Python with the engine, its dependencies and the built pages. Installed
+  in Claude Desktop (Settings → Extensions → Advanced → Install Extension…), it runs one process
+  that answers Claude's tool calls over MCP and serves the EIS pages at `127.0.0.1:8420` while
+  Desktop is open. Settings: the EIS data folder, the aircraft, log folders. Unsigned for now:
+  Desktop shows its warning. A `pip install "slingology-eis[investigations]"` and
+  `slingology-eis mcp` in `claude_desktop_config.json` is the equivalent for developers.
+- **33 tools in five layers** (`slingology-eis mcp tools`): `guide` first — the method, every
+  tool's parameter forms with an example, the aircraft record and your notes, the documents, the
+  workspace; raw material (`flights_list` with routes and names, `flights_find` by description,
+  `flight_get`, `series_get`, `fleet_metrics`, `trends_summary`); the instrument (presets, slices,
+  samples, the four questions, `signal_analyze`, `rows_compare`); the bench (`code_run`); context
+  (`profile_get`, `aircraft_get`, `documents_list`, `document_read`, `journal_list`, studies);
+  the record (`study_create`, `cell_append`, `study_finish`, the inbox, your marks). Writing tools
+  are marked so Desktop asks before first use; nothing deletes logs, changes filters or limits,
+  or writes Journal entries other than study findings. Four **prompts** in Desktop's `+` menu:
+  *Investigate*, *Look at this inbox item*, *Before/after*, *Review new flights*.
+- **The notebook is a Jupyter notebook.** `studies/<id>/notebook.ipynb`, authored by Claude cell
+  by cell; code runs on a sandboxed bench (worker process, 60 s / 2 GB caps, no network, writes
+  only under the study; a kernel-level boundary on macOS) against the **`eis` library** —
+  `eis.flights`, `eis.find`, `eis.load`, `eis.slices`, `eis.cycling` / `coupling` / `groups` /
+  `unusual`, `eis.compare`, `eis.signal`, `eis.metrics`, `eis.trends`, `eis.document`,
+  `eis.logview`. The same functions the tools call, so a notebook's number is the tool's number
+  and carries its OM reference and caveats. The notebook opens and runs unchanged in JupyterLab
+  (`from slingology_eis import eis; eis.open(...)` is its first cell); outputs produced there
+  show as *ran elsewhere* on the Research page until re-run or accepted. Re-run / accept /
+  discard keep pending outputs beside the stored ones. A finished notebook reopens when a
+  follow-up adds analysis and keeps its earlier summaries. Export is the notebook (zip) or an
+  HTML page; import maps flights by fingerprint and marks cells whose flights are absent.
+- **The log-view cell.** `eis.logview(flight, start, end, channels, marks)` embeds the flight
+  chart for a window: a static strip chart everywhere, the live Flight view on the Research page,
+  with *Open flight* to the whole flight at that time and those channels.
+- **The Flight view learns to look.** A *Signal* toggle lights period and swing strips over the
+  whole flight per channel; zooming shows the window's swing, period and coupling beside their
+  OM references. **Mark for Claude** on any zoomed window: a note and a question (new or open);
+  your questions sit in the inbox beside what EIS raised, each mark opening its flight at the
+  window; Claude's notebook starts from your marks. A mark is where to look and a sentence — no
+  analysis is stored with it.
+- **The inbox.** A deterministic scan after each import, gated on recurrence (a pattern in 6 of
+  the last 10 full-power slices at *normal* sensitivity; *quiet* 8/10, *curious* 4/10 in
+  Settings → Research) raises candidates with their evidence — a repeating period, a shift, a
+  group apart. Nothing runs unattended; resolution is yours (*nothing here*, *watch*, *acted*)
+  or Claude's through a finished notebook.
+- **The aircraft record.** A registry object every workspace belongs to: airframe, engine,
+  propeller, controller, firmware, avionics, your **notes** for the investigator, and
+  **documents folders** — the Operators Manual and service bulletins read in place from your own
+  folders (PDF, Markdown, text; an index cache under the data root; never copied). Settings →
+  Aircraft edits it and moves workspaces between aircraft; `guide` flags a workspace whose engine
+  profile disagrees with its aircraft.
+- **One research model.** The manual Research workbench of the `research` branch's first attempt
+  — hand studies, question forms, the Signal and Compare screens, `.eisstudy` — is gone; the
+  Research page is notebooks and the inbox. Spec 06 is now the *instrument* behind `eis.*` and
+  the tools: slices (presets, condition rules, phase and hand slices), descriptors, the four
+  questions with their result contract (finding, evidence, magnitude beside its reference,
+  caveats), windows proposed from the data. Comparing is something you ask Claude.
+- **What the website can do.** Everything but run code and talk to Claude: it renders notebooks
+  (live log views included), shows the inbox and your questions, lets you mark windows, and
+  invites the extension install where a bench or Claude is needed. **Move my workspace**: when
+  the website finds EIS running on this computer it offers to move your browser workspace to it
+  in one click (export → the local server's import → open the local pages); the local server now
+  answers only loopback origins and, on that one route, the website's.
+
+### Flights, workspaces and settings (Spec 01 v0.30, Spec 02 v0.24, Spec 03 v0.33)
+
+- **Routes from GPS.** Departure, arrival and intermediate stops resolved against a bundled,
+  offline airport table (OurAirports, 28,916 airports with a runway ≥ 300 m), with takeoff and
+  landing counts, maximum altitude, cruise DA and OAT, and local start/end times (the zone from
+  the log, else from longitude). AXIS logs, whose file names carry no airport, get routes too.
+  The Flights list shows the route; **Find a flight** searches by description ("Oct 24, three
+  landings, Bellingham"); a flight can be **named** in place.
+- **Three ways to start a workspace**: *Create from logs*, *Import a workspace*, *Load from a
+  folder* (Chrome and Edge keep the folder across visits; Safari reads it for the visit; the
+  server and the extension link it).
+- **Settings → Aircraft** (record, notes, documents folders, workspaces) and **Settings →
+  Research** (inbox sensitivity). Every time the tools and pages show is the flight's local time
+  with its offset.
+
+### Fixes and small changes
+
+- `groups` accepts `split: "source"` as shorthand; a wrong form names the valid ones.
+- A cycle faster than the 1 Hz log can resolve (period under ~3 s with a clear peak) is
+  described as such (`below_floor`) rather than as *no cycling*.
+- `analyze_signal` gains `skip_onset_s` and suggests it when a window opens on a power ramp.
+- Document search is case-insensitive; the OM reference text says *peaks at* rather than *top*.
+- The bench drains a stopped cell's output before the *Stopped* message (CI's memory-cap flake).
+- A straight-line window reports no period (CI flake).
+- The local server's CORS is no longer `*`.
+
+### Docs (Spec 13 v0.5)
+
+*Investigating your engine* on the documentation site: the one model (look → mark → ask → read),
+*What EIS measures*, the `eis` library, the tools and prompts, the notebook format; walkthroughs
+for installing the extension, your first investigation, marking something for Claude, running a
+notebook in JupyterLab, aircraft documents, your first workspace. Screenshots are shot from
+synthetic data by script.
+
+### Included from 1.0.2 (unreleased)
 
 **The Garmin Pilot aircraft log.** The AXIS writes a second record of every power-up — the log it
 hands to Garmin Pilot, which uploads it to flyGarmin — and SlingologyEIS now reads it and merges
 it with the SD-card log of the same flight. Also: full chart detail when zoomed, an event's worst
 moment on the chart, a light theme, the build shown in Settings, and a feedback link.
 
-**Existing workspaces:** the engine version moves to 1.0.2, so the next Sync offers to re-analyse
+**Existing workspaces:** the engine version moves (to 1.1.0, with the work above), so the next Sync offers to re-analyse
 every stored flight. Say yes once. Of the 124 test logs only the aircraft log's result changes
 (it failed to load before); the 115 G3X logs and 8 AXIS SD-card logs analyse exactly as in
 1.0.1.
 
-### The aircraft log (Spec 01 v0.25–0.26, Spec 02 v0.20, Spec 03 v0.28)
+#### The aircraft log (Spec 01 v0.25–0.26, Spec 02 v0.20, Spec 03 v0.28)
 
 - **A fourth source format, *Aircraft log*.** Files downloaded from flyGarmin as
   `aircraft-log-<IDENT>-<UTC start>.csv` are recognised from their header. The clock is the
@@ -51,14 +172,14 @@ every stored flight. Say yes once. Of the 124 test logs only the aircraft log's 
   log's boot and cranking runs classify as ground start.
 - **Anonymised exports** rename an aircraft log to `aircraft-log-ANON-n-<UTC start>.csv`.
 
-### Log channels (Spec 14 v0.18)
+#### Log channels (Spec 14 v0.18)
 
 - A channel assignment may name one **Ignore value** — a number the input sends while its sensor
   isn't reporting (the AXIS analog inputs read 254 for the first seconds after boot). Readings
   with that value are treated as missing under the assigned name; the raw channel keeps them.
   The Journal entry states it.
 
-### Flight chart (Spec 07 v0.3)
+#### Flight chart (Spec 07 v0.3)
 
 - **Detail on zoom.** Zoomed to ten minutes or less, the chart fetches the visible stretch at full
   resolution and draws it in place of the whole-flight envelope, so the reading at the cursor is
@@ -68,7 +189,7 @@ every stored flight. Say yes once. Of the 124 test logs only the aircraft log's 
   *worst 49.0 psi*. Found from the log, not stored — no analysis change.
 - Fixed: zooming out after opening an event no longer jumps back to the event's window.
 
-### App (Spec 15 v0.6–v0.8)
+#### App (Spec 15 v0.6–v0.8)
 
 - **Light theme.** A dark/light setting (dark by default) with a sun/moon toggle in the top bar;
   every colour, chart palette and severity colour has a light value checked for contrast.
@@ -82,12 +203,12 @@ every stored flight. Say yes once. Of the 124 test logs only the aircraft log's 
 - Flights: the date and folder groups share one set of column widths; long file names are cut
   with an ellipsis, whole on hover.
 
-### CLI
+#### CLI
 
 - `slingology-eis flights` lists a flight exported twice (SD card and Garmin Pilot) once, says
   *N duplicate exports merged*, and lists the merged copies with `--show-excluded`. Listing only.
 
-### Documentation
+#### Documentation
 
 - The pilot documentation site gains the research paper (Edition 0.4), a sample workspace
   (release `sample-workspace`), header links to the app and the feedback board, and pages updated

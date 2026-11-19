@@ -418,3 +418,30 @@ def test_the_export_file_inside_an_unzipped_folder_links_its_logs_too(registry_s
     up = rpc(url, "import_workspace", {"content_base64": base64.b64encode((folder / "Sender.eisworkspace").read_bytes()).decode(),
                                         "filename": "Sender.eisworkspace", "name": "Empty"})["result"]
     assert up["logs_linked"] is False and up["manifest"]["log_folders"] == []
+
+def test_a_notebook_travels_with_its_outputs(registry_server, tmp_path):
+    """Spec 16 §5.1: studies/<id>/notebook.ipynb is carried as stored —
+    outputs included (the website can't recompute them)."""
+    url = registry_server
+    _sender(url, tmp_path)
+    sid = rpc(url, "study_create", {"name": "Carried", "question": "Does it travel?"})["result"]["study_id"]
+    assert rpc(url, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "A note."}})["ok"]
+    nb_path = _active_dir() / "studies" / sid / "notebook.ipynb"
+    sent = json.loads(nb_path.read_text())
+    sent["cells"].append({"id": "c3", "cell_type": "code", "execution_count": None, "source": "print(1)",
+                          "metadata": {"slingology": {"ran": {"engine": __version__, "flights": [], "status": "ok"}}},
+                          "outputs": [{"output_type": "stream", "name": "stdout", "text": "1\n"}]})
+    nb_path.write_text(json.dumps(sent))
+    _res, data = _export(url, include_logs=False)
+    rpc(url, "import_workspace", {"content_base64": base64.b64encode(data).decode(), "filename": "x.eisworkspace",
+                                  "skip_linking": True})
+    got = rpc(url, "load_study", {"study_id": sid})
+    assert got["ok"], got
+    got = got["result"]
+    assert got["format"] == "ipynb"
+    cells = got["notebook"]["cells"]
+    assert [c["id"] for c in cells] == [c["id"] for c in sent["cells"]]
+    assert [(c.get("outputs"), c["source"]) for c in cells[1:]] == [(c.get("outputs"), c["source"]) for c in sent["cells"][1:]]
+    # D14: the setup cell is re-pointed at the workspace it arrived in.
+    new_ws = got["notebook"]["metadata"]["slingology"]["workspace_id"]
+    assert cells[0]["id"] == "setup" and f'eis.open("{new_ws}")' in cells[0]["source"]

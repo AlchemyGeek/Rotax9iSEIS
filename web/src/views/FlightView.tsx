@@ -20,6 +20,9 @@ import { EventsTable } from "../components/EventsTable";
 import { TopicCards } from "../components/TopicCards";
 import { RuleEditorPanel } from "../components/RuleEditorPanel";
 import { useTimeline } from "../lib/useTimeline";
+import { useCapabilities } from "../lib/capabilities";
+import { SignalAid } from "../components/SignalAid";
+import { MarkForClaude } from "../components/MarkForClaude";
 import { flightFacts } from "../lib/flightFacts";
 import { buildEventRows, insightEventId, type EventRow } from "../lib/flightEvents";
 import { REFERENCE_DERIVED_TOPICS, topicCardModel } from "../lib/topicRoster";
@@ -83,6 +86,7 @@ export function FlightView() {
   const [worst, setWorst] = useState<{ x_s: number; label: string } | null>(null);
 
   const tl = useTimeline({ phases: flightAnalysis.phases, usingFixture });
+  const caps = useCapabilities();
 
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +279,24 @@ export function FlightView() {
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editParam, resolvedRules, shippedRules, insightSet, usingFixture]);
+
+  // Spec 06 §9: a Research slice opens the flight at its window
+  // (?window=<start>-<end>, seconds into the log), once the timeline is up;
+  // a notebook's log view (Spec 16 §5.2 *Open flight*) also names its
+  // channels (?channels=rpm,map_inhg).
+  const windowParam = searchParams.get("window");
+  const channelsParam = searchParams.get("channels");
+  useEffect(() => {
+    if (!windowParam || !tl.hasTimeline || !tl.fullEnd || (channelsParam && tl.channelRegistry.length === 0)) return;
+    const m = /^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(windowParam);
+    if (m) tl.navigateTo(Number(m[1]), Number(m[2]));
+    if (channelsParam) tl.showChannels(channelsParam.split(",").filter(Boolean));
+    const next = new URLSearchParams(searchParams);
+    next.delete("window");
+    next.delete("channels");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowParam, tl.hasTimeline, tl.fullEnd, tl.channelRegistry.length]);
 
   function handleRuleApplied(newRules: RuleSet) {
     setResolvedRules(newRules);
@@ -633,6 +655,14 @@ export function FlightView() {
               markers={markers}
               worst={worst}
               emptyText="No timeline available for this flight (its source log wasn't retained by the server)."
+              below={flightId && (
+                <SignalAid flightId={flightId} chartChannels={tl.activeChannelIds} visibleWindow={tl.visibleWindow}
+                  fullEnd={tl.fullEnd} enabled={caps?.features.research === true && !usingFixture}
+                  actions={caps?.features.investigations === true && !usingFixture ? (
+                    <MarkForClaude flightId={flightId} window={tl.visibleWindow} channels={tl.activeChannelIds}
+                      zoomed={tl.fullEnd > 0 && (tl.visibleWindow[0] > 1 || tl.visibleWindow[1] < tl.fullEnd - 1)} />
+                  ) : undefined} />
+              )}
             />
 
             <section id="events" style={{ flexShrink: 0, background: "var(--panel)", borderRadius: 12, padding: "14px 16px" }}>

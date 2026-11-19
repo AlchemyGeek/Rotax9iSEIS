@@ -29,7 +29,9 @@ All analysis logic stays in operations.py.
 from __future__ import annotations
 
 import inspect
+import sys
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +106,9 @@ ERROR_CODES = {
     # support it. Reserved; nothing produces it yet.
     "UNSUPPORTED_IN_HOST": "the operation isn't available in this host",
     "INTERNAL_ERROR": "an unexpected error inside an operation",
+    # Spec 06 §10.2: a study imported without any of its flights holds the
+    # sender's results and can't be run or edited (Run this on my flights).
+    "READ_ONLY": "the study is read-only",
 }
 
 
@@ -709,14 +714,93 @@ def _source_filename(workspace_dir: Path, flight_id: str) -> Optional[str]:
     return ws.source_filename(workspace_dir, flight_id)
 
 
-def op_list_flights(params: dict, ctx: dict) -> Any:
-    return [
-        {
-            "flight_id": fa.flight_id, "header": fa.header, "quality": fa.quality,
-            "source_filename": _source_filename(ctx["workspace_dir"], fa.flight_id),
-        }
-        for fa in _load_workspace_flights(ctx["workspace_dir"])
-    ]
+def _flight_summary(workspace_dir: Path, fa: FlightAnalysis) -> dict:
+    """Spec 16 §4.2 flights_list: the flight facts and phase summary (minutes
+    per phase, from the stored phases) and which source it was analysed from."""
+    phases: dict = {}
+    for p in fa.phases or []:
+        phases[p["phase"]] = round(phases.get(p["phase"], 0.0) + (p["end_s"] - p["start_s"]) / 60.0, 1)
+    src = ws.load_sources(workspace_dir, fa.flight_id)
+    analysed = ws.source_filename(workspace_dir, fa.flight_id)
+    via = next((i.via for i in (src.imports if src else []) if i.filename == analysed), None)
+    m = fa.metrics or {}
+    return {
+        "source": "AXIS" if via in ("axis", "aircraft_log") else "G3X",
+        "facts": {k: (m.get(k) or {}).get("value")
+                  # F18: the cruise density altitude and OAT, the conditions a
+                  # metric is read against (eis.metrics, flights_list).
+                  for k in ("duration_min", "airborne_min", "max_altitude_ft", "max_ias_kt",
+                            "cruise_da_ft", "cruise_oat_c")},
+        "phase_min": phases,
+        "events": len(fa.exceedances or []),
+    }
+
+
+async def op_list_flights(params: dict, ctx: dict) -> Any:
+    """Every flight's header, quality and log filename; with `summary`, the
+    flight facts and phase summary (S13). Every row carries its
+    identification (`ident`: route, local times, takeoffs and landings —
+    Spec 16 §4.4) when it is known, and the pilot's `name` / `notes`.
+    `identify: true` first fills the identification of flights lacking it
+    (reads their logs once). `name` keeps flights whose name or notes
+    contain it (case-insensitive)."""
+    from . import flight_ident as fi
+    if params.get("identify"):
+        await fi.ensure_async(ctx["workspace_dir"], _sources(ctx))
+    names = fi.load_names(ctx["workspace_dir"])
+    want = (params.get("name") or "").strip().lower()
+    out = []
+    for fa in _load_workspace_flights(ctx["workspace_dir"]):
+        named = names.get(fa.flight_id) or {}
+        if want and want not in f"{named.get('name', '')} {named.get('notes', '')}".lower():
+            continue
+        row = {"flight_id": fa.flight_id, "header": fa.header, "quality": fa.quality,
+               "source_filename": _source_filename(ctx["workspace_dir"], fa.flight_id)}
+        ident = fi.current(ctx["workspace_dir"], fa)
+        if ident is not None:
+            row["ident"] = {k: v for k, v in ident.items() if k not in ("key", "version")}
+        if named:
+            row["name"] = named.get("name") or None
+            row["notes"] = named.get("notes") or None
+        if params.get("summary"):
+            row["summary"] = _flight_summary(ctx["workspace_dir"], fa)
+        out.append(row)
+    return out
+
+
+def op_flight_set_name(params: dict, ctx: dict) -> Any:
+    """Spec 16 §4.4: the pilot's name and notes for a flight (both
+    optional; empty clears). Carried by workspace export."""
+    from . import flight_ident as fi
+    _require_active(ctx)
+    fid = params.get("flight_id")
+    if not fid or not (ctx["workspace_dir"] / "flights" / str(fid) / "analysis.json").is_file():
+        raise RpcError("NOT_FOUND", f"no flight {fid} in this workspace")
+    if params.get("name") is None and params.get("notes") is None:
+        raise RpcError("BAD_PARAMS", "flight_set_name needs name and/or notes")
+    try:
+        got = fi.set_name(ctx["workspace_dir"], fid, params.get("name"), params.get("notes"))
+    except ValueError as e:
+        raise RpcError("BAD_PARAMS", str(e))
+    return {"flight_id": fid, "name": got.get("name"), "notes": got.get("notes")}
+
+
+async def op_flights_find(params: dict, ctx: dict) -> Any:
+    """Spec 16 D10: flights for a description in words — date words
+    (\"Oct 24\", \"last Friday\"), airport codes and names, counts
+    (\"three landings\"), name words — ≤ `limit` (10) candidates ranked,
+    with what matched and what the description was understood to ask."""
+    from datetime import date as _date
+    from . import flight_ident as fi
+    _require_active(ctx)
+    text = params.get("description")
+    if not isinstance(text, str) or not text.strip():
+        raise RpcError("BAD_PARAMS", "flights_find needs a description, e.g. \"the Oct 24 flight with three landings\"")
+    rows = await op_list_flights({"identify": True}, ctx)
+    today = _date.fromisoformat(params["today"]) if params.get("today") else None
+    limit = max(1, min(10, int(params.get("limit") or 10)))
+    return fi.find([{"flight_id": r["flight_id"], "ident": r.get("ident"), "date": r["header"].get("date"),
+                     "name": r.get("name"), "notes": r.get("notes")} for r in rows], text, today=today, limit=limit)
 
 
 def op_get_flight(params: dict, ctx: dict) -> Any:
@@ -742,7 +826,16 @@ def op_get_flight(params: dict, ctx: dict) -> Any:
         # open "reference changed" markers (acceptance 8) for this flight.
         "reference_state": {"excluded": excluded_entry is not None, "reason": excluded_entry["reason"] if excluded_entry else None},
         "reference_changes": ws.open_reference_changes_for_flight(ctx["workspace_dir"], flight_id),
+        # Spec 16 §4.4/§4.7: the flight's identification — route, local
+        # start with its zone — when it is known.
+        "ident": _ident_of(ctx["workspace_dir"], fa),
     }
+
+
+def _ident_of(ws_dir: Path, fa) -> Optional[dict]:
+    from . import flight_ident as fi
+    i = fi.current(ws_dir, fa)
+    return {k: v for k, v in i.items() if k not in ("key", "version")} if i else None
 
 
 def _engine_config_for(workspace_dir: Path) -> dict:
@@ -949,7 +1042,7 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
             raise RpcError("BAD_PARAMS", "end_s is before start_s")
     workspace_dir = ctx["workspace_dir"]
     flight_dir = workspace_dir / "flights" / flight_id
-    source_files = [p for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] if flight_dir.is_dir() else []
+    source_files = [p for p in flight_dir.iterdir() if p.name not in ws.FLIGHT_DOCUMENTS] if flight_dir.is_dir() else []
     # Two kept copies (an AXIS SD-card log and its aircraft log, Spec 02
     # v0.16 §5.7): the one the analysis comes from.
     analysed = ws.source_filename(workspace_dir, flight_id)
@@ -963,7 +1056,15 @@ async def op_get_flight_series(params: dict, ctx: dict) -> Any:
             raise RpcError("NOT_FOUND", f"no source log reachable for flight {flight_id} "
                                          f"(not retained in the workspace, and its log folder isn't reachable right now)")
         content, filename = found
-    return _downsample_series(content, filename, _expand_channels(channels),
+    # `max_points` (Spec 16 §4.2's series cap): at most that many points per
+    # channel — every row of a window that fits, else the min/max envelope.
+    n_buckets = 400
+    if params.get("max_points") is not None:
+        try:
+            n_buckets = max(10, int(params["max_points"]) // 2)
+        except (TypeError, ValueError):
+            raise RpcError("BAD_PARAMS", "max_points is a whole number")
+    return _downsample_series(content, filename, _expand_channels(channels), n_buckets=n_buckets,
                               assignments=_assignments(ctx), window=window)
 
 
@@ -1096,12 +1197,17 @@ async def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
     pending_logs, stale_ids = (await ws.pending_work_async(workspace_dir, _sources(ctx))) if ctx.get("active_workspace_id") else ([], [])
     stale = set(stale_ids)
 
+    from . import flight_ident as fi
+    names = fi.load_names(workspace_dir)
     rows = []
     for fid in ws.list_flight_ids(workspace_dir):
         fa = ws.load_flight_analysis(workspace_dir, fid)
         if fa is None:
             continue
         src = ws.load_sources(workspace_dir, fid)
+        # Spec 16 §4.4 / Spec 03: the route, local start with its zone,
+        # takeoffs and landings (computed on Sync), and the pilot's name.
+        ident = fi.current(workspace_dir, fa) or {}
         iset = evaluate_insights(fa, fleet, rules, filters=filters)
         insights = [i for t in iset.topics for i in t.get("insights", [])]
         worst = None
@@ -1142,6 +1248,13 @@ async def op_list_flights_with_status(params: dict, ctx: dict) -> Any:
                 if i is not last_import and i.via != (last_import.via if last_import else None)
             } - {"unknown"}),
             "log_folder": last_import.log_folder_path if last_import else "",
+            "identified": bool(ident),
+            "route": list(ident.get("route") or []),
+            "start_local": ident.get("start_local"),
+            "tz_abbrev": ident.get("tz_abbrev"),
+            "takeoffs": ident.get("takeoffs"),
+            "landings": ident.get("landings"),
+            "name": (names.get(fid) or {}).get("name") or None,
         })
     # Spec 03 §5.1 "Unreadable": logs the scan couldn't read or analyse,
     # with the reason — not "Needs analysis", which they'd never leave.
@@ -1768,7 +1881,7 @@ def op_create_workspace(params: dict, ctx: dict) -> Any:
         manifest = ws.create_workspace(
             ctx["registry_path"], ctx["workspaces_root"],
             params["name"], params["engine_model"],
-            primary_tail_number=params.get("tail_number"),
+            primary_tail_number=params.get("tail_number"), aircraft_id=params.get("aircraft_id"),
         )
     except ValueError as e:
         raise RpcError("BAD_PARAMS", str(e))
@@ -1900,7 +2013,8 @@ def op_import_workspace(params: dict, ctx: dict) -> Any:
     from . import workspace_export as wx
     try:
         contents = _export_contents(params, ctx)
-        manifest = wx.import_workspace(ctx["registry_path"], ctx["workspaces_root"], contents, name=params.get("name"))
+        manifest = wx.import_workspace(ctx["registry_path"], ctx["workspaces_root"], contents, name=params.get("name"),
+                                       aircraft_id=params.get("aircraft_id"))
     except wx.ImportRefused as e:
         raise RpcError("IMPORT_REFUSED", str(e))
     except ValueError as e:
@@ -2551,13 +2665,384 @@ def op_save_workspace_settings(params: dict, ctx: dict) -> Any:
     return settings.to_dict()
 
 
+# ── Research (Spec 06 §11) ────────────────────────────────────────────────
+# Every Research action is one operation (goal 6): the page, the CLI and a
+# future agent call the same ones. Slices are built over the workspace's
+# LogSources as a resumable coroutine (Spec 04 D11) with progress on the
+# "research" stream; nothing is computed only in the page.
+
+def _research_call(fn):
+    """Map the research package's errors onto the envelope."""
+    from .research.rules import RuleError
+
+    async def wrapped(params: dict, ctx: dict) -> Any:
+        try:
+            out = fn(params, ctx)
+            if inspect.iscoroutine(out):
+                out = await out
+            return out
+        except RuleError as e:
+            raise RpcError("BAD_PARAMS", str(e))
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
+def _research_rules(ctx: dict, rules: Optional[list]) -> list[dict]:
+    """Slice rules as given, a preset named by its id standing for the
+    preset's rule (e.g. "full_power")."""
+    from .research import presets as rp
+    from .research.rules import RuleError
+    engine_cfg, engine_name = _current_engine(ctx)
+    out = []
+    for r in rules or []:
+        if isinstance(r, str):
+            if r.startswith("phase:"):
+                from .research.rules import phase_rule
+                out.append(phase_rule(r.split(":", 1)[1]))
+                continue
+            p = rp.preset(r, engine_name, engine_cfg)
+            if p is None:
+                raise RuleError(f"no preset {r!r} for {engine_name}")
+            out.append(p)
+        else:
+            out.append(r)
+    return out
+
+
+def _research_progress(ctx: dict):
+    def on_progress(update: dict) -> None:
+        _emit(ctx, "research", {"active": True, **update})
+    return on_progress
+
+
+async def _build(ctx: dict, params: dict, *, cache=None, keep_samples: bool = False, only_slices=None):
+    from .research.slices import build_slice_set
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        return await build_slice_set(
+            ctx["workspace_dir"], _sources(ctx), selection=params.get("selection"),
+            rules=_research_rules(ctx, params.get("slice_rules")), hand_slices=params.get("hand_slices"),
+            channels=params.get("channels"), reference=params.get("reference") or "rpm",
+            windows=params.get("windows"), prominence_min=float(params.get("prominence_min", 0.2)),
+            assignments=_assignments(ctx), cache=cache, keep_samples=keep_samples,
+            on_progress=_research_progress(ctx), only_slices=only_slices)
+    finally:
+        _emit(ctx, "research", {"active": False})
+
+
+def op_list_slice_presets(params: dict, ctx: dict) -> Any:
+    """§5.2/§5.3: the shipped slice rules for an engine profile (default:
+    the active workspace's), and the phase rules."""
+    from .research import presets as rp
+    if params.get("engine"):
+        name = _resolve_engine_name(params["engine"])
+        cfg = load_engine_config(name)
+    else:
+        cfg, name = _current_engine(ctx)
+    return rp.list_presets(name, cfg)
+
+
+async def op_build_slices(params: dict, ctx: dict) -> Any:
+    """§5.5: the slices a selection, slice rules and hand slices make, with
+    each slice's context and §6 descriptors and the resolved §7.0 windows."""
+    _require_active(ctx)
+    ss = await _build(ctx, params, cache=None)
+    out = ss.to_dict()
+    out["selection"] = params.get("selection") or {"mode": "all"}
+    return out
+
+
+def _anchor_index(s, anchor: str, samples: dict) -> int:
+    """D6 anchors, as seconds into the slice: the rule's crossing (default;
+    a hand slice's start), slice start, slice end, a channel's peak, or a
+    phase boundary ("phase:CLIMB")."""
+    if anchor in (None, "", "crossing"):
+        return s.anchor_s - s.start_s
+    if anchor == "start":
+        return 0
+    if anchor == "end":
+        return s.end_s - s.start_s
+    if anchor.startswith("peak:"):
+        y = samples.get(anchor.split(":", 1)[1])
+        if y is None or not np.isfinite(y).any():
+            return 0
+        return int(np.nanargmax(y))
+    if anchor.startswith("phase:"):
+        # The first phase boundary into the named phase inside the slice.
+        return 0
+    from .research.rules import RuleError
+    raise RuleError(f"unknown anchor {anchor!r}; one of crossing, start, end, peak:<channel>, phase:<PHASE>")
+
+
+async def op_get_slice_samples(params: dict, ctx: dict) -> Any:
+    """§11: aligned samples of chosen slices for the views — x in seconds
+    from the anchor (D6), plus each hand slice's stored offset."""
+    _require_active(ctx)
+    channels = params.get("channels") or ["rpm"]
+    ids = set(params.get("slice_ids") or [])
+    build = {**params, "channels": channels}
+    if ids:
+        # Session B: the view asks for a few slices at a time; read only
+        # their flights (a slice id starts with its flight_id, §3.2) rather
+        # than the whole selection — the aligned view would otherwise pay a
+        # full workspace pass on every anchor or channel change.
+        flights = sorted({i.split(":", 1)[0] for i in ids})
+        sel = dict(params.get("selection") or {"mode": "all"})
+        if sel.get("mode") == "flights":
+            flights = [f for f in flights if f in set(sel.get("flights") or [])]
+        build["selection"] = {"mode": "flights", "flights": flights, "split": sel.get("split")}
+    ss = await _build(ctx, build, keep_samples=True, only_slices=ids or None)
+    anchor = params.get("anchor") or "crossing"
+    out = []
+    for s in ss.slices:
+        samples = s.samples or {}
+        a = _anchor_index(s, anchor, samples)
+        if anchor.startswith("phase:"):
+            want = anchor.split(":", 1)[1].upper()
+            fa = ws.load_flight_analysis(ctx["workspace_dir"], s.flight)
+            starts = [int(p["start_s"]) for p in (fa.phases if fa else []) if p["phase"] == want
+                      and s.start_s <= p["start_s"] < s.end_s]
+            a = (starts[0] - s.start_s) if starts else 0
+        n = s.end_s - s.start_s
+        x = [round(float(i - a + s.offset_s), 1) for i in range(n)]
+        out.append({"slice_id": s.slice_id, "flight": s.flight, "label": s.label, "context": s.context,
+                    "anchor_offset_s": a, "t": x,
+                    "channels": {ch: [None if not np.isfinite(v) else round(float(v), 2) for v in samples.get(ch, [])]
+                                 for ch in channels if ch in samples}})
+    return {"anchor": anchor, "channels": channels, "slices": out}
+
+
+async def op_run_test(params: dict, ctx: dict) -> Any:
+    """§11: one test (§7.1–7.4) on a slice set, returning the §8 result.
+    The set is given as selection + slice_rules + hand_slices."""
+    _require_active(ctx)
+    test_id = params.get("test_id")
+    merged = {k: v for k, v in params.items() if v is not None}
+    engine_cfg, _ = _current_engine(ctx)
+    from .research.api import run_question
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        out = await run_question(
+            ctx["workspace_dir"], _sources(ctx), test_id=test_id, selection=merged.get("selection"),
+            slice_rules=_research_rules(ctx, merged.get("slice_rules")), hand_slices=merged.get("hand_slices"),
+            channels=list(params.get("channels") or []), params=dict(params.get("params") or {}),
+            references=merged.get("references"), windows=merged.get("windows"),
+            prominence_min=float(merged.get("prominence_min", 0.2)), engine_cfg=engine_cfg,
+            assignments=_assignments(ctx), cache=None, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+    return out
+
+
+async def op_analyze_signal(params: dict, ctx: dict) -> Any:
+    """One flight's rolling swing and period strips per channel, and for an
+    optional window its diagnostics and descriptors beside their references
+    (Spec 06 v1.0; the Flight view's Signal toggle, Spec 16 D15). Reads the
+    flight's log through its LogSource."""
+    from .research.signal import analyze_signal
+    _require_active(ctx)
+    flight_id = params.get("flight_id")
+    if not flight_id:
+        raise RpcError("BAD_PARAMS", "analyze_signal needs a flight_id")
+    engine_cfg, _ = _current_engine(ctx)
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        return await analyze_signal(
+            ctx["workspace_dir"], _sources(ctx), flight_id, channels=params.get("channels"),
+            window=params.get("window"), reference=params.get("reference"),
+            windows=params.get("windows"), prominence_min=float(params.get("prominence_min", 0.2)),
+            references=params.get("references"), engine_cfg=engine_cfg, assignments=_assignments(ctx),
+            include_values=params.get("include_values", True) is not False,
+            include_strips=params.get("include_strips", True) is not False,
+            skip_onset_s=params.get("skip_onset_s") or 0, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+
+
+async def op_compare_rows(params: dict, ctx: dict) -> Any:
+    """§9.2 Compare: one row per slice, grouped by flight, from the same
+    slice build as build_slices; `collapse` gives one row per flight;
+    `pinned` names the reference row. Flights of the selection with no
+    matching slice are listed (reached through `eis.compare`)."""
+    from .research.api import compare
+    _require_active(ctx)
+    merged = {k: v for k, v in params.items() if v is not None}
+    merged.setdefault("channels", ["rpm", "map_inhg"])
+    engine_cfg, _ = _current_engine(ctx)
+    _emit(ctx, "research", {"active": True, "phase": "starting"})
+    try:
+        out = await compare(ctx["workspace_dir"], _sources(ctx), selection=merged.get("selection"),
+                            slice_rules=_research_rules(ctx, merged.get("slice_rules")),
+                            hand_slices=merged.get("hand_slices"), channels=merged["channels"],
+                            windows=merged.get("windows"), pinned=params.get("pinned"),
+                            collapse=bool(params.get("collapse")), engine_cfg=engine_cfg,
+                            assignments=_assignments(ctx), cache=None, on_progress=_research_progress(ctx))
+    finally:
+        _emit(ctx, "research", {"active": False})
+    return out
+
+
+def _engine_model(ctx: dict) -> str:
+    try:
+        return ws.load_manifest(ctx["workspace_dir"]).engine_model
+    except (FileNotFoundError, OSError, ValueError):
+        return ""
+
+
+def _notebooks(ctx: dict):
+    """Spec 16 §5: the notebooks' store. A study still stored the old way —
+    a Session D investigation or a hand study (Spec 06 v1.0, D15) — is
+    converted to a notebook on first sight."""
+    from .investigations import ipynb as nbx
+    from .investigations.ops import presets_of
+    nbx.convert_all(ctx["workspace_dir"], presets=presets_of(ctx))
+    return nbx
+
+
+def _nb_or_404(ctx: dict, sid) -> Any:
+    nbx = _notebooks(ctx)
+    if not nbx.exists(ctx["workspace_dir"], sid):
+        raise RpcError("NOT_FOUND", f"no notebook {sid}")
+    return nbx
+
+
+def op_load_study(params: dict, ctx: dict) -> Any:
+    """A notebook's list row with `notebook` (the .ipynb as stored) and the
+    pictures its markdown names under files/."""
+    _require_active(ctx)
+    sid = params.get("study_id")
+    nbx = _nb_or_404(ctx, sid)
+    nb = nbx.load(ctx["workspace_dir"], sid)
+    return {**nbx.read_view(nb), "files": nbx.markdown_images(ctx["workspace_dir"], nb)}
+
+
+def op_list_studies(params: dict, ctx: dict) -> Any:
+    """The workspace's notebooks, most recently updated first."""
+    _require_active(ctx)
+    nbx = _notebooks(ctx)
+    rows = []
+    for sid in nbx.list_ids(ctx["workspace_dir"]):
+        try:
+            rows.append(nbx.summary(nbx.load(ctx["workspace_dir"], sid)))
+        except (ValueError, KeyError, nbx.NotebookError):
+            continue
+    return {"studies": sorted(rows, key=lambda s: s.get("updated") or "", reverse=True)}
+
+
+def op_delete_study(params: dict, ctx: dict) -> Any:
+    _require_active(ctx)
+    sid = params.get("study_id")
+    if not _nb_or_404(ctx, sid).delete(ctx["workspace_dir"], sid):
+        raise RpcError("NOT_FOUND", f"no notebook {sid}")
+    return {"deleted": sid}
+
+
+def _safe_name(name: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9._ -]+", "", name or "").strip().replace(" ", "-")
+    return s or "notebook"
+
+
+def op_export_study(params: dict, ctx: dict) -> Any:
+    """Spec 16 §5.1: a notebook as a zip of its folder (`format: "zip"`, the
+    default) or one HTML page (`"html"`). Handed to the transport like a
+    workspace export."""
+    from .investigations import nbhtml
+    _require_active(ctx)
+    sid = params.get("study_id")
+    fmt = params.get("format")
+    nbx = _nb_or_404(ctx, sid)
+    nb = nbx.load(ctx["workspace_dir"], sid)
+    name = _safe_name(nbx.meta(nb).get("name") or sid)
+    if fmt in (None, "zip"):
+        data, suffix = nbx.export_zip(ctx["workspace_dir"], nb), ".zip"
+    elif fmt == "html":
+        files = nbx.files_dir(ctx["workspace_dir"], sid)
+
+        def read(ref: str):
+            p = files / ref.split("/", 1)[-1]
+            return p.read_bytes() if p.is_file() and ".." not in ref else None
+        data, suffix = nbhtml.render(nbx.for_export(nb, ctx["workspace_dir"]), read).encode(), ".html"
+    else:
+        raise RpcError("BAD_PARAMS", "a notebook exports as format zip (the notebook folder) or html")
+    out = _export_dir(ctx) / uuid.uuid4().hex
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{name}{suffix}"
+    path.write_bytes(data)
+    return {"filename": path.name, "size": len(data), "download_url": ctx["deliver_file"](path, path.name)}
+
+
+def op_import_study(params: dict, ctx: dict) -> Any:
+    """Spec 16 §5.1: a notebook — its folder's zip or a bare .ipynb (content
+    or upload_id) — becomes a new notebook, its fingerprints mapped to
+    flights here and cells whose flights are absent read-only."""
+    _require_active(ctx)
+    if params.get("upload_id"):
+        data, _name = _log_content(params, ctx)
+    elif isinstance(params.get("content"), (bytes, bytearray)):
+        data = bytes(params["content"])
+    else:
+        raise RpcError("BAD_PARAMS", "choose a notebook zip or an .ipynb file")
+    nbx = _notebooks(ctx)
+    try:
+        return nbx.read_view(nbx.import_bytes(ctx["workspace_dir"], data))
+    except nbx.NotebookError as e:
+        raise RpcError(e.code, e.message)
+
+
+async def op_run_study_on_my_flights(params: dict, ctx: dict) -> Any:
+    """Q5 *Run this on my flights*: the notebook copied as a new notebook
+    (its files with it) and re-run where there is a bench (D8), its new
+    outputs accepted."""
+    import copy as _copy
+    import shutil
+    _require_active(ctx)
+    sid = params.get("study_id")
+    nbx = _nb_or_404(ctx, sid)
+    src = nbx.load(ctx["workspace_dir"], sid)
+    nb = _copy.deepcopy(src)
+    m = nbx.meta(nb)
+    m.update({"id": f"st-{uuid.uuid4().hex[:12]}", "name": f"{m.get('name') or 'Notebook'} — my flights",
+              "status": "open", "created": None})
+    m.pop("imported", None)
+    nbx.save(ctx["workspace_dir"], nb)
+    a, b = nbx.files_dir(ctx["workspace_dir"], sid), nbx.files_dir(ctx["workspace_dir"], m["id"])
+    if a.is_dir():
+        shutil.copytree(a, b, dirs_exist_ok=True)
+    await _OPS["study_cells_rerun"]({"study_id": m["id"]}, ctx)
+    if _FEATURES[ctx.get("host", "server")].get("bench"):
+        await _OPS["study_cells_accept"]({"study_id": m["id"]}, ctx)
+    return nbx.read_view(nbx.load(ctx["workspace_dir"], m["id"]))
+
+
+def op_get_research_progress(params: dict, ctx: dict) -> Any:
+    return ctx.get("research_progress", {"active": False})
+
+
+def op_forget_study_finding(params: dict, ctx: dict) -> Any:
+    """Remove a `study_finding` Journal entry (the Journal's "Remove" for
+    this kind). The study keeps its result."""
+    _require_active(ctx)
+    removed = ws.remove_journal_entry(ctx["workspace_dir"], kind="study_finding", ref_id=str(params.get("ref_id")))
+    return {"removed": removed is not None}
+
+
 # Spec 04 v0.4 §9.5: what this host can do, by host kind. The UI gates on
 # `features`, never on `host`.
 _FEATURES = {
     "server": {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
-               "persistent_storage_status": False, "download_url": True, "folder_watching": False},
+               "persistent_storage_status": False, "download_url": True, "folder_watching": False,
+               "research": True, "investigations": True, "bench": True, "documents": True,
+               "move_workspace": False},
+    # Spec 16 D8: the website renders notebooks and keeps an inbox, but has
+    # no bench — code_run is a server-host operation — and reads no
+    # documents folders (D11: documents_list / document_read).
     "browser": {"data_location": False, "add_folder_by_path": False, "choose_folder": True,
-                "persistent_storage_status": True, "download_url": False, "folder_watching": False},
+                "persistent_storage_status": True, "download_url": False, "folder_watching": False,
+                "research": True, "investigations": True, "bench": False, "documents": False,
+                # Spec 16 D17: the website offers to move its workspace to an
+                # EIS running on this computer (the local server receives it).
+                "move_workspace": True},
 }
 
 
@@ -2569,6 +3054,9 @@ def op_get_capabilities(params: dict, ctx: dict) -> Any:
     if factory is not None:
         features["add_folder_by_path"] = bool(getattr(factory, "add_folder_by_path", False))
         features["choose_folder"] = bool(getattr(factory, "choose_folder", False))
+    if features.get("bench"):
+        # A server host under Pyodide (the Node conformance run) has no worker processes.
+        features["bench"] = sys.platform not in ("emscripten", "wasi")
     return {"host": host, "engine_version": __version__, "host_version": __version__, "features": features}
 
 
@@ -2601,6 +3089,8 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "analyze_ecu_workspace": op_analyze_ecu_workspace,
     "validate_rules": op_validate_rules,
     "list_flights": op_list_flights,
+    "flight_set_name": op_flight_set_name,
+    "flights_find": op_flights_find,
     "get_flight": op_get_flight,
     "get_fleet": op_get_fleet,
     "get_trends_panels": op_get_trends_panels,
@@ -2666,7 +3156,63 @@ _OPS: dict[str, Callable[[dict, dict], Any]] = {
     "update_exclusion_reason": op_update_exclusion_reason,
     "get_topic_help": op_get_topic_help,
     "get_aircraft_summary": op_get_aircraft_summary,
+    # Research (Spec 06 §11)
+    "list_slice_presets": _research_call(op_list_slice_presets),
+    "build_slices": _research_call(op_build_slices),
+    "get_slice_samples": _research_call(op_get_slice_samples),
+    "run_test": _research_call(op_run_test),
+    "load_study": _research_call(op_load_study),
+    "list_studies": _research_call(op_list_studies),
+    "delete_study": _research_call(op_delete_study),
+    "export_study": _research_call(op_export_study),
+    "import_study": _research_call(op_import_study),
+    "run_study_on_my_flights": _research_call(op_run_study_on_my_flights),
+    "analyze_signal": _research_call(op_analyze_signal),
+    "compare_rows": _research_call(op_compare_rows),
+    "get_research_progress": op_get_research_progress,
+    "forget_study_finding": op_forget_study_finding,
 }
+
+
+def _investigation_op(name: str):
+    """Spec 16 §4.3: an Investigations operation (investigations/ops.py),
+    imported when first called so the browser runtime loads none of it
+    until asked."""
+    async def op(params: dict, ctx: dict) -> Any:
+        from .investigations import ops as _iops
+        out = getattr(_iops, f"op_{name}")(params, ctx)
+        if inspect.iscoroutine(out):
+            out = await out
+        return out
+    op.__name__ = f"op_{name}"
+    return _research_call(op)
+
+
+for _name in ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
+              "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
+              "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete"):
+    _OPS[_name] = _investigation_op(_name)
+
+
+def _localised(fn):
+    """Spec 16 §4.7: the answer's slices and windows labelled with the
+    flight's local time and offset (flight_ident.localise)."""
+    async def op(params: dict, ctx: dict) -> Any:
+        out = fn(params, ctx)
+        if inspect.iscoroutine(out):
+            out = await out
+        if isinstance(out, (dict, list)) and ctx.get("workspace_dir") is not None:
+            from . import flight_ident as fi
+            fi.localise(ctx["workspace_dir"], out)
+        return out
+    op.__name__ = getattr(fn, "__name__", "op")
+    op.__doc__ = fn.__doc__
+    return op
+
+
+for _name in ("build_slices", "get_slice_samples", "run_test", "compare_rows", "analyze_signal", "inbox_scan",
+              "inbox_list"):
+    _OPS[_name] = _localised(_OPS[_name])
 
 
 def _resolve_active_workspace(workspace_arg: Optional[str], registry_path: Path, workspaces_root: Path,
@@ -2715,6 +3261,9 @@ def _open_data_root(ctx: dict, workspace_arg: Optional[str] = None) -> None:
         ctx["workspace_dir"], ctx["active_workspace_id"] = loc.root, None
         return
     ctx.pop("data_location_missing", None)
+    # Spec 16 §4.4: every workspace belongs to an aircraft (idempotent).
+    from . import aircraft as _aircraft
+    _aircraft.ensure(loc.root)
     # Spec 02 §5.8.1: a configured location wins; and outside a developer
     # checkout (an installed wheel, the browser) the default root is used as
     # it is — the legacy single-workspace fallback is a checkout's alone.
@@ -2752,7 +3301,11 @@ def _no_delivery(path: Path, filename: str) -> Any:
 # matching capability.
 _HOST_ONLY: dict[str, set] = {
     op: {"server"} for op in ("get_data_location", "assess_data_location", "change_data_location",
-                              "get_data_location_progress", "retry_data_location", "add_log_folder")
+                              "get_data_location_progress", "retry_data_location", "add_log_folder",
+                              # Spec 16 D3/D8: the bench runs only beside a local engine.
+                              "code_run",
+                              # Spec 16 D11: the owner's folders, read in place.
+                              "documents_list", "document_read")
 }
 
 

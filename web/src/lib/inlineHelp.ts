@@ -47,6 +47,12 @@ export const INLINE_HELP = {
   // Flight view header
   "flight.excluded_from_reference":
     "This flight is still analysed, but it no longer shapes what normal looks like for your other flights.",
+
+  // The Flight view's Signal toggle (Spec 16 D15).
+  "signal.strips":
+    "Each channel's upper strip shows how far it swings over a few of its own cycles and the lower one is lit only where a repeat stands out clearly, so a bright stretch shows where to look, not whether anything is wrong.",
+  "signal.window":
+    "The seconds the chart is zoomed to, measured as Claude's notebooks measure a slice, with each number beside the Operators Manual line or threshold it is read against.",
 } as const;
 
 export type InlineHelpId = keyof typeof INLINE_HELP;

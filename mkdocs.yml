@@ -61,7 +61,7 @@ plugins:
 extra_css:
   - stylesheets/extra.css
 
-# Specs are kept in docs/specs for developers but are not part of the site nav.
+# Specs are kept in docs/specs for developers and are not part of the site.
 exclude_docs: |
   specs/
   overrides/
@@ -84,6 +84,12 @@ nav:
       - Your decisions: concepts/your-decisions.md
       - "Trends: is my engine changing?": concepts/trends.md
       - The Journal: concepts/the-journal.md
+  - Investigating your engine:
+      - "Research: look, mark, ask, read": concepts/research.md
+      - "Investigations: asking Claude": concepts/research-investigations.md
+      - Notebooks you keep and share: concepts/research-studies.md
+      - From a finding to action: concepts/research-action.md
+      - Questions Research will ask next: concepts/research-next.md
   - Working with others:
       - Sharing a workspace: concepts/sharing-a-workspace.md
   - Walkthroughs:
@@ -91,12 +97,27 @@ nav:
       - Reading your first flight: walkthroughs/first-flight.md
       - From an insight to a decision: walkthroughs/insight-to-decision.md
       - Export and import: walkthroughs/export-import.md
+      - Install the extension: walkthroughs/install-extension.md
+      - Set up your aircraft and documents: walkthroughs/aircraft-documents.md
+      - Mark something for Claude: walkthroughs/mark-for-claude.md
+      - Your first investigation: walkthroughs/first-investigation.md
+      - Reproducing a takeoff investigation: walkthroughs/research-takeoff.md
+      - Run a notebook in JupyterLab: walkthroughs/notebook-jupyterlab.md
+      - Sharing a notebook: walkthroughs/research-sharing.md
   - Reference:
       - Operators Manual limits by engine: reference/om-limits.md
       - Settings and their defaults: reference/settings.md
+      - Research presets: reference/research-presets.md
+      - What EIS measures: reference/what-eis-measures.md
+      - Investigation tools: reference/investigation-tools.md
+      - Investigation prompts: reference/investigation-prompts.md
+      - The eis library: reference/eis-library.md
+      - The notebook format: reference/notebook-format.md
       - Glossary: reference/glossary.md
       - The research paper: reference/research-paper.md
       - Further reading: reference/further-reading.md
+      - Investigations:
+          - "Takeoff RPM/MAP oscillation (Oct 2026)": research/2026-10-takeoff-rpm-oscillation.md
 
 extra:
   app_url: https://alchemygeek.github.io/Rotax9iSEIS/app/

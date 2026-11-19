@@ -6,15 +6,12 @@ import type { WorkspaceRegistryEntry } from "../types/contract";
 import { useFilterAttention } from "../lib/filterAttention";
 import { useShiftHistoryAttention } from "../lib/shiftHistoryAttention";
 import { ImportWorkspaceDialog } from "./ImportWorkspaceDialog";
+import { NewWorkspaceDialog } from "./NewWorkspace";
 import { setTheme, useTheme } from "../lib/theme";
+import { useCapabilities } from "../lib/capabilities";
+import { dismissMovedNote, takeMovedNote } from "../lib/moveWorkspace";
 
 const client = getEngineClient();
-
-// Mirrors slingology_eis/workspace.py's ENGINE_MODELS — no RPC exposes
-// this short a list on its own (list_engines returns full profile
-// objects), and it changes rarely enough that duplicating the four
-// values here is simpler than a round trip just to populate a picker.
-const ENGINE_MODELS = ["912iS", "915iS", "916iS"];
 
 // Spec 15 §6: the docs site, confirmed permanent. One constant — there is
 // no redirect layer to absorb a move.
@@ -74,12 +71,9 @@ function WorkspaceSwitcher() {
   const [activeId, setActiveId] = useState<string | null>(fixtureAppSettings.last_active_workspace_id);
   const [usingFixture, setUsingFixture] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newEngine, setNewEngine] = useState("916iS");
-  const [newTail, setNewTail] = useState("");
   // Spec 03 v0.19 §5.8: Import workspace… from the switcher too.
   const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
   // Until the server answers, show no workspace at all — not the sample
   // registry's name, nor "+ New workspace" for someone who has some.
   const [loaded, setLoaded] = useState(false);
@@ -129,88 +123,24 @@ function WorkspaceSwitcher() {
     }
   }
 
-  async function handleCreate() {
-    if (!newName.trim()) return;
-    setBusy(true);
-    try {
-      await client.createWorkspace(newName.trim(), newEngine, newTail.trim() || undefined);
-      window.location.hash = "#/flights";
-      window.location.reload();
-    } catch {
-      setBusy(false);
-    }
-  }
-
   if (!loaded) {
     return <div data-testid="workspace-switcher-loading" style={{ minWidth: 120, height: 28 }} />;
   }
 
   if (!active) {
-    // Real, empty registry — no fixture stand-in here, the create form
-    // below is the actual next step, not a fallback to hide it.
+    // Real, empty registry: the first-workspace page (Flights) holds the
+    // three ways to start one (Spec 16 D18).
     return (
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          style={{
-            padding: "6px 12px", borderRadius: 8, background: "var(--panel-control)",
-            border: "1px dashed var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
-          }}
-        >
-          + New workspace
-        </button>
-        {open && (
-          <>
-            <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
-            <div
-              style={{
-                position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 220, zIndex: 11,
-                background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 10,
-                padding: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", display: "flex", flexDirection: "column", gap: 6,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <input
-                autoFocus
-                placeholder="Workspace name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-              />
-              <select
-                value={newEngine}
-                onChange={(e) => setNewEngine(e.target.value)}
-                style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-              >
-                {ENGINE_MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <input
-                placeholder="Tail number (optional)"
-                value={newTail}
-                onChange={(e) => setNewTail(e.target.value)}
-                style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-              />
-              <button
-                onClick={handleCreate}
-                disabled={busy || !newName.trim()}
-                style={{ padding: "6px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
-              >
-                {busy ? "Creating…" : "Create"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setOpen(false); setImporting(true); }}
-                style={{ padding: "6px 10px", borderRadius: 6, background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer" }}
-              >
-                Import workspace…
-              </button>
-            </div>
-          </>
-        )}
-        {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
-      </div>
+      <button
+        onClick={() => { window.location.hash = "#/flights"; }}
+        data-testid="new-workspace-open"
+        style={{
+          padding: "6px 12px", borderRadius: 8, background: "var(--panel-control)",
+          border: "1px dashed var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
+        }}
+      >
+        + New workspace
+      </button>
     );
   }
 
@@ -231,7 +161,7 @@ function WorkspaceSwitcher() {
       </button>
       {open && (
         <>
-          <div onClick={() => { setOpen(false); setShowCreate(false); }} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 10 }} />
           <div
             style={{
               position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 260, zIndex: 11,
@@ -262,59 +192,25 @@ function WorkspaceSwitcher() {
               </div>
             ))}
             <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 4 }}>
-              {!showCreate ? (
-                <>
-                  <div
-                    onClick={() => setShowCreate(true)}
-                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--link)", cursor: usingFixture ? "default" : "pointer" }}
-                    title={usingFixture ? "no local server reachable" : undefined}
-                  >
-                    + New workspace
-                  </div>
-                  <div
-                    onClick={() => { if (!usingFixture) { setOpen(false); setImporting(true); } }}
-                    style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--text-secondary)", cursor: usingFixture ? "default" : "pointer" }}
-                  >
-                    Import workspace…
-                  </div>
-                </>
-              ) : (
-                <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                  <input
-                    autoFocus
-                    placeholder="Workspace name"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-                  />
-                  <select
-                    value={newEngine}
-                    onChange={(e) => setNewEngine(e.target.value)}
-                    style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-                  >
-                    {ENGINE_MODELS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                  <input
-                    placeholder="Tail number (optional)"
-                    value={newTail}
-                    onChange={(e) => setNewTail(e.target.value)}
-                    style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text-primary)", fontSize: 12 }}
-                  />
-                  <button
-                    onClick={handleCreate}
-                    disabled={busy || !newName.trim()}
-                    style={{ padding: "6px 10px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: busy ? "default" : "pointer" }}
-                  >
-                    {busy ? "Creating…" : "Create"}
-                  </button>
-                </div>
-              )}
+              <div
+                onClick={() => { if (!usingFixture) { setOpen(false); setCreating(true); } }}
+                data-testid="new-workspace-open"
+                style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--link)", cursor: usingFixture ? "default" : "pointer" }}
+                title={usingFixture ? "no local server reachable" : undefined}
+              >
+                + New workspace
+              </div>
+              <div
+                onClick={() => { if (!usingFixture) { setOpen(false); setImporting(true); } }}
+                style={{ padding: "8px 10px", fontSize: 12, color: usingFixture ? "var(--text-tertiary)" : "var(--text-secondary)", cursor: usingFixture ? "default" : "pointer" }}
+              >
+                Import workspace…
+              </div>
             </div>
           </div>
         </>
       )}
+      {creating && <NewWorkspaceDialog onClose={() => setCreating(false)} onImport={() => { setCreating(false); setImporting(true); }} />}
       {importing && <ImportWorkspaceDialog onClose={() => setImporting(false)} />}
     </div>
   );
@@ -323,6 +219,11 @@ function WorkspaceSwitcher() {
 export function NavShell({ right, children }: { right?: ReactNode; children: ReactNode }) {
   const filterAttention = useFilterAttention();
   const shiftHistoryAttention = useShiftHistoryAttention();
+  // Spec 06 §12 / Spec 03 §4: Research is shown when the host offers it
+  // (features.research), hidden on an older host — a feature gate, never a
+  // host-kind check.
+  const caps = useCapabilities();
+  const research = caps?.features.research === true;
   return (
     <div
       style={{
@@ -375,6 +276,11 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
                 </span>
               )}
             </NavLink>
+            {research && (
+              <NavLink to="/research" style={NAV_LINK_STYLE} data-testid="nav-research">
+                Research
+              </NavLink>
+            )}
             <NavLink to="/journal" style={NAV_LINK_STYLE}>
               Journal
               {filterAttention > 0 && (
@@ -439,7 +345,25 @@ export function NavShell({ right, children }: { right?: ReactNode; children: Rea
           </NavLink>
         </div>
       </div>
+      <MovedNote />
       <div style={{ flexGrow: 1, minHeight: 0, display: "flex" }}>{children}</div>
+    </div>
+  );
+}
+
+// Spec 16 D17: the local pages just after Move my workspace — one line,
+// until dismissed (this tab only).
+function MovedNote() {
+  const [moved, setMoved] = useState<string | null>(() => takeMovedNote());
+  if (!moved) return null;
+  return (
+    <div data-testid="moved-note" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 28px", fontSize: 12,
+      background: "var(--brand-fill)", borderBottom: "1px solid var(--border)", color: "var(--text-primary)" }}>
+      <span style={{ flexGrow: 1 }}>
+        Your workspace is here now, moved from the website. Link your log folder on <a href="#/flights">Flights</a> and Sync to see its flights.
+      </span>
+      <button type="button" onClick={() => { dismissMovedNote(); setMoved(null); }} aria-label="Dismiss"
+        style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 14 }}>×</button>
     </div>
   );
 }

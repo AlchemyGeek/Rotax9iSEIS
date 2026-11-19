@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slingology-eis"
-version = "1.0.2"
+version = "1.1.0"
 description = "Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,14 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.0",
+    "slingology-eis[investigations]",
+]
+# Spec 16: the bench's scientific stack (code_run) and the PDF pager
+# (document_read). The engine and the browser runtime need none of it.
+investigations = [
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "pypdf>=4",
 ]
 notebooks = [
     "jupytext>=1.14",
@@ -48,4 +56,5 @@ include = ["slingology_eis*"]
 # tree by design (Spec 10 §5) — true package data for it is the same
 # unresolved gap engines/*.json already has for a genuinely installed
 # wheel, not a new one.
-slingology_eis = ["help/topics.md"]
+slingology_eis = ["help/topics.md", "airports/airports.csv.gz", "airports/README.md",
+                  "investigations/guide.md", "investigations/prompts/*.md"]

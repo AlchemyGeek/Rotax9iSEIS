@@ -2,7 +2,7 @@
 
 ## How the project is run
 
-- Design is spec-first. Every behaviour is owned by one of `docs/specs/01`–`15`; a change to
+- Design is spec-first. Every behaviour is owned by one of `docs/specs/01`–`16`; a change to
   behaviour is a revision of the owning spec (revision-history row, same numbering and scope
   conventions), never a standalone addendum. Prompts to Code are functional; Code owns the
   implementation decisions.
@@ -16,7 +16,8 @@
 ## Branches
 
 - `main` — releasable. Bug fixes are committed here directly.
-- `webui` (merged at 1.0.0) and `pyodide` (merged at 1.0.1) — kept for history, no new work.
+- `webui` (merged at 1.0.0), `pyodide` (merged at 1.0.1) and `research` (squash-merged at 1.1.0:
+  Spec 06 the instrument, Spec 16 Investigations) — kept for history, no new work.
   Feature work of that size goes on a branch off `main`, merged back as a release; `main` is
   merged into it along the way to pick up fixes, and a bug found on the branch is fixed on
   `main` first.
@@ -32,6 +33,20 @@ goes through a `LogSource` and must stay a resumable coroutine (one file outstan
 the browser the page supplies the bytes. `PYODIDE_VERSION` pins the runtime; a change there
 means re-running the browser parity and persistence checks under `spike/`.
 
+## Three front doors, one engine
+
+Besides HTTP and the Pyodide worker, `slingology_eis/investigations/mcp_server.py` is the MCP
+server Claude Desktop runs (`slingology-eis mcp`; the extension bundle from
+`scripts/build_extension.py` wraps it with its own Python and the built pages). Its tools call
+host operations and trim their JSON; the MCP parity test re-applies each trim to the operation's
+JSON fetched independently, so a new tool means a trim rule and a parity case. `guide.md` and
+`prompts/*.md` in that package are the method Claude follows — edit them like a spec, not like
+code. The bench (`bench*.py`) runs notebook cells in a worker process with the `eis` library
+(`eis_lib.py`, also importable as `slingology_eis.eis`); whatever a tool measures, `eis.*` must
+measure identically — the acceptance tests compare them. Pages are gated by `get_capabilities`
+(`features.investigations`, `bench`, `move_workspace`), never by host. Spec 16 §3.x tables record
+every functional decision a session made; keep adding rows there.
+
 ## Real flight-log test data
 
 The flight logs (G3X, and from October 2026 Garmin AXIS) used by the
@@ -39,6 +54,9 @@ characterization, contract and CLI tests are private and gitignored (`/data/` in
 private repo: **`AlchemyGeek/EIS-Test-Data`** (CSV files at the repo root).
 
 At the start of any session that develops or tests the engine, CLI or web UI:
+
+The owner adds new flights to that repo himself; a session never writes there. The extension's
+*EIS data folder* must point at `data/`, never `data/logs/` (the clone).
 
 1. Attach the data repo to the session (cloud sessions: the `add_repo` tool
    with owner `AlchemyGeek`, repo `EIS-Test-Data`), then clone it next to this
@@ -69,6 +87,9 @@ Rules for the data:
   fixtures, workspace caches, phase snapshots, per-run ECU lists), to this repo.
   They contain the tail number, times and airports. Aggregate counts in a commit
   message are fine; per-flight detail goes in the session report.
+  **One exception, granted by the owner (Nov 2026):** `docs/research/` holds the
+  owner's own investigation write-ups, which may carry per-flight tables for
+  N117ZS. Nothing else is exempt, and the exemption is the owner's to extend.
 - Treat `EIS-Test-Data` as read-only; the owner adds new flights to it.
 - The characterization goldens (`tests/characterization/golden/`, gitignored) are
   regenerated per `tests/characterization/README.md` only when new output is
@@ -79,7 +100,7 @@ Rules for the data:
 ```bash
 cd web
 npm ci
-npx vitest run        # 198 tests; exits 1 today on a jsdom scrollIntoView error (BACKLOG P5)
+npx vitest run        # 298 tests
 npm run build         # server-mode UI → web/dist/, which `slingology-eis serve` serves
 npm run build:browser # the static site for the browser mode (UI, runtime.json, Pyodide, wheel)
 npm run dev:browser   # browser mode under Vite, engine wheel built into public/engine/
@@ -90,10 +111,20 @@ Verify UI changes live in both modes: `slingology-eis serve` and open
 own — point `SLINGOLOGY_EIS_HOME` at a throwaway data root so nothing touches
 the real registry; and the static build in headless Chrome via
 `spike/browser-host/run_parity.py` (byte-identical to server mode) and
-`run_walkthrough.py`. A server started before a code change serves the old RPC
+`run_walkthrough.py` (and `run_session_g_walkthrough.py --flight-log … --second-log …`, which
+takes the real log names as arguments so nothing committed names them). The two scripts need the
+test build: `python scripts/build_site.py --out web/dist --e2e`; rebuild normally afterwards. A server started before a code change serves the old RPC
 surface; restart it before blaming the page. Fixtures under
 `web/src/fixtures/` are synthetic or scrubbed (`web/scripts/gen_cas_fixture.py`);
 they carry no tail number, GPS, airport or real time.
+
+## Changing the instrument
+
+Spec 06's descriptors and tests (`slingology_eis/research/`) feed the inbox scan, the tools and
+every notebook. A change there must keep the Spec 06 acceptance tests on the real logs green and
+be checked before/after on the owner's workspace copy — count the slice measurements and question
+results that differ and state them in the commit (Session E's F2 did: 515 identical, 15 wording
+only). Sub-floor periods (< 3 s at 1 Hz) are never *prominent*; they are *below_floor*.
 
 ## Changing detection heuristics
 

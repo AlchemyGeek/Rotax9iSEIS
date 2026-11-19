@@ -1,0 +1,1054 @@
+"""
+The MCP tool surface (Spec 16 §4.2): a curated façade over the host.
+
+Every tool is a thin mapping onto one Spec 01 operation (series_get, one
+or two): it calls the operation through `call(op, params)` — the host's
+own dispatch, the rules every transport shares — and shapes the
+operation's JSON with the tool's documented trim. Nothing here computes
+an analysis; a tool that needs something no operation answers is a
+missing operation, not façade code.
+
+The trims, which the parity test re-applies to the operations' JSON:
+
+  PAGE_ROWS            50 rows per page (flights, fleet rows, slices, rows, table rows)
+  SERIES_MAX_POINTS    600 points per channel; ≤ that many seconds come back every row,
+                       a longer window as the min/max envelope (Spec 07 §11.2)
+  SERIES_MAX_CHANNELS  6
+  SAMPLES_MAX_VALUES   6000 values (slices × seconds × channels) per samples_get
+  CODE_STREAM_CHARS    8000 characters of stdout/stderr per code cell, head kept
+  CODE_FIGURES         4 figures returned as PNG images (all are kept in the study)
+  PERIODOGRAM_PEAKS    5 strongest periods per channel; the detrended series, ACF and
+                       lag curve are dropped (the UI draws them; the numbers stay)
+  STRIP_RUNS           40 lit runs per channel (rolling strips → where it cycles)
+  TEXT_CHARS           2000 characters of a stored cell's markdown or stream in study_read
+
+Every result is wrapped as {engine_version, workspace_id, result}. With no
+workspace open, every tool answers the same "no workspace yet" text.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+PAGE_ROWS = 50
+SERIES_MAX_POINTS = 600
+SERIES_MAX_CHANNELS = 6
+SAMPLES_MAX_VALUES = 6000
+CODE_STREAM_CHARS = 8000
+CODE_FIGURES = 4
+PERIODOGRAM_PEAKS = 5
+STRIP_RUNS = 40
+TEXT_CHARS = 2000
+
+NO_WORKSPACE = ("No workspace yet — open the EIS pages at http://127.0.0.1:8420, create a workspace "
+                "and import your logs; then ask again.")
+
+Call = Callable[[str, dict], Any]
+
+
+class ToolRefusal(Exception):
+    """A request the tool won't answer as asked (a cap), with why and what to ask instead."""
+
+
+@dataclass
+class Tool:
+    name: str
+    title: str
+    description: str
+    properties: dict
+    run: Callable[[dict, Call], Any]
+    required: tuple = ()
+    writes: bool = False
+    destructive: bool = False
+    images: Optional[Callable[[Any], list]] = None   # extra image blocks (code_run's figures)
+    ops: tuple = field(default_factory=tuple)          # the operations it maps onto, for the spec table
+
+    def definition(self) -> dict:
+        return {
+            "name": self.name, "title": self.title, "description": self.description,
+            "inputSchema": {"type": "object", "properties": self.properties, "required": list(self.required),
+                            "additionalProperties": False},
+            "annotations": {"title": self.title, "readOnlyHint": not self.writes,
+                            "destructiveHint": self.destructive, "idempotentHint": not self.writes,
+                            "openWorldHint": False},
+        }
+
+
+# ── shared shaping ─────────────────────────────────────────────────────────
+
+def local_only(x):
+    """§4.7 (F8): every time a tool returns is the flight's local time with
+    its offset. The operations label slices and windows (`start_local`,
+    `when`); this trim drops what isn't local — `start_utc`, and a
+    `start_time` (the log's own clock) wherever `start_local` stands
+    beside it. Applied to every tool's result."""
+    if isinstance(x, list):
+        return [local_only(v) for v in x]
+    if not isinstance(x, dict):
+        return x
+    d = {k: local_only(v) for k, v in x.items() if k != "start_utc"}
+    if "start_local" in d:
+        d.pop("start_time", None)
+    return d
+
+
+def page(items: list, args: dict, key: str = "rows") -> dict:
+    """A page of at most PAGE_ROWS items: offset/limit from the arguments."""
+    offset = max(0, int(args.get("offset") or 0))
+    limit = max(1, min(PAGE_ROWS, int(args.get("limit") or PAGE_ROWS)))
+    chunk = items[offset:offset + limit]
+    nxt = offset + len(chunk)
+    return {"total": len(items), "offset": offset, key: chunk, "next_offset": nxt if nxt < len(items) else None}
+
+
+def _clip(text: Optional[str], n: int) -> tuple[Optional[str], bool]:
+    if text is None or len(text) <= n:
+        return text, False
+    return text[:n] + f"\n[… {len(text) - n} more characters]", True
+
+
+def _selection(args: dict) -> dict:
+    return {"mode": "flights", "flights": list(args["flights"])} if args.get("flights") else {"mode": "all"}
+
+
+def _set_params(args: dict) -> dict:
+    """The slice-set parameters every Instrument tool shares (Spec 06 §11)."""
+    p: dict = {"selection": _selection(args)}
+    for a, k in (("slice_rules", "slice_rules"), ("hand_slices", "hand_slices"), ("channels", "channels"),
+                 ("reference", "reference"), ("windows", "windows")):
+        if args.get(a) is not None:
+            p[k] = args[a]
+    return p
+
+
+# ── Raw material ───────────────────────────────────────────────────────────
+
+def flight_row(f: dict) -> dict:
+    """One flights_list row: local times (§4.7), the route from GPS, the
+    counts, the pilot's name — no UTC (F8)."""
+    h, s, i = f.get("header") or {}, f.get("summary") or {}, f.get("ident") or {}
+    facts = dict(s.get("facts") or {})
+    if i.get("max_altitude_ft") is not None:
+        facts["max_altitude_ft"] = round(i["max_altitude_ft"])
+    return {"flight_id": f["flight_id"], "date": i.get("local_date") or h.get("date"),
+            "start_local": i.get("start_local"), "end_local": i.get("end_local"), "tz": i.get("tz_abbrev"),
+            "route": "–".join(i.get("route") or []) or None, "dep_airport": i.get("dep_airport"),
+            "arr_airport": i.get("arr_airport"), "takeoffs": i.get("takeoffs"), "landings": i.get("landings"),
+            "name": f.get("name"), "engine_hours_start": h.get("engine_hours_start"),
+            "engine_hours_end": h.get("engine_hours_end"), "source": s.get("source"),
+            "source_filename": f.get("source_filename"), **facts, "phase_min": s.get("phase_min"),
+            "events": s.get("events"), "quality_notes": len(f.get("quality") or [])}
+
+
+def shape_flights(args: dict, flights: list) -> dict:
+    rows = [flight_row(f) for f in flights]
+
+    def keep(r: dict) -> bool:
+        if args.get("date_from") and (r["date"] or "") < args["date_from"]:
+            return False
+        if args.get("date_to") and (r["date"] or "") > args["date_to"]:
+            return False
+        if args.get("source") and r["source"] != args["source"]:
+            return False
+        if args.get("airport"):
+            want = str(args["airport"]).upper()
+            if want not in {(r["dep_airport"] or "").upper(), (r["arr_airport"] or "").upper()} \
+                    and want not in (r["route"] or "").upper().split("–"):
+                return False
+        hrs = r["engine_hours_start"]
+        if args.get("hours_min") is not None and (hrs is None or hrs < args["hours_min"]):
+            return False
+        if args.get("hours_max") is not None and (hrs is None or hrs > args["hours_max"]):
+            return False
+        return True
+    rows = sorted((r for r in rows if keep(r)), key=lambda r: (r["start_local"] or r["date"] or "", r["flight_id"]))
+    return page(rows, args, "flights")
+
+
+def run_flights_list(args: dict, call: Call) -> dict:
+    p = {"summary": True, "identify": True}
+    if args.get("name"):
+        p["name"] = args["name"]
+    return shape_flights(args, call("list_flights", p))
+
+
+def run_flights_find(args: dict, call: Call) -> dict:
+    p = {"description": args.get("description")}
+    if args.get("limit"):
+        p["limit"] = args["limit"]
+    return call("flights_find", p)
+
+
+def shape_flight(args: dict, g: dict) -> dict:
+    fa = g["flight_analysis"]
+    phase_min: dict = {}
+    for p in fa.get("phases") or []:
+        phase_min[p["phase"]] = round(phase_min.get(p["phase"], 0.0) + (p["end_s"] - p["start_s"]) / 60.0, 1)
+    ev_keys = ("event_id", "source", "label", "param", "severity", "limit_type", "limit_value", "observed_value",
+               "excess", "unit", "start_utc", "elapsed_s", "duration_s", "note")
+    topics = []
+    for t in (g.get("insight_set") or {}).get("topics") or []:
+        if not t.get("enabled", True):
+            continue
+        topics.append({"topic_id": t["topic_id"], "analysis": (t.get("analysis") or {}).get("text"),
+                       "insights": [{"id": i.get("id"), "severity": i.get("severity"),
+                                     "message": (i.get("message") or {}).get("text")} for i in t.get("insights") or []],
+                       "triggers": [{"type": s.get("type"), "met": s.get("met"), "detail": s.get("detail")}
+                                    for s in t.get("trigger_status") or []]})
+    ident = g.get("ident") or {}
+    from ..flight_ident import window_label
+
+    def when(a, b=None):
+        return window_label(ident, a, b) if ident.get("start_local") and isinstance(a, (int, float)) else None
+    header = dict(fa.get("header") or {})
+    if ident.get("start_local"):
+        header.update({"start_local": ident.get("start_local"), "end_local": ident.get("end_local"),
+                       "tz": ident.get("tz_abbrev"), "local_date": ident.get("local_date")})
+    events = []
+    for e in fa.get("exceedances") or []:
+        ev = {k: e.get(k) for k in ev_keys if e.get(k) is not None}
+        w = when(e.get("elapsed_s"), (e.get("elapsed_s") or 0) + (e.get("duration_s") or 0)
+                 if isinstance(e.get("elapsed_s"), (int, float)) else None)
+        if w:
+            ev["when"] = w
+        events.append(ev)
+    phases = [{**p, **({"when": when(p.get("start_s"), p.get("end_s"))} if when(p.get("start_s")) else {})}
+              for p in fa.get("phases") or []]
+    route = {k: ident.get(k) for k in ("route", "dep_airport", "arr_airport", "takeoffs", "landings",
+                                       "max_altitude_ft") if ident.get(k) is not None}
+    return {"flight_id": fa["flight_id"], "header": header, "source_filename": g.get("source_filename"), **route,
+            "phases": phases, "phase_min": phase_min,
+            "facts": {k: {"value": (v or {}).get("value"), "unit": (v or {}).get("unit")}
+                      for k, v in (fa.get("metrics") or {}).items()},
+            "events": events,
+            "available_channels": fa.get("available_channels"), "quality": fa.get("quality"),
+            "topics": topics, "reference_state": g.get("reference_state")}
+
+
+def run_flight_get(args: dict, call: Call) -> dict:
+    return shape_flight(args, call("get_flight", {"flight_id": args["flight_id"]}))
+
+
+def _series_params(args: dict) -> dict:
+    chans = list(args.get("channels") or [])
+    if not chans:
+        raise ToolRefusal("Name the channels (see flight_get's available_channels), at most "
+                          f"{SERIES_MAX_CHANNELS}.")
+    if len(chans) > SERIES_MAX_CHANNELS:
+        raise ToolRefusal(f"At most {SERIES_MAX_CHANNELS} channels per call; ask again in groups.")
+    p = {"flight_id": args["flight_id"], "channels": chans, "max_points": SERIES_MAX_POINTS}
+    if args.get("start_s") is not None:
+        p["start_s"] = float(args["start_s"])
+    if args.get("end_s") is not None:
+        p["end_s"] = float(args["end_s"])
+    return p
+
+
+def shape_series(args: dict, raw: dict, p: dict) -> dict:
+    windowed = "start_s" in p or "end_s" in p
+    last = max((pts[-1][0] for pts in raw.values() if pts), default=0.0)
+    if not windowed and last > SERIES_MAX_POINTS:
+        raise ToolRefusal(
+            f"This flight is {last:.0f} s long; without a window that is more than the {SERIES_MAX_POINTS}-point "
+            f"cap per channel. Give start_s and end_s (from flight_get's phases or events): a window of up to "
+            f"{SERIES_MAX_POINTS} s comes back at every 1-second row; a longer one as a min/max envelope of "
+            f"{SERIES_MAX_POINTS} points per channel.")
+    span = (p.get("end_s", last) - p.get("start_s", 0.0)) if windowed else last
+    return {"flight_id": args["flight_id"], "window": {"start_s": p.get("start_s"), "end_s": p.get("end_s")},
+            "decimated": span > SERIES_MAX_POINTS,
+            "channels": {ch: {"t_s": [pt[0] for pt in pts], "value": [pt[1] for pt in pts]} for ch, pts in raw.items()},
+            "missing_channels": [c for c in p["channels"] if c not in raw]}
+
+
+def run_series_get(args: dict, call: Call) -> dict:
+    p = _series_params(args)
+    return shape_series(args, call("get_flight_series", p), p)
+
+
+def _fleet_points(fleet: dict) -> dict:
+    """flight_id → {date, engine_hours, metric values} from the fleet's points."""
+    rows: dict = {}
+    for mid, m in (fleet.get("metrics") or {}).items():
+        for pt in m.get("points") or []:
+            r = rows.setdefault(pt["flight_id"], {"flight_id": pt["flight_id"], "date": pt.get("date"),
+                                                  "engine_hours": pt.get("x")})
+            r[mid] = pt.get("value")
+    return rows
+
+
+def _metric_brief(m: dict) -> dict:
+    b, t, s = m.get("baseline") or {}, m.get("trend") or {}, m.get("shift")
+    return {"metric_id": m["metric_id"],
+            "baseline": {k: b.get(k) for k in ("n", "mean", "std", "min", "max")},
+            "trend": {k: t.get(k) for k in ("n", "slope", "r_squared", "direction")},
+            "outliers": m.get("outliers") or [], "shift": s}
+
+
+def fleet_metric_rows(fleet: dict, metrics: Optional[list] = None, flights: Optional[list] = None) -> tuple[list, list, list]:
+    """The per-flight metrics table — fleet_metrics' rows and eis.metrics'
+    (Spec 16 F18: one code path): (rows ordered by engine hours, the
+    metric ids, the unknown ones). Default metrics: all but limit_*."""
+    have = fleet.get("metrics") or {}
+    want = list(metrics or [k for k in sorted(have) if not k.startswith("limit_")])
+    unknown = [k for k in want if k not in have]
+    rows = [{k: r.get(k) for k in ("flight_id", "date", "engine_hours", *want)}
+            for r in _fleet_points(fleet).values()]
+    if flights:
+        rows = [r for r in rows if r["flight_id"] in set(flights)]
+    rows.sort(key=lambda r: (r["engine_hours"] is None, r["engine_hours"] or 0.0, r["flight_id"]))
+    return rows, want, unknown
+
+
+def trend_cards(fleet: dict) -> list:
+    """The Trends cards, ranked — trends_summary's change_summary and
+    eis.trends' rows (F18: one code path): each metric's reference
+    (baseline), trend and shift, with the flights it rests on."""
+    metrics = fleet.get("metrics") or {}
+    out = []
+    for c in fleet.get("change_summary") or []:
+        m = metrics.get(c["metric_id"])
+        brief = _metric_brief(m) if m else {"metric_id": c["metric_id"]}
+        out.append({**c, **brief, "flights": [p["flight_id"] for p in (m or {}).get("points") or []]})
+    return out
+
+
+def shape_fleet_metrics(args: dict, fleet: dict) -> dict:
+    metrics = fleet.get("metrics") or {}
+    rows, want, unknown = fleet_metric_rows(fleet, args.get("metrics"), args.get("flights"))
+    out = page(rows, args, "rows")
+    out.update({"metrics": [_metric_brief(metrics[k]) for k in want if k in metrics], "unknown_metrics": unknown,
+                "available_metrics": sorted(metrics), "excluded": fleet.get("excluded")})
+    return out
+
+
+def run_fleet_metrics(args: dict, call: Call) -> dict:
+    return shape_fleet_metrics(args, call("get_fleet", {}))
+
+
+def shape_trends(args: dict, fleet: dict) -> dict:
+    ranked = [{k: v for k, v in c.items() if k != "flights"} for c in trend_cards(fleet)]
+    return {"change_summary": ranked, "shift_history": fleet.get("shift_history") or [],
+            "flights": len(fleet.get("flight_ids") or []), "excluded": fleet.get("excluded")}
+
+
+def run_trends_summary(args: dict, call: Call) -> dict:
+    return shape_trends(args, call("get_fleet", {}))
+
+
+# ── Instrument (Spec 06 §11) ───────────────────────────────────────────────
+
+def run_presets_list(args: dict, call: Call) -> dict:
+    return call("list_slice_presets", {})
+
+
+def shape_slices(args: dict, ss: dict) -> dict:
+    out = {k: ss.get(k) for k in ("count", "flights_selected", "flights_with_slices", "by_source", "windows",
+                                  "missing_flights", "unreachable_flights", "selection")}
+    out["rules"] = [{"rule_id": r.get("rule_id"), "name": r.get("name")} for r in ss.get("rules") or []]
+    def one(s: dict) -> dict:
+        d = {k: s.get(k) for k in ("slice_id", "flight", "rule_id", "kind", "label", "when", "start_s", "end_s",
+                                   "context", "descriptors")}
+        if s.get("when"):          # §4.7: the log's own clock gives way to the local time
+            d["context"] = {k: v for k, v in (s.get("context") or {}).items() if k != "start_time"}
+        else:
+            d.pop("when")
+        return d
+    out.update(page([one(s) for s in ss.get("slices") or []], args, "slices"))
+    return out
+
+
+def run_slices_build(args: dict, call: Call) -> dict:
+    return shape_slices(args, call("build_slices", _set_params(args)))
+
+
+def shape_samples(args: dict, raw: dict) -> dict:
+    n = sum(len(s.get("t") or []) * max(1, len(s.get("channels") or {})) for s in raw.get("slices") or [])
+    if n > SAMPLES_MAX_VALUES:
+        raise ToolRefusal(
+            f"These slices hold {n} values; the cap is {SAMPLES_MAX_VALUES}. Name fewer slice_ids (slices_build "
+            f"lists them), fewer channels, or use code_run's load_slice_samples, which has no cap.")
+    return raw
+
+
+def run_samples_get(args: dict, call: Call) -> dict:
+    p = _set_params(args)
+    p.pop("reference", None)
+    if args.get("slice_ids"):
+        p["slice_ids"] = list(args["slice_ids"])
+    p["anchor"] = args.get("anchor") or "crossing"
+    return shape_samples(args, call("get_slice_samples", p))
+
+
+def shape_question(args: dict, r: dict) -> dict:
+    block = r.get("block") or {}
+    table = (r.get("evidence") or {}).get("table") or {}
+    out = {k: r.get(k) for k in ("test_id", "question", "finding", "magnitude", "caveats")}
+    out.update({"summary": block.get("summary"), "params": block.get("params"),
+                "slice_set": block.get("slice_set"), "references": block.get("references"),
+                "columns": [{"start_time": "start_local"}.get(k, k) for k in
+                            (c.get("key", c.get("label")) if isinstance(c, dict) else c for c in table.get("columns") or [])]})
+    out.update(page(table.get("rows") or [], args, "rows"))
+    return out
+
+
+def run_question_run(args: dict, call: Call) -> dict:
+    p = _set_params(args)
+    p["test_id"] = args["test_id"]
+    if args.get("params"):
+        p["params"] = args["params"]
+    return shape_question(args, call("run_test", p))
+
+
+def _lit_runs(strip: dict) -> list:
+    """The seconds a rolling strip is lit (prominent), as runs."""
+    lit, per, sw = strip.get("prominent") or [], strip.get("period_s") or [], strip.get("swing") or []
+    runs, i, n = [], 0, len(lit)
+    while i < n:
+        if not lit[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and lit[j]:
+            j += 1
+        ps = sorted(p for p in per[i:j] if p is not None)
+        ss = [s for s in sw[i:j] if s is not None]
+        runs.append({"start_s": i, "end_s": j, "period_s": ps[len(ps) // 2] if ps else None,
+                     "swing_max": max(ss) if ss else None})
+        i = j
+    return runs
+
+
+def _peaks(pg: dict) -> list:
+    per, pw = pg.get("period_s") or [], pg.get("power") or []
+    idx = [k for k in range(1, len(pw) - 1) if pw[k] is not None and pw[k] >= (pw[k - 1] or 0) and pw[k] >= (pw[k + 1] or 0)]
+    idx.sort(key=lambda k: -pw[k])
+    return [{"period_s": per[k], "power": pw[k]} for k in idx[:PERIODOGRAM_PEAKS]]
+
+
+def shape_signal(args: dict, a: dict) -> dict:
+    out = {k: a.get(k) for k in ("flight_id", "duration_s", "source", "date", "channels",
+                                 "missing_channels", "reference", "filled", "prominence_min", "om_limits",
+                                 "strip_windows")}
+    out["phases"] = a.get("phases")
+    out["lit_runs"] = {ch: (lambda rs: {"runs": rs[:STRIP_RUNS], "total": len(rs)})(_lit_runs(st))
+                       for ch, st in (a.get("strips") or {}).items()}
+    w = a.get("window")
+    if w:
+        diag = {}
+        for ch, d in (w.get("diagnostics") or {}).items():
+            diag[ch] = {k: d.get(k) for k in ("period_s", "period_ls_s", "best_lag_s") if k in d}
+            if d.get("periodogram"):
+                diag[ch]["periodogram_peaks"] = _peaks(d["periodogram"])
+            if d.get("lag_curve") and d.get("best_lag_s") is not None:
+                diag[ch]["corr_at_best_lag"] = next((c.get("corr") for c in d["lag_curve"]
+                                                     if c.get("lag_s") == d["best_lag_s"]), None)
+        out["window"] = {k: w.get(k) for k in ("start_s", "end_s", "when", "duration_s", "skip_onset_s", "context",
+                                               "descriptors", "windows", "numbers", "caveats") if k in w}
+        if w.get("when") and isinstance(out["window"].get("context"), dict):
+            out["window"]["context"] = {k: v for k, v in out["window"]["context"].items() if k != "start_time"}
+        out["window"]["diagnostics"] = diag
+    return out
+
+
+def run_signal_analyze(args: dict, call: Call) -> dict:
+    p = {"flight_id": args["flight_id"], "include_values": False, "include_strips": bool(args.get("strips", True))}
+    for k in ("channels", "reference", "references", "skip_onset_s"):
+        if args.get(k) is not None:
+            p[k] = args[k]
+    if args.get("start_s") is not None or args.get("end_s") is not None:
+        p["window"] = {"start_s": args.get("start_s", 0), "end_s": args.get("end_s")}
+    return shape_signal(args, call("analyze_signal", p))
+
+
+def shape_compare(args: dict, c: dict) -> dict:
+    out = {k: c.get(k) for k in ("row_count", "slice_count", "flight_count", "flights_without", "pinned", "collapsed",
+                                 "channels", "reference", "windows", "deltas", "om_limits", "by_source",
+                                 "missing_flights", "unreachable_flights", "selection")}
+    out["groups"] = [{k: g.get(k) for k in ("flight", "date", "source", "count")} for g in c.get("groups") or []]
+    out.update(page(c.get("rows") or [], args, "rows"))
+    return out
+
+
+def run_rows_compare(args: dict, call: Call) -> dict:
+    p = _set_params(args)
+    if args.get("pinned"):
+        p["pinned"] = args["pinned"]
+    if args.get("collapse"):
+        p["collapse"] = True
+    return shape_compare(args, call("compare_rows", p))
+
+
+# ── Bench ──────────────────────────────────────────────────────────────────
+
+def _text(v) -> str:
+    return "".join(v) if isinstance(v, list) else str(v or "")
+
+
+def _trim_outputs(outputs: list, stream_chars: int) -> list:
+    """nbformat outputs as the investigator reads them: text clipped,
+    a table's text, a figure or log view named (its image comes back as
+    an image block from code_run), never SVG markup."""
+    out = []
+    for o in outputs or []:
+        t = o.get("output_type")
+        if t == "stream":
+            txt, cut = _clip(_text(o.get("text")), stream_chars)
+            out.append({"stream": o.get("name"), "text": txt, **({"clipped": True} if cut else {})})
+        elif t == "error":
+            tb = o.get("traceback") or []
+            lines = tb if isinstance(tb, list) else str(tb).splitlines()
+            out.append({"error": o.get("ename"), "evalue": o.get("evalue"),
+                        "traceback": (["[…]"] + lines[-20:]) if len(lines) > 20 else lines})
+        else:
+            data = o.get("data") or {}
+            item: dict = {}
+            txt, cut = _clip(_text(data.get("text/plain")), stream_chars)
+            if txt:
+                item["text"] = txt
+            if cut:
+                item["clipped"] = True
+            table = ((o.get("metadata") or {}).get("slingology") or {}).get("table")
+            if table:
+                item["table"] = table
+            if "image/svg+xml" in data or "image/png" in data:
+                item["figure"] = True
+            lv = data.get("application/vnd.slingology.logview+json")
+            if lv:
+                item["logview"] = lv
+            out.append(item)
+    return out
+
+
+def _ran(cell: dict) -> dict:
+    return ((cell.get("metadata") or {}).get("slingology") or {}).get("ran") or {}
+
+
+def shape_code_run(args: dict, r: dict) -> dict:
+    cell = r["cell"]
+    out = {"study_id": r["study_id"], "cell_id": cell["id"], "kind": cell.get("cell_type")}
+    if cell.get("cell_type") == "code":
+        out.update({"status": _ran(cell).get("status"), "ran": _ran(cell),
+                    "outputs": _trim_outputs(cell.get("outputs"), CODE_STREAM_CHARS),
+                    "figures_returned": len(list(r.get("previews") or {})[:CODE_FIGURES])})
+    return out
+
+
+def code_run_images(r: dict) -> list:
+    return [{"type": "image", "data": b64, "mimeType": "image/png"}
+            for _ref, b64 in list((r.get("previews") or {}).items())[:CODE_FIGURES]]
+
+
+def run_code_run(args: dict, call: Call) -> dict:
+    p = {"study_id": args["study_id"], "source": args["source"]}
+    for k in ("cell_id", "timeout_s", "memory_mb"):
+        if args.get(k) is not None:
+            p[k] = args[k]
+    return call("code_run", p)
+
+
+# ── Context ────────────────────────────────────────────────────────────────
+
+def run_profile_get(args: dict, call: Call) -> dict:
+    return call("get_engine_limits", {})
+
+
+def run_aircraft_get(args: dict, call: Call) -> dict:
+    return call("aircraft_get", {})
+
+
+def run_documents_list(args: dict, call: Call) -> dict:
+    return call("documents_list", {})
+
+
+def run_document_read(args: dict, call: Call) -> dict:
+    p = {"name": args["name"]}
+    for k in ("page", "pages", "find"):
+        if args.get(k) is not None:
+            p[k] = args[k]
+    return call("document_read", p)
+
+
+def shape_journal(args: dict, j: dict) -> dict:
+    keep = ("id", "kind", "ref_id", "what", "where", "reason", "note", "created_at", "updated_at", "effect", "current")
+    out = {k: v for k, v in j.items() if k != "entries"}
+    out.update(page([{k: e.get(k) for k in keep} for e in j.get("entries") or []], args, "entries"))
+    return out
+
+
+def run_journal_list(args: dict, call: Call) -> dict:
+    return shape_journal(args, call("get_journal", {}))
+
+
+def run_studies_list(args: dict, call: Call) -> dict:
+    return call("list_studies", {})
+
+
+def shape_study(args: dict, doc: dict) -> dict:
+    if isinstance(doc.get("notebook"), dict):
+        return shape_notebook(args, doc)
+    out = {k: v for k, v in doc.items() if k not in ("cache", "cells", "tests")}
+    out["tests"] = [{**{k: v for k, v in t.items() if k != "result"},
+                     "result": shape_question({}, t["result"]) if t.get("result") else None}
+                    for t in doc.get("tests") or []]
+    for t in out["tests"]:
+        if t["result"]:
+            t["result"]["rows"] = t["result"]["rows"][:10]
+    return out
+
+
+def shape_notebook(args: dict, view: dict) -> dict:
+    """A notebook as the investigator reads it: its metadata and each cell
+    — markdown source and code source clipped, outputs as _trim_outputs,
+    pending re-run outputs flagged."""
+    nb = view["notebook"]
+    out = {k: v for k, v in view.items() if k != "notebook"}
+    cells = []
+    for c in nb.get("cells") or []:
+        sm = (c.get("metadata") or {}).get("slingology") or {}
+        src, _ = _clip(_text(c.get("source")), TEXT_CHARS)
+        cell = {"cell_id": c.get("id"), "kind": c.get("cell_type"), "source": src}
+        if c.get("cell_type") == "code":
+            cell["ran"] = sm.get("ran")
+            cell["outputs"] = _trim_outputs(c.get("outputs"), TEXT_CHARS)
+            for k in ("ran_elsewhere", "read_only"):
+                if sm.get(k):
+                    cell[k] = True
+            if sm.get("pending"):
+                cell["pending"] = _trim_outputs(sm["pending"].get("outputs"), TEXT_CHARS)
+        cells.append(cell)
+    out["cells"] = cells
+    return out
+
+
+def run_study_read(args: dict, call: Call) -> dict:
+    return shape_study(args, call("load_study", {"study_id": args["study_id"]}))
+
+
+# ── Record ─────────────────────────────────────────────────────────────────
+
+def run_study_create(args: dict, call: Call) -> dict:
+    p = {"name": args["name"], "author": "claude"}
+    for k in ("question", "kind", "inbox_candidate", "engine_type", "question_id"):
+        if args.get(k):
+            p[k] = args[k]
+    view = call("study_create", p)
+    out = {k: view.get(k) for k in ("study_id", "name", "kind", "author", "question", "status", "inbox_candidate")}
+    if args.get("question_id"):
+        # D16: the cells written from the owner's marks — a note, then its log view.
+        cells = (view.get("notebook") or {}).get("cells") or []
+        out["question_id"] = args["question_id"]
+        out["cells"] = [{"cell_id": c.get("id"), "kind": c.get("cell_type"),
+                         "source": (c["source"] if isinstance(c.get("source"), str) else "".join(c.get("source") or []))[:400]}
+                        for c in cells if ((c.get("metadata") or {}).get("slingology") or {}).get("role") == "pin"
+                        or "eis.logview(" in (c["source"] if isinstance(c.get("source"), str) else "".join(c.get("source") or []))]
+    return out
+
+
+def run_cell_append(args: dict, call: Call) -> dict:
+    cell = {k: args[k] for k in ("kind", "source", "role", "flight", "start_s", "end_s", "channels", "marks",
+                                 "title", "rule", "timeout_s", "memory_mb") if args.get(k) is not None}
+    return call("study_cells_append", {"study_id": args["study_id"], "cell": cell})
+
+
+def run_study_rerun(args: dict, call: Call) -> dict:
+    return call("study_cells_rerun", {"study_id": args["study_id"]})
+
+
+def shape_rerun(args: dict, r: dict) -> dict:
+    return {"study": r["study"], "cells": r["cells"], "figures_returned": len(list(r.get("previews") or {})[:CODE_FIGURES])}
+
+
+def _pending_call(op: str):
+    def run(args: dict, call: Call) -> dict:
+        p = {"study_id": args["study_id"]}
+        if args.get("cell_ids"):
+            p["cell_ids"] = list(args["cell_ids"])
+        if args.get("source"):
+            p["source"] = args["source"]
+        return call(op, p)
+    return run
+
+
+def run_study_finish(args: dict, call: Call) -> dict:
+    p = {k: args[k] for k in ("study_id", "summary", "inbox_candidate", "question", "resolution", "note", "journal",
+                              "finding") if args.get(k) is not None}
+    return call("study_finish", p)
+
+
+def run_pins_list(args: dict, call: Call) -> dict:
+    p = {}
+    if args.get("status"):
+        p["status"] = args["status"]
+    return call("pins_list", p)
+
+
+def run_question_resolve(args: dict, call: Call) -> dict:
+    return call("question_resolve", {k: args[k] for k in ("question_id", "status", "study_id", "note")
+                                     if args.get(k) is not None})
+
+
+def run_inbox_list(args: dict, call: Call) -> dict:
+    p = {}
+    if args.get("status"):
+        p["status"] = args["status"]
+    return call("inbox_list", p)
+
+
+def run_inbox_resolve(args: dict, call: Call) -> dict:
+    return call("inbox_resolve", {k: args[k] for k in ("candidate_id", "status", "study_id", "note")
+                                  if args.get(k) is not None})
+
+
+# ── schemas ────────────────────────────────────────────────────────────────
+
+_S = {"type": "string"}
+_N = {"type": "number"}
+_I = {"type": "integer", "minimum": 0}
+_STRS = {"type": "array", "items": {"type": "string"}}
+_PAGE = {"offset": {**_I, "description": "First row (default 0)"},
+         "limit": {"type": "integer", "minimum": 1, "maximum": PAGE_ROWS, "description": f"Rows (≤ {PAGE_ROWS})"}}
+_RULES = {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "object"}]},
+          "description": "Slice rules: a preset id (presets_list), \"phase:CLIMB\", or a Spec 06 §5.1 rule object"}
+_SET = {"slice_rules": _RULES,
+        "hand_slices": {"type": "array", "items": {"type": "object"},
+                        "description": "Hand slices: {flight, start_s, end_s, label?}"},
+        "flights": {**_STRS, "description": "Flight ids (default: every flight)"},
+        "channels": {**_STRS, "description": "Channels (default rpm, map_inhg)"},
+        "windows": {"type": "object", "description": "Per channel {window_s, lag_s} (default: the engine's)"}}
+# F1: the slice set's forms, with an example of each, for every tool that takes one.
+_SET_HELP = (" A slice set: `flights` (default every flight) and `slice_rules`, each a preset id (\"full_power\"), "
+             "a phase (\"phase:CLIMB\") or a rule object ({\"rule_id\": \"high_map\", \"name\": \"MAP >= 38\", "
+             "\"conditions\": [{\"channel\": \"map_inhg\", \"op\": \">=\", \"value\": 38}], "
+             "\"min_duration_s\": 20}); optional `hand_slices` ([{\"flight\": \"…\", \"start_s\": 600, "
+             "\"end_s\": 660}]) and `windows` ({\"rpm\": {\"window_s\": 8, \"lag_s\": 5}}).")
+_SPLIT_HELP = (" groups: params.descriptor is channel.measure (\"rpm.swing\"); params.split is \"source\" (short for "
+               "{\"by\": \"source\"}), {\"by\": \"date\", \"date\": \"2026-10-01\"}, {\"by\": \"da_band\"}, "
+               "{\"by\": \"oat_band\", \"edges\": [5, 20]}, {\"by\": \"engine_hours\", \"edges\": [150]}, "
+               "{\"by\": \"rule\"} or {\"by\": \"flights\", \"groups\": [{\"label\": \"before\", "
+               "\"flights\": [\"…\"]}, {\"label\": \"after\", \"flights\": [\"…\"]}]}.")
+
+TOOLS: list[Tool] = [
+    Tool("flights_list", "List flights",
+         "The workspace's flights, oldest first: local date and start/end time with the zone, route (airports "
+         "resolved from GPS), takeoffs and landings, the pilot's name, engine hours, source (G3X or AXIS), flight "
+         "facts, minutes per phase and event count. Filters: date_from/date_to (local YYYY-MM-DD), source, "
+         "airport (any airport on the route), name (words in the pilot's name or notes), hours_min/hours_max; "
+         f"{PAGE_ROWS} per page. Example: {{\"airport\": \"KBLI\", \"date_from\": \"2026-10-01\"}}.",
+         {"date_from": {**_S, "description": "Local date YYYY-MM-DD"}, "date_to": {**_S, "description": "Local date YYYY-MM-DD"},
+          "source": {"type": "string", "enum": ["G3X", "AXIS"]},
+          "airport": {**_S, "description": "An airport code on the route, e.g. KBLI"},
+          "name": {**_S, "description": "Words in the flight's name or notes"}, "hours_min": _N, "hours_max": _N,
+          **_PAGE}, run_flights_list, ops=("list_flights",)),
+    Tool("flights_find", "Find a flight",
+         "Flights for a description in words, best first (at most 10), each with what matched: dates (\"Oct 24\", "
+         "\"2026-10-24\", \"last Friday\", a month or weekday), airports by code or name (\"KBLI\", \"Bellingham\"), "
+         "counts (\"three landings\", \"two stops\", \"touch and go\"), words of the pilot's flight name. "
+         "Example: {\"description\": \"the Oct 24 flight with three landings, Bellingham\"}.",
+         {"description": _S, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, run_flights_find,
+         required=("description",), ops=("flights_find",)),
+    Tool("flight_get", "One flight",
+         "One flight: header, phases, flight facts, events (limit exceedances and CAS) and the topic findings the "
+         "Flight view shows. Example: {\"flight_id\": \"1e10d971bd5da136\"}.", {"flight_id": _S}, run_flight_get, required=("flight_id",), ops=("get_flight",)),
+    Tool("series_get", "Channel series",
+         f"Channels of one flight over a window (seconds from the log's start). At most {SERIES_MAX_CHANNELS} channels; "
+         f"a window of up to {SERIES_MAX_POINTS} s comes back at every row, a longer one as a {SERIES_MAX_POINTS}-point "
+         "min/max envelope per channel. Without a window it answers only for a flight that short. Example: "
+         "{\"flight_id\": \"1e10d971bd5da136\", \"channels\": [\"rpm\", \"map_inhg\"], \"start_s\": 600, "
+         "\"end_s\": 660}.",
+         {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N}, run_series_get,
+         required=("flight_id", "channels"), ops=("get_flight_series",)),
+    Tool("fleet_metrics", "Per-flight metrics",
+         f"The Spec 12 per-flight metrics table (one row per flight, ordered by engine hours) with each metric's "
+         f"baseline, trend, outliers and shift; {PAGE_ROWS} rows per page. Default metrics: all but the limit_* ones. "
+         "Example: {\"metrics\": [\"cht_max_f\", \"oil_temp_max_f\"], \"limit\": 20}.",
+         {"metrics": _STRS, "flights": _STRS, **_PAGE}, run_fleet_metrics, ops=("get_fleet",)),
+    Tool("trends_summary", "Trends summary",
+         "The Trends change summary (ranked metrics with baseline, trend and shift) and the shift history.",
+         {}, run_trends_summary, ops=("get_fleet",)),
+    Tool("presets_list", "Slice presets",
+         "The engine profile's shipped slice rules (Spec 06): id, name, the question each is for, its conditions.",
+         {}, run_presets_list, ops=("list_slice_presets",)),
+    Tool("slices_build", "Build slices",
+         f"The slices a selection and slice rules make, each with its local time, context and descriptors; "
+         f"{PAGE_ROWS} per page." + _SET_HELP + " Example: {\"slice_rules\": [\"full_power\"], \"channels\": "
+         "[\"rpm\", \"map_inhg\"]}.",
+         {**_SET, **_PAGE}, run_slices_build, ops=("build_slices",)),
+    Tool("samples_get", "Slice samples",
+         f"The 1 Hz samples of slices, aligned at an anchor (crossing, start, end, peak:CHANNEL). Refuses more than "
+         f"{SAMPLES_MAX_VALUES} values — name slice_ids from slices_build." + _SET_HELP + " Example: "
+         "{\"slice_rules\": [\"full_power\"], \"slice_ids\": [\"<a slice_id from slices_build>\"], "
+         "\"channels\": [\"rpm\"], \"anchor\": \"start\"}.",
+         {**_SET, "slice_ids": _STRS, "anchor": _S}, run_samples_get, ops=("get_slice_samples",)),
+    Tool("question_run", "Run a question",
+         "A Spec 06 test over a slice set — cycling, coupling, groups or unusual — with its finding, magnitude with "
+         f"OM references, caveats and the evidence rows ({PAGE_ROWS} per page)." + _SET_HELP + _SPLIT_HELP
+         + " Examples: {\"test_id\": \"cycling\", \"slice_rules\": [\"full_power\"], \"channels\": [\"rpm\"]}; "
+         "{\"test_id\": \"coupling\", \"slice_rules\": [\"full_power\"], \"channels\": [\"rpm\", "
+         "\"map_inhg\"]}; {\"test_id\": \"groups\", \"slice_rules\": [\"full_power\"], \"params\": "
+         "{\"descriptor\": \"rpm.swing\", \"split\": \"source\"}}; {\"test_id\": \"unusual\", "
+         "\"slice_rules\": [\"full_power\"]}.",
+         {"test_id": {"type": "string", "enum": ["cycling", "coupling", "groups", "unusual"]},
+          "params": {"type": "object", "description": "Test parameters (Spec 06 §7)"}, "reference": _S, **_SET, **_PAGE},
+         run_question_run, required=("test_id",), ops=("run_test",)),
+    Tool("signal_analyze", "Signal on one flight",
+         "One flight's rolling strips, summarised as the runs where each channel cycles (lit), and a window's "
+         f"descriptors, numbers with OM references and diagnostics (periods, the {PERIODOGRAM_PEAKS} strongest "
+         "periodogram peaks, best lag) and caveats. Without a window, the window is derived from where the "
+         "reference channel cycles. skip_onset_s leaves the window's first seconds out of the descriptors and "
+         "period (a power change at its start buries the cycle; a caveat suggests a value when it sees one). "
+         "Example: {\"flight_id\": \"1e10d971bd5da136\", \"start_s\": 600, \"end_s\": 662, \"channels\": "
+         "[\"rpm\", \"map_inhg\"], \"skip_onset_s\": 16}.",
+         {"flight_id": _S, "channels": _STRS, "start_s": _N, "end_s": _N, "reference": _S,
+          "skip_onset_s": {"type": "number", "minimum": 0,
+                           "description": "Seconds at the window's start left out of the descriptors (default 0)"},
+          "strips": {"type": "boolean", "description": "Compute the rolling strips (default true)"}},
+         run_signal_analyze, required=("flight_id",), ops=("analyze_signal",)),
+    Tool("rows_compare", "Compare rows",
+         f"One row per slice, grouped by flight, with deltas to a pinned row; {PAGE_ROWS} rows per page."
+         + _SET_HELP + " Example: {\"slice_rules\": [\"full_power\"], \"pinned\": \"<a slice_id>\"}.",
+         {**_SET, "reference": _S, "pinned": _S, "collapse": {"type": "boolean"}, **_PAGE},
+         run_rows_compare, ops=("compare_rows",)),
+    Tool("code_run", "Run Python",
+         "Run Python on the bench and keep it as a code cell in the notebook study_id (study_create first: every "
+         "executed cell belongs to a notebook) — appended, or replacing cell_id. The namespace has numpy (np), pandas "
+         "(pd), scipy, matplotlib (plt) and the eis library, the tools' own code: eis.flights(), eis.find(\"Oct 24 "
+         "Bellingham\"), eis.load(flight, [\"rpm\"], start_s, end_s), eis.slices(\"full_power\"), "
+         "eis.cycling(\"full_power\", \"rpm\") → Result (.finding, .magnitude, .caveats, .rows, .figure(); "
+         "print(r) is the §8 text), eis.coupling(rule, [\"rpm\", \"map_inhg\"]), eis.groups(rule, \"rpm.swing\", "
+         "by=\"source\") or by=\"date\", date=\"2026-10-01\", eis.unusual(rule), eis.signal(flight, start_s, end_s, "
+         "[\"rpm\"]), eis.compare(rule), eis.logview(flight, start_s, end_s, [\"rpm\", \"map_inhg\"], "
+         "marks=[(t_s, \"label\")]), eis.document(\"om.pdf\").find(\"boost\"), eis.aircraft, eis.profile, eis.notes. "
+         "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. The last "
+         "expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and "
+         f"memory capped. Returns stdout (≤ {CODE_STREAM_CHARS} characters), tables (text) and up to {CODE_FIGURES} "
+         "figures as images. Example: {\"study_id\": \"…\", \"source\": \"r = eis.cycling('full_power', "
+         "'rpm')\\nprint(r)\"}.",
+         {"study_id": _S, "source": _S, "cell_id": _S,
+          "timeout_s": {"type": "number", "minimum": 1, "maximum": 300, "description": "Default 60"},
+          "memory_mb": {"type": "number", "minimum": 256, "maximum": 8192, "description": "Default 2048"}},
+         run_code_run, required=("study_id", "source"), writes=True, images=code_run_images, ops=("code_run",)),
+    Tool("profile_get", "Engine profile",
+         "The engine profile: limits with their Operators Manual references.", {}, run_profile_get,
+         ops=("get_engine_limits",)),
+    Tool("aircraft_get", "Aircraft",
+         "The aircraft record: name, airframe, engine serial, propeller, controller, firmware, avionics, the "
+         "documents folders; the owner's notes (notes.md) whole; its workspaces; the engine model and the "
+         "Settings → Log channels assignments.", {}, run_aircraft_get, ops=("aircraft_get",)),
+    Tool("documents_list", "Documents",
+         "The aircraft's documents — the Operators Manual, service bulletins, manuals, notes — read in place from "
+         "the folders the owner named (Settings → Aircraft → Documents folders; subfolders included): name, folder, "
+         "kind, pages, first line. With no folder set it says so.",
+         {}, run_documents_list, ops=("documents_list",)),
+    Tool("document_read", "Read a document",
+         "Pages of one document (at most 3 at a time), or the pages where a phrase occurs (find: case-insensitive, "
+         "accents ignored, with snippets). Never a whole manual. Examples: {\"name\": \"Bulletins/APL-SB-23.pdf\", "
+         "\"find\": \"hunting\"}, {\"name\": \"om.md\", \"page\": 5, \"pages\": 2}.",
+         {"name": _S, "page": {"type": "integer", "minimum": 1}, "pages": {"type": "integer", "minimum": 1, "maximum": 3},
+          "find": _S}, run_document_read, required=("name",), ops=("document_read",)),
+    Tool("journal_list", "Journal",
+         f"The Journal entries as the UI shows them; {PAGE_ROWS} per page.", {**_PAGE}, run_journal_list,
+         ops=("get_journal",)),
+    Tool("studies_list", "Studies", "The studies in the workspace: kind, author, question, status, finding.",
+         {}, run_studies_list, ops=("list_studies",)),
+    Tool("study_read", "Read a study",
+         "One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures "
+         "named, not drawn; pending re-run outputs flagged).",
+         {"study_id": _S}, run_study_read, required=("study_id",), ops=("load_study",)),
+    Tool("study_create", "Start a notebook",
+         "Start an investigation notebook for a question; its first cell holds the question. Add cells with "
+         "cell_append and code_run, end with study_finish. With question_id (one of the owner's questions, "
+         "pins_list) the notebook opens with the owner's marks: each mark's note, then a log view of its window. "
+         "Example: {\"name\": \"Full-power rpm cycling\", \"question\": \"Why does rpm hunt at full power?\"}, "
+         "or {\"name\": \"Rough climbs\", \"question_id\": \"q-1a2b3c4d\"}.",
+         {"name": _S, "question": _S, "kind": {"type": "string", "enum": ["investigation", "question-for-type"]},
+          "inbox_candidate": {**_S, "description": "The inbox candidate this investigates (marked investigating)"},
+          "question_id": {**_S, "description": "The owner's question this takes up (pins_list): marked investigating, "
+                                               "and a markdown cell with each mark's note followed by its log view"},
+          "engine_type": _S}, run_study_create, required=("name",), writes=True, ops=("study_create",)),
+    Tool("cell_append", "Add a cell",
+         "Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; "
+         "code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "
+         "\"label\"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight "
+         "view. Example: {\"kind\": \"logview\", \"flight\": \"…\", \"start_s\": 360, \"end_s\": 420, "
+         "\"channels\": [\"rpm\", \"map_inhg\"], \"marks\": [[367, \"takeoff power\"]]}.",
+         {"study_id": _S, "kind": {"type": "string", "enum": ["markdown", "code", "logview"]},
+          "source": _S, "role": _S, "flight": _S, "start_s": _N, "end_s": _N, "channels": _STRS,
+          "marks": {"type": "array", "items": {"type": "array"}}, "title": _S, "rule": _S,
+          "timeout_s": _N, "memory_mb": _N},
+         run_cell_append, required=("study_id", "kind"), writes=True, images=code_run_images,
+         ops=("study_cells_append",)),
+    Tool("study_rerun", "Re-run a notebook",
+         "Re-run every code cell of a notebook against this workspace; outputs that differ wait as pending until "
+         "study_accept or study_discard.", {"study_id": _S}, run_study_rerun, required=("study_id",), writes=True,
+         images=code_run_images, ops=("study_cells_rerun",)),
+    Tool("study_accept", "Accept re-run outputs",
+         "Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs. With "
+         "source \"external\": accept instead the outputs a kernel outside EIS (JupyterLab) saved in the notebook, "
+         "as they stand (cells marked ran elsewhere). Example: {\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
+         {"study_id": _S, "cell_ids": _STRS,
+          "source": {"type": "string", "enum": ["rerun", "external"],
+                     "description": "rerun (default): the bench's pending outputs; external: outputs saved outside EIS"}},
+         _pending_call("study_cells_accept"), required=("study_id",),
+         writes=True, ops=("study_cells_accept",)),
+    Tool("study_discard", "Discard re-run outputs",
+         "Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand. Example: "
+         "{\"study_id\": \"…\", \"cell_ids\": [\"c6\"]}.",
+         {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_discard"), required=("study_id",),
+         writes=True, ops=("study_cells_discard",)),
+    Tool("study_finish", "Finish a notebook",
+         "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
+         "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
+         "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
+         "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
+         "Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: "
+         "{\"study_id\": \"…\", \"summary\": \"…\", \"question\": \"q-1a2b3c4d\", \"resolution\": \"watch\", "
+         "\"journal\": true}.",
+         {"study_id": _S, "summary": _S, "inbox_candidate": _S,
+          "question": {**_S, "description": "The owner's question this answers (pins_list); it and its marks take the resolution"},
+          "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
+          "note": _S, "journal": {"type": "boolean"}, "finding": _S}, run_study_finish,
+         required=("study_id", "summary"), writes=True, ops=("study_finish",)),
+    Tool("inbox_list", "Inbox",
+         "The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence "
+         "and status; scans first when there are new flights. Example: {\"status\": [\"new\", \"investigating\"]}.",
+         {"status": {"anyOf": [_S, _STRS]}}, run_inbox_list, ops=("inbox_list",)),
+    Tool("inbox_resolve", "Resolve a candidate",
+         "Set a candidate's status — investigating, nothing-here, watch, acted (or new) — with its study and a note. "
+         "Example: {\"candidate_id\": \"…\", \"status\": \"nothing-here\", \"note\": \"the governor, known\"}.",
+         {"candidate_id": _S, "status": {"type": "string",
+                                         "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
+          "study_id": _S, "note": _S}, run_inbox_resolve, required=("candidate_id", "status"), writes=True,
+         ops=("inbox_resolve",)),
+    Tool("pins_list", "The owner's questions",
+         "The owner's questions and marks (Mark for Claude on the Flight view): each question with its status, "
+         "notebook and marks — flight, window (start_s, end_s and the local time), the channels shown, the owner's "
+         "note — and the unassigned marks. A mark is where to look and a sentence, not a finding. newest_open names "
+         "the question to take up when the owner asks without saying which. Example: {\"status\": [\"new\", "
+         "\"investigating\"]}.",
+         {"status": {"anyOf": [_S, _STRS]}}, run_pins_list, ops=("pins_list",)),
+    Tool("question_resolve", "Resolve a question",
+         "Set one of the owner's questions' status — investigating, nothing-here, watch, acted (or new) — with its "
+         "notebook and a note; its marks take the resolution. study_finish with question does this as it ends a "
+         "notebook. Example: {\"question_id\": \"q-1a2b3c4d\", \"status\": \"watch\", \"study_id\": \"st-…\"}.",
+         {"question_id": _S, "status": {"type": "string",
+                                        "enum": ["new", "investigating", "nothing-here", "watch", "acted"]},
+          "study_id": _S, "note": _S}, run_question_resolve, required=("question_id", "status"), writes=True,
+         ops=("question_resolve",)),
+]
+
+# ── Session tools (D10): which workspace this conversation's tools see ──
+# They act on the server (the conversation), not on a host operation, so
+# they aren't in the parity test; nothing they do touches the registry.
+
+def _workspaces_view(server) -> dict:
+    from .. import aircraft as AC
+    root, _ws, entries = server._registry()
+    if root is None:
+        return {"aircraft": None, "in_use": None, "workspaces": [], "other_aircraft": []}
+    ac = server.aircraft()
+    in_use = server.choose_workspace()
+    reg = {e.id: e for e in entries}
+
+    def row(wid: str) -> dict:
+        e = reg[wid]
+        return {"workspace_id": e.id, "name": e.name, "engine_model": e.engine_model,
+                "flight_count": e.flight_count, "last_opened_at": e.last_opened_at, "in_use": e.id == in_use}
+    others = [{"aircraft_id": a["id"], "name": a["name"], "workspaces": [row(w) for w in a["workspaces"] if w in reg]}
+              for a in AC.list_aircraft(root) if not ac or a["id"] != ac["id"]]
+    return {"aircraft": {"aircraft_id": ac["id"], "name": ac["name"], "engine_model": ac["engine_model"]} if ac else None,
+            "in_use": in_use, "chosen_by": ("workspace_use" if server.use_workspace == in_use and in_use
+                                            else "--workspace" if server.workspace_arg else "aircraft"),
+            "workspaces": [row(w) for w in (ac["workspaces"] if ac else []) if w in reg],
+            "other_aircraft": others}
+
+
+def call_session_tool(name: str, args: dict, server, *, engine_version: str, workspace_id: Optional[str]) -> dict:
+    from .. import serialize
+    if workspace_id is None:
+        return _error(server.aircraft_error or NO_WORKSPACE)
+    if name == "workspaces_list":
+        result = _workspaces_view(server)
+    else:   # workspace_use
+        want = args.get("workspace_id")
+        _root, _ws, entries = server._registry()
+        match = next((e for e in entries if want in (e.id, e.name)), None) if want else None
+        if match is None:
+            names = ", ".join(f"{e.name} ({e.id})" for e in entries) or "none"
+            return _error(f"workspace_use needs workspace_id, one of: {names}.")
+        server.use_workspace = match.id
+        workspace_id = server._refresh()
+        result = {**_workspaces_view(server),
+                  "note": "Only this conversation's following tool calls use it; the EIS pages are unchanged."}
+    body = {"engine_version": engine_version, "workspace_id": workspace_id, "result": result}
+    text = serialize.dumps(body)
+    return {"content": [{"type": "text", "text": text}], "structuredContent": json.loads(text), "isError": False}
+
+
+def _no_op(args: dict, call: Call) -> Any:
+    raise ToolRefusal("a session tool runs in the server")
+
+
+SESSION_TOOLS = ("workspaces_list", "workspace_use")
+TOOLS[:0] = [
+    Tool("workspaces_list", "Workspaces",
+         "The aircraft's workspaces (and any other aircraft's), with the one these tools use. Usually one: the "
+         "server opens the aircraft's workspace without asking.", {}, _no_op, ops=()),
+    Tool("workspace_use", "Use a workspace",
+         "Use another of the aircraft's workspaces for the rest of this conversation (not the EIS pages). "
+         "Example: {\"workspace_id\": \"ws_2b59350ca5ac\"} or the workspace's name.",
+         {"workspace_id": _S}, _no_op, required=("workspace_id",), writes=True, ops=()),
+]
+
+# D13: `guide` is listed first — the server's instructions say to call it before anything else.
+TOOLS.insert(0, Tool(
+    "guide", "Read this first",
+    "How to investigate with EIS, in one document: the method (one flight first, then across the flights; the "
+    "mechanism as a hypothesis; alternatives ruled out; what it means and what to do; no verdict words without "
+    "their reference), the tool map with every parameter form and an example, the notebook rules, this "
+    "aircraft's record and the owner's notes, its documents, and the workspace in use (flights, date span, open "
+    "inbox candidates). Call it at the start of every conversation.",
+    {}, lambda args, call: call("guide", {}), ops=("guide",)))
+
+# code_run's façade result is shaped after the call (the images need the raw result).
+_SHAPE_AFTER = {"code_run": shape_code_run, "cell_append": shape_code_run, "study_rerun": shape_rerun}
+
+BY_NAME = {t.name: t for t in TOOLS}
+
+
+def call_tool(name: str, args: dict, call: Call, *, engine_version: str, workspace_id: Optional[str]) -> dict:
+    """One tool call → an MCP CallToolResult: {content, structuredContent, isError}."""
+    from .. import serialize
+    tool = BY_NAME.get(name)
+    if tool is None:
+        return _error(f"No tool {name!r}.")
+    if workspace_id is None:
+        return _error(NO_WORKSPACE)
+    missing = [k for k in tool.required if args.get(k) in (None, "", [])]
+    if missing:
+        return _error(f"{name} needs {', '.join(missing)}.")
+    try:
+        raw = tool.run(dict(args), call)
+        result = local_only(_SHAPE_AFTER[name](args, raw) if name in _SHAPE_AFTER else raw)
+    except ToolRefusal as e:
+        return _error(str(e))
+    except ToolOpError as e:
+        return _error(f"{e.code}: {e.message}")
+    body = {"engine_version": engine_version, "workspace_id": workspace_id, "result": result}
+    text = serialize.dumps(body)
+    content: list = [{"type": "text", "text": text}]
+    if tool.images:
+        content.extend(tool.images(raw))
+    # structuredContent is exactly the text block's JSON (NaN → null, as every transport sends it).
+    return {"content": content, "structuredContent": json.loads(text), "isError": False}
+
+
+class ToolOpError(Exception):
+    """An operation's RpcError, as the façade reports it."""
+    def __init__(self, code: str, message: str):
+        super().__init__(f"{code}: {message}")
+        self.code, self.message = code, message
+
+
+def _error(text: str) -> dict:
+    return {"content": [{"type": "text", "text": text}], "isError": True}

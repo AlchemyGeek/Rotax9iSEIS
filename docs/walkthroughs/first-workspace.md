@@ -11,21 +11,27 @@ Everything the app does from here on happens inside your browser, on your comput
 !!! note "Prefer to run it yourself?"
     The same app can run as a small program on your own computer instead, with the workspace kept in an ordinary folder. See [Running the app on your own computer](#running-the-app-on-your-own-computer) at the end of this page. Everything else in this guide is the same either way.
 
-## 2. Create a workspace
+## 2. Start a workspace — three ways
 
-The app asks for a workspace **name** and the **engine model**, with an optional tail number. Name it after the aircraft. Choose the engine carefully — it decides which Operators Manual limits apply and cannot be changed later (you would make a new workspace).
+With no workspace yet, the app opens on **Your first workspace**: a **name**, the **engine model**, an optional tail number, and three ways to start, side by side. Name it after the aircraft. Choose the engine carefully — it decides which Operators Manual limits apply and cannot be changed later (you would make a new workspace).
 
 <figure class="screenshot" markdown>
-![An empty workspace, inviting you to add your logs](../img/workspace-empty.png){ .screenshot }
-<figcaption>Your new workspace, before any logs.</figcaption>
+![Your first workspace: a name and engine, then Create from logs, Import a workspace and Load from a folder](../img/workspace-start.png){ .screenshot }
+<figcaption>The three ways to start. The same three appear under <strong>+ New workspace</strong> later.</figcaption>
 </figure>
+
+- **Load from a folder** — the usual one. **Choose folder…** and pick the folder where you keep your logs; subfolders are included, and the app keeps reading it as you add more (step 3).
+- **Create from logs** — **Create** makes an empty workspace; then pick or drop log files onto the page.
+- **Import a workspace** — a workspace someone exported for you, or your own from another computer (**Import workspace…**). Its name comes with it.
+
+The folder is a folder of *logs*, not another app's workspace.
 
 ## 3. Point it at your logs
 
 !!! tip "No logs yet?"
     Skip this step and the next: [download the sample workspace](https://github.com/AlchemyGeek/Rotax9iSEIS/releases/download/sample-workspace/SlingologyEIS-sample-N117ZS.zip) (10 MB) and use **Settings → App → Import workspace…** instead. It is a season of flights from the aircraft the app was developed on, decisions included. Pick up again at step 5 — the sample has four ground runs in *Skipped*, and the [export and import](export-import.md) walkthrough explains what an import does.
 
-Click **Choose folder…** and pick the folder where you keep your logs — subfolders are included. Or drop files onto the page. The app only *reads* this folder; it never copies, moves or renames anything in it. You can add more folders later, and if you move logs around, **Sync** finds them again.
+With **Load from a folder**, the folder you picked is already the workspace's. With **Create from logs**, click **Choose folder…** on the empty workspace and pick the folder where you keep your logs — subfolders are included — or drop files onto the page. The app only *reads* this folder; it never copies, moves or renames anything in it. You can add more folders later, and if you move logs around, **Sync** finds them again.
 
 How the browser remembers the folder differs:
 

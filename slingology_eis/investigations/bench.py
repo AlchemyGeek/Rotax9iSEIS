@@ -1,0 +1,216 @@
+"""
+The code tool's engine side (Spec 16 D3, §4.5): run one cell in a worker
+process (bench_worker.py) under the envelope, and turn what it returned
+into a notebook cell's nbformat 4 outputs (§5.1).
+
+Caps (§9 Q2), per cell:
+- wall clock `DEFAULT_TIMEOUT_S` (a cell may ask for up to `MAX_TIMEOUT_S`),
+  counted from the worker's start, imports included;
+- memory `DEFAULT_MEMORY_MB` peak resident (up to `MAX_MEMORY_MB`);
+- stdout and stderr kept up to `MAX_STREAM_CHARS` each;
+- tables up to `TABLE_ROWS` rows (text/html and text/plain), figures as
+  inline SVG (image/svg+xml) with a small PNG preview for the
+  investigator, never stored.
+
+A cell stopped at a cap keeps what it printed before the stop. A cell's
+own error is its output, never a host error, so the investigator can read
+it and try again.
+
+The worker gets a minimal environment — no inherited variables beyond
+PATH, HOME and the locale — so a cell can't read the engine's
+environment either.
+"""
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from .. import __version__
+
+DEFAULT_TIMEOUT_S = 60
+MAX_TIMEOUT_S = 300
+DEFAULT_MEMORY_MB = 2048
+MAX_MEMORY_MB = 8192
+MAX_STREAM_CHARS = 100_000
+TABLE_ROWS = 500
+_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+
+
+class BenchError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+# The kernel's layer under the worker's audit hook (§4.5): on macOS the
+# worker starts under sandbox-exec with a profile that denies the network,
+# new processes and writes outside files/ (and the bench's own scratch and
+# matplotlib cache). The hook alone is not a boundary — code in the same
+# interpreter can reach its state; the profile is enforced by the kernel.
+# sandbox-exec is deprecated by Apple but present and working; elsewhere
+# (Linux, Windows) only the hook applies.
+_SANDBOX_EXEC = "/usr/bin/sandbox-exec" if sys.platform == "darwin" else None
+
+
+def _sb_quote(p) -> str:
+    return '"' + os.path.realpath(str(p)).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _sandbox_profile(writable: list) -> str:
+    exe = os.path.realpath(sys.executable)
+    base = os.path.realpath(sys.base_prefix)
+    allow_w = " ".join(f"(subpath {_sb_quote(p)})" for p in writable)
+    return "\n".join([
+        "(version 1)",
+        "(allow default)",
+        "(deny network*)",
+        "(deny process-fork)",
+        "(deny process-exec)",
+        # The interpreter itself (a framework build re-execs into Python.app).
+        f"(allow process-exec (literal {_sb_quote(exe)}) (literal {_sb_quote(sys.executable)}) (subpath {_sb_quote(base)}))",
+        "(deny file-write*)",
+        f'(allow file-write* {allow_w} (literal "/dev/null") (literal "/dev/dtracehelper") (literal "/dev/tty"))',
+        "",
+    ])
+
+
+def available() -> bool:
+    """A worker process can be started here (not under Pyodide)."""
+    return sys.platform not in ("emscripten", "wasi")
+
+
+def caps(timeout_s=None, memory_mb=None) -> dict:
+    try:
+        t = DEFAULT_TIMEOUT_S if timeout_s is None else float(timeout_s)
+        m = DEFAULT_MEMORY_MB if memory_mb is None else float(memory_mb)
+    except (TypeError, ValueError):
+        raise BenchError("BAD_PARAMS", "timeout_s and memory_mb are numbers")
+    if not 1 <= t <= MAX_TIMEOUT_S:
+        raise BenchError("BAD_PARAMS", f"timeout_s is 1–{MAX_TIMEOUT_S}")
+    if not 256 <= m <= MAX_MEMORY_MB:
+        raise BenchError("BAD_PARAMS", f"memory_mb is 256–{MAX_MEMORY_MB}")
+    return {"timeout_s": t, "memory_mb": m, "table_rows": TABLE_ROWS}
+
+
+def _read_capped(p: Path) -> tuple[str, bool]:
+    if not p.is_file():
+        return "", False
+    data = p.read_bytes()
+    text = data.decode("utf-8", errors="replace")
+    if len(text) > MAX_STREAM_CHARS:
+        return text[:MAX_STREAM_CHARS] + "\n[…output truncated]", True
+    return text, False
+
+
+def _env(mpl_dir: Path) -> dict:
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "SYSTEMROOT") if k in os.environ}
+    env.update({"PYTHONPATH": str(_PACKAGE_ROOT), "PYTHONDONTWRITEBYTECODE": "1", "PYTHONHASHSEED": "0",
+                "PYTHONNOUSERSITE": "1", "MPLCONFIGDIR": str(mpl_dir), "MPLBACKEND": "Agg",
+                "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"})
+    return env
+
+
+def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratch: Path, mpl_dir: Path,
+             engine_cfg: dict, engine_name: str, aircraft: dict, assignments: dict, study: dict,
+             cap: dict, documents_dirs: Optional[list] = None, data_root: Optional[Path] = None,
+             notes: str = "") -> dict:
+    """Run one cell; returns {outputs, ran, previews}. `outputs` are the
+    cell's nbformat 4 outputs (Spec 16 §5.1: streams, tables as text/html,
+    figures inline as image/svg+xml, log views as SVG + their reference);
+    `previews` maps an output's index ("o2") to a PNG (base64) of its
+    figure for the investigator's eyes — never stored."""
+    if not isinstance(source, str) or not source.strip():
+        raise BenchError("BAD_PARAMS", "a code cell needs source")
+    if not available():
+        raise BenchError("NOT_SUPPORTED", "the bench needs a local engine (a worker process); "
+                                          "this runtime can't start one")
+    files_dir.mkdir(parents=True, exist_ok=True)
+    mpl_dir.mkdir(parents=True, exist_ok=True)
+    work = scratch / f"bench-{uuid.uuid4().hex[:12]}"
+    work.mkdir(parents=True, exist_ok=True)
+    req = {"source": source, "cell_id": cell_id, "ws_dir": str(ws_dir), "files_dir": str(files_dir),
+           "engine_cfg": engine_cfg, "engine_name": engine_name, "aircraft": aircraft, "assignments": assignments,
+           "study": study, "caps": cap, "result_path": str(work / "result.json"),
+           "documents_dirs": list(documents_dirs or []), "data_root": str(data_root or ""), "notes": notes or ""}
+    (work / "request.json").write_text(json.dumps(req))
+    out_p, err_p = work / "stdout.txt", work / "stderr.txt"
+    started = time.monotonic()
+    at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    argv = [sys.executable, "-m", "slingology_eis.investigations.bench_worker", str(work / "request.json")]
+    os_sandbox = None
+    if _SANDBOX_EXEC and Path(_SANDBOX_EXEC).exists():
+        profile = work / "sandbox.sb"
+        profile.write_text(_sandbox_profile(writable=[files_dir, work, mpl_dir]))
+        argv = [_SANDBOX_EXEC, "-f", str(profile)] + argv
+        os_sandbox = "sandbox-exec"
+    with open(out_p, "wb") as out_f, open(err_p, "wb") as err_f:
+        proc = subprocess.Popen(argv, cwd=str(files_dir), env=_env(mpl_dir),
+                                stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f, start_new_session=True)
+        status = None
+        try:
+            proc.wait(timeout=cap["timeout_s"])
+        except subprocess.TimeoutExpired:
+            status = "timeout"
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.wait()
+    ms = int((time.monotonic() - started) * 1000)
+    from .bench_worker import MEMORY_EXIT
+    stdout, _ = _read_capped(out_p)
+    stderr, _ = _read_capped(err_p)
+    result = None
+    if status is None:
+        if proc.returncode == MEMORY_EXIT:
+            status = "memory"
+        else:
+            try:
+                result = json.loads((work / "result.json").read_text())
+                status = result["status"]
+            except (OSError, ValueError, KeyError):
+                status = "crashed"
+
+    outputs: list[dict] = []
+    if stdout:
+        outputs.append({"output_type": "stream", "name": "stdout", "text": stdout})
+    previews: dict[str, str] = {}
+    for o in (result or {}).get("outputs") or []:
+        png = o.pop("_png", None)
+        if png:
+            previews[f"o{len(outputs)}"] = png
+        outputs.append(o)
+    if stderr.strip():
+        outputs.append({"output_type": "stream", "name": "stderr", "text": stderr})
+
+    def stopped(evalue: str, tb: str) -> dict:
+        return {"output_type": "error", "ename": "Stopped" if status != "crashed" else "Crashed",
+                "evalue": evalue, "traceback": [tb]}
+    if status == "timeout":
+        outputs.append(stopped(f"the cell ran past the {cap['timeout_s']:g} s cap",
+                               f"Stopped at the {cap['timeout_s']:g} s wall-clock cap; the output above is what "
+                               "it printed before the stop."))
+    elif status == "memory":
+        outputs.append(stopped(f"the cell passed the {cap['memory_mb']:g} MB memory cap",
+                               f"Stopped at the {cap['memory_mb']:g} MB memory cap; the output above is what "
+                               "it printed before the stop."))
+    elif status == "crashed":
+        outputs.append(stopped(f"the bench process ended without a result (exit {proc.returncode})",
+                               "The bench process ended without a result; stderr above may say why."))
+    ran = {"engine": __version__, "flights": (result or {}).get("flights") or [], "at": at, "ms": ms,
+           "status": status, "caps": {"timeout_s": cap["timeout_s"], "memory_mb": cap["memory_mb"],
+                                      "os_sandbox": os_sandbox}}
+    for p in work.iterdir():
+        p.unlink()
+    work.rmdir()
+    return {"outputs": outputs, "ran": ran, "previews": previews}
+
+

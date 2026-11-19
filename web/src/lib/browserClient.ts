@@ -6,7 +6,7 @@
 import { appUrl } from "./appBase";
 import { EngineRpcError, LocalServerClient, type SeriesResult, type UploadFile } from "./engineClient";
 import { PageFolders, MAX_LOG_BYTES, type FolderState } from "./pageFolders";
-import type { DataLocationProgress, ScanProgress, WorkspaceManifest } from "../types/contract";
+import type { DataLocationProgress, ResearchProgress, ScanProgress, WorkspaceManifest } from "../types/contract";
 
 export interface BrowserRuntime {
   host: "browser";
@@ -43,6 +43,10 @@ const store = {
 /** What the views use of the browser client, where `choose_folder`. */
 export interface FolderPicking {
   chooseFolder(): Promise<WorkspaceManifest>;
+  /** D18: pick a folder before any workspace exists (the click is the
+   * browser's required gesture); register it once the workspace is made. */
+  pickFolder(): Promise<{ folder_id: string; name: string }>;
+  registerPickedFolder(picked: { folder_id: string; name: string }): Promise<WorkspaceManifest>;
   addFolderFiles(files: (File | { file: File; path: string })[]): Promise<WorkspaceManifest>;
   reconnectFolder(folder_id: string, files?: (File | { file: File; path: string })[]): Promise<FolderState>;
   folderState(folder_id: string): Promise<FolderState>;
@@ -69,6 +73,8 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
   private idleWaiters: (() => void)[] = [];
   private queuedReads = new Map<string, Promise<unknown>>();
   private scanProgress: ScanProgress = { active: false };
+  // Spec 06 §11: the "research" progress stream, polled like scan progress.
+  private researchProgress: ResearchProgress = { active: false };
   private downloads = new Map<string, string>();
   private uploads = new Map<string, Pending>();
   private statusListeners = new Set<(s: EngineStatus) => void>();
@@ -168,6 +174,7 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
           this.scanProgress = msg.update;
           if (msg.update.phase === "analyzing") this.heapTrace.push([msg.update.current, msg.heap]);
         }
+        if (msg.stream === "research") this.researchProgress = msg.update;
         break;
       case "need-listing":
         this.folders.list(msg.folder_id).then(
@@ -265,6 +272,10 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
     return this.scanProgress;
   }
 
+  async getResearchProgress(): Promise<ResearchProgress> {
+    return this.researchProgress;
+  }
+
   async getDataLocationProgress(): Promise<DataLocationProgress> {
     return { active: false };
   }
@@ -346,6 +357,14 @@ export class BrowserWorkerClient extends LocalServerClient implements FolderPick
   async chooseFolder(): Promise<WorkspaceManifest> {
     const { folder_id, name } = await this.folders.choose();
     return this.rpc<WorkspaceManifest>("register_log_folder", { name, folder_id });
+  }
+
+  pickFolder(): Promise<{ folder_id: string; name: string }> {
+    return this.folders.choose();
+  }
+
+  registerPickedFolder(picked: { folder_id: string; name: string }): Promise<WorkspaceManifest> {
+    return this.rpc<WorkspaceManifest>("register_log_folder", { name: picked.name, folder_id: picked.folder_id });
   }
 
   /** Safari, or a dropped folder: its files, for this session. */

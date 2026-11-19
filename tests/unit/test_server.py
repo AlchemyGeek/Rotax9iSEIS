@@ -996,7 +996,7 @@ def test_get_flight_series_works_for_folder_scanned_flight(registry_server, tmp_
     flight_dir = ws.resolve_workspaces_root() / [
         e["id"] for e in rpc(registry_server, "list_workspaces", {})["result"] if e["name"] == "N117ZS"
     ][0] / "flights" / flight_id
-    assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json")] == []
+    assert [p.name for p in flight_dir.iterdir() if p.name not in ("analysis.json", "sources.json", "ident.json")] == []
 
     series = rpc(registry_server, "get_flight_series", {"flight_id": flight_id, "channels": ["ias_kt"]})
     assert series["ok"], series
@@ -2248,7 +2248,12 @@ def test_get_capabilities(server):
     from slingology_eis import __version__
     assert caps["host"] == "server" and caps["engine_version"] == __version__ and caps["host_version"] == __version__
     assert caps["features"] == {"data_location": True, "add_folder_by_path": True, "choose_folder": False,
-                                "persistent_storage_status": False, "download_url": True, "folder_watching": False}
+                                "persistent_storage_status": False, "download_url": True, "folder_watching": False,
+                                "research": True, "investigations": True, "documents": True,
+                                # Spec 16 D17: the website offers the move; a server receives it.
+                                "move_workspace": False,
+                                # Spec 16 S6: a server host under Pyodide has no worker processes.
+                                "bench": not isinstance(server, NodeHost)}
 
 
 def test_dispatcher_errors_have_distinct_codes(registry_server):

@@ -1,0 +1,364 @@
+{
+ "study_id": "st-000000fixture",
+ "name": "Synthetic rpm cycle",
+ "updated": "2026-01-02T10:00:00Z",
+ "created": "2026-01-02T09:00:00Z",
+ "finding": "RPM swings **180 rpm** about the setpoint.",
+ "tests": 0,
+ "read_only": false,
+ "flights": 1,
+ "kind": "investigation",
+ "author": "claude",
+ "question": "Is there a cycle in rpm at full power?",
+ "status": "finished",
+ "summary": "RPM swings **180 rpm** about the setpoint.\n\nWatch it.",
+ "cells": 13,
+ "format": "ipynb",
+ "pending": 1,
+ "inbox_candidate": null,
+ "engine": "1.0.2",
+ "notebook": {
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "cells": [
+   {
+    "id": "setup",
+    "cell_type": "code",
+    "execution_count": null,
+    "outputs": [],
+    "source": "# Setup: binds `eis` to this workspace and imports what the EIS bench predefines. A no-op on the\n# bench; in JupyterLab (a kernel with slingology-eis[investigations]) it is the binding (Spec 16 D14).\nimport numpy as np, pandas as pd, scipy, matplotlib\nimport matplotlib.pyplot as plt\nfrom slingology_eis import eis\neis.open(\"ws_000000000000\")",
+    "metadata": {
+     "slingology": {
+      "role": "setup"
+     }
+    }
+   },
+   {
+    "id": "c1",
+    "cell_type": "markdown",
+    "source": "## Question\n\nIs there a cycle in **rpm** at full power?",
+    "metadata": {
+     "slingology": {
+      "role": "question"
+     }
+    }
+   },
+   {
+    "id": "c2",
+    "cell_type": "markdown",
+    "source": "# Plan\n\n1. Look at *one* flight first.\n2. Then every `full_power` slice.\n\n- swing about the setpoint\n- period\n\n| measure | value |\n|---|---|\n| swing | 180 rpm |\n\n> A hypothesis, not a conclusion.\n\n```\nr = eis.cycling(\"full_power\", \"rpm\")\n```\n\nSee [the docs](https://example.org/docs?a=1&b=2) and [this](javascript:alert(1)); <script>alert('x')</script> stays text.\n\n![chart](files/chart.svg)",
+    "metadata": {}
+   },
+   {
+    "id": "c3",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "print(r)",
+    "outputs": [
+     {
+      "output_type": "stream",
+      "name": "stdout",
+      "text": [
+       "RPM cycles every 3.8 s\n",
+       "in 9 of 10 slices <ok>\n"
+      ]
+     },
+     {
+      "output_type": "stream",
+      "name": "stderr",
+      "text": "a warning & more\n"
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      }
+     }
+    }
+   },
+   {
+    "id": "c4",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "r.rows",
+    "outputs": [
+     {
+      "output_type": "execute_result",
+      "execution_count": 1,
+      "data": {
+       "text/html": "<table class=\"eis-table\"><caption>Slices</caption><thead><tr><th>slice</th><th>rpm swing</th></tr></thead><tbody><tr><td>s1</td><td>180</td></tr><tr><td>s2</td><td>176 &lt; 180</td></tr></tbody></table><p>3 more rows not kept</p>",
+       "text/plain": "slice rpm swing\n s1 180"
+      },
+      "metadata": {
+       "slingology": {
+        "table": {
+         "n_rows": 5,
+         "n_cols": 2,
+         "truncated": true
+        }
+       }
+      }
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      }
+     }
+    }
+   },
+   {
+    "id": "c5",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "html_without_mark",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "data": {
+       "text/html": "<b onclick='x()'>bold</b>",
+       "text/plain": "<b>plain fallback</b>"
+      },
+      "metadata": {}
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      }
+     }
+    }
+   },
+   {
+    "id": "c6",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "r.figure()",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "data": {
+       "image/svg+xml": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"40\" viewBox=\"0 0 120 40\"><polyline points=\"0,30 20,10 40,30 60,10 80,30 100,10 120,30\" fill=\"none\" stroke=\"#333\"/></svg>",
+       "text/plain": "<Figure rpm swing>"
+      },
+      "metadata": {}
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      }
+     }
+    }
+   },
+   {
+    "id": "c7",
+    "cell_type": "markdown",
+    "source": "The figure above shows the swing per slice.",
+    "metadata": {}
+   },
+   {
+    "id": "c8",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "plt.show()",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "data": {
+       "image/png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+       "text/plain": "<Figure>"
+      },
+      "metadata": {}
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      },
+      "ran_elsewhere": "external"
+     }
+    }
+   },
+   {
+    "id": "c9",
+    "cell_type": "markdown",
+    "source": "The log view below is the first takeoff.",
+    "metadata": {}
+   },
+   {
+    "id": "c10",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "eis.logview(\"5ynthet1c0f11e01\", 360, 420, [\"rpm\", \"map_inhg\"], marks=[(367, \"takeoff power\")])",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "metadata": {},
+      "data": {
+       "image/svg+xml": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"40\" viewBox=\"0 0 120 40\"><polyline points=\"0,30 20,10 40,30 60,10 80,30 100,10 120,30\" fill=\"none\" stroke=\"#333\"/></svg>",
+       "text/plain": "<LogView>",
+       "application/vnd.slingology.logview+json": {
+        "flight": "5ynthet1c0f11e01",
+        "flight_date_local": "2026-01-02",
+        "start_s": 360,
+        "end_s": 420,
+        "channels": [
+         "rpm",
+         "map_inhg"
+        ],
+        "marks": [
+         {
+          "t_s": 367.0,
+          "label": "takeoff power"
+         }
+        ],
+        "title": "First takeoff",
+        "window_label": "06:00–07:00 into the flight"
+       }
+      }
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      }
+     }
+    }
+   },
+   {
+    "id": "c11",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "1/0",
+    "outputs": [
+     {
+      "output_type": "error",
+      "ename": "ZeroDivisionError",
+      "evalue": "division by zero",
+      "traceback": [
+       "\u001b[0;31mZeroDivisionError\u001b[0m",
+       "division by zero"
+      ]
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      },
+      "pending": {
+       "outputs": [
+        {
+         "output_type": "stream",
+         "name": "stdout",
+         "text": "now fine\n"
+        }
+       ]
+      }
+     }
+    }
+   },
+   {
+    "id": "c12",
+    "cell_type": "code",
+    "execution_count": null,
+    "source": "eis.cycling('full_power', 'rpm', flights=['gone'])",
+    "outputs": [
+     {
+      "output_type": "stream",
+      "name": "stdout",
+      "text": "sender's result\n"
+     }
+    ],
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.0.2",
+       "flights": [
+        "5ynthet1c0f11e01"
+       ],
+       "at": "2026-01-02T10:00:00Z",
+       "ms": 120,
+       "status": "ok"
+      },
+      "read_only": true
+     }
+    }
+   }
+  ],
+  "metadata": {
+   "kernelspec": {
+    "name": "python3",
+    "display_name": "Python 3",
+    "language": "python"
+   },
+   "slingology": {
+    "id": "st-000000fixture",
+    "name": "Synthetic rpm cycle",
+    "kind": "investigation",
+    "author": "claude",
+    "question": "Is there a cycle in rpm at full power?",
+    "status": "finished",
+    "summary": "RPM swings **180 rpm** about the setpoint.\n\nWatch it.",
+    "inbox_candidate": null,
+    "engine": "1.0.2",
+    "engine_type": "916iS",
+    "created": "2026-01-02T09:00:00Z",
+    "updated": "2026-01-02T10:00:00Z",
+    "workspace_id": "ws_000000000000"
+   }
+  }
+ },
+ "files": {
+  "files/chart.svg": "data:image/svg+xml;base64,PHN2Zy8+"
+ }
+}

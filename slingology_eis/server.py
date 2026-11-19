@@ -14,12 +14,22 @@ operations share, lives in the host.
 
 Binds to loopback (127.0.0.1) only; the "any other interface needs an
 access token" case (Spec 04 §9.2, Docker/NAS) isn't implemented yet.
+
+Cross-origin (Spec 16 D17): pages on this machine (any loopback origin —
+the server's own pages, `npm run dev`, the static site served locally)
+may call every route. The website's origin may call only the probe
+(`GET /eis/probe`) and *Move my workspace* (`POST /eis/move-workspace`).
+Any other origin gets no CORS headers, and a POST carrying any other
+Origin is refused (403), so a page elsewhere can't drive the engine with
+a "simple" request that needs no preflight.
 """
 from __future__ import annotations
 
 import base64
 import json
 import mimetypes
+import os
+import re
 import shutil
 import sys
 import uuid
@@ -32,6 +42,32 @@ from . import serialize as _json_serialize
 from .cli import resolve_logs_dir
 from .resources import web_dist
 from .log_sources import DISK
+
+# Spec 16 D17: the website (GitHub Pages) — the only non-loopback origin
+# allowed, and only on the two routes below. SLINGOLOGY_EIS_WEBSITE_ORIGIN
+# (comma-separated) replaces it, for testing against another host.
+WEBSITE_ORIGINS = ("https://alchemygeek.github.io",)
+PROBE_PATH = "/eis/probe"
+MOVE_PATH = "/eis/move-workspace"
+_WEBSITE_PATHS = (PROBE_PATH, MOVE_PATH)
+_LOOPBACK = re.compile(r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$")
+
+
+def website_origins() -> tuple[str, ...]:
+    env = os.environ.get("SLINGOLOGY_EIS_WEBSITE_ORIGIN")
+    if env:
+        return tuple(o.strip().rstrip("/") for o in env.split(",") if o.strip())
+    return WEBSITE_ORIGINS
+
+
+def origin_allowed(origin: Optional[str], path: str) -> bool:
+    """May a page at `origin` call `path` here? No Origin (curl, tests,
+    the MCP host) is not a cross-origin call."""
+    if not origin:
+        return True
+    if _LOOPBACK.match(origin):
+        return True
+    return origin in website_origins() and path.split("?")[0] in _WEBSITE_PATHS
 
 # Kept importable from here for callers that predate the host split.
 RpcError = _host.RpcError
@@ -79,9 +115,49 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path], quiet: bool):
                 sys.stderr.write(f"{self.address_string()} - {fmt % args}\n")
 
         def _cors(self) -> None:
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            # D17: the caller's origin echoed back when it may call this
+            # route (loopback: all routes; the website: the probe and the
+            # move), and nothing otherwise — the browser then refuses it.
+            origin = self.headers.get("Origin")
+            self.send_header("Vary", "Origin")
+            if not origin or not origin_allowed(origin, self.path):
+                return
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            # Chrome's Private Network Access preflight: a public page may
+            # reach this loopback server on the routes above.
+            if self.headers.get("Access-Control-Request-Private-Network"):
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+
+        def _refused(self) -> bool:
+            """A POST from an origin that may not call this route: 403."""
+            if origin_allowed(self.headers.get("Origin"), self.path):
+                return False
+            self.send_response(403)
+            self.send_header("Vary", "Origin")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return True
+
+        def _receive_upload(self, filename: str) -> dict:
+            """The request body streamed to a private temp file, registered
+            as an upload the RPC ops refer to by upload_id."""
+            length = int(self.headers.get("Content-Length", 0))
+            upload_id = uuid.uuid4().hex
+            folder = _host.scratch_dir(ctx) / "uploads" / upload_id
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / (Path(filename).name or "upload")
+            remaining = length
+            with open(target, "wb") as out:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1 << 20, remaining))
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    remaining -= len(chunk)
+            ctx["uploads"][upload_id] = {"path": target, "filename": target.name}
+            return {"upload_id": upload_id, "filename": target.name, "size": length - remaining}
 
         def _send_json(self, body: dict) -> None:
             payload = _json_serialize.dumps(body).encode("utf-8")
@@ -98,28 +174,31 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path], quiet: bool):
             self.end_headers()
 
         def do_POST(self) -> None:  # noqa: N802
+            if self._refused():
+                return
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(self.path).query)
             if self.path.startswith("/upload"):
                 # Spec 02 v0.14: a file chosen in the browser (an export
                 # zip can be hundreds of MB), streamed to a private temp
                 # file; the RPC ops then refer to it by upload_id.
-                from urllib.parse import parse_qs, urlparse
-                filename = (parse_qs(urlparse(self.path).query).get("filename") or ["upload"])[0]
-                length = int(self.headers.get("Content-Length", 0))
-                upload_id = uuid.uuid4().hex
-                folder = _host.scratch_dir(ctx) / "uploads" / upload_id
-                folder.mkdir(parents=True, exist_ok=True)
-                target = folder / (Path(filename).name or "upload")
-                remaining = length
-                with open(target, "wb") as out:
-                    while remaining > 0:
-                        chunk = self.rfile.read(min(1 << 20, remaining))
-                        if not chunk:
-                            break
-                        out.write(chunk)
-                        remaining -= len(chunk)
-                ctx["uploads"][upload_id] = {"path": target, "filename": target.name}
-                self._send_json({"ok": True, "result": {"upload_id": upload_id, "filename": target.name,
-                                                        "size": length - remaining}})
+                up = self._receive_upload((query.get("filename") or ["upload"])[0])
+                self._send_json({"ok": True, "result": up})
+                return
+            if self.path.split("?")[0] == MOVE_PATH:
+                # Spec 16 D17: the website's workspace export, posted by its
+                # page, imported as a new workspace (never a merge) and made
+                # active; the page then opens ours.
+                up = self._receive_upload((query.get("filename") or ["workspace.eisworkspace"])[0])
+                reply = _host.reply({"request_id": "move", "op": "import_workspace",
+                                     "params": {"upload_id": up["upload_id"]}}, ctx)
+                if reply.get("ok"):
+                    m = reply["result"]["manifest"]
+                    port = self.server.server_address[1]
+                    reply = {"ok": True, "result": {
+                        "workspace_id": m["id"], "name": m["name"],
+                        "open_url": f"http://127.0.0.1:{port}/?moved={m['id']}#/flights"}}
+                self._send_json(reply)
                 return
             if self.path != "/rpc":
                 self.send_response(404)
@@ -138,6 +217,13 @@ def _make_handler(ctx: dict, ui_dist: Optional[Path], quiet: bool):
             self._send_json(_host.reply(envelope, ctx))
 
         def do_GET(self) -> None:  # noqa: N802
+            if self.path.split("?")[0] == PROBE_PATH:
+                # Spec 16 D17: "is EIS running on this computer?" — what the
+                # website needs to offer the move, and nothing about the
+                # workspaces here.
+                from . import __version__
+                self._send_json({"app": "SlingologyEIS", "version": __version__, "move_workspace": True})
+                return
             if self.path.split("?")[0] == "/runtime.json":
                 # Spec 04 §9.5: the page asks first which host it runs on.
                 # This server answers for itself, whatever a static build

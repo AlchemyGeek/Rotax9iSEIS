@@ -782,6 +782,9 @@ export interface WorkspaceSettings {
   // this is the one place already round-tripped through the local
   // server scoped to exactly one workspace.
   trends_detail_strips?: Record<string, boolean>;
+  // Spec 16 §6 (D5): the Research inbox's sensitivity (Settings → Research); absent = "normal".
+  research_sensitivity?: "quiet" | "normal" | "curious";
+  channel_assignments?: Record<string, unknown>;
 }
 
 // Spec 14 v0.13 §5 — a results-affecting setting that differs from
@@ -800,7 +803,8 @@ export interface ChangedSetting {
 // Spec 14 §6.1 — the kinds of decision the Journal register holds.
 export type JournalEntryKind =
   | "acknowledged_insight" | "limit_filter" | "disabled_topic" | "rule_edit" | "changed_setting"
-  | "exclusion" | "reference_pin" | "annotation";
+  | "exclusion" | "reference_pin" | "annotation"
+  | "study_finding"; // Spec 06 §10.3 — a Research finding noted in the Journal
 
 // Spec 14 §7.1 — the Flight view header's "Contributes to reference /
 // Excluded from reference (reason)" state, and an open "reference
@@ -889,6 +893,15 @@ export interface FlightTableRow {
   different_tail_number?: string;
   filename: string;
   log_folder: string;
+  // Spec 16 §4.4 / Spec 03 §5.1 (Session F): the flight's identification
+  // (computed on Sync) and the pilot's name for it.
+  identified?: boolean; // false: not worked out yet (a flight stored before Session E; Sync or Identify does it)
+  route?: string[];
+  start_local?: string | null;
+  tz_abbrev?: string | null;
+  takeoffs?: number | null;
+  landings?: number | null;
+  name?: string | null;
 }
 
 export interface FlightsTableFixture {
@@ -1036,6 +1049,11 @@ export interface HostCapabilities {
     persistent_storage_status: boolean;
     download_url: boolean;
     folder_watching: boolean;
+    research?: boolean; // Spec 06 §11 — absent on a host older than Research
+    investigations?: boolean; // Spec 16 — notebooks and the inbox (both hosts)
+    bench?: boolean; // Spec 16 D3/D8 — runs notebook code (server host only)
+    move_workspace?: boolean; // Spec 16 D17 — the website offers Move my workspace (browser host only)
+    documents?: boolean; // Spec 16 D11 — reads the aircraft's documents folders (server host only)
   };
 }
 
@@ -1340,3 +1358,515 @@ export interface CopyFiltersResult {
   copied: { filter: LimitFilter; valid: boolean; diagnostics: Diagnostic[] }[];
   skipped: { target: FilterTarget; reason: string }[];
 }
+
+// ── Spec 06 — Research ──────────────────────────────────────────────────────
+// The research operations (Spec 06 §11), as the host returns them. Slices are
+// derived and never stored; a study stores definitions plus a descriptor cache.
+
+export type SliceCondition =
+  | { channel: string; op: ">=" | ">" | "<=" | "<" | "="; value: number }
+  | { channel: string; op: "between"; min: number; max: number };
+
+export interface SliceRule {
+  rule_id: string;
+  name: string;
+  from_preset?: string;
+  // Spec 06 §9.1: a rule made by Signal view's "Make this a rule" — where
+  // its window came from (provenance only, not part of the rule's body).
+  derived_from?: { flight: string; start_s: number; end_s: number; channel: string };
+  conditions: SliceCondition[];
+  min_duration_s: number;
+  merge_gap_s: number;
+  pad_s: number;
+  phase: { mode: "within" | "overlap"; phases: string[] } | null;
+  // list_slice_presets adds these:
+  description?: string;
+  question?: string;
+  isolates?: string;
+  status?: "measured" | "unverified";
+  value_sources?: Record<string, string>;
+}
+
+export interface HandSlice {
+  flight: string;
+  start_s: number;
+  end_s: number;
+  label: string;
+  offset_s: number;
+}
+
+export interface SlicePresets {
+  engine: string;
+  status: "measured" | "unverified";
+  note: string | null;
+  presets: SliceRule[];
+  phase_rules: SliceRule[];
+}
+
+export interface StudySelection {
+  mode: "all" | "flights";
+  flights?: string[];
+  split?: StudySplit | null;
+}
+
+export type StudySplit =
+  | { by: "da_band" | "oat_band" | "engine_hours"; edges?: number[] }
+  | { by: "source" | "rule" }
+  | { by: "date"; date: string }
+  | { by: "flights"; groups: { label: string; flights: string[] }[] };
+
+export interface SliceContext {
+  source?: string;
+  phases?: string[];
+  start_time?: string;
+  da_ft?: number | null;
+  oat_c?: number | null;
+  pressure_alt_ft?: number | null;
+  engine_hours?: number | null;
+  [k: string]: unknown;
+}
+
+export interface SliceInfo {
+  slice_id: string;
+  flight: string;
+  source_key: string;
+  kind: "rule" | "hand";
+  rule_id: string | null;
+  label: string;
+  start_s: number;
+  end_s: number;
+  anchor_s: number;
+  offset_s?: number;
+  context: SliceContext;
+  quality: { duration_s?: number; filled_share?: number; samples?: number; [k: string]: unknown };
+  descriptors: Record<string, Record<string, number | boolean | null>>;
+}
+
+export interface SliceSetResult {
+  slices: SliceInfo[];
+  count: number;
+  by_source: Record<string, number>;
+  flights_with_slices: number;
+  flights_selected: number;
+  rules: SliceRule[];
+  hand_slices: HandSlice[];
+  channels: string[];
+  reference: string;
+  windows: Record<string, { window_s: number; lag_s: number; basis: string; median_period_s?: number; median_duration_s?: number }>;
+  missing_flights: string[];
+  unreachable_flights: string[];
+  missing_channels: Record<string, string[]>;
+  parsed_flights: number;
+  cached_flights: number;
+  engine_version: string;
+  selection: StudySelection;
+}
+
+export interface SliceSamples {
+  anchor: string;
+  channels: string[];
+  slices: {
+    slice_id: string;
+    flight: string;
+    label: string;
+    context: SliceContext;
+    anchor_offset_s: number;
+    t: number[];
+    channels: Record<string, (number | null)[]>;
+  }[];
+}
+
+export type ResearchTestId = "cycling" | "coupling" | "groups" | "unusual";
+
+export interface ResearchReference {
+  kind: "om" | "set" | "user";
+  label: string;
+  value: number | [number, number] | null;
+  unit?: string;
+  source?: string;
+  text?: string;
+  id?: string;
+  ref_kind?: string;
+}
+
+export interface ResearchMagnitude {
+  label: string;
+  value: number | null;
+  unit?: string;
+  spread?: [number, number] | null;
+  references: ResearchReference[];
+  text: string;
+}
+
+export interface ResearchChart {
+  kind: "aligned_slices" | "multi_channel_stack" | "distributions" | "ranked";
+  channels?: string[];
+  anchor?: string;
+  distribution?: { descriptor: string; channel: string };
+  descriptor?: string;
+  group_by?: string;
+  descriptor_column?: string;
+  highlight?: string[];
+}
+
+export interface ResearchTestResult {
+  test_id: ResearchTestId;
+  version: number;
+  question: string;
+  finding: string;
+  evidence: {
+    chart: ResearchChart;
+    table: { columns: { key: string; label: string; unit?: string }[]; rows: Record<string, unknown>[] };
+  };
+  magnitude: ResearchMagnitude[];
+  caveats: string[];
+  block: Record<string, unknown>;
+}
+
+export interface StudyTest {
+  test_id: ResearchTestId;
+  version?: number;
+  params: Record<string, unknown>;
+  channels: string[];
+  result?: ResearchTestResult | null;
+  error?: string;
+}
+
+export interface UserReference {
+  label: string;
+  channel: string;
+  value: number;
+  kind: "value" | "band";
+  source?: string;
+}
+
+export interface Study {
+  study_id: string;
+  name: string;
+  created: string | null;
+  updated: string | null;
+  selection: StudySelection;
+  slice_rules: SliceRule[];
+  hand_slices: HandSlice[];
+  references: UserReference[];
+  tests: StudyTest[];
+  windows: Record<string, unknown>;
+  view: { anchor?: string; channels?: string[] };
+  notes: string;
+  provenance: Record<string, unknown>;
+  cache?: unknown;
+  read_only?: { label: string; sender: Record<string, unknown> } | null;
+  imported?: { at: string; sender: Record<string, unknown>; name: string; matched: string[]; missing: string[] } | null;
+  flights?: string[];
+  last_run?: { slices: number; by_source: Record<string, number>; missing_flights: string[]; unreachable_flights: string[]; engine: string } | null;
+  // Spec 06 v0.6 §10.1 (Session C): what Signal and Compare reopen on.
+  signal?: StudySignal | null;
+  compare?: StudyCompare | null;
+}
+
+export interface StudySignal {
+  flight: string | null;
+  channels: string[];
+  reference: string | null;
+  window: { start_s: number; end_s: number } | null;
+}
+
+export interface StudyCompare {
+  pinned: string | null;          // a slice id, or a flight id when collapsed
+  collapse: boolean;
+  channels: string[];
+  reference: string | null;
+  chart: { x?: CompareChartX; y?: string; colour?: "flight" | "source" };
+}
+
+export type CompareChartX = "date" | "engine_hours" | "da_ft" | "oat_c";
+
+// ── Spec 06 §9.1 Signal view: analyze_signal ────────────────────────────────
+
+export interface SignalStrips {
+  swing: (number | null)[];
+  period_s: (number | null)[];
+  prominence: (number | null)[];
+  prominent: boolean[];
+}
+
+export interface SignalMagnitude {
+  label: string;
+  value: number | null;
+  unit: string;
+  text: string;
+  references: { kind: string; label: string; value?: unknown; text?: string; source?: string | null }[];
+}
+
+export interface SignalDiagnostics {
+  detrended: (number | null)[];
+  acf: (number | null)[];
+  periodogram: { period_s: number[]; power: number[] };
+  period_s: number | null;
+  period_ls_s: number | null;
+  lag_curve?: { lag_s: number; corr: number | null }[];
+  best_lag_s?: number | null;
+}
+
+export interface SignalWindow {
+  start_s: number;
+  end_s: number;
+  duration_s: number;
+  context: SliceContext;
+  descriptors: Record<string, Record<string, number | boolean | null>>;
+  windows: Record<string, { window_s: number; lag_s: number; basis: string; median_period_s?: number | null }>;
+  diagnostics: Record<string, SignalDiagnostics>;
+  numbers: Record<string, SignalMagnitude[]>;
+}
+
+export interface SignalResult {
+  flight_id: string;
+  duration_s: number;
+  source: string | null;
+  start_time: string | null;
+  date: string | null;
+  channels: string[];
+  missing_channels: string[];
+  reference: string | null;
+  phases: { phase: string; start_s: number; end_s: number }[];
+  filled: number[];
+  strip_windows: Record<string, { window_s: number; basis: string; flight_period_s: number | null; lit_seconds: number; lit_share: number }>;
+  strips: Record<string, SignalStrips>;
+  prominence_min: number;
+  om_limits: Record<string, OmLimitRef[]>;
+  values?: Record<string, (number | null)[]>;
+  window: SignalWindow | null;
+}
+
+export interface OmLimitRef {
+  kind: "om";
+  id: string;
+  label: string;
+  value: number;
+  limit_type: string;
+  unit: string;
+  source?: string | null;
+}
+
+// ── Spec 06 §9.2 Compare: compare_rows ──────────────────────────────────────
+
+export interface CompareValues {
+  period_s?: number | null;
+  period_prominence?: number | null;
+  period_prominent?: boolean | number | null;
+  swing?: number | null;
+  median?: number | null;
+  corr0?: number | null;
+  lag_s?: number | null;
+}
+
+export interface CompareRow {
+  row_id: string;
+  slice_id: string | null;
+  flight: string;
+  kind: "rule" | "hand" | "flight";
+  label: string;
+  start_s: number;
+  end_s: number;
+  start_time: string | null;
+  date: string | null;
+  duration_s: number | null;
+  count?: number;
+  source: string | null;
+  da_ft: number | null;
+  oat_c: number | null;
+  pa_ft: number | null;
+  engine_hours: number | null;
+  phases: string[] | string | null;
+  values: Record<string, CompareValues>;
+  pinned?: boolean;
+  delta?: Record<string, CompareValues>;
+}
+
+export interface CompareResult {
+  rows: CompareRow[];
+  groups: { flight: string; date: string | null; start_time: string | null; source: string | null; count: number; row_ids: string[]; summary: CompareRow }[];
+  collapsed: boolean;
+  row_count: number;
+  slice_count: number;
+  flight_count: number;
+  flights_without: { flight: string; date: string | null; start_utc: string | null }[];
+  pinned: string | null;
+  channels: string[];
+  reference: string | null;
+  windows: SliceSetResult["windows"];
+  chart_x: CompareChartX[];
+  values: string[];
+  deltas: string[];
+  om_limits: Record<string, OmLimitRef[]>;
+  rules: SliceRule[];
+  hand_slices: HandSlice[];
+  by_source: Record<string, number>;
+  missing_flights: string[];
+  unreachable_flights: string[];
+  engine_version: string;
+  selection: StudySelection;
+}
+
+export interface StudySummary {
+  study_id: string;
+  name: string;
+  updated: string | null;
+  created: string | null;
+  finding: string | null;
+  tests: number;
+  read_only: boolean;
+  flights: number;
+  // Spec 16 §5.1 — an investigation notebook's row (absent on a hand study).
+  format?: "ipynb";
+  kind?: string | null;
+  author?: string | null;
+  question?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  cells?: number;
+  pending?: number;
+}
+
+export interface StudyImportResult {
+  study: Study;
+  matched: string[];
+  missing: string[];
+  read_only: boolean;
+}
+
+export interface ResearchProgress {
+  active: boolean;
+  phase?: "starting" | "slicing";
+  done?: number;
+  total?: number;
+}
+
+// ── Spec 16 (Session F): flight search, the aircraft record, the inbox ─────
+
+export interface FlightFindCandidate {
+  flight_id: string;
+  score: number;
+  matched: string[];
+  local_date: string;
+  start_local: string | null;
+  route: string | null;
+  takeoffs: number | null;
+  landings: number | null;
+  name: string | null;
+}
+
+export interface FlightFindResult {
+  description: string;
+  understood: { dates: string[]; months: string[]; weekdays: string[]; landings: number | null; takeoffs: number | null;
+    airports: Record<string, string[]>; other_words: string[] };
+  candidates: FlightFindCandidate[];
+  total: number;
+}
+
+export interface AircraftRecord {
+  id: string;
+  name: string;
+  engine_model: string;
+  documents_dirs: string[];
+  workspaces: string[];
+  created?: string;
+  updated?: string;
+  [field: string]: unknown;
+}
+
+export interface AircraftWorkspaceRef {
+  id: string;
+  name: string;
+  engine_model: string;
+  flight_count: number;
+  last_opened_at: string | null;
+}
+
+export interface AircraftView {
+  aircraft: AircraftRecord;
+  notes: string;
+  fields: { key: string; label: string; hint: string }[];
+  workspaces: AircraftWorkspaceRef[];
+  engine_model: string;
+}
+
+export type InboxStatus = "new" | "investigating" | "nothing-here" | "watch" | "acted";
+
+export interface InboxCandidate {
+  id: string;
+  key: string;
+  preset: string;
+  preset_name: string;
+  kind: "recurring" | "shift" | "group" | string;
+  descriptors: string[];
+  fired: { rule: string; hits?: number; of?: number; n?: number; m?: number; [k: string]: unknown };
+  summary: string;
+  evidence: { columns: string[]; rows: (string | number | boolean | null)[][] };
+  slices: string[];
+  window: { flight_ids: string[]; hours_from?: number; hours_to?: number };
+  status: InboxStatus;
+  sensitivity: "quiet" | "normal" | "curious";
+  parameters: { n: number; m: number; shift_z: number; group_z: number };
+  created: string;
+  last_seen: string;
+  holds: boolean;
+  study_id: string | null;
+  note: string | null;
+  resolved_at: string | null;
+}
+
+export interface InboxListing {
+  candidates: InboxCandidate[];
+  counts: Record<InboxStatus, number>;
+  last_scan: { at: string; sensitivity: string; flights: number; parameters: Record<string, unknown>; [k: string]: unknown } | null;
+}
+
+// Spec 16 D16 — Mark for Claude: the owner's questions and their pins.
+// A pin is where to look and a sentence; it stores no analysis.
+export interface Pin {
+  id: string;
+  question_id: string | null;
+  flight: string;              // a flight_id; "src:<key>" while an imported flight isn't here yet
+  start_s: number;
+  end_s: number;
+  channels: string[];
+  note: string | null;
+  created: string;
+  status?: InboxStatus;        // the question's resolution, once resolved
+  study_id?: string | null;
+  // added by pins_list / flight_pin: the flight's labels
+  flight_here?: boolean;
+  date?: string | null;
+  flight_name?: string | null;
+  when?: string | null;
+  route?: string | null;
+}
+
+export interface OwnerQuestion {
+  id: string;
+  title: string;
+  status: InboxStatus;
+  study_id: string | null;
+  note: string | null;
+  created: string;
+  updated: string;
+  resolved_at: string | null;
+}
+
+export interface OwnerQuestionWithPins extends OwnerQuestion {
+  pins: Pin[];
+  pin_count: number;
+  newest_note: string | null;
+}
+
+export interface PinsListing {
+  questions: OwnerQuestionWithPins[];
+  unassigned: Pin[];
+  counts: Record<InboxStatus, number>;
+  pins: number;
+  newest_open: string | null;
+}
+
+/** A pin's question: an id, a new one by title, or none (unassigned). */
+export type PinQuestionTarget = string | { title: string } | null;

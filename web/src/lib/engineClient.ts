@@ -52,8 +52,13 @@ import type {
   WorkspaceRegistryEntry,
   WorkspaceRulesResult,
   WorkspaceSettings,
+  SignalResult,
+  StudySummary,
+  FlightFindResult, AircraftView, AircraftRecord, AircraftWorkspaceRef, InboxStatus, InboxCandidate, InboxListing, OwnerQuestion, Pin, PinQuestionTarget, PinsListing,
+  UserReference,
 } from "../types/contract";
 import { targetLabel } from "../types/contract";
+import type { NotebookStudyView } from "../components/research/NotebookView";
 
 // A server older than the Spec 09 v0.18 web (engine before the CAS-events
 // change) names a filter's target with a top-level limit_id and no
@@ -247,6 +252,59 @@ export interface EngineClient {
   // Spec 12 R3.3 (Session A) — Trends panel layout, built by the engine
   // from the topic register, not a frontend metric list (D3).
   getTrendsPanels(): Promise<{ panels: TrendsPanel[] }>;
+
+  // Spec 16 §5 — notebooks (Spec 06 v1.0 retired hand studies and their operations).
+  loadStudy(studyId: string): Promise<NotebookStudyView>;
+  listStudies(): Promise<{ studies: StudySummary[] }>;
+  deleteStudy(studyId: string): Promise<{ deleted: string }>;
+  // A notebook (Spec 16 §5.1) exports as "zip" (default) or "html".
+  exportStudy(studyId: string, format?: "zip" | "html"): Promise<{ filename: string; size: number; download_url: string }>;
+  importStudy(file: File): Promise<NotebookStudyView>;
+  // Spec 16 §5.1 — a notebook's re-run (D4 semantics) and its pending outputs; needs features.bench.
+  // `source: "external"` keeps outputs a kernel outside EIS saved in place (D14).
+  rerunStudyCells(studyId: string): Promise<NotebookRerunResult>;
+  // Spec 16 Session F — flights by name and words, the aircraft record, the inbox (both hosts).
+  flightSetName(flightId: string, name: string | null): Promise<{ flight_id: string; name: string | null; notes: string | null }>;
+  flightsFind(description: string): Promise<FlightFindResult>;
+  /** Work out the route, local times and takeoffs/landings of flights lacking them (reads each such log once). */
+  identifyFlights(): Promise<number>;
+  aircraftGet(aircraftId?: string): Promise<AircraftView>;
+  aircraftSet(args: { aircraft_id?: string; aircraft?: Record<string, unknown>; notes?: string }): Promise<AircraftView>;
+  aircraftAssign(args: { workspace_id: string; aircraft_id?: string; new_aircraft?: { name: string } }): Promise<AircraftView>;
+  listAircraft(): Promise<(AircraftRecord & { workspaces: AircraftWorkspaceRef[] })[]>;
+  inboxList(args?: { status?: InboxStatus[]; scan?: "auto" | "never" | "always" }): Promise<InboxListing>;
+  inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ candidate: InboxCandidate }>;
+  // Spec 16 D16 — Mark for Claude (both hosts).
+  flightPin(args: { flight_id: string; start_s: number; end_s: number; channels: string[]; note: string | null; question: PinQuestionTarget }): Promise<{ pin: Pin; question: OwnerQuestion | null; where: string }>;
+  pinsList(args?: { status?: InboxStatus[] }): Promise<PinsListing>;
+  questionResolve(args: { question_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ question: OwnerQuestion }>;
+  questionEdit(args: { question_id: string; title?: string; note?: string | null }): Promise<{ question: OwnerQuestion }>;
+  questionDelete(questionId: string): Promise<{ deleted: string; pins_unassigned: number }>;
+  pinEdit(args: { pin_id: string; note?: string | null; question?: PinQuestionTarget; channels?: string[] }): Promise<{ pin: Pin; question: OwnerQuestion | null }>;
+  pinDelete(pinId: string): Promise<{ deleted: string }>;
+  acceptStudyCells(studyId: string, opts?: { cell_ids?: string[]; source?: "rerun" | "external" }): Promise<{ study: StudySummary; cells: string[] }>;
+  discardStudyCells(studyId: string, cellIds?: string[]): Promise<{ study: StudySummary; cells: string[] }>;
+  runStudyOnMyFlights(studyId: string): Promise<NotebookStudyView>;
+  // Spec 16 D15 — the Flight view's Signal toggle: one flight's strips, and a window's read-out.
+  analyzeSignal(args: SignalArgs): Promise<SignalResult>;
+  // The Journal's Remove for a notebook's study finding (study_finish journal).
+  forgetStudyFinding(refId: string): Promise<{ removed: boolean }>;
+}
+
+export interface NotebookRerunResult {
+  study: StudySummary;
+  cells: { cell_id: string; ran: boolean; identical?: boolean; status?: string; ran_elsewhere?: boolean }[];
+}
+
+export interface SignalArgs {
+  flight_id: string;
+  channels?: string[];
+  window?: { start_s: number; end_s: number } | null;
+  reference?: string | null;
+  references?: UserReference[];
+  include_strips?: boolean;
+  include_values?: boolean;
+  skip_onset_s?: number;
 }
 
 export class EngineRpcError extends Error {
@@ -701,6 +759,91 @@ export class LocalServerClient implements EngineClient {
 
   getTrendsPanels() {
     return this.rpc<{ panels: TrendsPanel[] }>("get_trends_panels", {});
+  }
+
+  // Spec 16 §5 — notebooks.
+  loadStudy(studyId: string) {
+    return this.rpc<NotebookStudyView>("load_study", { study_id: studyId });
+  }
+  listStudies() {
+    return this.rpc<{ studies: StudySummary[] }>("list_studies", {});
+  }
+  deleteStudy(studyId: string) {
+    return this.rpc<{ deleted: string }>("delete_study", { study_id: studyId });
+  }
+  exportStudy(studyId: string, format?: "zip" | "html") {
+    return this.rpc<{ filename: string; size: number; download_url: string }>("export_study", { study_id: studyId, ...(format ? { format } : {}) });
+  }
+  rerunStudyCells(studyId: string) {
+    return this.rpc<NotebookRerunResult>("study_cells_rerun", { study_id: studyId });
+  }
+  flightSetName(flightId: string, name: string | null) {
+    return this.rpc<{ flight_id: string; name: string | null; notes: string | null }>("flight_set_name", { flight_id: flightId, name: name ?? "" });
+  }
+  flightsFind(description: string) {
+    return this.rpc<FlightFindResult>("flights_find", { description });
+  }
+  async identifyFlights() {
+    const rows = await this.rpc<{ ident?: unknown }[]>("list_flights", { identify: true });
+    return rows.filter((r) => r.ident).length;
+  }
+  aircraftGet(aircraftId?: string) {
+    return this.rpc<AircraftView>("aircraft_get", aircraftId ? { aircraft_id: aircraftId } : {});
+  }
+  aircraftSet(args: { aircraft_id?: string; aircraft?: Record<string, unknown>; notes?: string }) {
+    return this.rpc<AircraftView>("aircraft_set", args);
+  }
+  aircraftAssign(args: { workspace_id: string; aircraft_id?: string; new_aircraft?: { name: string } }) {
+    return this.rpc<AircraftView>("aircraft_assign", args);
+  }
+  listAircraft() {
+    return this.rpc<(AircraftRecord & { workspaces: AircraftWorkspaceRef[] })[]>("list_aircraft", {});
+  }
+  inboxList(args: { status?: InboxStatus[]; scan?: "auto" | "never" | "always" } = {}) {
+    return this.rpc<InboxListing>("inbox_list", args);
+  }
+  inboxResolve(args: { candidate_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }) {
+    return this.rpc<{ candidate: InboxCandidate }>("inbox_resolve", args);
+  }
+  flightPin(args: { flight_id: string; start_s: number; end_s: number; channels: string[]; note: string | null; question: PinQuestionTarget }) {
+    return this.rpc<{ pin: Pin; question: OwnerQuestion | null; where: string }>("flight_pin", args);
+  }
+  pinsList(args: { status?: InboxStatus[] } = {}) {
+    return this.rpc<PinsListing>("pins_list", args);
+  }
+  questionResolve(args: { question_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }) {
+    return this.rpc<{ question: OwnerQuestion }>("question_resolve", args);
+  }
+  questionEdit(args: { question_id: string; title?: string; note?: string | null }) {
+    return this.rpc<{ question: OwnerQuestion }>("question_edit", args);
+  }
+  questionDelete(questionId: string) {
+    return this.rpc<{ deleted: string; pins_unassigned: number }>("question_delete", { question_id: questionId });
+  }
+  pinEdit(args: { pin_id: string; note?: string | null; question?: PinQuestionTarget; channels?: string[] }) {
+    return this.rpc<{ pin: Pin; question: OwnerQuestion | null }>("pin_edit", args);
+  }
+  pinDelete(pinId: string) {
+    return this.rpc<{ deleted: string }>("pin_delete", { pin_id: pinId });
+  }
+  acceptStudyCells(studyId: string, opts: { cell_ids?: string[]; source?: "rerun" | "external" } = {}) {
+    return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_accept", { study_id: studyId, ...opts });
+  }
+  discardStudyCells(studyId: string, cellIds?: string[]) {
+    return this.rpc<{ study: StudySummary; cells: string[] }>("study_cells_discard", { study_id: studyId, ...(cellIds ? { cell_ids: cellIds } : {}) });
+  }
+  async importStudy(file: File) {
+    const up = await this.uploadFile(file);
+    return this.rpc<NotebookStudyView>("import_study", { upload_id: up.upload_id });
+  }
+  runStudyOnMyFlights(studyId: string) {
+    return this.rpc<NotebookStudyView>("run_study_on_my_flights", { study_id: studyId });
+  }
+  analyzeSignal(args: SignalArgs) {
+    return this.rpc<SignalResult>("analyze_signal", args);
+  }
+  forgetStudyFinding(refId: string) {
+    return this.rpc<{ removed: boolean }>("forget_study_finding", { ref_id: refId });
   }
 }
 

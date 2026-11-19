@@ -4,7 +4,10 @@ import { NavShell, FEEDBACK_URL } from "../components/NavShell";
 import { InlineHelp } from "../components/InlineHelp";
 import { DataLocationPanel } from "../components/DataLocation";
 import { StoragePanel } from "../components/StoragePanel";
+import { AircraftSettings } from "../components/settings/AircraftSettings";
+import { ResearchSettings } from "../components/settings/ResearchSettings";
 import { useCapabilities } from "../lib/capabilities";
+import { MoveWorkspaceBanner } from "../components/MoveWorkspace";
 import { ImportWorkspaceDialog } from "../components/ImportWorkspaceDialog";
 import { UnpinConfirmDialog } from "../components/PinDialogs";
 import { bandLabel } from "../lib/bands";
@@ -43,9 +46,11 @@ function clone<T>(x: T): T {
   return typeof structuredClone === "function" ? structuredClone(x) : JSON.parse(JSON.stringify(x));
 }
 
-const TAB_IDS = ["engine", "reference", "app"] as const;
+// Spec 16 (Session F): Aircraft (the record, notes, documents folders, its
+// workspaces) and Research (the inbox's sensitivity).
+const TAB_IDS = ["engine", "reference", "aircraft", "research", "app"] as const;
 type TabId = (typeof TAB_IDS)[number];
-const TAB_LABELS: Record<TabId, string> = { engine: "Engine", reference: "Reference & Models", app: "App" };
+const TAB_LABELS: Record<TabId, string> = { engine: "Engine", reference: "Reference & Models", aircraft: "Aircraft", research: "Research", app: "App" };
 
 function numberInput(value: number, onChange: (v: number) => void, opts?: { step?: number; min?: number; max?: number }) {
   return (
@@ -501,6 +506,13 @@ export function Settings() {
             ))}
           </div>
         </div>
+
+        {tab === "aircraft" && (usingFixture
+          ? <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Open or create a workspace first — the aircraft record belongs to its workspaces.</div>
+          : <AircraftSettings />)}
+        {tab === "research" && (usingFixture
+          ? <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>Open or create a workspace first — the inbox's sensitivity is a workspace setting.</div>
+          : <ResearchSettings />)}
 
         {tab === "engine" && (
           <>
@@ -962,6 +974,7 @@ export function Settings() {
                 </div>
               </div>
 
+              <MoveWorkspaceBanner />
               {/* Spec 02 v0.11 §7.2 / Spec 03 v0.19 §5.7: share the whole
                   workspace; import one as a new workspace. */}
               <div style={PANEL_STYLE} data-testid="workspace-share">

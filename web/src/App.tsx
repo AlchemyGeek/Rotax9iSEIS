@@ -10,6 +10,8 @@ import { LogPreview } from "./views/LogPreview";
 import { Trends } from "./views/Trends";
 import { Journal } from "./views/Journal";
 import { Settings } from "./views/Settings";
+import { Research } from "./views/Research";
+import { Study } from "./views/Study";
 import { ChartSessionProvider } from "./lib/chartSession";
 import { syncThemeFromSettings, useTheme } from "./lib/theme";
 
@@ -69,6 +71,12 @@ function App() {
           <Route path="/ecu" element={<Navigate to="/flights" replace />} />
           <Route path="/annotations" element={<Navigate to="/journal" replace />} />
           <Route path="/journal" element={<Journal />} />
+          {/* Spec 06 §12 (D7): Research is a destination of its own; a study
+              has its own route. Gated in the nav by the host's research
+              capability; the routes exist regardless (a bookmark on an older
+              host gets the page's own notice). */}
+          <Route path="/research" element={<Research />} />
+          <Route path="/research/:studyId" element={<Study />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
         </PageBoundary>
