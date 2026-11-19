@@ -1,0 +1,2877 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engine health analytics for Rotax iS aircraft engines — what it tells you and why">
+      
+      
+      
+        <link rel="canonical" href="https://alchemygeek.github.io/Rotax9iSEIS/reference/what-eis-measures/">
+      
+      
+        <link rel="prev" href="../research-presets/">
+      
+      
+        <link rel="next" href="../investigation-tools/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../img/favicon-32.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>What EIS measures - SLINGOLOGY EIS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#what-eis-measures" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="SLINGOLOGY EIS" class="md-header__button md-logo" aria-label="SLINGOLOGY EIS" data-md-component="logo">
+      
+  <img src="../../img/eis-icon.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SLINGOLOGY EIS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              What EIS measures
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <a href="https://feedback.slingology.synology.me/" class="md-header__feedback" title="Report a problem or suggest a feature" target="_blank" rel="noopener">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 10h-2V6h2zm0 2h-2v2h2zm9-8v12a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2m-2 0H4v13.2L5.2 16H20z"/></svg>
+        <span class="md-header__feedback-text">Feedback</span>
+      </a>
+    
+    
+      <a href="https://alchemygeek.github.io/Rotax9iSEIS/app/" class="md-header__app" title="Open SlingologyEIS in your browser" target="_blank" rel="noopener">
+        <span class="md-header__app-text">Open the app</span><span class="md-header__app-short">App</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3m-2 16H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2z"/></svg>
+      </a>
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/AlchemyGeek/Rotax9iSEIS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AlchemyGeek/Rotax9iSEIS
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="SLINGOLOGY EIS" class="md-nav__button md-logo" aria-label="SLINGOLOGY EIS" data-md-component="logo">
+      
+  <img src="../../img/eis-icon.png" alt="logo">
+
+    </a>
+    SLINGOLOGY EIS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/AlchemyGeek/Rotax9iSEIS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AlchemyGeek/Rotax9iSEIS
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding your engine's data
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Understanding your engine's data
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/what-eis-tells-you/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS tells you
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/why-fadec-is-different/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Why a FADEC Rotax is different
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/logs-flights-workspaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logs, flights and workspaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/phases-of-flight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phases of flight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS watches
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    What EIS watches
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/limits-and-events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators Manual limits and events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/your-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/topics-and-insights/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topics and insights
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/the-topics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The topics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/cylinder-balance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cylinder balance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deciding what matters
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deciding what matters
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/your-decisions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/trends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trends: is my engine changing?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/the-journal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Journal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Investigating your engine
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Investigating your engine
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/research/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research: look, mark, ask, read
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/research-investigations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Investigations: asking Claude
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/research-studies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notebooks you keep and share
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/research-action/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From a finding to action
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/research-next/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Questions Research will ask next
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working with others
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Working with others
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/sharing-a-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing a workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Walkthroughs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Walkthroughs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/first-workspace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open the app and your first workspace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/first-flight/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reading your first flight
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/insight-to-decision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From an insight to a decision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/export-import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export and import
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/install-extension/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install the extension
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/aircraft-documents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Set up your aircraft and documents
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/mark-for-claude/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mark something for Claude
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/first-investigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first investigation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/research-takeoff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reproducing a takeoff investigation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/notebook-jupyterlab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run a notebook in JupyterLab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../walkthroughs/research-sharing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sharing a notebook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../om-limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operators Manual limits by engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings and their defaults
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS measures
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What EIS measures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#slices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#measurements-on-each-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measurements on each slice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-one-flight-looked-at-closely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal: one flight, looked at closely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-four-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The four tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The four tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#is-it-steady-or-cycling-eiscycling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is it steady, or cycling? — eis.cycling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-these-move-together-and-who-leads-eiscoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do these move together, and who leads? — eis.coupling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#are-these-groups-different-eisgroups-eiscompare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Are these groups different? — eis.groups, eis.compare
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-slices-are-unusual-eisunusual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which slices are unusual? — eis.unusual
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#every-answer-has-the-same-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Every answer has the same shape
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../investigation-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Investigation tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../investigation-prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Investigation prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eis-library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The eis library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notebook-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The notebook format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-paper/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The research paper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../further-reading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further reading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_12" id="__nav_8_12_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Investigations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Investigations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../research/2026-10-takeoff-rpm-oscillation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Takeoff RPM/MAP oscillation (Oct 2026)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#slices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#measurements-on-each-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measurements on each slice
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-one-flight-looked-at-closely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal: one flight, looked at closely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-four-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The four tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The four tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#is-it-steady-or-cycling-eiscycling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Is it steady, or cycling? — eis.cycling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-these-move-together-and-who-leads-eiscoupling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Do these move together, and who leads? — eis.coupling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#are-these-groups-different-eisgroups-eiscompare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Are these groups different? — eis.groups, eis.compare
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-slices-are-unusual-eisunusual" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which slices are unusual? — eis.unusual
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#every-answer-has-the-same-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Every answer has the same shape
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="what-eis-measures">What EIS measures<a class="headerlink" href="#what-eis-measures" title="Permanent link">&para;</a></h1>
+<p>What the instrument behind Research does when you look at a flight with <strong>Signal</strong>, and when Claude measures in a notebook: slices, the measurements on each slice, the four tests, and the shape of every answer. Claude investigates; EIS measures — this page is the measuring. It is the fine print behind <a href="../../concepts/research/">Research</a> and <a href="../../concepts/research-investigations/">Investigations</a>; the functions are in <a href="../eis-library/">the <code>eis</code> library</a>, and the tools in <a href="../investigation-tools/">Investigation tools</a>.</p>
+<h2 id="slices">Slices<a class="headerlink" href="#slices" title="Permanent link">&para;</a></h2>
+<p>EIS measures <strong>slices</strong>, not whole flights. A slice is a stretch of one flight, carrying every channel the log recorded in it and its context. A rule applied to every flight gives a <strong>slice set</strong> — ninety-odd takeoffs, say — and every test is asked of a set. A whole flight is too big a thing to compare; <em>the thirty seconds after full power is applied</em> exist on every flight and can be compared ninety times.</p>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" role="img" aria-label="One flight's rpm and manifold-pressure traces over time. A shaded window marks a slice: every channel inside it, plus a card of context the slice carries: source, phases, altitude, outside air temperature, engine hours, start time and flight." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="40" y1="150" x2="720" y2="150" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="716" y="166" text-anchor="end" opacity="0.7">one flight, time →</text>
+<path d="M40.0,120.0 L44.0,120.0 L48.0,120.0 L52.0,120.0 L56.0,120.0 L60.0,120.0 L64.0,120.0 L68.0,120.0 L72.0,120.0 L76.0,120.0 L80.0,120.0 L84.0,120.0 L88.0,120.0 L92.0,120.0 L96.0,120.0 L100.0,120.0 L104.0,120.0 L108.0,120.0 L112.0,120.0 L116.0,120.0 L120.0,58.1 L124.0,62.6 L128.0,65.6 L132.0,65.5 L136.0,62.3 L140.0,57.8 L144.0,54.5 L148.0,54.4 L152.0,57.4 L156.0,61.9 L160.0,65.3 L164.0,65.8 L168.0,63.0 L172.0,58.5 L176.0,54.9 L180.0,54.1 L184.0,56.7 L188.0,61.1 L192.0,64.9 L196.0,65.9 L200.0,63.6 L204.0,59.3 L208.0,55.3 L212.0,54.0 L216.0,56.1 L220.0,60.3 L224.0,64.4 L228.0,66.0 L232.0,64.2 L236.0,60.0 L240.0,55.9 L244.0,54.0 L248.0,55.5 L252.0,59.6 L256.0,63.9 L260.0,66.0 L264.0,64.7 L268.0,60.8 L272.0,56.5 L276.0,54.1 L280.0,75.0 L284.0,75.0 L288.0,75.0 L292.0,75.0 L296.0,75.0 L300.0,75.0 L304.0,75.0 L308.0,75.0 L312.0,75.0 L316.0,75.0 L320.0,75.0 L324.0,75.0 L328.0,75.0 L332.0,75.0 L336.0,75.0 L340.0,75.0 L344.0,75.0 L348.0,75.0 L352.0,75.0 L356.0,75.0 L360.0,110.0 L364.0,110.0 L368.0,110.0 L372.0,110.0 L376.0,110.0 L380.0,110.0 L384.0,110.0 L388.0,110.0 L392.0,110.0 L396.0,110.0 L400.0,110.0 L404.0,110.0 L408.0,110.0 L412.0,110.0 L416.0,110.0 L420.0,110.0 L424.0,110.0 L428.0,110.0 L432.0,110.0 L436.0,110.0 L440.0,110.0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M40.0,134.0 L44.0,134.0 L48.0,134.0 L52.0,134.0 L56.0,134.0 L60.0,134.0 L64.0,134.0 L68.0,134.0 L72.0,134.0 L76.0,134.0 L80.0,134.0 L84.0,134.0 L88.0,134.0 L92.0,134.0 L96.0,134.0 L100.0,134.0 L104.0,134.0 L108.0,134.0 L112.0,134.0 L116.0,134.0 L120.0,72.1 L124.0,76.6 L128.0,79.6 L132.0,79.5 L136.0,76.3 L140.0,71.8 L144.0,68.5 L148.0,68.4 L152.0,71.4 L156.0,75.9 L160.0,79.3 L164.0,79.8 L168.0,77.0 L172.0,72.5 L176.0,68.9 L180.0,68.1 L184.0,70.7 L188.0,75.1 L192.0,78.9 L196.0,79.9 L200.0,77.6 L204.0,73.3 L208.0,69.3 L212.0,68.0 L216.0,70.1 L220.0,74.3 L224.0,78.4 L228.0,80.0 L232.0,78.2 L236.0,74.0 L240.0,69.9 L244.0,68.0 L248.0,69.5 L252.0,73.6 L256.0,77.9 L260.0,80.0 L264.0,78.7 L268.0,74.8 L272.0,70.5 L276.0,68.1 L280.0,89.0 L284.0,89.0 L288.0,89.0 L292.0,89.0 L296.0,89.0 L300.0,89.0 L304.0,89.0 L308.0,89.0 L312.0,89.0 L316.0,89.0 L320.0,89.0 L324.0,89.0 L328.0,89.0 L332.0,89.0 L336.0,89.0 L340.0,89.0 L344.0,89.0 L348.0,89.0 L352.0,89.0 L356.0,89.0 L360.0,124.0 L364.0,124.0 L368.0,124.0 L372.0,124.0 L376.0,124.0 L380.0,124.0 L384.0,124.0 L388.0,124.0 L392.0,124.0 L396.0,124.0 L400.0,124.0 L404.0,124.0 L408.0,124.0 L412.0,124.0 L416.0,124.0 L420.0,124.0 L424.0,124.0 L428.0,124.0 L432.0,124.0 L436.0,124.0 L440.0,124.0" fill="none" stroke="currentColor" stroke-width="1.0" stroke-linejoin="round" opacity="0.5"/>
+<rect x="120.0" y="30" width="160.0" height="120" fill="#14b8a6" opacity="0.12"/>
+<line x1="120.0" y1="30" x2="120.0" y2="150" stroke="#14b8a6" stroke-width="1.5"/>
+<line x1="280.0" y1="30" x2="280.0" y2="150" stroke="#14b8a6" stroke-width="1.5"/>
+<text x="200.0" y="24" text-anchor="middle" fill="#14b8a6" font-weight="600">slice</text>
+<text x="200.0" y="44" text-anchor="middle" fill="#14b8a6" font-size="10">every channel inside the window</text>
+<rect x="480" y="40" width="250" height="88" rx="6" fill="currentColor" opacity="0.06"/>
+<text x="490" y="58" font-weight="600">context the slice carries</text>
+<text x="490" y="78" opacity="0.8">source: G3X or AXIS · phases spanned</text>
+<text x="490" y="95" opacity="0.8">pressure & density altitude · OAT</text>
+<text x="490" y="112" opacity="0.8">engine hours · start time · flight</text>
+<line x1="282.0" y1="84" x2="476" y2="84" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#ar)" opacity="0.6"/>
+<text x="40" y="186" opacity="0.7">cut by a rule (rpm ≥ 5,550 for ≥ 15 s), by a phase, or by hand — all three give the same object</text>
+</svg>
+
+<figcaption>A slice: a window of one flight carrying every channel and its context.</figcaption>
+</figure>
+
+<table>
+<thead>
+<tr>
+<th>Cut by</th>
+<th>Means</th>
+<th>In a notebook</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A preset</strong></td>
+<td>One of the rules EIS ships, each measured against a season of real logs (<a href="../research-presets/">Research presets</a>)</td>
+<td><code>eis.slices("full_power")</code></td>
+</tr>
+<tr>
+<td><strong>A phase</strong></td>
+<td>Every climb, takeoff roll, cruise… as the Flight view labels them; a rule with no conditions</td>
+<td><code>eis.slices("phase:CLIMB")</code></td>
+</tr>
+<tr>
+<td><strong>A rule</strong></td>
+<td>Conditions on channels, held for a minimum duration, short dips bridged, optionally within a phase</td>
+<td>a rule object (below)</td>
+</tr>
+<tr>
+<td><strong>By hand</strong></td>
+<td>One window of one flight — usually a mark you made with <em>Mark for Claude</em></td>
+<td><code>hand_slices</code></td>
+</tr>
+</tbody>
+</table>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 210" role="img" aria-label="An rpm trace over one flight with the rule's condition drawn as a dashed line. Where rpm stays above it long enough a slice is shaded; a brief dip inside it is bridged by the merge gap; a later burst above the line that is shorter than the minimum duration is not a slice." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="40" y1="170" x2="720" y2="170" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="716" y="186" text-anchor="end" opacity="0.7">time →</text>
+<line x1="40" y1="95" x2="720" y2="95" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="5 4"/>
+<text x="44" y="89" fill="#ef4444">condition: rpm ≥ 5,550</text>
+<path d="M40.0,148.4 L42.2,149.3 L44.5,150.2 L46.8,151.2 L49.0,152.0 L51.2,152.6 L53.5,152.9 L55.8,153.0 L58.0,152.7 L60.2,152.2 L62.5,151.4 L64.8,150.5 L67.0,149.6 L69.2,148.6 L71.5,147.9 L73.8,147.3 L76.0,147.0 L78.2,147.1 L80.5,147.4 L82.8,148.0 L85.0,148.8 L87.2,149.7 L89.5,150.7 L91.8,151.5 L94.0,152.3 L96.2,152.8 L98.5,153.0 L100.8,152.9 L103.0,152.5 L105.2,151.9 L107.5,151.0 L109.8,150.1 L112.0,149.1 L114.2,148.3 L116.5,147.6 L118.8,147.1 L121.0,147.0 L123.2,147.2 L125.5,147.6 L127.8,148.3 L130.0,119.2 L130.5,119.4 L131.0,119.6 L131.5,119.8 L132.0,120.0 L132.5,120.2 L133.0,120.4 L133.5,120.7 L134.0,120.9 L134.5,121.1 L135.0,121.3 L135.5,121.5 L136.0,121.6 L136.5,121.8 L137.0,122.0 L137.5,122.1 L138.0,122.3 L138.5,122.4 L139.0,122.5 L139.5,122.6 L140.0,122.7 L140.5,122.8 L141.0,122.9 L141.5,122.9 L142.0,123.0 L142.5,123.0 L143.0,123.0 L143.5,123.0 L144.0,123.0 L144.5,122.9 L145.0,122.9 L145.5,122.8 L146.0,122.7 L146.5,122.6 L147.0,122.5 L147.5,122.4 L148.0,122.3 L148.5,122.1 L149.0,121.9 L149.5,121.8 L150.0,71.6 L153.8,70.1 L157.5,68.5 L161.2,67.4 L165.0,67.0 L168.8,67.4 L172.5,68.6 L176.2,70.1 L180.0,71.6 L183.8,72.7 L187.5,73.0 L191.2,72.4 L195.0,71.2 L198.8,69.6 L202.5,68.2 L206.2,67.2 L210.0,67.0 L213.8,67.7 L217.5,69.0 L221.2,70.6 L225.0,72.0 L228.8,72.9 L232.5,72.9 L236.2,72.2 L240.0,70.8 L243.8,69.2 L247.5,67.8 L251.2,67.1 L255.0,67.1 L258.8,68.0 L262.5,69.4 L266.2,71.0 L270.0,72.3 L273.8,73.0 L277.5,72.8 L281.2,71.8 L285.0,70.4 L288.8,68.8 L292.5,67.6 L296.2,67.0 L300.0,97.3 L300.3,97.4 L300.6,97.4 L300.9,97.5 L301.2,97.6 L301.5,97.6 L301.8,97.7 L302.1,97.8 L302.4,97.9 L302.7,98.0 L303.0,98.1 L303.3,98.2 L303.6,98.3 L303.9,98.4 L304.2,98.5 L304.5,98.6 L304.8,98.7 L305.1,98.8 L305.4,99.0 L305.7,99.1 L306.0,99.2 L306.3,99.3 L306.6,99.5 L306.9,99.6 L307.2,99.7 L307.5,99.8 L307.8,100.0 L308.1,100.1 L308.4,100.2 L308.7,100.4 L309.0,100.5 L309.3,100.6 L309.6,100.7 L309.9,100.9 L310.2,101.0 L310.5,101.1 L310.8,101.2 L311.1,101.3 L311.4,101.4 L311.7,101.6 L312.0,73.7 L314.2,74.4 L316.4,74.8 L318.6,75.0 L320.8,74.9 L323.0,74.5 L325.2,73.9 L327.4,73.0 L329.6,72.1 L331.8,71.2 L334.0,70.3 L336.2,69.6 L338.4,69.2 L340.6,69.0 L342.8,69.1 L345.0,69.5 L347.2,70.1 L349.4,71.0 L351.6,71.9 L353.8,72.8 L356.0,73.7 L358.2,74.4 L360.4,74.8 L362.6,75.0 L364.8,74.9 L367.0,74.5 L369.2,73.8 L371.4,73.0 L373.6,72.1 L375.8,71.2 L378.0,70.3 L380.2,69.6 L382.4,69.2 L384.6,69.0 L386.8,69.1 L389.0,69.5 L391.2,70.2 L393.4,71.0 L395.6,71.9 L397.8,72.8 L400.0,116.7 L401.0,117.0 L402.0,117.3 L403.0,117.6 L404.0,117.8 L405.0,117.9 L406.0,118.0 L407.0,118.0 L408.0,118.0 L409.0,117.9 L410.0,117.7 L411.0,117.5 L412.0,117.2 L413.0,116.9 L414.0,116.6 L415.0,116.2 L416.0,115.8 L417.0,115.4 L418.0,114.9 L419.0,114.5 L420.0,114.1 L421.0,113.7 L422.0,113.3 L423.0,113.0 L424.0,112.7 L425.0,112.4 L426.0,112.2 L427.0,112.1 L428.0,112.0 L429.0,112.0 L430.0,112.0 L431.0,112.1 L432.0,112.3 L433.0,112.5 L434.0,112.8 L435.0,113.1 L436.0,113.4 L437.0,113.8 L438.0,114.2 L439.0,114.6 L440.0,118.1 L443.0,119.3 L446.0,120.3 L449.0,120.9 L452.0,121.0 L455.0,120.5 L458.0,119.6 L461.0,118.3 L464.0,117.1 L467.0,116.0 L470.0,115.2 L473.0,115.0 L476.0,115.3 L479.0,116.1 L482.0,117.2 L485.0,118.5 L488.0,119.7 L491.0,120.6 L494.0,121.0 L497.0,120.9 L500.0,120.2 L503.0,119.2 L506.0,117.9 L509.0,116.7 L512.0,115.7 L515.0,115.1 L518.0,115.0 L521.0,115.5 L524.0,116.5 L527.0,117.7 L530.0,118.9 L533.0,120.0 L536.0,120.8 L539.0,121.0 L542.0,120.7 L545.0,119.9 L548.0,118.8 L551.0,117.5 L554.0,116.3 L557.0,115.4 L560.0,72.0 L560.6,72.0 L561.2,72.0 L561.9,72.0 L562.5,72.1 L563.1,72.2 L563.8,72.3 L564.4,72.4 L565.0,72.5 L565.6,72.7 L566.2,72.9 L566.9,73.1 L567.5,73.3 L568.1,73.5 L568.8,73.7 L569.4,74.0 L570.0,74.2 L570.6,74.5 L571.2,74.8 L571.9,75.0 L572.5,75.3 L573.1,75.6 L573.8,75.8 L574.4,76.1 L575.0,76.3 L575.6,76.6 L576.2,76.8 L576.9,77.0 L577.5,77.2 L578.1,77.4 L578.8,77.5 L579.4,77.7 L580.0,77.8 L580.6,77.9 L581.2,77.9 L581.9,78.0 L582.5,78.0 L583.1,78.0 L583.8,78.0 L584.4,77.9 L585.0,127.8 L588.4,127.1 L591.8,125.9 L595.1,124.4 L598.5,123.1 L601.9,122.3 L605.2,122.0 L608.6,122.4 L612.0,123.5 L615.4,124.8 L618.8,126.2 L622.1,127.4 L625.5,128.0 L628.9,127.9 L632.2,127.1 L635.6,125.9 L639.0,124.5 L642.4,123.2 L645.8,122.3 L649.1,122.0 L652.5,122.4 L655.9,123.4 L659.2,124.8 L662.6,126.2 L666.0,127.3 L669.4,127.9 L672.8,127.9 L676.1,127.2 L679.5,125.9 L682.9,124.5 L686.2,123.2 L689.6,122.3 L693.0,122.0 L696.4,122.4 L699.8,123.4 L703.1,124.7 L706.5,126.2 L709.9,127.3 L713.2,127.9 L716.6,127.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+<rect x="150" y="40" width="250" height="130" fill="#14b8a6" opacity="0.12"/>
+<text x="275" y="34" text-anchor="middle" fill="#14b8a6" font-weight="600">one slice</text>
+<rect x="300" y="40" width="12" height="130" fill="none" stroke="#14b8a6" stroke-dasharray="3 3"/>
+<text x="306" y="62" text-anchor="middle" fill="#14b8a6" font-size="10">dip shorter than the merge gap: bridged</text>
+<rect x="560" y="40" width="25" height="130" fill="currentColor" opacity="0.06"/>
+<text x="572" y="34" text-anchor="middle" opacity="0.7">too short</text>
+<text x="572" y="48" text-anchor="middle" opacity="0.7" font-size="10">(< minimum duration)</text>
+<text x="40" y="196" opacity="0.7">rule = conditions · minimum duration · merge gap · optional phase. Applied to every flight it gives a slice set.</text>
+</svg>
+
+<figcaption>A rule: conditions, a minimum duration and a merge gap, applied to every flight.</figcaption>
+</figure>
+
+<table>
+<thead>
+<tr>
+<th>Rule part</th>
+<th>Meaning</th>
+<th>The full-power preset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Conditions</td>
+<td>One or more channels compared with a value (<code>&gt;=</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&lt;</code>, <code>=</code>, <code>between</code>); all must hold</td>
+<td>rpm ≥ 5,550</td>
+</tr>
+<tr>
+<td>Minimum duration</td>
+<td>The conditions must hold at least this long</td>
+<td>15 s</td>
+</tr>
+<tr>
+<td>Merge gap</td>
+<td>A dip shorter than this does not split a slice</td>
+<td>3 s</td>
+</tr>
+<tr>
+<td>Phase</td>
+<td>Optionally, only within (or outside) phases EIS already identifies</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Pad</td>
+<td>Optionally, seconds added before and after</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Context each slice carries:</strong> log source (G3X or AXIS), the phases it spans, pressure and density altitude, outside air temperature, engine hours, its flight and local start time. Logs are once a second; AXIS logs are resampled to one second at import, with filled rows marked and left out of rate and period measurements. The G3X damps some channels: the same manifold-pressure oscillation leaves 2 inHg of ripple on a G3X log and 5–7 inHg on an AXIS log, so sources are never pooled on such a channel.</p>
+<h2 id="measurements-on-each-slice">Measurements on each slice<a class="headerlink" href="#measurements-on-each-slice" title="Permanent link">&para;</a></h2>
+<p>Computed for every slice and every channel asked for:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Measurements</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Level</td>
+<td>mean, median, minimum, maximum</td>
+</tr>
+<tr>
+<td>Spread</td>
+<td>standard deviation, median absolute deviation, <strong>swing</strong> (median bottom-to-top over a rolling window), interquartile range</td>
+</tr>
+<tr>
+<td>Shape</td>
+<td>slope across the slice, largest rate of change</td>
+</tr>
+<tr>
+<td>Periodicity</td>
+<td><strong>dominant period</strong> and its prominence</td>
+</tr>
+<tr>
+<td>Coupling</td>
+<td>correlation with a reference channel (rpm by default) at zero lag, and the lag of best match</td>
+</tr>
+<tr>
+<td>Quality</td>
+<td>sample count, duration, share of filled rows, dropouts</td>
+</tr>
+</tbody>
+</table>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 222" role="img" aria-label="A cycling rpm trace around a 5,700 setpoint. The period is marked between two peaks as 3.8 seconds per cycle; the swing is marked from bottom to top as 180 rpm." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="60" y1="190" x2="720" y2="190" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<line x1="60" y1="190" x2="60" y2="30" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="720" y="206" text-anchor="end" opacity="0.7">seconds</text>
+<text x="14" y="40" opacity="0.7">rpm</text>
+<path d="M190.0,110.0 L192.6,103.8 L195.2,97.9 L197.8,92.2 L200.4,87.1 L203.0,82.7 L205.6,79.1 L208.2,76.4 L210.8,74.7 L213.4,74.0 L216.0,74.4 L218.6,75.8 L221.2,78.3 L223.8,81.7 L226.4,85.9 L229.0,90.8 L231.6,96.3 L234.2,102.2 L236.8,108.3 L239.4,114.5 L242.0,120.6 L244.6,126.3 L247.2,131.5 L249.8,136.2 L252.4,140.0 L255.0,143.0 L257.6,145.0 L260.2,145.9 L262.8,145.8 L265.4,144.7 L268.0,142.5 L270.6,139.3 L273.2,135.3 L275.8,130.6 L278.4,125.2 L281.0,119.4 L283.6,113.3 L286.2,107.1 L288.8,101.0 L291.4,95.2 L294.0,89.8 L296.6,85.0 L299.2,80.9 L301.8,77.7 L304.4,75.5 L307.0,74.2 L309.6,74.1 L312.2,74.9 L314.8,76.8 L317.4,79.7 L320.0,83.5 L322.6,88.1 L325.2,93.3 L327.8,99.0 L330.4,105.0 L333.0,111.2 L335.6,117.3 L338.2,123.3 L340.8,128.8 L343.4,133.8 L346.0,138.0 L348.6,141.5 L351.2,144.0 L353.8,145.5 L356.4,146.0 L359.0,145.4 L361.6,143.8 L364.2,141.1 L366.8,137.6 L369.4,133.2 L372.0,128.2 L374.6,122.6 L377.2,116.6 L379.8,110.5 L382.4,104.3 L385.0,98.3 L387.6,92.7 L390.2,87.5 L392.8,83.0 L395.4,79.4 L398.0,76.6 L400.6,74.8 L403.2,74.0 L405.8,74.3 L408.4,75.7 L411.0,78.1 L413.6,81.4 L416.2,85.5 L418.8,90.4 L421.4,95.9 L424.0,101.7 L426.6,107.9 L429.2,114.0 L431.8,120.1 L434.4,125.9 L437.0,131.2 L439.6,135.8 L442.2,139.7 L444.8,142.8 L447.4,144.8 L450.0,145.9 L452.6,145.9 L455.2,144.8 L457.8,142.7 L460.4,139.6 L463.0,135.7 L465.6,131.0 L468.2,125.7 L470.8,119.9 L473.4,113.8 L476.0,107.6 L478.6,101.5 L481.2,95.6 L483.8,90.2 L486.4,85.4 L489.0,81.2 L491.6,78.0 L494.2,75.6 L496.8,74.3 L499.4,74.0 L502.0,74.8 L504.6,76.7 L507.2,79.5 L509.8,83.2 L512.4,87.7 L515.0,92.9 L517.6,98.5 L520.2,104.5 L522.8,110.7 L525.4,116.9 L528.0,122.8 L530.6,128.4 L533.2,133.4 L535.8,137.7 L538.4,141.3 L541.0,143.9 L543.6,145.4 L546.2,146.0 L548.8,145.5 L551.4,143.9 L554.0,141.4 L556.6,137.9 L559.2,133.6 L561.8,128.6 L564.4,123.0 L567.0,117.1 L569.6,111.0 L572.2,104.8 L574.8,98.8 L577.4,93.1 L580.0,87.9 L582.6,83.4 L585.2,79.6 L587.8,76.8 L590.4,74.9 L593.0,74.0 L595.6,74.3 L598.2,75.5 L600.8,77.8 L603.4,81.1 L606.0,85.2 L608.6,90.0 L611.2,95.4 L613.8,101.3 L616.4,107.4 L619.0,113.6 L621.6,119.6 L624.2,125.4 L626.8,130.8 L629.4,135.5 L632.0,139.5 L634.6,142.6 L637.2,144.7 L639.8,145.8 L642.4,145.9 L645.0,144.9 L647.6,142.9 L650.2,139.9 L652.8,136.0 L655.4,131.4 L658.0,126.1 L660.6,120.3 L663.2,114.3 L665.8,108.1 L668.4,102.0 L671.0,96.1 L673.6,90.6 L676.2,85.7 L678.8,81.5 L681.4,78.2 L684.0,75.8 L686.6,74.4 L689.2,74.0 L691.8,74.7 L694.4,76.5 L697.0,79.2 L699.6,82.9 L702.2,87.3 L704.8,92.4 L707.4,98.1 L710.0,104.1" fill="none" stroke="#14b8a6" stroke-width="2" stroke-linejoin="round"/>
+<line x1="60" y1="110" x2="720" y2="110" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"/>
+<text x="64" y="105" opacity="0.7">setpoint 5,700</text>
+<line x1="213.75" y1="60" x2="308.75" y2="60" stroke="currentColor" stroke-width="1.2"/>
+<line x1="213.75" y1="54" x2="213.75" y2="66" stroke="currentColor" stroke-width="1"/>
+<line x1="308.75" y1="54" x2="308.75" y2="66" stroke="currentColor" stroke-width="1"/>
+<text x="261.25" y="54" text-anchor="middle" font-weight="600">period: 3.8 s per cycle</text>
+<line x1="451.25" y1="146" x2="451.25" y2="74" stroke="#ef4444" stroke-width="1.5" marker-end="url(#ar)"/>
+<line x1="451.25" y1="74" x2="451.25" y2="146" stroke="#ef4444" stroke-width="1.5" marker-end="url(#ar)"/>
+<text x="443.25" y="162" text-anchor="end" fill="#ef4444" font-weight="600">swing: 180 rpm, bottom to top</text>
+<line x1="580" y1="74" x2="710" y2="74" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>
+<text x="710" y="68" text-anchor="end" fill="#ef4444" font-size="10">top of swing</text>
+<line x1="580" y1="146" x2="710" y2="146" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>
+<text x="710" y="160" text-anchor="end" fill="#ef4444" font-size="10">bottom of swing</text>
+<text x="60" y="212" opacity="0.7">recurrence: how many of the set's slices show this — 93 of 98 is a characteristic; 3 of 98 is three flights to look at</text>
+</svg>
+
+<figcaption>Period and swing on a cycling rpm trace.</figcaption>
+</figure>
+
+<p>Medians and median absolute deviations are used wherever a central value or spread is reported, because once-a-second engine data is quantised (rpm in steps of ten) and has spikes.</p>
+<p><strong>Windows and lag ranges come from the data.</strong> The dominant period is estimated first, on the whole detrended slice. Then:</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Swing window</th>
+<th>Lag range</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>At least half the slices have a clear period <em>P</em></td>
+<td>2.5 × <em>P</em></td>
+<td>±1.5 × <em>P</em></td>
+</tr>
+<tr>
+<td>Otherwise</td>
+<td>0.2 × median slice duration</td>
+<td>±0.1 × median slice duration</td>
+</tr>
+<tr>
+<td>Never less than</td>
+<td><strong>12 s</strong></td>
+<td><strong>±10 s</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The values used, and what they came from, are printed in every answer's caveats; a notebook can override them (<code>windows</code>).</p>
+<p><strong>Period detection.</strong> The search runs from 2 s up to a third of the slice. A period counts when the autocorrelation peak is prominent (half its peak-to-trough height at least 0.2) and the periodogram agrees within 20 %. Periods under 3 s are never counted: a cycle that fast is "faster than the 1 Hz log can resolve", and EIS says so rather than report it.</p>
+<h2 id="signal-one-flight-looked-at-closely">Signal: one flight, looked at closely<a class="headerlink" href="#signal-one-flight-looked-at-closely" title="Permanent link">&para;</a></h2>
+<p><strong>Signal</strong> on the Flight view lays two strips under each channel over the whole flight: the <strong>swing</strong> (how far the channel moves bottom to top, second by second) and where it <strong>repeats</strong> (lit where a period stands out). Zoom to a window and its numbers appear beside their references: the swing beside the Operators Manual line it approaches, the period, and each other channel's correlation with the first. It is <code>signal_analyze</code> — the same numbers Claude gets for that window.</p>
+<h2 id="the-four-tests">The four tests<a class="headerlink" href="#the-four-tests" title="Permanent link">&para;</a></h2>
+<p>Instruments for four kinds of question, asked of a slice set. A notebook uses one when the question is about what it measures, and says why when it uses one for another reason; any other question is answered by loading, slicing and plotting.</p>
+<h3 id="is-it-steady-or-cycling-eiscycling">Is it steady, or cycling? — <code>eis.cycling</code><a class="headerlink" href="#is-it-steady-or-cycling-eiscycling" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>RPM cycles every 3.8 s (IQR 3.6–3.9), swing 180 rpm (170–190), in 93 of 98 slices (AXIS 13 of 14, G3X 80 of 84).</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Channels</td>
+<td>one</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>median and IQR of period and swing; the count of slices with a clear period (recurrence), per source</td>
+</tr>
+<tr>
+<td>References</td>
+<td>the Operators Manual limit for the channel where one exists; the set's own spread</td>
+</tr>
+<tr>
+<td>Does not mean</td>
+<td>that cycling is bad; nothing under 3 s can be seen</td>
+</tr>
+</tbody>
+</table>
+<p>The count is the number to read first: 93 of 98 is a characteristic of the installation; 3 of 98 is three flights to look at.</p>
+<h3 id="do-these-move-together-and-who-leads-eiscoupling">Do these move together, and who leads? — <code>eis.coupling</code><a class="headerlink" href="#do-these-move-together-and-who-leads-eiscoupling" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>Manifold pressure follows RPM with no delay (median correlation 0.93 on AXIS slices, 0.2 on G3X slices); fuel flow follows 1 s behind.</p>
+</blockquote>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" role="img" aria-label="Three cycling traces stacked: rpm, manifold pressure and fuel flow. Rpm and manifold pressure peak at the same instant, lag zero. Fuel flow peaks one second later, lag plus one second: it follows." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<text x="144" y="74" text-anchor="end" opacity="0.8">rpm</text>
+<path d="M150.0,70.0 L152.8,65.9 L155.7,61.9 L158.6,58.2 L161.4,54.9 L164.2,52.2 L167.1,50.1 L169.9,48.7 L172.8,48.0 L175.7,48.2 L178.5,49.1 L181.3,50.7 L184.2,53.0 L187.1,56.0 L189.9,59.4 L192.8,63.2 L195.6,67.2 L198.4,71.4 L201.3,75.5 L204.2,79.4 L207.0,82.9 L209.8,86.0 L212.7,88.6 L215.6,90.5 L218.4,91.6 L221.2,92.0 L224.1,91.6 L226.9,90.5 L229.8,88.6 L232.6,86.0 L235.5,82.9 L238.3,79.4 L241.2,75.5 L244.1,71.4 L246.9,67.2 L249.8,63.2 L252.6,59.4 L255.4,56.0 L258.3,53.0 L261.1,50.7 L264.0,49.1 L266.9,48.2 L269.7,48.0 L272.6,48.7 L275.4,50.1 L278.2,52.2 L281.1,54.9 L283.9,58.2 L286.8,61.9 L289.6,65.9 L292.5,70.0 L295.4,74.1 L298.2,78.1 L301.1,81.8 L303.9,85.1 L306.8,87.8 L309.6,89.9 L312.4,91.3 L315.3,92.0 L318.1,91.8 L321.0,90.9 L323.9,89.3 L326.7,87.0 L329.6,84.0 L332.4,80.6 L335.2,76.8 L338.1,72.8 L341.0,68.6 L343.8,64.5 L346.6,60.6 L349.5,57.1 L352.4,54.0 L355.2,51.4 L358.0,49.5 L360.9,48.4 L363.8,48.0 L366.6,48.4 L369.5,49.5 L372.3,51.4 L375.1,54.0 L378.0,57.1 L380.9,60.6 L383.7,64.5 L386.5,68.6 L389.4,72.8 L392.2,76.8 L395.1,80.6 L397.9,84.0 L400.8,87.0 L403.6,89.3 L406.5,90.9 L409.4,91.8 L412.2,92.0 L415.1,91.3 L417.9,89.9 L420.8,87.8 L423.6,85.1 L426.4,81.8 L429.3,78.1 L432.1,74.1 L435.0,70.0 L437.9,65.9 L440.7,61.9 L443.6,58.2 L446.4,54.9 L449.2,52.2 L452.1,50.1 L455.0,48.7 L457.8,48.0 L460.7,48.2 L463.5,49.1 L466.4,50.7 L469.2,53.0 L472.0,56.0 L474.9,59.4 L477.8,63.2 L480.6,67.2 L483.4,71.4 L486.3,75.5 L489.1,79.4 L492.0,82.9 L494.8,86.0 L497.7,88.6 L500.6,90.5 L503.4,91.6 L506.2,92.0 L509.1,91.6 L511.9,90.5 L514.8,88.6 L517.7,86.0 L520.5,82.9 L523.4,79.4 L526.2,75.5 L529.0,71.4 L531.9,67.2 L534.8,63.2 L537.6,59.4 L540.5,56.0 L543.3,53.0 L546.1,50.7 L549.0,49.1 L551.8,48.2 L554.7,48.0 L557.5,48.7 L560.4,50.1 L563.2,52.2 L566.1,54.9 L569.0,58.2 L571.8,61.9 L574.6,65.9 L577.5,70.0 L580.4,74.1 L583.2,78.1 L586.0,81.8 L588.9,85.1 L591.8,87.8 L594.6,89.9 L597.5,91.3 L600.3,92.0 L603.2,91.8 L606.0,90.9 L608.9,89.3 L611.7,87.0 L614.5,84.0 L617.4,80.6 L620.2,76.8 L623.1,72.8 L626.0,68.6 L628.8,64.5 L631.6,60.6 L634.5,57.1 L637.3,54.0 L640.2,51.4 L643.0,49.5 L645.9,48.4 L648.8,48.0 L651.6,48.4 L654.5,49.5 L657.3,51.4 L660.2,54.0 L663.0,57.1 L665.9,60.6 L668.7,64.5 L671.6,68.6 L674.4,72.8 L677.2,76.8 L680.1,80.6 L683.0,84.0 L685.8,87.0 L688.6,89.3 L691.5,90.9 L694.4,91.8 L697.2,92.0 L700.0,91.3 L702.9,89.9 L705.8,87.8 L708.6,85.1 L711.5,81.8 L714.3,78.1 L717.1,74.1 L720.0,70.0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+<text x="144" y="154" text-anchor="end" opacity="0.8">manifold pressure</text>
+<path d="M150.0,150.0 L152.8,145.9 L155.7,141.9 L158.6,138.2 L161.4,134.9 L164.2,132.2 L167.1,130.1 L169.9,128.7 L172.8,128.0 L175.7,128.2 L178.5,129.1 L181.3,130.7 L184.2,133.0 L187.1,136.0 L189.9,139.4 L192.8,143.2 L195.6,147.2 L198.4,151.4 L201.3,155.5 L204.2,159.4 L207.0,162.9 L209.8,166.0 L212.7,168.6 L215.6,170.5 L218.4,171.6 L221.2,172.0 L224.1,171.6 L226.9,170.5 L229.8,168.6 L232.6,166.0 L235.5,162.9 L238.3,159.4 L241.2,155.5 L244.1,151.4 L246.9,147.2 L249.8,143.2 L252.6,139.4 L255.4,136.0 L258.3,133.0 L261.1,130.7 L264.0,129.1 L266.9,128.2 L269.7,128.0 L272.6,128.7 L275.4,130.1 L278.2,132.2 L281.1,134.9 L283.9,138.2 L286.8,141.9 L289.6,145.9 L292.5,150.0 L295.4,154.1 L298.2,158.1 L301.1,161.8 L303.9,165.1 L306.8,167.8 L309.6,169.9 L312.4,171.3 L315.3,172.0 L318.1,171.8 L321.0,170.9 L323.9,169.3 L326.7,167.0 L329.6,164.0 L332.4,160.6 L335.2,156.8 L338.1,152.8 L341.0,148.6 L343.8,144.5 L346.6,140.6 L349.5,137.1 L352.4,134.0 L355.2,131.4 L358.0,129.5 L360.9,128.4 L363.8,128.0 L366.6,128.4 L369.5,129.5 L372.3,131.4 L375.1,134.0 L378.0,137.1 L380.9,140.6 L383.7,144.5 L386.5,148.6 L389.4,152.8 L392.2,156.8 L395.1,160.6 L397.9,164.0 L400.8,167.0 L403.6,169.3 L406.5,170.9 L409.4,171.8 L412.2,172.0 L415.1,171.3 L417.9,169.9 L420.8,167.8 L423.6,165.1 L426.4,161.8 L429.3,158.1 L432.1,154.1 L435.0,150.0 L437.9,145.9 L440.7,141.9 L443.6,138.2 L446.4,134.9 L449.2,132.2 L452.1,130.1 L455.0,128.7 L457.8,128.0 L460.7,128.2 L463.5,129.1 L466.4,130.7 L469.2,133.0 L472.0,136.0 L474.9,139.4 L477.8,143.2 L480.6,147.2 L483.4,151.4 L486.3,155.5 L489.1,159.4 L492.0,162.9 L494.8,166.0 L497.7,168.6 L500.6,170.5 L503.4,171.6 L506.2,172.0 L509.1,171.6 L511.9,170.5 L514.8,168.6 L517.7,166.0 L520.5,162.9 L523.4,159.4 L526.2,155.5 L529.0,151.4 L531.9,147.2 L534.8,143.2 L537.6,139.4 L540.5,136.0 L543.3,133.0 L546.1,130.7 L549.0,129.1 L551.8,128.2 L554.7,128.0 L557.5,128.7 L560.4,130.1 L563.2,132.2 L566.1,134.9 L569.0,138.2 L571.8,141.9 L574.6,145.9 L577.5,150.0 L580.4,154.1 L583.2,158.1 L586.0,161.8 L588.9,165.1 L591.8,167.8 L594.6,169.9 L597.5,171.3 L600.3,172.0 L603.2,171.8 L606.0,170.9 L608.9,169.3 L611.7,167.0 L614.5,164.0 L617.4,160.6 L620.2,156.8 L623.1,152.8 L626.0,148.6 L628.8,144.5 L631.6,140.6 L634.5,137.1 L637.3,134.0 L640.2,131.4 L643.0,129.5 L645.9,128.4 L648.8,128.0 L651.6,128.4 L654.5,129.5 L657.3,131.4 L660.2,134.0 L663.0,137.1 L665.9,140.6 L668.7,144.5 L671.6,148.6 L674.4,152.8 L677.2,156.8 L680.1,160.6 L683.0,164.0 L685.8,167.0 L688.6,169.3 L691.5,170.9 L694.4,171.8 L697.2,172.0 L700.0,171.3 L702.9,169.9 L705.8,167.8 L708.6,165.1 L711.5,161.8 L714.3,158.1 L717.1,154.1 L720.0,150.0" fill="none" stroke="#14b8a6" stroke-width="1.8" stroke-linejoin="round"/>
+<text x="144" y="234" text-anchor="end" opacity="0.8">fuel flow</text>
+<path d="M150.0,247.2 L152.8,244.4 L155.7,241.0 L158.6,237.2 L161.4,233.2 L164.2,229.1 L167.1,225.0 L169.9,221.0 L172.8,217.4 L175.7,214.3 L178.5,211.7 L181.3,209.7 L184.2,208.5 L187.1,208.0 L189.9,208.3 L192.8,209.4 L195.6,211.2 L198.4,213.7 L201.3,216.7 L204.2,220.2 L207.0,224.1 L209.8,228.2 L212.7,232.3 L215.6,236.4 L218.4,240.2 L221.2,243.7 L224.1,246.7 L226.9,249.1 L229.8,250.8 L232.6,251.8 L235.5,252.0 L238.3,251.4 L241.2,250.1 L244.1,248.1 L246.9,245.4 L249.8,242.2 L252.6,238.5 L255.4,234.6 L258.3,230.4 L261.1,226.3 L264.0,222.3 L266.9,218.6 L269.7,215.3 L272.6,212.5 L275.4,210.3 L278.2,208.8 L281.1,208.1 L283.9,208.1 L286.8,208.9 L289.6,210.5 L292.5,212.8 L295.4,215.6 L298.2,219.0 L301.1,222.8 L303.9,226.8 L306.8,230.9 L309.6,235.0 L312.4,239.0 L315.3,242.6 L318.1,245.7 L321.0,248.3 L323.9,250.3 L326.7,251.5 L329.6,252.0 L332.4,251.7 L335.2,250.6 L338.1,248.8 L341.0,246.3 L343.8,243.3 L346.6,239.8 L349.5,235.9 L352.4,231.8 L355.2,227.7 L358.0,223.6 L360.9,219.8 L363.8,216.3 L366.6,213.3 L369.5,210.9 L372.3,209.2 L375.1,208.2 L378.0,208.0 L380.9,208.6 L383.7,209.9 L386.5,211.9 L389.4,214.6 L392.2,217.8 L395.1,221.5 L397.9,225.4 L400.8,229.6 L403.6,233.7 L406.5,237.7 L409.4,241.4 L412.2,244.7 L415.1,247.5 L417.9,249.7 L420.8,251.2 L423.6,251.9 L426.4,251.9 L429.3,251.1 L432.1,249.5 L435.0,247.2 L437.9,244.4 L440.7,241.0 L443.6,237.2 L446.4,233.2 L449.2,229.1 L452.1,225.0 L455.0,221.0 L457.8,217.4 L460.7,214.3 L463.5,211.7 L466.4,209.7 L469.2,208.5 L472.0,208.0 L474.9,208.3 L477.8,209.4 L480.6,211.2 L483.4,213.7 L486.3,216.7 L489.1,220.2 L492.0,224.1 L494.8,228.2 L497.7,232.3 L500.6,236.4 L503.4,240.2 L506.2,243.7 L509.1,246.7 L511.9,249.1 L514.8,250.8 L517.7,251.8 L520.5,252.0 L523.4,251.4 L526.2,250.1 L529.0,248.1 L531.9,245.4 L534.8,242.2 L537.6,238.5 L540.5,234.6 L543.3,230.4 L546.1,226.3 L549.0,222.3 L551.8,218.6 L554.7,215.3 L557.5,212.5 L560.4,210.3 L563.2,208.8 L566.1,208.1 L569.0,208.1 L571.8,208.9 L574.6,210.5 L577.5,212.8 L580.4,215.6 L583.2,219.0 L586.0,222.8 L588.9,226.8 L591.8,230.9 L594.6,235.0 L597.5,239.0 L600.3,242.6 L603.2,245.7 L606.0,248.3 L608.9,250.3 L611.7,251.5 L614.5,252.0 L617.4,251.7 L620.2,250.6 L623.1,248.8 L626.0,246.3 L628.8,243.3 L631.6,239.8 L634.5,235.9 L637.3,231.8 L640.2,227.7 L643.0,223.6 L645.9,219.8 L648.8,216.3 L651.6,213.3 L654.5,210.9 L657.3,209.2 L660.2,208.2 L663.0,208.0 L665.9,208.6 L668.7,209.9 L671.6,211.9 L674.4,214.6 L677.2,217.8 L680.1,221.5 L683.0,225.4 L685.8,229.6 L688.6,233.7 L691.5,237.7 L694.4,241.4 L697.2,244.7 L700.0,247.5 L702.9,249.7 L705.8,251.2 L708.6,251.9 L711.5,251.9 L714.3,251.1 L717.1,249.5 L720.0,247.2" fill="none" stroke="#6b7280" stroke-width="1.8" stroke-linejoin="round"/>
+<line x1="363.75" y1="40" x2="363.75" y2="250" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>
+<text x="363.75" y="34" text-anchor="middle" opacity="0.8">rpm peaks here</text>
+<text x="369.75" y="120" fill="#14b8a6" font-size="10">MAP peaks at the same instant: lag 0, together</text>
+<line x1="377.35774763435705" y1="202" x2="377.35774763435705" y2="250" stroke="#6b7280" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>
+<line x1="363.75" y1="258" x2="376.35774763435705" y2="258" stroke="#ef4444" stroke-width="2" marker-end="url(#ar)"/>
+<text x="385.35774763435705" y="266" fill="#ef4444" font-size="10">fuel flow peaks 1 s later: lag +1 s, it follows</text>
+<text x="40" y="290" opacity="0.7">correlation says how closely two rise and fall together; lag says who moves first. Neither says which one causes the other.</text>
+</svg>
+
+<figcaption>Moving together, and who leads.</figcaption>
+</figure>
+
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Channels</td>
+<td>one, plus one or more to compare with</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>median correlation at zero lag and the median lag of best match, per pair, per source</td>
+</tr>
+<tr>
+<td>Does not mean</td>
+<td>which one causes the other; slow co-movement (two temperatures rising together) is removed by detrending, but read the chart</td>
+</tr>
+</tbody>
+</table>
+<p>The 0.93 against 0.2 is two recorders, not two engines: the G3X damps manifold pressure.</p>
+<h3 id="are-these-groups-different-eisgroups-eiscompare">Are these groups different? — <code>eis.groups</code>, <code>eis.compare</code><a class="headerlink" href="#are-these-groups-different-eisgroups-eiscompare" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>Swing is 180 rpm below 3,500 ft DA, 130 rpm at 3,500–6,000 ft and 75 rpm at 6,000 ft and above (92 / 4 / 2 slices — small groups).</p>
+</blockquote>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 222" role="img" aria-label="Slices as points along an rpm-swing axis. A large group clusters around a median of 180 rpm; a small group of two sits around 75 rpm with a small-group caution. The gap between the medians is labelled as the difference and the effect size." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="60" y1="190" x2="720" y2="190" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="720" y="206" text-anchor="end" opacity="0.7">rpm swing →</text>
+<circle cx="520.8" cy="109.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="567.7" cy="128.3" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="506.4" cy="81.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="506.3" cy="147.0" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="515.2" cy="159.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="546.6" cy="117.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="540.8" cy="131.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="477.4" cy="92.0" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="462.8" cy="121.9" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="455.7" cy="139.3" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="509.9" cy="140.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="503.9" cy="127.3" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="513.7" cy="149.2" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="526.6" cy="117.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="500.7" cy="137.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="435.1" cy="153.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="459.3" cy="115.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="561.7" cy="154.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="530.2" cy="90.9" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="504.2" cy="97.4" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="559.4" cy="130.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="507.6" cy="104.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="476.9" cy="108.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="515.1" cy="126.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="441.0" cy="134.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="472.5" cy="154.3" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="594.2" cy="133.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="419.1" cy="93.0" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="584.2" cy="152.4" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="436.3" cy="125.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="510.6" cy="146.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="489.7" cy="125.9" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="513.7" cy="148.3" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="531.3" cy="159.2" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="578.9" cy="112.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="555.4" cy="92.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="498.0" cy="149.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="583.8" cy="83.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="507.7" cy="137.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="508.8" cy="106.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="600.5" cy="120.4" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="439.3" cy="159.9" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="511.0" cy="128.0" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="532.0" cy="82.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="530.4" cy="128.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="556.3" cy="92.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="595.7" cy="105.1" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="538.5" cy="156.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="548.4" cy="116.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="493.0" cy="121.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="483.1" cy="124.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="474.0" cy="129.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="561.9" cy="114.5" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="499.3" cy="137.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="519.6" cy="158.2" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="551.2" cy="121.7" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="511.0" cy="113.2" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="515.1" cy="126.4" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="572.7" cy="130.6" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="524.0" cy="84.8" r="3.5" fill="currentColor" opacity="0.7"/>
+<circle cx="236.5" cy="123.6" r="4" fill="#14b8a6"/>
+<circle cx="236.1" cy="117.1" r="4" fill="#14b8a6"/>
+<line x1="516.9230769230769" y1="60" x2="516.9230769230769" y2="190" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="516.9230769230769" y="54" text-anchor="middle" font-weight="600">below 3,000 ft DA: median 180 rpm, 92 slices</text>
+<line x1="250.38461538461536" y1="74" x2="250.38461538461536" y2="190" stroke="#14b8a6" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="250.38461538461536" y="54" text-anchor="middle" fill="#14b8a6" font-weight="600">above 6,000 ft: median 75 rpm</text>
+<text x="250.38461538461536" y="68" text-anchor="middle" fill="#14b8a6" font-size="10">2 slices — small group</text>
+<line x1="250.38461538461536" y1="176" x2="516.9230769230769" y2="176" stroke="#ef4444" stroke-width="1.5" marker-end="url(#ar)"/>
+<line x1="516.9230769230769" y1="176" x2="250.38461538461536" y2="176" stroke="#ef4444" stroke-width="1.5" marker-end="url(#ar)"/>
+<text x="383.65384615384613" y="172" text-anchor="middle" fill="#ef4444" font-weight="600" font-size="10">difference 105 rpm · effect size: no overlap</text>
+<text x="60" y="212" opacity="0.7">the headline is the size of the gap and how many slices stand behind each side — not a probability</text>
+</svg>
+
+<figcaption>Two groups on one measurement: the gap between the medians and how many slices stand behind each.</figcaption>
+</figure>
+
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Split</td>
+<td>by log source, before/after a date, density-altitude or OAT bands, engine hours, rule, or named groups of flights</td>
+</tr>
+<tr>
+<td>Measurement</td>
+<td>any per-slice measurement above, written <code>channel.measure</code> (<code>rpm.swing</code>, <code>oil_temp_f.median</code>)</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>each group's median, the median difference, an effect size (Cliff's delta, 0 = interleaved to 1 = no overlap), the counts; a rank test as supporting evidence only</td>
+</tr>
+<tr>
+<td>Does not mean</td>
+<td>why; a group below the minimum (ten by default) gets the small-group caution; no <em>p</em>-value is a headline</td>
+</tr>
+</tbody>
+</table>
+<p>Consecutive seconds are not independent, so a probability would look far more certain than the data is; the size of the gap and the count behind each side are the headline. <code>eis.compare</code> gives the same set one row per slice, grouped by flight, with each row's difference from a slice you pin — <em>this</em> takeoff against all the others.</p>
+<h3 id="which-slices-are-unusual-eisunusual">Which slices are unusual? — <code>eis.unusual</code><a class="headerlink" href="#which-slices-are-unusual-eisunusual" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p>2026-07-17 18:19 — rpm swing far below the rest (70 vs 180); manifold pressure flat at 51.4 inHg.</p>
+</blockquote>
+<figure class="diagram">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 222" role="img" aria-label="Slices as points on two measurements, rpm swing and peak manifold pressure. A dashed outline encloses the cloud of ordinary slices; two slices sit apart with low swing and manifold pressure at its ceiling, labelled as the two high-altitude takeoffs that stand out." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker><marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#14b8a6"/></marker></defs>
+<line x1="70" y1="190" x2="690" y2="190" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<line x1="70" y1="190" x2="70" y2="40" stroke="currentColor" stroke-width="1" marker-end="url(#ar)" opacity="0.7"/>
+<text x="690" y="206" text-anchor="end" opacity="0.7">rpm swing →</text>
+<text x="14" y="46" opacity="0.7">MAP</text>
+<text x="14" y="58" opacity="0.7">max</text>
+<circle cx="389.8" cy="137.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="391.0" cy="125.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="362.8" cy="127.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="444.5" cy="135.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="441.5" cy="133.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="415.8" cy="132.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="333.4" cy="142.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.3" cy="137.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="332.3" cy="105.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="364.4" cy="123.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="412.2" cy="129.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.8" cy="121.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="412.3" cy="135.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="373.6" cy="154.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.3" cy="146.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="375.2" cy="119.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="386.2" cy="128.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="425.3" cy="133.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="382.1" cy="116.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="379.2" cy="147.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="367.7" cy="133.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="417.1" cy="109.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="401.9" cy="148.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="319.4" cy="125.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="395.8" cy="118.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="419.9" cy="129.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="341.4" cy="141.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="426.8" cy="143.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="457.6" cy="135.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="404.8" cy="111.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="424.6" cy="121.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="381.9" cy="112.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="361.3" cy="122.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="451.6" cy="101.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="341.7" cy="133.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="457.7" cy="138.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="324.0" cy="94.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="414.3" cy="119.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="355.2" cy="143.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="444.1" cy="132.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="409.8" cy="136.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="463.8" cy="138.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="420.7" cy="137.7" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="337.3" cy="147.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="438.2" cy="137.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="321.0" cy="121.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="433.7" cy="104.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="392.6" cy="144.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="347.6" cy="152.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.1" cy="127.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="413.0" cy="139.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="404.8" cy="146.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="373.5" cy="124.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="441.7" cy="130.4" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="364.8" cy="143.3" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="458.6" cy="123.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="344.8" cy="128.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="394.0" cy="125.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="456.2" cy="115.6" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="450.4" cy="112.2" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="368.5" cy="138.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="445.1" cy="142.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="413.8" cy="132.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="406.1" cy="138.1" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="393.0" cy="133.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="422.9" cy="130.0" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="430.6" cy="137.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="480.4" cy="134.5" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="382.9" cy="124.8" r="3.5" fill="currentColor" opacity="0.55"/>
+<circle cx="399.5" cy="142.9" r="3.5" fill="currentColor" opacity="0.55"/>
+<ellipse cx="400" cy="130" rx="110" ry="42" fill="none" stroke="currentColor" stroke-dasharray="4 4" opacity="0.5"/>
+<text x="400" y="182" text-anchor="middle" opacity="0.8">most slices: swing ≈ 180, MAP peak ≈ 50 inHg</text>
+<circle cx="160" cy="62" r="5" fill="#14b8a6"/>
+<circle cx="160" cy="62" r="9" fill="none" stroke="#14b8a6"/>
+<circle cx="174" cy="54" r="5" fill="#14b8a6"/>
+<circle cx="174" cy="54" r="9" fill="none" stroke="#14b8a6"/>
+<text x="195" y="50" fill="#14b8a6" font-weight="600">two slices stand out: swing far below the rest,</text>
+<text x="195" y="64" fill="#14b8a6">MAP flat at its ceiling — the two high-altitude takeoffs</text>
+<text x="195" y="78" fill="#14b8a6" font-size="10">different from the others. On this aircraft they were the healthy ones.</text>
+<text x="70" y="212" opacity="0.7">unusual = far from your other slices on some measurement. It is a place to look, never a verdict.</text>
+</svg>
+
+<figcaption>Unusual means far from the other slices — here, the two clean high-altitude takeoffs.</figcaption>
+</figure>
+
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Channels</td>
+<td>by default rpm, manifold pressure, fuel flow, EGT 1–4, CHT, oil pressure and temperature, coolant temperature, fuel pressure, volts</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>a ranked list of at most ten slices, each with the measurement it stands out on (a robust z of 3.5 or more against slices of the same source) and the direction</td>
+</tr>
+<tr>
+<td>Does not mean</td>
+<td>that a listed slice has a problem, or that an unlisted one does not</td>
+</tr>
+</tbody>
+</table>
+<p>Unusual means <em>different from your other slices</em>. On the oscillation case the two slices that stood out were the two that did not cycle.</p>
+<h2 id="every-answer-has-the-same-shape">Every answer has the same shape<a class="headerlink" href="#every-answer-has-the-same-shape" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Finding</strong> — one sentence with a count, split by source when both are present.</li>
+<li><strong>Evidence</strong> — a chart, and the table of every slice with its measurements and conditions.</li>
+<li><strong>Magnitude beside a reference</strong> — the Operators Manual value from the engine profile (the only number EIS brings), the set's own spread, or a reference Claude or you name with its source.</li>
+<li><strong>Caveats</strong> — the sampling floor, source differences, group sizes, the windows used, and what the answer does not mean.</li>
+<li><strong>Details</strong> — the machine-readable record of the run: question, settings, slices, references, engine version.</li>
+</ol>
+<p>No answer carries a verdict. The words <em>abnormal</em>, <em>fault</em> and <em>detected</em> do not appear, and a test over EIS's own text keeps it so; whether a shape matters is for the Operators Manual, the people who built the part, and you.</p>
+<p>The instrument is <a href="https://github.com/AlchemyGeek/Rotax9iSEIS/blob/main/docs/specs/06-research.md">Spec 06 — Research</a>: slices §5, measurements §6, the tests §7, the result §8.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../research-presets/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Research presets">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Research presets
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../investigation-tools/" class="md-footer__link md-footer__link--next" aria-label="Next: Investigation tools">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Investigation tools
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://feedback.slingology.synology.me/" target="_blank" rel="noopener" title="Report a problem or suggest a feature" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 10h-2V6h2zm0 2h-2v2h2zm9-8v12a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2m-2 0H4v13.2L5.2 16H20z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://github.com/AlchemyGeek/Rotax9iSEIS" target="_blank" rel="noopener" title="Source code on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.tabs.link", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
