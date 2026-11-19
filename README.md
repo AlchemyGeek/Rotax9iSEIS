@@ -1,6 +1,6 @@
 # SlingologyEIS — Rotax iS Engine Analytics
 
-**Version 1.0.2** — check yours with `slingology-eis --version`.
+**Version 1.1.0** — check yours with `slingology-eis --version`.
 
 Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines
 (912iS, 915iS, 916iS), built for how these engines actually work rather than retrofitted
@@ -10,7 +10,7 @@ flight: did anything go outside the Rotax Operators Manual limits, and is this f
 behaves. The rules come from Rotax; the expectations come from your own flight history; you decide
 what to accept.
 
-It runs in two ways over the same engine, and either way your logs stay in your own folders —
+It runs in three ways over the same engine, and every way your logs stay in your own folders —
 read where they are, never copied or uploaded:
 
 - **In your browser**, from https://alchemygeek.github.io/Rotax9iSEIS/app/ — nothing to install. The analysis runs inside the
@@ -18,17 +18,24 @@ read where they are, never copied or uploaded:
   storage.
 - **As a local server on your own computer** — `pip install`, then `slingology-eis serve`, then
   open it in a browser. Nothing listens on the network.
+- **As a Claude Desktop extension** — one `.mcpb` file from the
+  [latest release](https://github.com/AlchemyGeek/Rotax9iSEIS/releases/latest), nothing else to
+  install. Your own Claude investigates your engine with EIS's instruments and writes the
+  investigation as a notebook; the EIS pages run at `127.0.0.1:8420` while Desktop is open. See
+  *Investigations* below.
 
-**Status:** 1.0.2 reads the Garmin AXIS's second log — the aircraft log Garmin Pilot uploads to
-flyGarmin — and merges it with the SD-card log of the same flight; the flight chart shows full
-detail when zoomed and marks where an event reached its worst value; the app has a light theme
-and a feedback link. 1.0.1 added the in-browser mode, offline use, the pilot documentation site
-and the Slingology visual identity to the 1.0.0 web UI. Validated on one aircraft: N117ZS, a
-Sling TSi with a Rotax 916iS, 61 flights from a set of 124 logs (Garmin G3X, and since October
-2026 the Garmin AXIS). Engine
-profiles for the 912iS, 915iS and 916iS are verified against their Operators Manuals. Analytics
-topics validated on the 916iS are marked *unverified* on the other engines until data from such
-an aircraft exists.
+**Status:** 1.1.0 adds *Investigations*: a Claude Desktop extension through which your own Claude
+asks questions of your flights with EIS's deterministic instruments, reads the Operators Manual
+and service bulletins from your folders, and writes a Jupyter notebook you read in the app or run
+in JupyterLab; period/swing strips and *Mark for Claude* on the flight chart; an inbox that raises
+recurring patterns; routes resolved from GPS; an aircraft record with your notes and documents.
+It also ships the 1.0.2 aircraft-log work (the second AXIS log Garmin Pilot uploads to flyGarmin,
+merged with the SD-card log of the same flight). Validated on one aircraft: N117ZS, a Sling TSi
+with a Rotax 916iS, 62 flights from a set of 125 logs (Garmin G3X, and since October 2026 the
+Garmin AXIS); the acceptance case is its takeoff rpm oscillation
+(`docs/research/2026-10-takeoff-rpm-oscillation.md`). Engine profiles for the 912iS, 915iS and
+916iS are verified against their Operators Manuals. Analytics topics validated on the 916iS are
+marked *unverified* on the other engines until data from such an aircraft exists.
 
 **Pilot documentation:** https://alchemygeek.github.io/Rotax9iSEIS/ — what EIS tells you and why,
 concept by concept, with walkthroughs. This README covers getting the app running; the `?` on every
@@ -63,7 +70,8 @@ No logs of your own yet? The [sample workspace](https://github.com/AlchemyGeek/R
 — 19 flights of N117ZS with its owner's filters — imports from Settings → App → *Import workspace…*.
 
 Tested on macOS Chrome and macOS Safari. (The local server also works from iPad Safari; the
-in-browser mode on iPad is not a current target.)
+in-browser mode on iPad is not a current target.) Investigations need Claude Desktop on macOS
+(Apple silicon or Intel) and a Claude account; the extension bundles everything else.
 
 ## Running it in your browser
 
@@ -112,7 +120,8 @@ build`, Node.js 20 or later) before `serve` — see *For developers*.
 
 ## First use
 
-1. **Create a workspace.** The app asks for a name and the engine model. A workspace holds the
+1. **Create a workspace** — from logs you pick, from a workspace export, or by loading a folder
+   of logs. The app asks for a name and the engine model. A workspace holds the
    derived results for one aircraft — analyses, your reference, filters, notes, the Journal — and
    you can have as many as you like (another aircraft, or an experiment on a subset of your logs),
    one active at a time. The engine model is fixed when the workspace is created; a workspace is
@@ -132,12 +141,61 @@ build`, Node.js 20 or later) before `serve` — see *For developers*.
    alerts), and a card per analytics topic. **Trends** shows whether anything about your engine is
    changing against your own history. **Journal** lists every decision you've made in the
    workspace — a filter, a rule edit, an excluded flight, a pinned reference, a note. **Settings**
-   shows the engine's limits, the reference and model parameters, and app preferences (units,
-   light or dark theme, and the build you are running).
+   shows the engine's limits, the reference and model parameters, app preferences (units,
+   light or dark theme, and the build you are running), the **aircraft** record (propeller,
+   controller, firmware, your notes for Claude, your manuals' folders) and **Research** (inbox
+   sensitivity). The **Flights** list shows each flight's route, resolved from GPS, and *Find a
+   flight* searches by description; a flight can be named in place.
 
 Your reference (what's normal for this engine) is learned only from this workspace's flights, so
 the first ten or so flights report *still building* on the baseline comparisons. Nothing learned
 from one aircraft is ever applied to another.
+
+## Investigations — your Claude and your engine
+
+EIS tells you *what* crossed a limit and *whether* your engine is changing. Investigating *why*
+— the oscillation that is not an exceedance, the temperature that is higher only in one kind of
+flight — takes a scientist's loop: look at one flight, then across all of them, propose a
+mechanism, rule out the alternatives, say what it means. 1.1.0 gives that loop to your own Claude.
+
+**How it works.** *Claude investigates; EIS measures.* The Claude Desktop extension runs the EIS
+engine on your computer and exposes it to Claude as 33 tools: your flights (with routes and
+names), slices of them, the four deterministic questions (*is this signal cycling? do these two
+move together? are these groups different? which slice is unusual?*), a sandboxed Python bench
+with the `eis` library, your aircraft record and notes, and the manuals in your folders. Claude
+writes what it finds as a Jupyter notebook in your workspace; the Research page renders it with
+live flight charts, and it opens and runs unchanged in JupyterLab. Nothing is sent anywhere except
+Claude Desktop's own conversation with Anthropic; EIS stores nothing outside your data folder.
+
+**The loop in the app.**
+
+1. **Look.** On a flight, turn on *Signal*: strips over the whole flight light where a channel
+   cycles; zoom in and the window's swing, period and coupling appear beside their Operators
+   Manual references.
+2. **Mark.** *Mark for Claude* on any zoomed window — a note, and the question it belongs to. Your
+   questions sit in the Research page's inbox beside what EIS raised itself (a recurring pattern
+   in your recent flights, found by a scan after each import; nothing runs unattended).
+3. **Ask.** In Claude Desktop, `+` → *SlingologyEIS* → *Investigate* (or *Look at this inbox
+   item*, *Before/after*, *Review new flights*). Claude calls `guide` first — the method and your
+   aircraft's context — and starts from your marks.
+4. **Read.** The notebook on the Research page: one flight first, then across flights, the
+   mechanism as a hypothesis, alternatives ruled out, what to do; every number from an `eis`
+   function with its reference beside it. A log-view cell takes you back to the flight.
+
+**Install.** Download `slingology-eis-<version>-macos-arm64.mcpb` (Intel Macs: `x86_64`) from the
+release; in Claude Desktop, Settings → Extensions → Advanced settings → *Install Extension…*; set
+the *EIS data folder* (default `~/SlingologyEIS`); quit and reopen Desktop. The bundle is unsigned
+for now, so Desktop warns once. Been using the website? Open it with Desktop running and press
+**Move my workspace** — your browser workspace is imported into the extension in one step; from
+then on you work at `127.0.0.1:8420`. Developers can instead `pip install -e ".[investigations]"`
+and add `slingology-eis mcp` to `claude_desktop_config.json` (Spec 16 §7).
+
+**JupyterLab.** `python -m ipykernel install --user --name slingology-eis` in the environment
+where the package is installed; a notebook's first cell binds `eis` to your workspace. Outside
+EIS there is no sandbox — it is your own kernel.
+
+The documentation site's *Investigating your engine* section has the walkthroughs; Spec 16
+(`docs/specs/16-investigations.md`) is the design, Spec 06 the instrument.
 
 ## Sharing a workspace
 
@@ -155,6 +213,8 @@ file as is and gets a new workspace with your flights and decisions.
 | Your logs | Wherever you keep them | Yes — never copied or modified (an imported export's logs are copied into that workspace) |
 | Workspaces (derived results), browser mode | The browser's origin private file system for the site, same layout as below; Settings → App → *Storage* | Derived; export before clearing site data |
 | Workspaces (derived results), server mode | The *data location*: `~/SlingologyEIS/` by default (`data/` in a git checkout), holding `registry.json`, app settings and `workspaces/<id>/`. Change it from Settings → App or `slingology-eis data-location set PATH`; the choice is kept in a per-user `location.json`, and `SLINGOLOGY_EIS_HOME` overrides it | Derived; safe to delete and rebuild |
+| Aircraft record and notes | `aircraft/<id>/` in the data location (`aircraft.json`, `notes.md`); documents folders are paths to your own folders, read in place, with an index cache under `cache/documents/` | Yours; the cache is derived |
+| Investigation notebooks | `workspaces/<id>/studies/<id>/notebook.ipynb` + `files/` — standard Jupyter notebooks | Yours; carried by export |
 | Default engine for the CLI | `config.json` (`"engine"`) | Edit freely |
 | Insight trigger rules (shipped defaults) | `insight_rules.json`; each workspace keeps its own edited copy | Edit in the app, on the topic card |
 
@@ -173,6 +233,8 @@ on the backlog.
 
 `slingology-eis` runs the same engine from the terminal, without the UI. It is useful for a quick
 look at one log, for scripting, and for development; it is not required to use the app.
+`slingology-eis mcp` is the MCP server Claude Desktop runs (`mcp tools` lists the tools;
+`mcp call <tool> '<json>'` calls one).
 
 ```bash
 slingology-eis <command> [options]
@@ -258,16 +320,22 @@ Rotax9iSEIS/
 │   ├── log_sources.py     #   Where logs come from: disk, or supplied by the page
 │   ├── workspace.py       #   Workspace registry, manifests, scans, Journal
 │   ├── workspace_export.py, data_location.py   # Sharing a workspace; where the data root lives
-│   ├── server.py          #   The HTTP transport: /rpc, /upload, /download, the built UI
+│   ├── server.py          #   The HTTP transport: /rpc, /upload, /download, the built UI, /eis/probe + move-workspace
+│   ├── investigations/    #   Spec 16: MCP server (mcp_server.py, mcp_tools.py), bench (bench*.py), the eis
+│   │                      #   library (eis_lib.py), notebooks (notebook.py, ipynb.py, nbhtml.py), inbox, pins,
+│   │                      #   documents, aircraft, guide.md and prompts/, the extension entry (extension.py)
+│   ├── research/          #   Spec 06, the instrument: slices, descriptors, the four tests, analyze_signal
+│   ├── eis.py             #   `from slingology_eis import eis` — the library for notebooks outside EIS
 │   ├── cli.py             #   The slingology-eis command
 │   └── help/topics.md     #   Pilot-facing topic explanations (shipped in the package)
 ├── web/                   # React + TypeScript + Vite UI, both hosts (see web/README.md)
 ├── engines/               # Engine profiles (see above)
 ├── contract/schema/       # JSON Schemas for every contract result type
 ├── docs/                  # Pilot documentation site (MkDocs; docs/README-docs.md), plus:
-│   ├── specs/             #   Specs 01–15: engine contract, workspace, UI, filters, topics, trends, runtimes, branding
+│   ├── specs/             #   Specs 01–16: engine contract, workspace, UI, filters, topics, trends, runtimes, branding, research, investigations
+│   ├── research/          #   The owner's investigation write-ups (the takeoff rpm oscillation)
 │   └── ROTAX 91XiS Engine Data Analytics.md   # Research paper
-├── mkdocs.yml · PYODIDE_VERSION · scripts/build_engine_wheel.py
+├── mkdocs.yml · PYODIDE_VERSION · scripts/build_engine_wheel.py · scripts/build_extension.py (the .mcpb)
 ├── notebooks/             # Diagnostic scripts: 01–04 legacy reports, 05 limit events, 06 phase regression
 ├── tests/                 # pytest: unit, contract, cli, characterization (goldens gitignored)
 ├── spike/                 # Spec 04 harnesses: Pyodide feasibility, persistence probe, browser-host parity
@@ -281,7 +349,7 @@ Rotax9iSEIS/
 ### Setup and tests
 
 ```bash
-pip install -e ".[dev]"          # pytest, jsonschema
+pip install -e ".[dev,investigations]"   # pytest, jsonschema; the MCP server, bench and eis library
 python -m pytest -q              # Python suite; real-log tests skip without data/logs/
 cd web && npm ci
 npm run build                    # server-mode UI → web/dist/ (what `serve` serves from a checkout)
@@ -289,7 +357,8 @@ npm run build:browser            # the static site for the browser mode
 npx vitest run                   # web tests
 ```
 
-The operations tests run three ways — in-process, over HTTP, and under Pyodide in Node.js — so
+`slingology-eis mcp tools` lists the MCP tools; `slingology-eis mcp` is the stdio server Claude
+Desktop runs (`SLINGOLOGY_EIS_HOME` selects the data root). The operations tests run three ways — in-process, over HTTP, and under Pyodide in Node.js — so
 the browser host is checked without a browser; `web/README.md` describes the two hosts, the
 engine wheel (`scripts/build_engine_wheel.py`, version pinned in `PYODIDE_VERSION`) and the
 parity and walk-through runs under `spike/browser-host/`.
@@ -312,14 +381,14 @@ python notebooks/06_phase_regression.py --compare before
 The engine (`operations.py`) is stateless: bytes in, typed results out, validated against
 `contract/schema/`. Everything else — CLI, local server, web UI — is a host around it, and the
 same engine runs in the browser under Pyodide. Design is spec-first: every behaviour is owned by
-one of `docs/specs/01`–`15`, each with its own revision history, and
+one of `docs/specs/01`–`16`, each with its own revision history, and
 `insight_rules.json`, `engines/*.json` and `docs/specs/topics/register.json` are the data those
 specs point at. The Python package depends only on `pandas` and `numpy`; the web UI on React,
 React Router and ECharts.
 
-### Notebooks
+### Notebooks (the repo's diagnostic scripts)
 
-`notebooks/01`–`04` are the original interactive scripts the toolkit grew from. They call the same
+Not the investigation notebooks above. `notebooks/01`–`04` are the original interactive scripts the toolkit grew from. They call the same
 library as the CLI but keep their own rendering, which is why they remain the characterization
 tests' independent oracle. `05_limit_events_report.py` prints per-limit event statistics by
 weather band; `06_phase_regression.py` is the snapshot tool above. The `notebooks` extra
