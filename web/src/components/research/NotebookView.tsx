@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../../lib/engineClient";
 import { useCapabilities } from "../../lib/capabilities";
 import {
-  cellFlags, cellMeta, logviewRef, markdown, metaLine, nbMeta, outputHtml, outputsLine, outputsState, text,
-  type FileImages, type NbCell, type NbOutput, type Notebook,
-  summaryHistory,
+  cellFlags, cellMeta, isSetupCell, logviewRef, markdown, nbMeta, notebookStatus, outputHtml, outputsLine, outputsState,
+  summaryBlock, text, type FileImages, type NbCell, type NbOutput, type Notebook,
 } from "../../lib/notebook";
+import { EVIDENCE, ORIGIN, TEST, evidenceText, scopeText } from "../../lib/notebookCard";
+import type { NotebookCard } from "../../types/contract";
+import { TagEditor, ActionMenu, ChannelTags, StatusMark, statusColor, type MenuItem } from "./bits";
 import { LogViewCell } from "./LogViewCell";
 import { BODY, BUTTON, MUTED, NOTICE, PANEL, PRIMARY } from "./ui";
 
@@ -42,6 +44,11 @@ function Output({ o }: { o: NbOutput }) {
   return <Html html={outputHtml(o)} />;
 }
 
+// Spec 03 v0.34: the header carries the card's marks and tags, author ·
+// status · engine · updated and the question; the summary is an open,
+// collapsible block in body type with the earlier summaries inside it;
+// *Re-run* (bench) is the one visible button, the rest in *Actions*; the
+// setup cell is not shown.
 // Spec 16 §5.3 — one renderer for both tiers: markdown, code collapsed
 // under *show code* with its outputs, tables, figures and log views (§5.2);
 // the header says who wrote it, the question, its status, the engine and
@@ -127,46 +134,73 @@ export function NotebookView({ view, onChanged, onDeleted }: {
     }
   }
 
+  const card = (m.card ?? null) as NotebookCard | null;
+  const actions: MenuItem[] = [
+    ...(bench && state.pending > 0 ? [
+      { label: "Accept all new outputs", testid: "nb-accept-all", onSelect: () => void accept() },
+      { label: "Discard all new outputs", testid: "nb-discard-all", onSelect: () => void discard() },
+    ] : []),
+    ...(bench && state.ranElsewhere > 0 ? [{ label: "Keep outputs that ran elsewhere", testid: "nb-keep-external", onSelect: () => void keepExternal() }] : []),
+    { label: "Export notebook (.zip)", testid: "nb-export-zip", onSelect: () => void exportAs("zip") },
+    { label: "Export as a page (.html)", testid: "nb-export-html", onSelect: () => void exportAs("html") },
+    ...(imported ? [{ label: "Run this on my flights", testid: "nb-run-mine", onSelect: () => void runOnMine() }] : []),
+    { label: "Delete…", testid: "nb-delete-start", danger: true, onSelect: () => setConfirmDelete(true) },
+  ];
+
   return (
     <div className="nb" data-testid="notebook" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
-      <header style={{ ...PANEL, display: "flex", flexDirection: "column", gap: 6 }} data-testid="notebook-header">
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{m.name || "Notebook"}</h1>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-tertiary)" }}>NOTEBOOK</span>
+      <header style={{ ...PANEL, display: "flex", flexDirection: "column", gap: 8 }} data-testid="notebook-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {card && <span title={ORIGIN[card.origin]?.label} data-testid="nb-origin" style={{ fontSize: 15, color: "var(--text-secondary)" }}>{ORIGIN[card.origin]?.glyph}</span>}
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{m.name || "Notebook"}</h1>
           <span style={{ flexGrow: 1 }} />
           {bench && <button type="button" style={BUTTON} disabled={!!busy} onClick={() => void rerun()} data-testid="nb-rerun">{busy === "rerun" ? "Re-running…" : "Re-run"}</button>}
-          <button type="button" style={BUTTON} onClick={() => void exportAs("zip")} data-testid="nb-export-zip">Export notebook (.zip)</button>
-          <button type="button" style={BUTTON} onClick={() => void exportAs("html")} data-testid="nb-export-html">Export as a page (.html)</button>
-          {imported && <button type="button" style={PRIMARY} disabled={!!busy} onClick={() => void runOnMine()} data-testid="nb-run-mine">{busy === "mine" ? "Running…" : "Run this on my flights"}</button>}
-          {!confirmDelete
-            ? <button type="button" style={BUTTON} onClick={() => setConfirmDelete(true)}>Delete…</button>
-            : <span style={BODY}>Delete this notebook and its files? <button type="button" style={BUTTON} onClick={() => void remove()} data-testid="nb-delete">Delete</button> <button type="button" style={BUTTON} onClick={() => setConfirmDelete(false)}>Keep</button></span>}
+          <ActionMenu items={actions} label="Actions ▾" title="Actions" testid="nb-actions" buttonStyle={BUTTON} />
         </div>
-        <div className="meta" style={{ ...MUTED, fontSize: 13 }} data-testid="nb-meta" dangerouslySetInnerHTML={{ __html: metaLine(m) }} />
-        {m.question && <div style={{ ...BODY, fontSize: 15, color: "var(--text-primary)" }}><strong>Question:</strong> {m.question}</div>}
-        <div style={{ ...MUTED, color: state.pending || state.ranElsewhere || state.readOnly ? "var(--severity-watch)" : "var(--text-tertiary)" }} data-testid="nb-outputs">{outputsLine(state)}</div>
-        {bench && (state.pending > 0 || state.ranElsewhere > 0) && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {state.pending > 0 && <button type="button" style={PRIMARY} disabled={!!busy} onClick={() => void accept()} data-testid="nb-accept-all">Accept all new outputs</button>}
-            {state.pending > 0 && <button type="button" style={BUTTON} disabled={!!busy} onClick={() => void discard()} data-testid="nb-discard-all">Discard all</button>}
-            {state.ranElsewhere > 0 && <button type="button" style={BUTTON} disabled={!!busy} onClick={() => void keepExternal()} data-testid="nb-keep-external">Keep outputs that ran elsewhere</button>}
+        {confirmDelete && (
+          <div style={BODY}>Delete this notebook and its files? <button type="button" style={BUTTON} onClick={() => void remove()} data-testid="nb-delete">Delete</button> <button type="button" style={BUTTON} onClick={() => setConfirmDelete(false)}>Keep</button></div>
+        )}
+        {card && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", fontSize: 11, color: "var(--text-tertiary)" }} data-testid="nb-card">
+            <ChannelTags channels={card.channels} max={10} />
+            <span data-testid="nb-scope">{scopeText(card)}</span>
+            {EVIDENCE.filter((e) => card.evidence[e.key]).length > 0 && (
+              <span title={evidenceText(card.evidence)} style={{ display: "inline-flex", gap: 8 }}>
+                {EVIDENCE.filter((e) => card.evidence[e.key]).map((e) => <span key={e.key}>{e.glyph} {card.evidence[e.key]}</span>)}
+              </span>
+            )}
+            {card.tests.map((t) => <span key={t} title={`Test: ${t}`} style={{ color: "var(--text-secondary)" }}>{TEST[t]?.glyph} {t}</span>)}
+            {card.tags.map((t) => (
+              <span key={t} data-testid="nb-tag" style={{ background: "var(--panel-control)", borderRadius: 4, padding: "0 6px", fontSize: 10, lineHeight: "16px", color: "var(--text-secondary)" }}>{t}</span>
+            ))}
+            <TagEditor studyId={id} tags={card.tags} testid="nb-tag-add"
+              onSaved={() => void act("tags", async () => null)} />
           </div>
         )}
+        {/* author · status · engine · updated — the export's line, with the status as its dot and word */}
+        <div className="meta" style={{ ...MUTED, fontSize: 12, display: "flex", alignItems: "center", flexWrap: "wrap", whiteSpace: "pre" }} data-testid="nb-meta">
+          <span>by {m.author || "user"}</span>{" · "}
+          <StatusMark status={notebookStatus(m)} testid="nb-status"
+            color={card?.resolution && notebookStatus(m) === "finished" ? statusColor(card.resolution) : undefined}
+            title={card?.resolution && notebookStatus(m) === "finished" ? `Finished: ${card.resolution === "nothing-here" ? "nothing here" : card.resolution}` : undefined} />{" · "}
+          <span>engine {m.engine ?? ""}</span>{m.updated ? <>{" · "}<span title={m.updated}>{String(m.updated).slice(0, 10)}</span></> : null}
+        </div>
+        {m.question && <div style={{ ...BODY, fontSize: 14, color: "var(--text-primary)" }} data-testid="nb-question"><strong>Question:</strong> {m.question}</div>}
+        <div style={{ ...MUTED, color: state.pending || state.ranElsewhere || state.readOnly ? "var(--severity-watch)" : "var(--text-tertiary)" }} data-testid="nb-outputs">{outputsLine(state)}</div>
         {!bench && caps && (state.ranElsewhere > 0 || state.readOnly > 0) && (
           <div style={MUTED}>This page shows the outputs as they were saved; re-running a notebook needs EIS on your computer (the Claude Desktop extension or a pip install).</div>
         )}
-        {m.summary && <section className="summary"><Html html={"<h2>Summary</h2>" + markdown(m.summary)} /></section>}
         {m.reopened && m.status === "open" && (
           <div style={NOTICE} data-testid="nb-reopened">
-            Reopened {String(m.reopened).slice(0, 10)}: a follow-up is adding to this notebook. The summary above is from before it; Claude finishes again with a new one.
+            Reopened {String(m.reopened).slice(0, 10)}: a follow-up is adding to this notebook. The summary below is from before it; Claude finishes again with a new one.
           </div>
         )}
-        {(m.summaries?.length ?? 0) > 0 && <Html className="summary-history" testid="nb-summary-history" html={summaryHistory(m.summaries!)} />}
+        {m.summary && <Html className="nb-summary" testid="nb-summary" html={summaryBlock(m.summary, m.summaries ?? [])} />}
       </header>
       {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
       {notice && <div style={NOTICE} data-testid="nb-notice">{notice}</div>}
       <main style={{ ...PANEL, display: "flex", flexDirection: "column" }}>
-        {nb.cells.map((c) => <Cell key={c.id} c={c} files={view.files} bench={bench} busy={!!busy}
+        {nb.cells.filter((c) => !isSetupCell(c)).map((c) => <Cell key={c.id} c={c} files={view.files} bench={bench} busy={!!busy}
           onAccept={() => void accept([c.id])} onDiscard={() => void discard([c.id])} onKeep={() => void keepExternal([c.id])} />)}
       </main>
     </div>
@@ -180,11 +214,10 @@ function Cell({ c, files, bench, busy, onAccept, onDiscard, onKeep }: {
   if (c.cell_type !== "code") return null;
   const sm = cellMeta(c);
   const flags = cellFlags(c);
-  const setup = sm.role === "setup";
   return (
     <div className="cell code" data-testid="nb-cell-code" data-cell={c.id}>
       <details className="code">
-        <summary>{setup ? "show code (setup: binds eis to this workspace)" : "show code"}</summary>
+        <summary>show code</summary>
         <pre><code>{text(c.source)}</code></pre>
       </details>
       {flags.length > 0 && (

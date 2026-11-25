@@ -125,8 +125,10 @@ def main() -> int:
             # D15 — Research home is notebooks + inbox; nothing of the hand-study UI is reachable.
             page.get_by_test_id("nav-research").wait_for(timeout=120000)
             page.get_by_test_id("nav-research").click()
-            page.get_by_test_id("research-model").wait_for(timeout=120000)
             page.get_by_test_id("inbox").wait_for(timeout=120000)
+            page.get_by_test_id("research-help").click()          # Spec 03 v0.34: the model sentence is in the page's help
+            page.get_by_test_id("research-model").wait_for(timeout=120000)
+            page.keyboard.press("Escape")
             body = page.inner_text("body")
             step("Research home: the notebooks and the inbox, no hand study, preset, question form, Signal or Compare",
                  page.get_by_test_id("new-study").count() == 0 and not re.search(r"Start from a preset|Is this signal steady|Compare|Research this", body))
@@ -188,16 +190,18 @@ def main() -> int:
             page.goto(url + "#/research")
             q = page.get_by_test_id("question").filter(has_text="rough climbs").first
             q.wait_for(timeout=120000)
+            q.get_by_test_id("inbox-line").first.click()          # Spec 03 v0.34: a digest line expands in place
             pins = q.get_by_test_id("pin")
+            pins.first.wait_for(timeout=30000)
             step("acceptance 19: the inbox shows one question with two marks",
                  page.get_by_test_id("question").filter(has_text="rough climbs").count() == 1 and pins.count() == 2,
                  notes=[n for n in q.get_by_test_id("pin-note").all_inner_texts()])
             if args.browser:
-                h = page.get_by_test_id("questions-handoff")
+                h = page.get_by_test_id("inbox-install")
                 step("on the website the question waits, with the install link",
-                     h.count() == 1 and "“rough climbs” is waiting for Claude." in h.inner_text())
+                     h.count() == 1 and "“rough climbs” is waiting for Claude" in h.inner_text())
             else:
-                step("with a bench there is no hand-off line", page.get_by_test_id("questions-handoff").count() == 0)
+                step("with a bench there is no hand-off line", page.get_by_test_id("inbox-install").count() == 0)
             shot(page, "g-inbox-question.png", page.get_by_test_id("inbox"))
             pins.first.get_by_test_id("pin-open").click()
             page.wait_for_url(re.compile(r".*/flights/.*"), timeout=30000)
@@ -209,13 +213,17 @@ def main() -> int:
             page.goto(url + "#/research")
             q = page.get_by_test_id("question").filter(has_text="rough climbs").first
             q.wait_for(timeout=60000)
-            q.get_by_test_id("question-delete").click()
+            q.get_by_test_id("inbox-item-menu").first.click()     # the item's ⋯ menu
+            page.get_by_test_id("question-delete").click()
             q.get_by_test_id("question-delete-confirm").click()
             un = page.get_by_test_id("questions-unassigned")
             un.wait_for(timeout=30000)
+            un.get_by_test_id("inbox-line").first.click()
+            un.get_by_test_id("pin").first.wait_for(timeout=30000)
             while un.get_by_test_id("pin").count():
                 n = un.get_by_test_id("pin").count()
-                un.get_by_test_id("pin").first.get_by_test_id("pin-delete").click()
+                un.get_by_test_id("pin").first.get_by_test_id("pin-menu").click()     # the mark's ⋯ menu
+                page.get_by_test_id("pin-delete").click()
                 t0 = time.time()
                 while time.time() - t0 < 20 and page.get_by_test_id("questions-unassigned").get_by_test_id("pin").count() == n:
                     time.sleep(0.2)

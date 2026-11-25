@@ -40,8 +40,8 @@ Afterwards, tolerated events collapse on every Flight view into one line per lim
 </figure>
 
 <figure class="screenshot" markdown>
-![A filter's card in the Journal](../img/journal-filter-card.png){ .screenshot }
-<figcaption>The filter's card in the Journal: its status, every flight's excess against the band, and the reference it watches against.</figcaption>
+![A filter's card in the Journal, under Manage limit filters](../img/journal-filter-card.png){ .screenshot }
+<figcaption>The filter's card (Journal → Manage limit filters): its status, every flight's excess against the band, and the reference it watches against.</figcaption>
 </figure>
 
 **What the app keeps watching.** When you create a filter it freezes a reference — your twenty most recent flights that had this event — and from then on compares every new flight with it. The filter's card in the Journal reports a status: *Stable*; *Breached* (an event the filter did not cover); *Drifting* (the last couple of flights went further past the limit, or events are becoming more frequent, than the reference); *Review due* (a set number of engine hours has passed); *Quiet* (no events on the last ten flights — perhaps the filter is no longer needed). Breached and drifting filters are counted on the Journal badge and announced in a banner on the Flights page. *Mark reviewed* clears a breach or a review; drift clears itself when the pattern settles, or you *Re-baseline* the filter if the new pattern is the one you now accept.

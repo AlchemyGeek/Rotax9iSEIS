@@ -86,6 +86,22 @@ describe("Move my workspace (D17)", () => {
     expect(calls.filter((c) => c.url === PROBE_URL)).toHaveLength(1);
   });
 
+  it("on Research home the banner can be dismissed; Settings → App still offers it", async () => {
+    const { unmount } = render(<MoveWorkspaceBanner dismissable />);
+    await screen.findByTestId("move-workspace-button");
+    fireEvent.click(screen.getByTestId("move-dismiss"));
+    expect(screen.queryByTestId("move-workspace")).toBeNull();
+    expect(window.localStorage.getItem("slingology-eis.move-banner-dismissed.ws-1")).toBe("1");
+    unmount();
+    const again = render(<MoveWorkspaceBanner dismissable />);           // Research home, next visit: still dismissed
+    await new Promise((r) => setTimeout(r, 20));
+    expect(again.container.textContent).toBe("");
+    again.unmount();
+    render(<MoveWorkspaceBanner />);                                     // Settings → App: offered
+    expect(await screen.findByTestId("move-workspace-button")).toBeTruthy();
+    expect(screen.queryByTestId("move-dismiss")).toBeNull();
+  });
+
   it("marks the website's workspace as the copy after the move", async () => {
     window.localStorage.setItem("slingology-eis.moved.ws-1", "2026-11-18T10:00:00Z");
     render(<MoveWorkspaceBanner />);

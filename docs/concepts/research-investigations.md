@@ -28,23 +28,31 @@ An investigation is that loop, done by your Claude with EIS as its instrument. Y
 2. **Ask.** In Claude Desktop, open a chat and choose **Investigate** from the chat's **+** menu. With no text it takes your newest open question; with text that names one of your questions it takes that one; anything else is a new question in your words — *"the climb after my touch-and-go at KBLI on Oct 24 felt like a surge; look into it."*
 3. **Claude works.** A notebook opens with your marks — your note, then a log view of each window — and Claude starts from what you saw. You see its steps in the chat and the notebook forming on the Research page. It measures what the question is about: whether something swings and repeats, whether two channels move together, whether a measurement differs before and after a change, which flights stand out — or, for anything else, it loads the data and plots it ([What EIS measures](../reference/what-eis-measures.md)).
 4. **Steer.** *"Compare with every other takeoff." "Does it depend on altitude?" "What does the controller manual say about its governing band?"*
-5. **Read.** The notebook in EIS: the question and summary at the top, then the narrative, each measurement with its output, figures, tables and **log views** — the Flight view's chart for the window that matters, with *Open flight*. The code is folded under *show code*. When Claude finishes, your question is marked *watching* (or what Claude and you decided), with the notebook linked from it.
+5. **Read.** The notebook in EIS: the question and Claude's summary at the top (the summary folds away), then the narrative, each measurement with its output, figures, tables and **log views** — the Flight view's chart for the window that matters, with *Open flight*. The code is folded under *show code*. When Claude finishes, your question is marked *watching* (or what Claude and you decided), with the notebook linked from it.
 
 ![A notebook Claude wrote, on the Research page: header and summary, a log view of the full-power minute](../img/investigations-notebook.png){ .screenshot }
 
-A notebook is an ordinary Jupyter notebook. It opens unchanged in JupyterLab, where you can run it yourself against your workspace ([Run a notebook in JupyterLab](../walkthroughs/notebook-jupyterlab.md)), and *Re-run* on the Research page runs it again on your current flights, holding any output that changed for you to accept or discard. On the website, notebooks open and read the same way; running them needs EIS on your computer.
+A notebook is an ordinary Jupyter notebook. It opens unchanged in JupyterLab, where you can run it yourself against your workspace ([Run a notebook in JupyterLab](../walkthroughs/notebook-jupyterlab.md)), and *Re-run* on the Research page runs it again on your current flights, holding any output that changed for you to accept or discard. Everything else — export as a zip or a page, keep or discard changed outputs, delete — is under **Actions**. On the website, notebooks open and read the same way; running them needs EIS on your computer.
+
+## Research home
+
+The Research page lists your notebooks as cards, newest first, with the inbox below them.
+
+![Research home: three notebooks as cards, and the inbox below with two questions and a pattern EIS raised](../img/investigations-home.png){ .screenshot }
+
+A card says what the notebook is without opening it: where it started (✎ your marks, ◉ something EIS raised, ? a question asked in Claude Desktop, ↓ imported), its title and status, the question, the channels it looked at in the Flight view's colours, how many flights over which dates, its evidence (∿ log views, ◫ figures, ▦ tables), the tests it ran (↻ cycling, ⇄ coupling, ⊟ groups, ◇ unusual), whether its outputs are current, and two or three topic words Claude gave it. Hover over any mark for its name; click a topic word to show only the notebooks that carry it. With more than six notebooks, a row above the cards filters them to *Open* or *Finished*. The statuses everywhere on the page are one dot and one word: *new*, *investigating*, *watch*, *acted*, *nothing here* for questions and what EIS raised; *open*, *finished*, *reopened* for notebooks, a finished notebook's dot coloured by what it concluded.
 
 ## The inbox
 
-The inbox on the Research page holds two kinds of thing, with the same statuses.
+The inbox holds two kinds of thing, with the same statuses, one line each — open items first, what you've resolved behind *Show resolved*. Click a line to open it in place.
 
-**Your questions**, with their marks across flights. Each mark opens its flight at the window, with the channels you were looking at. Rename a question, move a mark to another question (or to *Unassigned*), edit its note, delete it. A question Claude has taken up has *Open the investigation*.
+**Your questions**, with their marks across flights. An open question shows each mark with its time (*Jan 1 · 12:01–12:03 (+1:50 into the flight)*; hover for the full time and zone), its channels and your note; each mark opens its flight at the window, with the channels you were looking at. The **⋯** menu on a question renames, resolves or deletes it; on a mark it edits the note, moves the mark to another question (or to *Unassigned*) or deletes it. A question Claude has taken up has *Open the investigation*.
 
-**What EIS raised.** When the Research page opens after new flights, EIS runs its own cheap scan — no AI — over the preset slices of the recent flights and keeps only patterns that hold across many of them: a repeating cycle in governed rpm, a measurement that has moved against your reference, a group of slices that stands apart. Each comes with what fired and the evidence table (every slice, each opening its flight at that moment). The **Look at this inbox item** prompt in Claude Desktop takes one.
+**What EIS raised.** When the Research page opens after new flights, EIS runs its own cheap scan — no AI — over the preset slices of the recent flights and keeps only patterns that hold across many of them: a repeating cycle in governed rpm, a measurement that has moved against your reference, a group of slices that stands apart. Opened, each says what fired, with *Show the evidence* for the table (every slice, each opening its flight at that moment). The **Look at this inbox item** prompt in Claude Desktop takes one.
 
 ![The inbox on Research home: your question with its marks, and a pattern EIS raised](../img/investigations-inbox.png){ .screenshot }
 
-Mark either kind *Nothing here*, *Watch* or *Acted*, with a note. *Nothing here* is a legitimate result. How much the scan raises is **Settings → Research → Inbox sensitivity**: *quiet* (a pattern in 8 of the last 10 slices), *normal* (6 of 10, the default) or *curious* (4 of 10). On the website the inbox works the same, and an open question carries a line on handing it to Claude with the extension.
+Mark either kind *Nothing here*, *Watch* or *Acted*, with a note, from its **⋯** menu. *Nothing here* is a legitimate result. How much the scan raises is **Settings → Research → Inbox sensitivity**: *quiet* (a pattern in 8 of the last 10 slices), *normal* (6 of 10, the default) or *curious* (4 of 10). On the website the inbox works the same, and an open question carries a line on handing it to Claude with the extension.
 
 The scan never puts anything on a flight's cards, and a single odd flight is not a scan item — that is what your own marks are for. EIS never says what a pattern means; that is the investigation's.
 

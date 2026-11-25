@@ -481,6 +481,11 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     if lacking:
         raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
                                        "saying what it shows; add one beside cell " + ", ".join(lacking))
+    try:
+        tags = NBX.clean_tags(params.get("tags")) if params.get("tags") is not None else None
+        finding = NBX.clean_finding(params.get("finding"))
+    except NBX.NotebookError as e:
+        raise _err(e)
     m = NBX.meta(nb)
     # F17: a follow-up's summary replaces the earlier one; the earlier one
     # stays, with the date it was written, as the notebook's history.
@@ -489,6 +494,16 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
         m["summaries"] = [*(m.get("summaries") or []), {"summary": prev, "finished": m.get("finished")}]
     m.pop("reopened", None)
     m.update({"summary": summary.strip(), "status": "finished", "finished": H._now_iso()})
+    if tags is not None:            # §5.5: Claude's topic words; a follow-up may leave them as they were
+        m["tags"] = tags
+    # v1.2: the one-line finding (the Journal's line); a finish without one drops an earlier one,
+    # which belonged to the earlier summary.
+    if finding:
+        m["finding"] = finding
+    else:
+        m.pop("finding", None)
+    # §5.5: the resolution this finish gave, for the card (a question's defaults to watch, as below).
+    m["resolution"] = params.get("resolution") or ("watch" if (params.get("question") or m.get("question_id")) else None)
     resolved = None
     cand = params.get("inbox_candidate") or m.get("inbox_candidate")
     if cand:
@@ -513,9 +528,8 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     _save_nb(ctx, nb)
     entry = None
     if params.get("journal"):
-        finding = params.get("finding") or summary.strip().split("\n", 1)[0]
         entry = ws.upsert_journal_entry(
-            ctx["workspace_dir"], kind="study_finding", ref_id=f"{m['id']}:summary", what=finding,
+            ctx["workspace_dir"], kind="study_finding", ref_id=f"{m['id']}:summary", what=NBX.journal_line(m, params.get("note")),
             where={"study_id": m["id"], "test_index": None, "study_name": m.get("name")}, note=params.get("note"))
     open_ = [c for c in IB.load(ctx["workspace_dir"])["candidates"] if c.get("status") in IB.OPEN]
     flights = NBX.flights_of(nb)
@@ -832,7 +846,23 @@ def op_question_delete(params: dict, ctx: dict) -> Any:
     return {"deleted": q["id"], "pins_unassigned": n}
 
 
+def op_study_set_tags(params: dict, ctx: dict) -> Any:
+    """Spec 03 v0.37 / Spec 16 §5.5: the owner adds or removes a notebook's
+    tags from the page (`+` on a card or the notebook header). One list,
+    shared with Claude's study_finish tags. Page-only: no MCP tool. The
+    notebook's date is kept — a tag is filing, not an edit."""
+    H._require_active(ctx)
+    nb = notebook(ctx, params.get("study_id"))
+    try:
+        tags = NBX.clean_tags(params.get("tags") or [])
+        NBX.meta(nb)["tags"] = tags
+        NBX.save(ctx["workspace_dir"], nb, touch=False)
+    except NBX.NotebookError as e:
+        raise _err(e)
+    return {"study": NBX.summary(nb)}
+
+
 OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
        "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
-       "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete")
+       "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete", "study_set_tags")
 

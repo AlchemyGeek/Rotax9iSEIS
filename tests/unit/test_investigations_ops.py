@@ -331,6 +331,12 @@ def test_guide(research_ws):
                  "skip_onset_s", '"phase:CLIMB"'):
         assert form in doc, form
     assert "aircraft_record_empty" in g["flags"] and "The record is empty" in doc
+    # Spec 16 §5.5: the guide and the Investigate prompt ask for two or three topic tags at study_finish.
+    assert "Give it `tags`: two or three topic words" in doc and "not what it found" in doc
+    from slingology_eis.investigations import ops as O
+    assert "`tags`: two or three topic words" in (O.PROMPTS_DIR / "investigate.md").read_text()
+    # Spec 16 v1.2: and for a one-line finding beside the summary.
+    assert "Give it `finding`: **one sentence**" in doc and "`finding`: one sentence" in (O.PROMPTS_DIR / "investigate.md").read_text()
     assert g["workspace"]["flights"] == len(ids) and "6 flights" in doc and "Inbox: 0 open" in doc
     _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop"}, "notes": "Governor adjusted 2026-01-03."}))
     g2 = _ok(rpc(h, "guide", {}))
@@ -546,3 +552,174 @@ def test_spec16_23_a_follow_up_reopens_the_notebook_and_keeps_the_earlier_summar
     exp = _ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))
     page = _download(h, exp["download_url"]).decode()
     assert "Earlier summaries (1)" in page and "Oil runs 6 °F warmer this month." in page
+
+
+# ── Spec 16 §5.5: what a notebook says about itself (v1.1) ─────────────────
+
+def test_spec16_5_5_the_card_is_derived_and_listed(research_ws):
+    """list_studies carries each notebook's card — origin, channels, flights
+    and dates, evidence, tests, outputs, resolution, tags — computed by the
+    engine when the notebook is saved; study_finish takes tags."""
+    h, ids = research_ws
+    sid = _notebook(h, "Cycling at full power")
+
+    def card():
+        return next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)["card"]
+
+    c0 = card()
+    assert c0 == {"v": 1, "origin": "asked", "channels": [], "flights": 0, "date_span": None,
+                  "evidence": {"log_views": 0, "figures": 0, "tables": 0}, "tests": [], "outputs": "current",
+                  "resolution": None, "tags": []}
+    if _has_bench(h):
+        _bench_stack()
+        _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
+            "kind": "code", "source": f"r = eis.cycling({_rule_literal()}, 'rpm')\nr.rows"}}))
+        _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
+            "kind": "logview", "flight": ids[0], "start_s": 10, "end_s": 70, "channels": ["rpm", "fuel_flow_gph"]}}))
+        _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "The window."}}))
+        c1 = card()
+        # Facts the eis library recorded as the cells ran: the test and the channels it and the log view used.
+        assert c1["tests"] == ["cycling"] and c1["channels"] == ["rpm", "fuel_flow_gph"]
+        assert c1["flights"] == len(ids) and c1["date_span"] == ["2026-01-01", "2026-01-06"]
+        assert c1["evidence"]["log_views"] == 1 and c1["evidence"]["tables"] >= 1
+        nb = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
+        ran = _sm(next(c for c in nb["cells"] if "eis.cycling" in "".join(c["source"])))["ran"]
+        assert ran["tests"] == ["cycling"] and ran["channels"] == ["rpm"]
+        _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())"}))
+        _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
+        assert card()["outputs"] == "pending"
+        _ok(rpc(h, "study_cells_discard", {"study_id": sid}))
+        assert card()["outputs"] == "current"
+    bad = rpc(h, "study_finish", {"study_id": sid, "summary": "x", "tags": ["a", "b", "c", "d", "e", "f"]})
+    assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS" and "at most 5" in bad["error"]["message"]
+    fin = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "RPM cycles.",
+                                      "tags": [" governor ", "full  power", "Governor"]}))
+    assert fin["study"]["card"]["tags"] == ["governor", "full power"]
+    assert card()["resolution"] is None                         # no item: no resolution
+
+    # An owner's question: origin marks, and the resolution study_finish gave it (watch by default).
+    _ok(rpc(h, "flight_pin", {"flight_id": ids[1], "start_s": 20, "end_s": 40, "channels": ["map_inhg"],
+                              "note": "a dip", "question": {"title": "MAP dips"}}))
+    qid = _ok(rpc(h, "pins_list", {}))["questions"][0]["id"]
+    q_sid = _ok(rpc(h, "study_create", {"name": "MAP dips", "question_id": qid}))["study_id"]
+    row = next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == q_sid)
+    assert row["card"]["origin"] == "marks"
+    if _has_bench(h):
+        assert row["card"]["channels"] == ["map_inhg"] and row["card"]["evidence"]["log_views"] == 1
+        assert row["card"]["date_span"] == ["2026-01-02", "2026-01-02"]
+    fin = _ok(rpc(h, "study_finish", {"study_id": q_sid, "summary": "A dip.", "question": qid}))
+    assert fin["study"]["card"]["resolution"] == "watch"
+    # A follow-up reopens it: no resolution shown until it is finished again.
+    _ok(rpc(h, "study_cells_append", {"study_id": q_sid, "cell": {"kind": "markdown", "source": "## Follow-up"}}))
+    assert next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == q_sid)["card"]["resolution"] is None
+    fin = _ok(rpc(h, "study_finish", {"study_id": q_sid, "summary": "Acted.", "resolution": "acted"}))
+    assert fin["study"]["card"]["resolution"] == "acted" and fin["study"]["card"]["tags"] == []
+
+
+def test_spec16_5_5_an_older_notebook_gets_its_card_on_first_load_and_on_import(research_ws, isolated_packaged_home):
+    import io
+    import zipfile
+    h, ids = research_ws
+    if isinstance(h, NodeHost):
+        pytest.skip("rewrites the notebook straight in the workspace folder")
+    sid = _notebook(h, "Older")
+    ws_dir = next(p.parent for p in (isolated_packaged_home / "workspaces").glob("*/manifest.json"))
+    p = ws_dir / "studies" / sid / "notebook.ipynb"
+    nb = json.loads(p.read_text())
+    del nb["metadata"]["slingology"]["card"]
+    nb["cells"].append({"id": "c9", "cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+                        "source": "r = eis.coupling('full_power')\nr"})      # a cell from before ran.tests existed
+    nb["cells"][-1]["outputs"] = []
+    nb["metadata"]["slingology"]["updated"] = "2026-01-02T03:04:05+00:00"
+    p.write_text(json.dumps(nb))
+    row = next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)
+    assert row["card"]["v"] == 1 and row["card"]["tests"] == ["coupling"] and row["card"]["origin"] == "asked"
+    assert row["updated"] == "2026-01-02T03:04:05+00:00"      # filling in the card isn't an edit: newest-first holds
+    assert "card" in json.loads(p.read_text())["metadata"]["slingology"]       # stored, not recomputed per listing
+    # Import: recomputed (origin imported), whatever card the sender's file carried.
+    data = _download(h, _ok(rpc(h, "export_study", {"study_id": sid}))["download_url"])
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        sent = json.loads(z.read("notebook.ipynb"))
+    sent["metadata"]["slingology"]["card"] = {"v": 1, "origin": "asked", "tags": ["forged"]}
+    got = _ok(rpc(h, "import_study", {"content_base64": base64.b64encode(json.dumps(sent).encode()).decode(),
+                                      "filename": "S.ipynb"}))
+    card = got["notebook"]["metadata"]["slingology"]["card"]
+    assert card["origin"] == "imported" and card["tags"] == [] and card["tests"] == ["coupling"]
+
+
+def test_spec14_6_1_a_research_finding_is_the_title_and_one_line(research_ws):
+    """Spec 14 v0.20 §6.1 / Spec 16 v1.2: study_finish's `finding` is the
+    Journal line, under the notebook's title; without one, the note, else
+    the summary's first sentence. The summary is behind the expand."""
+    h, _ = research_ws
+    sid = _notebook(h, "Oil temperature in cruise")
+    summary = "Oil runs 6 °F warmer in cruise since April. It follows OAT; nothing points at the cooler."
+
+    def finding():
+        j = _ok(rpc(h, "get_journal", {}))
+        e = next(e for e in j["entries"] if e["kind"] == "study_finding")
+        return e, next(s for s in j["sections"] if s["key"] == "findings")
+
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "finding": "Oil runs warmer with OAT, not with age.",
+                                "journal": True}))
+    e, sec = finding()
+    assert (e["title"], e["finding"], e["what"]) == ("Oil temperature in cruise", "Oil runs warmer with OAT, not with age.",
+                                                     "Oil runs warmer with OAT, not with age.")
+    assert e["summary"] == summary and sec["count"] == 1 and sec["total"] == "1 finding"
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "note": "shown to the mechanic", "journal": True}))
+    assert finding()[0]["finding"] == "shown to the mechanic"
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "journal": True}))
+    assert finding()[0]["finding"] == "Oil runs 6 °F warmer in cruise since April."
+    assert len([e for e in _ok(rpc(h, "get_journal", {}))["entries"] if e["kind"] == "study_finding"]) == 1
+    long = "x" * 300
+    assert rpc(h, "study_finish", {"study_id": sid, "summary": summary, "finding": long})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_spec14_6_1_an_older_finding_is_rewritten_from_its_notebook(research_ws, isolated_packaged_home):
+    """Entries written before v0.20 carried the whole summary; the next
+    Journal read rewrites them from the notebook, without dating them."""
+    h, _ = research_ws
+    if isinstance(h, NodeHost):
+        pytest.skip("rewrites journal.json straight in the workspace folder")
+    sid = _notebook(h, "Takeoff oscillation")
+    summary = "RPM swings 180 rpm at full power on 94 of 100 slices.\n\nWhat it means: the governor and the boost control."
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "journal": True}))
+    ws_dir = next(p.parent for p in (isolated_packaged_home / "workspaces").glob("*/manifest.json"))
+    store = json.loads((ws_dir / "journal.json").read_text())
+    e = next(e for e in store["entries"] if e["kind"] == "study_finding")
+    e["what"], e["updated_at"] = summary, "2026-01-02T03:04:05+00:00"           # as 1.1.0 wrote it
+    (ws_dir / "journal.json").write_text(json.dumps(store))
+    got = next(x for x in _ok(rpc(h, "get_journal", {}))["entries"] if x["kind"] == "study_finding")
+    assert got["what"] == got["finding"] == "RPM swings 180 rpm at full power on 94 of 100 slices."
+    assert got["title"] == "Takeoff oscillation" and got["updated_at"] == "2026-01-02T03:04:05+00:00"
+    assert next(x for x in json.loads((ws_dir / "journal.json").read_text())["entries"]
+                if x["kind"] == "study_finding")["what"] == got["what"]                 # rewritten, once
+
+
+def test_spec03_v037_the_owner_sets_a_notebooks_tags(research_ws):
+    """study_set_tags (page-only): the owner's tags and Claude's are one list,
+    on the card at once; the notebook's date is kept."""
+    h, _ = research_ws
+    sid = _notebook(h, "Tags")
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Done.", "tags": ["governor"]}))
+
+    def row():
+        return next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)
+
+    before = row()["updated"]
+    out = _ok(rpc(h, "study_set_tags", {"study_id": sid, "tags": ["governor", "takeoff"]}))
+    assert out["study"]["card"]["tags"] == ["governor", "takeoff"]
+    assert row()["card"]["tags"] == ["governor", "takeoff"] and row()["updated"] == before
+    assert _ok(rpc(h, "study_set_tags", {"study_id": sid, "tags": []}))["study"]["card"]["tags"] == []
+    assert rpc(h, "study_set_tags", {"study_id": sid, "tags": list("abcdef")})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_spec14_6_1_the_summarys_first_sentence():
+    """Without a finding or a note, the Journal line is the summary's first
+    sentence — not cut inside a citation's brackets or at an abbreviation."""
+    from slingology_eis.investigations.ipynb import first_sentence as f
+    assert f("Found: against the OM's values (OM 916 i A/C24 Ed. 0 Rev. 1, p. 30: 29–72.5 psi) the logs stay inside. "
+             "What it means: nothing.") == "Found: against the OM's values (OM 916 i A/C24 Ed. 0 Rev. 1, p. 30: 29–72.5 psi) the logs stay inside."
+    assert f("RPM swings 180 rpm.\n\nWhat it means.") == "RPM swings 180 rpm."
+    assert f("Peaks e.g. at 5,820 rpm stay brief. More.") == "Peaks e.g. at 5,820 rpm stay brief."
+    assert f("## Found: yes. Then") == "Found: yes." and f("No full stop") == "No full stop" and f(None) == ""

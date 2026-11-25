@@ -40,12 +40,25 @@ def golden_of(view) -> dict:
             sm = (c.get("metadata") or {}).get("slingology") or {}
             flags = [f for f, on in (("ran elsewhere", sm.get("ran_elsewhere")), ("read-only", sm.get("read_only"))) if on]
             cells[c["id"]] = {"outputs": [nbhtml.output(o) for o in c.get("outputs") or []], "flags": flags}
-    return {"meta_line": " · ".join(__import__("html").escape(str(x)) for x in (
-                f"by {m.get('author') or 'user'}", m.get("status") or "open", f"engine {m.get('engine') or ''}",
-                (m.get("updated") or "")[:10]) if x),
+    return {"meta_line": nbhtml.meta_line(m),
             "outputs_line": nbhtml.outputs_line(nb),
             "summary": nbhtml.markdown(m.get("summary") or ""),
+            # Spec 03 v0.34: the card's line, the summary block (earlier summaries inside), short window strings.
+            "card_line": nbhtml.card_line(m.get("card")),
+            "summary_block": nbhtml.summary_block(m.get("summary") or "",
+                                                  [{"summary": "Earlier.", "finished": "2026-01-01T00:00:00Z"}]),
+            "short_windows": {lab: nbhtml.short_window(lab) for lab in SHORT_WINDOW_CASES},
             "cells": cells}
+
+
+SHORT_WINDOW_CASES = [
+    "2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight)",
+    "2026-01-01 12:01:05–12:03:10 PST (+01:50–+03:55 into the flight)",
+    "2026-01-01 12:01:05 (+01:50 into the flight)",
+    "2026-03-09 13:01:05–13:03:10 (+1:01:50–+1:03:55 into the flight)",
+    "+06:07–+07:04 into the flight",
+    "not a window",
+]
 
 
 def test_the_export_matches_the_golden_the_page_is_checked_against():
@@ -60,8 +73,14 @@ def test_the_export_page_carries_every_piece():
     view = _view()
     page = nbhtml.render(view["notebook"], _read(view["files"]))
     g = golden_of(view)
-    assert g["meta_line"] in page and g["outputs_line"] in page and g["summary"] in page
-    for cell in g["cells"].values():
+    assert g["meta_line"] in page and g["outputs_line"] in page and g["summary"] in page and g["card_line"] in page
+    assert '<details class="summary" open><summary>Summary</summary>' in page
+    assert 'id="setup"' not in page and "eis.open(" not in page          # the setup cell isn't shown
+    assert "First takeoff · Jan 2 · 09:06–09:07 (+6:00 into the flight)" in page
+    assert 'title="2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)"' in page
+    for cid, cell in g["cells"].items():
+        if cid == "setup":
+            continue
         for piece in [cell.get("markdown") or ""] + cell.get("outputs", []):
             assert piece in page
 

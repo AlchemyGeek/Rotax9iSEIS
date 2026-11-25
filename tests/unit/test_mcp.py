@@ -98,7 +98,7 @@ def _read_cases(ids, sid):
         ("documents_list", {}, None),
         ("document_read", {"name": "om.md", "page": 2}, None),
         ("journal_list", {}, T.shape_journal),
-        ("studies_list", {}, None),
+        ("studies_list", {}, T.shape_studies),
         ("study_read", {"study_id": sid}, T.shape_study),
         ("inbox_list", {}, None),
         ("pins_list", {}, None),

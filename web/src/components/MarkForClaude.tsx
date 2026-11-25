@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getEngineClient } from "../lib/engineClient";
 import { channelLabel } from "../lib/research";
+import { windowTime } from "../lib/timeLabel";
 import type { OwnerQuestionWithPins, PinQuestionTarget } from "../types/contract";
 
 const client = getEngineClient();
@@ -23,16 +24,14 @@ const INPUT: React.CSSProperties = {
 
 type Choice = "new" | "existing" | "none";
 
-function clock(s: number): string {
-  const t = Math.round(s), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), r = t % 60;
-  return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
-}
-
-export function MarkForClaude({ flightId, window: win, channels, zoomed }: {
+export function MarkForClaude({ flightId, window: win, channels, zoomed, startLocal = null, tz = null }: {
   flightId: string;
   window: [number, number];
   channels: string[];
   zoomed: boolean;
+  /** The flight's local start and zone (get_flight's ident), for the window's time (Spec 03 v0.34). */
+  startLocal?: string | null;
+  tz?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [questions, setQuestions] = useState<OwnerQuestionWithPins[] | null>(null);
@@ -44,6 +43,7 @@ export function MarkForClaude({ flightId, window: win, channels, zoomed }: {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [a, b] = [Math.floor(win[0]), Math.ceil(win[1])];
+  const when = windowTime(startLocal, tz, a, b);
 
   async function begin() {
     setOpen(true);
@@ -74,7 +74,7 @@ export function MarkForClaude({ flightId, window: win, channels, zoomed }: {
     try {
       const r = await client.flightPin({ flight_id: flightId, start_s: a, end_s: b, channels, note: note.trim() || null, question: target });
       setOpen(false);
-      setDone(`Marked ${clock(a)}–${clock(b)} ${r.where}. In Claude Desktop, choose Investigate${r.question ? ` — with no text it takes your newest open question` : ""}.`);
+      setDone(`Marked ${when.short} ${r.where}. In Claude Desktop, choose Investigate${r.question ? ` — with no text it takes your newest open question` : ""}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -95,8 +95,8 @@ export function MarkForClaude({ flightId, window: win, channels, zoomed }: {
       {open && (
         <div role="dialog" aria-label="Mark for Claude" data-testid="mark-dialog"
           style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", background: "var(--panel)", maxWidth: 560, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--text-secondary)" }} data-testid="mark-window">
-            {clock(a)}–{clock(b)} into the flight · {channels.length ? channels.map(channelLabel).join(", ") : "no channels shown"}
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }} data-testid="mark-window" title={when.full}>
+            {when.short} · {channels.length ? channels.map(channelLabel).join(", ") : "no channels shown"}
           </div>
           <label style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 4 }}>
             What do you see here?

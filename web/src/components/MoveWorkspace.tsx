@@ -18,8 +18,24 @@ const BOX: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 12,
 };
 
-export function MoveWorkspaceBanner() {
+// Spec 03 v0.34: on Research home the banner can be dismissed (per workspace,
+// in this browser); after that it is offered only in Settings → App.
+const DISMISSED = "slingology-eis.move-banner-dismissed.";
+
+export function moveBannerDismissed(workspaceId: string): boolean {
+  try { return localStorage.getItem(DISMISSED + workspaceId) === "1"; } catch { return false; }
+}
+
+function Dismiss({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" aria-label="Dismiss" title="Hide this here; it stays in Settings → App" onClick={onClick} data-testid="move-dismiss"
+      style={{ background: "none", border: "none", color: "var(--text-tertiary)", fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "0 2px" }}>×</button>
+  );
+}
+
+export function MoveWorkspaceBanner({ dismissable = false }: { dismissable?: boolean }) {
   const caps = useCapabilities();
+  const [dismissed, setDismissed] = useState(false);
   const offered = caps?.features.move_workspace === true;
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [local, setLocal] = useState(false);
@@ -39,12 +55,18 @@ export function MoveWorkspaceBanner() {
   }, [offered]);
 
   if (!offered || !workspaceId) return null;
+  if (dismissable && (dismissed || moveBannerDismissed(workspaceId))) return null;
+  const dismiss = dismissable ? () => {
+    try { localStorage.setItem(DISMISSED + workspaceId, "1"); } catch { /* private mode: for this visit */ }
+    setDismissed(true);
+  } : null;
   const moved = movedAt(workspaceId);
   if (moved) {
     return (
       <div style={{ ...BOX, borderColor: "var(--border)" }} data-testid="move-copy">
         <span><strong>This is now the copy.</strong> You moved this workspace to EIS on this computer on {new Date(moved).toLocaleDateString()}; work there from now on.</span>
         <a href={`${LOCAL_EIS}/`} data-testid="move-open-local">Open EIS on this computer</a>
+        {dismiss && <Dismiss onClick={dismiss} />}
       </div>
     );
   }
@@ -77,6 +99,7 @@ export function MoveWorkspaceBanner() {
         style={{ padding: "6px 14px", borderRadius: 6, background: "var(--brand)", border: "none", color: "var(--on-brand)", fontSize: 12, fontWeight: 600, cursor: step ? "default" : "pointer" }}>
         {step ? "Moving…" : "Move my workspace to EIS on this computer"}
       </button>
+      {dismiss && !step && <Dismiss onClick={dismiss} />}
     </div>
   );
 }

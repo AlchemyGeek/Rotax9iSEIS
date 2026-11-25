@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { windowTime } from "../../lib/timeLabel";
 import { useNavigate } from "react-router-dom";
 import { EngineRpcError, getEngineClient } from "../../lib/engineClient";
 import { ChartSessionProvider } from "../../lib/chartSession";
@@ -27,11 +28,12 @@ function clock(s: number): string {
 export function LogViewCell({ view, svgHtml }: { view: LogViewRef; svgHtml: string }) {
   const [state, setState] = useState<"loading" | "live" | "absent" | "failed">("loading");
   const [fa, setFa] = useState<FlightAnalysis | null>(null);
+  const [ident, setIdent] = useState<Ident>(null);
 
   useEffect(() => {
     let live = true;
     client.getFlight(view.flight).then(
-      (got) => { if (live) { setFa(got.flight_analysis); setState("live"); } },
+      (got) => { if (live) { setFa(got.flight_analysis); setIdent(got.ident ?? null); setState("live"); } },
       (e) => { if (live) setState(e instanceof EngineRpcError && e.code === "NOT_FOUND" ? "absent" : "failed"); },
     );
     return () => { live = false; };
@@ -41,7 +43,7 @@ export function LogViewCell({ view, svgHtml }: { view: LogViewRef; svgHtml: stri
   if (state === "live" && fa) {
     return (
       <ChartSessionProvider initialSlots={view.channels}>
-        <LiveLogView view={view} fa={fa} onFail={() => setState("failed")} />
+        <LiveLogView view={view} fa={fa} ident={ident} onFail={() => setState("failed")} />
       </ChartSessionProvider>
     );
   }
@@ -54,7 +56,9 @@ export function LogViewCell({ view, svgHtml }: { view: LogViewRef; svgHtml: stri
   );
 }
 
-function LiveLogView({ view, fa, onFail }: { view: LogViewRef; fa: FlightAnalysis; onFail: () => void }) {
+type Ident = { start_local?: string | null; tz_abbrev?: string | null } | null;
+
+function LiveLogView({ view, fa, ident, onFail }: { view: LogViewRef; fa: FlightAnalysis; ident: Ident; onFail: () => void }) {
   const navigate = useNavigate();
   const tl = useTimeline({ phases: fa.phases ?? EMPTY_PHASES, usingFixture: false });
   const placed = useRef(false);
@@ -101,8 +105,9 @@ function LiveLogView({ view, fa, onFail }: { view: LogViewRef; fa: FlightAnalysi
   return (
     <div data-testid="logview-live">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>{logviewCaption(view)}</span>
-        {view.flight_date_local && <span className="mono" style={MUTED}>{view.flight_date_local} · {clock(view.start_s)}–{clock(view.end_s)} into the flight</span>}
+        {/* Spec 03 v0.34: the title and the short window; the full local form with its zone on hover. */}
+        <span style={{ fontSize: 15, fontWeight: 600 }} title={view.window_label ?? undefined} data-testid="logview-caption">{logviewCaption(view)}</span>
+        {!view.window_label && view.flight_date_local && <span className="mono" style={MUTED}>{view.flight_date_local} · {windowTime(null, null, view.start_s, view.end_s).short}</span>}
         <span style={{ flexGrow: 1 }} />
         <button type="button" style={BUTTON} onClick={openFlight} data-testid="open-flight">Open flight</button>
       </div>
@@ -111,6 +116,7 @@ function LiveLogView({ view, fa, onFail }: { view: LogViewRef; fa: FlightAnalysi
         phases={fa.phases}
         availableChannels={pickableChannels(fa.available_channels, fa.provenance.channel_assignments)}
         startUtc={fa.header.start_utc}
+        startLocal={ident?.start_local ?? null} tz={ident?.tz_abbrev ?? null}
         hasPhaseWarning={false}
         markers={markers}
         emptyText="This flight's log isn't retained here, so the chart can't be drawn."

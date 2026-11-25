@@ -30,7 +30,7 @@ If you have seen it on other flights, mark those windows under the same question
 
 ## 5. Find it in the inbox
 
-**Research** in the top bar: your question is in the inbox, with its marks. A mark opens its flight at the window, with the channels you were looking at. Rename the question, edit a note, move a mark to another question, or delete one.
+**Research** in the top bar: your question is in the inbox below the notebooks — click its line to see its marks. A mark opens its flight at the window, with the channels you were looking at. The **⋯** menus rename the question, edit a note, move a mark to another question, or delete one.
 
 ## 6. Hand it to Claude
 

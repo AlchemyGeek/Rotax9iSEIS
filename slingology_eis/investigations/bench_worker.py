@@ -369,6 +369,7 @@ def main(request_path: str) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     body = json.dumps({"status": status, "outputs": outputs, "flights": sorted(w.touched), "ms": ms,
+                       "channels": w.channels_used, "tests": w.tests_used,
                        "peak_rss_mb": round(_peak_rss_mb(), 1)}).encode()
     view = memoryview(body)
     while view:

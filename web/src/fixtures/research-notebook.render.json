@@ -2,6 +2,16 @@
  "meta_line": "by claude · finished · engine 1.0.2 · 2026-01-02",
  "outputs_line": "outputs: 1 cell with new outputs pending · 1 cell ran elsewhere · 1 cell read-only (flights not here)",
  "summary": "<p>RPM swings <strong>180 rpm</strong> about the setpoint.</p>\n<p>Watch it.</p>",
+ "card_line": "<p class=\"meta card\">? From a question asked in Claude Desktop · RPM MAP · 1 flight · Jan 2 · ∿ 1 log view ◫ 2 figures ▦ 2 tables · ↻ cycling · tags: governor, full power</p>",
+ "summary_block": "<details class=\"summary\" open><summary>Summary</summary><p>RPM swings <strong>180 rpm</strong> about the setpoint.</p>\n<p>Watch it.</p><details class=\"summary-history\"><summary>Earlier summaries (1)</summary><div class=\"earlier\"><p class=\"meta\">Summary of 2026-01-01</p><p>Earlier.</p></div></details></details>",
+ "short_windows": {
+  "2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight)": "Oct 24 · 22:26:07–22:26:53 (+10:16 into the flight)",
+  "2026-01-01 12:01:05–12:03:10 PST (+01:50–+03:55 into the flight)": "Jan 1 · 12:01–12:03 (+1:50 into the flight)",
+  "2026-01-01 12:01:05 (+01:50 into the flight)": "Jan 1 · 12:01 (+1:50 into the flight)",
+  "2026-03-09 13:01:05–13:03:10 (+1:01:50–+1:03:55 into the flight)": "Mar 9 · 13:01–13:03 (+1:01:50 into the flight)",
+  "+06:07–+07:04 into the flight": "+6:07–+7:04 into the flight",
+  "not a window": "not a window"
+ },
  "cells": {
   "setup": {
    "outputs": [],
@@ -54,7 +64,7 @@
   },
   "c10": {
    "outputs": [
-    "<figure class=\"logview\"><img class=\"figure\" alt=\"First takeoff\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjxwb2x5bGluZSBwb2ludHM9IjAsMzAgMjAsMTAgNDAsMzAgNjAsMTAgODAsMzAgMTAwLDEwIDEyMCwzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzMzIi8+PC9zdmc+\"><figcaption>First takeoff</figcaption></figure>"
+    "<figure class=\"logview\"><img class=\"figure\" alt=\"First takeoff · Jan 2 · 09:06–09:07 (+6:00 into the flight)\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjxwb2x5bGluZSBwb2ludHM9IjAsMzAgMjAsMTAgNDAsMzAgNjAsMTAgODAsMzAgMTAwLDEwIDEyMCwzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzMzIi8+PC9zdmc+\"><figcaption title=\"2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)\">First takeoff · Jan 2 · 09:06–09:07 (+6:00 into the flight)</figcaption></figure>"
    ],
    "flags": []
   },

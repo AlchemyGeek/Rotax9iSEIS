@@ -172,7 +172,10 @@ td {
 .nb .cell.markdown h1 { font-size: 21px; margin: 16px 0 8px; }
 .nb .cell.markdown h2, .nb .summary h2 { font-size: 18px; margin: 14px 0 6px; }
 .nb .cell.markdown h3 { font-size: 15px; margin: 12px 0 4px; }
-.nb .summary { font-size: 15px; line-height: 1.6; }
+.nb .summary { font-size: 15px; line-height: 1.6; font-weight: 400; color: var(--text-primary); }
+/* Spec 03 v0.34: the summary is a collapsible block, open by default, in the body type (not bold). */
+.nb details.summary { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px; }
+.nb details.summary > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 2px; }
 .nb .cell.markdown p, .nb .summary p { margin: 8px 0; }
 .nb .cell.markdown blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
 .nb .cell.markdown a { color: var(--link); }
@@ -195,3 +198,10 @@ td {
 .nb details.summary-history .earlier { border-left: 3px solid var(--border); padding-left: 12px; margin: 10px 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
 .nb details.summary-history .earlier .meta { font-size: 12px; color: var(--text-tertiary); margin: 0 0 4px; }
 .nb .pending { border-left: 3px solid var(--severity-watch); padding-left: 10px; margin-top: 6px; }
+
+/* Spec 03 v0.34 §5.10 — a notebook card is one link (its title), stretched over the card. */
+.nb-card:hover { border-color: var(--brand-tint) !important; }
+.nb-card .card-link::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+.nb-card .card-link:focus-visible { outline: none; }
+.nb-card .card-link:focus-visible::after { outline: 2px solid var(--brand-tint); outline-offset: 2px; }
+.inbox-line:hover { background: var(--panel-control); }

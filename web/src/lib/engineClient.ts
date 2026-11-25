@@ -33,6 +33,7 @@ import type {
   FleetSelectionResult,
   FlightAnalysis,
   JournalEntry,
+  JournalSection,
   ReferenceChangeMarker,
   ReferenceState,
   LimitFilter,
@@ -128,7 +129,7 @@ export interface EngineClient {
   // its Journal entry; reset one to shipped (from Settings or Journal).
   listChangedSettings(): Promise<{ settings: ChangedSetting[] }>;
   resetSetting(refId: string): Promise<FleetAnalysis>;
-  getJournal(): Promise<{ entries: JournalEntry[] }>;
+  getJournal(): Promise<{ entries: JournalEntry[]; sections?: JournalSection[] }>;
   getDefaultRules(): Promise<RuleSet>;
   ingestLog(file: UploadFile): Promise<IngestResult>;
   analyzeFlight(file: UploadFile, engine?: string): Promise<FlightAnalysis>;
@@ -138,6 +139,7 @@ export interface EngineClient {
   getFlight(flightId: string): Promise<{
     flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
     reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+    ident?: { start_local?: string | null; tz_abbrev?: string | null } | null;
   }>;
   getFleet(): Promise<FleetAnalysis>;
   rebuildFleet(): Promise<FleetAnalysis>;
@@ -279,6 +281,8 @@ export interface EngineClient {
   pinsList(args?: { status?: InboxStatus[] }): Promise<PinsListing>;
   questionResolve(args: { question_id: string; status: InboxStatus; study_id?: string | null; note?: string | null }): Promise<{ question: OwnerQuestion }>;
   questionEdit(args: { question_id: string; title?: string; note?: string | null }): Promise<{ question: OwnerQuestion }>;
+  /** Spec 03 v0.37: the owner's tags on a notebook (one list with Claude's). Page-only. */
+  studySetTags(args: { study_id: string; tags: string[] }): Promise<{ study: StudySummary }>;
   questionDelete(questionId: string): Promise<{ deleted: string; pins_unassigned: number }>;
   pinEdit(args: { pin_id: string; note?: string | null; question?: PinQuestionTarget; channels?: string[] }): Promise<{ pin: Pin; question: OwnerQuestion | null }>;
   pinDelete(pinId: string): Promise<{ deleted: string }>;
@@ -427,7 +431,7 @@ export class LocalServerClient implements EngineClient {
   }
 
   getJournal() {
-    return this.rpc<{ entries: JournalEntry[] }>("get_journal", {});
+    return this.rpc<{ entries: JournalEntry[]; sections?: JournalSection[] }>("get_journal", {});
   }
 
   getDefaultRules() {
@@ -469,6 +473,7 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{
       flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
       reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+      ident?: { start_local?: string | null; tz_abbrev?: string | null } | null;
     }>(
       "get_flight",
       { flight_id: flightId }
@@ -816,6 +821,9 @@ export class LocalServerClient implements EngineClient {
   }
   questionEdit(args: { question_id: string; title?: string; note?: string | null }) {
     return this.rpc<{ question: OwnerQuestion }>("question_edit", args);
+  }
+  studySetTags(args: { study_id: string; tags: string[] }) {
+    return this.rpc<{ study: StudySummary }>("study_set_tags", args);
   }
   questionDelete(questionId: string) {
     return this.rpc<{ deleted: string; pins_unassigned: number }>("question_delete", { question_id: questionId });

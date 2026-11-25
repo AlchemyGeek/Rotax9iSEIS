@@ -8,19 +8,25 @@ import { notifyFiltersChanged } from "../lib/filterAttention";
 import { notifyShiftHistoryChanged } from "../lib/shiftHistoryAttention";
 import { EngineRpcError, getEngineClient, type FlightSummary } from "../lib/engineClient";
 import { useCapabilities } from "../lib/capabilities";
-import type { Annotation, FilterTarget, JournalEntry, JournalEntryKind } from "../types/contract";
+import type { Annotation, FilterTarget, JournalEntry, JournalEntryKind, JournalSection } from "../types/contract";
 import { InlineHelp } from "../components/InlineHelp";
 import { ScopeCaption } from "../components/ScopeCaption";
+import { ActionMenu, type MenuItem } from "../components/research/bits";
 import { APPLY_LABEL, filterScope, type Scope } from "../lib/scope";
 
 const client = getEngineClient();
 
-// Spec 14 v0.10 §6 — Journal is the register of decisions in force. Each
-// decision has exactly one entry while it stands: reversing it removes the
-// entry, editing it updates the entry. The counted effect is live — the
-// server recomputes it every time this page opens — and a decision that
-// currently does nothing says so. Journal creates nothing itself except a
-// free-text annotation; every other decision is made where its result is.
+// Spec 14 §6 — Journal is the register of decisions in force: one entry per
+// decision while it stands; reversing it removes the entry, editing it
+// updates it. The effect is live — the engine recomputes it each time the
+// page opens — and a decision that currently does nothing says so.
+//
+// §6.4 (v0.20) — the page answers one glance: what is in force, and does
+// anything need me? Change notices first (the page's one accent), then the
+// entries one line each, grouped by kind in order of consequence with each
+// section's count and total effect (sections, titles and phrases come from
+// get_journal: the page computes nothing). A line opens in place to its
+// value, scope, reason, note, dates and a ⋯ menu with the actions.
 
 // §7.5 — the scope of the decision each entry stands for.
 const ENTRY_SCOPE: Partial<Record<JournalEntryKind, Scope>> = {
@@ -37,23 +43,29 @@ function settingsTab(e: JournalEntry): string {
   return (e.where as { tab?: string } | null)?.tab ?? "reference";
 }
 
-// The full §6.1 taxonomy, in table order. acknowledged_insight has no
-// entries yet (Spec 11 silencing is not built); its chip still shows so
-// the taxonomy reads as complete.
-const KIND_ORDER: JournalEntryKind[] = [
-  "acknowledged_insight", "limit_filter", "disabled_topic", "rule_edit", "changed_setting",
-  "exclusion", "reference_pin", "annotation", "study_finding",
-];
 const KIND_LABELS: Record<JournalEntryKind, string> = {
   acknowledged_insight: "Acknowledged insight",
-  limit_filter: "Filter",
+  limit_filter: "Limit filter",
   disabled_topic: "Disabled topic",
   rule_edit: "Rule edit",
   changed_setting: "Changed setting",
   exclusion: "Excluded from reference",
   reference_pin: "Reference pinned",
   annotation: "Annotation",
-  study_finding: "Research finding", // Spec 06 §10.3 — noted from a study
+  study_finding: "Research finding",
+};
+
+// The kind glyph at the head of a line; its name is the hover text.
+const KIND_GLYPH: Record<JournalEntryKind, string> = {
+  limit_filter: "⊖",
+  exclusion: "⊘",
+  changed_setting: "≠",
+  rule_edit: "≠",
+  disabled_topic: "○",
+  reference_pin: "⌖",
+  study_finding: "▤",
+  annotation: "❝",
+  acknowledged_insight: "✓",
 };
 
 // §6.1 "Removed by" — the action that ends each decision.
@@ -69,9 +81,16 @@ const REMOVE_LABEL: Record<JournalEntryKind, string> = {
   study_finding: "Remove from Journal",
 };
 
-function formatDate(iso: string): string {
+function longDate(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
 }
 
 // What removing the decision will do — the original decision's preview,
@@ -92,33 +111,60 @@ function removalPreview(e: JournalEntry): string {
     case "annotation":
       return "The note is deleted.";
     case "study_finding":
-      return "The finding leaves the Journal; the study keeps it.";
+      return "The finding leaves the Journal; the notebook keeps it.";
     default:
       return "";
   }
 }
 
-type GroupBy = "date" | "flight";
+type GroupBy = "kind" | "date" | "flight";
+
+// §6.4 item 4: titles at body size, secondary one step down and one grey, nothing under 13 px.
+const TITLE: React.CSSProperties = { fontSize: 14, fontWeight: 400, color: "var(--text-primary)" };
+const SECONDARY: React.CSSProperties = { fontSize: 13, color: "var(--text-secondary)" };
+const QUIET: React.CSSProperties = { fontSize: 13, color: "var(--text-tertiary)" };
+const LINK: React.CSSProperties = {
+  background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13,
+  color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2,
+};
+const BUTTON = (primary: boolean): React.CSSProperties => ({
+  padding: "5px 11px", borderRadius: 6, fontSize: 13, cursor: "pointer", fontWeight: primary ? 600 : 400,
+  background: primary ? "var(--brand)" : "transparent", color: primary ? "var(--on-brand)" : "var(--text-secondary)",
+  border: primary ? "none" : "1px solid var(--border)",
+});
+const SEGMENT = (active: boolean): React.CSSProperties => ({
+  padding: "3px 10px", fontSize: 13, cursor: "pointer", border: "1px solid var(--border)",
+  background: active ? "var(--panel-control)" : "transparent", color: active ? "var(--text-primary)" : "var(--text-secondary)",
+});
 
 export function Journal() {
   const navigate = useNavigate();
   // Spec 14 v0.13 §5: Settings links a changed setting to its entry here.
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const focusEntry = params.get("entry");
-  const [activeTab, setActiveTab] = useState<"journal" | "filters">("journal");
+  // The filter manager is the URL's ?filters=1, so a link to it works with the page already open,
+  // and the browser's Back returns to the Journal.
+  const managing = params.get("filters") === "1";
+  const setManaging = (on: boolean) => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    if (on) next.set("filters", "1"); else next.delete("filters");
+    return next;
+  });
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [sections, setSections] = useState<JournalSection[] | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [flights, setFlights] = useState<FlightSummary[]>([]);
   const [usingFixture, setUsingFixture] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [kindFilter, setKindFilter] = useState<JournalEntryKind | "all">("all");
-  const [groupBy, setGroupBy] = useState<GroupBy>("date");
+  const [query, setQuery] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupBy>("kind");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusEntry ? [focusEntry] : []));
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
   // One entry at a time is being edited or removed.
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [filterCount, setFilterCount] = useState<number | null>(null);
   // The server answered but couldn't read the Journal — say so, rather
   // than showing an empty sample page as if there were no decisions.
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -131,7 +177,7 @@ export function Journal() {
       client.getJournal().catch((err) => {
         if (err instanceof EngineRpcError && err.code === "NO_ACTIVE_WORKSPACE") {
           setNoWorkspace(true);
-          return { entries: [] as JournalEntry[] };
+          return { entries: [] as JournalEntry[], sections: [] as JournalSection[] };
         }
         throw err;
       }),
@@ -139,6 +185,7 @@ export function Journal() {
       client.listFlights().catch(() => [] as FlightSummary[]),
     ]);
     setEntries(j.entries);
+    setSections(j.sections ?? null);
     setAnnotations(a.annotations);
     setFlights(f);
   }
@@ -177,7 +224,7 @@ export function Journal() {
     }
   }
 
-  // Opened from a Settings mark: bring that entry into view.
+  // Opened from a Settings mark: bring that entry into view, opened.
   useEffect(() => {
     if (focusEntry) document.getElementById(`journal-entry-${focusEntry}`)?.scrollIntoView?.({ block: "center" });
   }, [entries, focusEntry]);
@@ -185,40 +232,50 @@ export function Journal() {
   const annotationById = useMemo(() => new Map(annotations.map((a) => [a.id, a])), [annotations]);
   const flightById = useMemo(() => new Map(flights.map((f) => [f.flight_id, f])), [flights]);
 
-  const kindCounts = useMemo(() => {
-    const m = new Map<JournalEntryKind, number>();
-    for (const e of entries) m.set(e.kind, (m.get(e.kind) ?? 0) + 1);
-    return m;
-  }, [entries]);
-
-  // Most recently changed first; entries with an open change notice float
-  // to the top (§6.2).
-  const visible = useMemo(() => {
-    const base = kindFilter === "all" ? entries : entries.filter((e) => e.kind === kindFilter);
-    return [...base].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  }, [entries, kindFilter]);
-  const attention = visible.filter((e) => (e.notices ?? []).length > 0);
-  const rest = visible.filter((e) => (e.notices ?? []).length === 0);
-
   function flightIdOf(e: JournalEntry): string | null {
     const fid = (e.where as { flight_id?: string } | null | undefined)?.flight_id;
-    return typeof fid === "string" ? fid : null;
+    return typeof fid === "string" ? fid : e.kind === "exclusion" ? e.ref_id : null;
   }
-
   function flightLabel(fid: string): string {
     const f = flightById.get(fid);
     return f ? `${f.header.date} · ${f.source_filename ?? fid}` : fid;
   }
+  const titleOf = (e: JournalEntry) => e.title ?? e.what;
 
+  // Search: title, reason, note, finding and flight (§6.4 item 3).
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    return new Set(entries.filter((e) => {
+      const fid = flightIdOf(e);
+      const hay = [titleOf(e), e.what, e.reason, e.note, e.finding, fid ? flightLabel(fid) : null,
+        e.kind === "annotation" ? annotationById.get(e.ref_id)?.note : null].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    }).map((e) => e.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, entries, flightById, annotationById]);
+  const shown = (e: JournalEntry) => !matches || matches.has(e.id);
+  const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
+
+  // The groups to draw: the engine's sections by kind; by date or by flight, newest first.
   const groups = useMemo(() => {
-    const out: { key: string; label: string; entries: JournalEntry[] }[] = [];
+    type Group = { key: string; label: string; total?: string; open: boolean; entries: JournalEntry[]; section?: JournalSection };
+    if (groupBy === "kind") {
+      const secs = sections ?? (entries.length ? [{ key: "all", label: "Decisions", kinds: [], count: entries.length, total: "",
+        flights: 0, open: true, entry_ids: entries.map((e) => e.id) } as JournalSection] : []);
+      return secs.map((s): Group => ({
+        key: s.key, label: s.label, total: s.total, open: s.open, section: s,
+        entries: s.entry_ids.map((id) => byId.get(id)).filter((e): e is JournalEntry => !!e),
+      }));
+    }
+    const out: Group[] = [];
     const index = new Map<string, number>();
-    for (const e of rest) {
+    for (const e of [...entries].sort((a, b) => b.updated_at.localeCompare(a.updated_at))) {
       let key: string;
       let label: string;
       if (groupBy === "date") {
         key = e.updated_at.slice(0, 10);
-        label = formatDate(e.updated_at);
+        label = longDate(`${key}T12:00:00`);       // the key's own day, whatever the browser's zone
       } else {
         const fid = flightIdOf(e);
         key = fid ?? "_workspace";
@@ -226,22 +283,27 @@ export function Journal() {
       }
       if (!index.has(key)) {
         index.set(key, out.length);
-        out.push({ key, label, entries: [] });
+        out.push({ key, label, open: true, entries: [] });
       }
       out[index.get(key)!].entries.push(e);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rest, groupBy, flightById]);
+  }, [groupBy, sections, entries, byId, flightById]);
+
+  const noticed = entries.filter((e) => (e.notices ?? []).length > 0);
 
   function openWhere(e: JournalEntry) {
     const fid = flightIdOf(e);
     if (fid) navigate(`/flights/${fid}`);
-    else if (e.kind === "limit_filter") setActiveTab("filters");
+    else if (e.kind === "limit_filter") setManaging(true);
     else if (e.kind === "reference_pin") navigate(`/trends?metric=${encodeURIComponent(e.ref_id)}`);
     else if (e.kind === "changed_setting") navigate(`/settings?tab=${settingsTab(e)}`);
     else if (e.kind === "study_finding") navigate(`/research/${encodeURIComponent(String((e.where as { study_id?: string } | null)?.study_id ?? ""))}`);
   }
+  const WHERE_LABEL: Partial<Record<JournalEntryKind, string>> = {
+    limit_filter: "Open in limit filters", reference_pin: "Open in Trends", changed_setting: "Open in Settings", study_finding: "Open the notebook",
+  };
 
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -300,223 +362,221 @@ export function Journal() {
     });
   }
 
-  const canEdit = (k: JournalEntryKind) => k !== "disabled_topic" && k !== "acknowledged_insight";
+  const canEdit = (k: JournalEntryKind) => k !== "disabled_topic" && k !== "acknowledged_insight" && k !== "study_finding";
   const scopeOf = (e: JournalEntry): Scope | undefined =>
     e.kind === "limit_filter" ? filterScope((e.where as { target?: FilterTarget } | null)?.target)
       // Spec 14 v0.14 §5.3: a log-channel assignment is not a comparison setting.
       : e.kind === "changed_setting" && e.ref_id.startsWith("channel_assignment:") ? "workspace"
       : ENTRY_SCOPE[e.kind];
 
-  const LINK: React.CSSProperties = { background: "none", border: "none", padding: 0, color: "var(--text-tertiary)", cursor: "pointer", fontSize: 11 };
-  const BUTTON = (primary: boolean): React.CSSProperties => ({
-    padding: "5px 11px", borderRadius: 6, fontSize: 11, cursor: "pointer", fontWeight: primary ? 600 : 400,
-    background: primary ? "var(--brand)" : "transparent", color: primary ? "var(--on-brand)" : "var(--text-secondary)",
-    border: primary ? "none" : "1px solid var(--border)",
-  });
+  function toggleEntry(id: string) {
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  function noticeAction(e: JournalEntry, kind: string) {
+    if (usingFixture) return null;
+    return kind === "no_effect"
+      ? <button type="button" style={LINK} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>Keep it</button>
+      : <button type="button" style={LINK} onClick={() => setManaging(true)}>Review the filter →</button>;
+  }
 
   function renderEntry(e: JournalEntry) {
     const scope = scopeOf(e);
-    const live = e.kind === "annotation" ? annotationById.get(e.ref_id) : null;
+    const isOpen = expanded.has(e.id);
     const isEditing = editing === e.id;
     const isRemoving = removing === e.id;
+    const zero = !!e.effect?.zero;
+    const secondary = e.kind === "study_finding" ? e.finding ?? e.what : e.effect?.short ?? e.effect?.text ?? null;
+    const note = e.kind === "annotation" ? annotationById.get(e.ref_id)?.note ?? null : e.note;
+    const where = flightIdOf(e) ? "Open the flight" : WHERE_LABEL[e.kind];
+    const items: MenuItem[] = usingFixture ? [] : [
+      ...(canEdit(e.kind) ? [{ label: "Edit", onSelect: () => { toggleOpen(e.id); startEdit(e); }, testid: "journal-edit" }] : []),
+      ...(e.kind === "study_finding" ? [{ label: "Open the notebook", onSelect: () => openWhere(e), testid: "journal-open-notebook" }] : []),
+      { label: REMOVE_LABEL[e.kind], onSelect: () => { toggleOpen(e.id); setEditing(null); setRemoving(e.id); }, testid: "journal-remove", danger: true },
+    ];
+    function toggleOpen(id: string) {
+      setExpanded((s) => (s.has(id) ? s : new Set([...s, id])));
+    }
     return (
-      <div
-        key={e.id}
-        id={`journal-entry-${e.id}`}
-        data-testid={`journal-entry-${e.id}`}
+      <div key={e.id} id={`journal-entry-${e.id}`} data-testid={`journal-entry-${e.id}`} data-kind={e.kind}
         data-focused={focusEntry === e.id || undefined}
-        style={{ background: "var(--panel)", borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6, outline: focusEntry === e.id ? "2px solid var(--brand-tint)" : "none" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: "var(--text-secondary)", background: "var(--panel-control)", padding: "3px 8px", borderRadius: 10, flexShrink: 0 }}>
-              {KIND_LABELS[e.kind]}
-            </span>
-            <a href="#" onClick={(ev) => { ev.preventDefault(); openWhere(e); }} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", textDecoration: "none" }}>
-              {live ? live.note.slice(0, 80) : e.what}
-            </a>
-          </div>
-          {!usingFixture && (
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
-              {scope && <ScopeCaption scope={scope} />}
-              {canEdit(e.kind) && <button type="button" style={LINK} onClick={() => startEdit(e)}>Edit</button>}
-              <button type="button" style={LINK} onClick={() => { setEditing(null); setRemoving(e.id); }}>{REMOVE_LABEL[e.kind]}</button>
-            </div>
-          )}
+        style={{ borderTop: "1px solid var(--border-subtle)", outline: focusEntry === e.id ? "1px solid var(--text-tertiary)" : "none", borderRadius: focusEntry === e.id ? 6 : 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 2px" }}>
+          <button type="button" onClick={() => toggleEntry(e.id)} aria-expanded={isOpen} data-testid="journal-line"
+            style={{ display: "flex", alignItems: "baseline", gap: 10, flexGrow: 1, minWidth: 0, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: "inherit", font: "inherit" }}>
+            <span aria-hidden title={KIND_LABELS[e.kind]} style={{ ...QUIET, width: 16, textAlign: "center", flexShrink: 0 }} data-testid="journal-glyph">{KIND_GLYPH[e.kind]}</span>
+            <span style={{ ...TITLE, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 0, maxWidth: "55%" }} data-testid="journal-title" title={titleOf(e)}>{titleOf(e)}</span>
+            {secondary && (
+              <span data-testid="live-effect" data-zero={zero || undefined} title={e.effect?.text}
+                style={{ ...(zero ? QUIET : SECONDARY), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1 1 0", minWidth: 0, display: "block" }}>
+                {zero && <span aria-hidden style={{ display: "inline-block", width: 7, height: 7, borderRadius: 4, border: "1px solid var(--text-tertiary)", marginRight: 5, verticalAlign: "middle" }} />}
+                {secondary}
+              </span>
+            )}
+          </button>
+          {(e.notices ?? []).length > 0 && <span aria-label="Needs a look" title="Needs a look — see the top of the page" style={{ width: 7, height: 7, borderRadius: 4, background: "var(--severity-warning)", flexShrink: 0 }} />}
+          <span style={{ ...QUIET, flexShrink: 0 }} title={longDate(e.updated_at)} data-testid="journal-date">{shortDate(e.updated_at)}</span>
+          {items.length > 0 && <ActionMenu items={items} testid="journal-menu" />}
         </div>
 
-        {e.current && <div className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>{e.current}</div>}
-        {e.effect && (
-          <div data-testid="live-effect" style={{ fontSize: 13, color: e.effect.zero ? "var(--text-tertiary)" : "var(--text-primary)" }}>
-            {e.effect.text.charAt(0).toUpperCase() + e.effect.text.slice(1)}
-          </div>
-        )}
-        {(e.notices ?? []).map((n) => (
-          <div key={n.kind} data-testid="change-notice" style={{ background: "rgba(245,165,36,0.08)", border: "1px solid rgba(245,165,36,0.3)", borderRadius: 8, padding: "8px 12px", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <span>
-              <strong style={{ color: "var(--severity-warning)" }}>{n.kind === "no_effect" ? "No effect" : n.kind === "breached" ? "Breached" : "Drifting"}</strong>
-              {n.text ? ` — ${n.text}` : ""}
+        {isOpen && (
+          <div data-testid="journal-expanded" style={{ padding: "0 2px 12px 28px", display: "flex", flexDirection: "column", gap: 6 }}>
+            {e.current && <div className="mono" style={{ ...SECONDARY, color: "var(--text-primary)" }} data-testid="journal-value">{e.current}</div>}
+            {e.effect && !zero && e.kind !== "study_finding" && <div style={SECONDARY}>{e.effect.text.charAt(0).toUpperCase() + e.effect.text.slice(1)}</div>}
+            {e.effect && zero && <div style={QUIET}>{e.effect.text.charAt(0).toUpperCase() + e.effect.text.slice(1)}</div>}
+            {e.kind === "study_finding" && e.summary && <div style={{ ...SECONDARY, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-line" }} data-testid="journal-summary">{e.summary}</div>}
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              {scope && <ScopeCaption scope={scope} />}
+              {where && <button type="button" style={LINK} onClick={() => openWhere(e)}>{where}</button>}
+            </div>
+            {e.reason && <div style={SECONDARY} data-testid="journal-reason">“{e.reason}”</div>}
+            {note && <div style={{ ...SECONDARY, fontStyle: "italic" }} data-testid="journal-note">“{note}”</div>}
+            {(e.notices ?? []).map((n) => <div key={n.kind} style={SECONDARY}>{n.text}</div>)}
+            <span style={QUIET}>
+              {`made ${longDate(e.created_at)}` + (longDate(e.updated_at) !== longDate(e.created_at) ? ` · changed ${longDate(e.updated_at)}` : "")}
             </span>
-            {!usingFixture && (n.kind === "no_effect" ? (
-              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => void act(() => client.confirmJournalNotice(e.id, "no_effect"))}>
-                Keep it
-              </button>
-            ) : (
-              <button type="button" style={{ ...LINK, color: "var(--link)", textDecoration: "underline", textDecorationColor: "var(--link-underline)", textUnderlineOffset: 2 }} onClick={() => setActiveTab("filters")}>
-                Review in Limit filters →
-              </button>
-            ))}
-          </div>
-        ))}
 
-        {isEditing && (e.kind === "annotation" || e.kind === "exclusion") && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <textarea
-              aria-label={e.kind === "exclusion" ? "Reason" : "Note"}
-              value={draft}
-              onChange={(ev) => setDraft(ev.target.value)}
-              rows={2}
-              style={{ flexGrow: 1, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit" }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <button type="button" disabled={busy} style={BUTTON(true)} onClick={() => saveEdit(e)}>Save</button>
-              <button type="button" style={BUTTON(false)} onClick={() => setEditing(null)}>Cancel</button>
-            </div>
+            {isEditing && (e.kind === "annotation" || e.kind === "exclusion") && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <textarea aria-label={e.kind === "exclusion" ? "Reason" : "Note"} value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={2}
+                  style={{ flexGrow: 1, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: 8, color: "var(--text-primary)", fontSize: 13, fontFamily: "inherit" }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <button type="button" disabled={busy} style={BUTTON(true)} onClick={() => saveEdit(e)}>Save</button>
+                  <button type="button" style={BUTTON(false)} onClick={() => setEditing(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {isEditing && e.kind === "limit_filter" && (
+              <FilterEditor target={(e.where as { target: FilterTarget }).target}
+                onSaved={() => { notifyFiltersChanged(); void act(async () => {}); }} onCancel={() => setEditing(null)} />
+            )}
+            {isRemoving && e.kind !== "exclusion" && (
+              <div role="dialog" aria-label={REMOVE_LABEL[e.kind]} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                {scope && <ScopeCaption scope={scope} />}
+                <div style={SECONDARY}>{removalPreview(e)}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" disabled={busy} style={BUTTON(true)} onClick={() => remove(e)}>{scope ? APPLY_LABEL[scope] : REMOVE_LABEL[e.kind]}</button>
+                  <button type="button" style={BUTTON(false)} onClick={() => setRemoving(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {isRemoving && e.kind === "exclusion" && (
+              <ExcludeConfirmDialog mode="include" flightId={e.ref_id} flightLabel={titleOf(e)} busy={busy}
+                onCancel={() => setRemoving(null)} onConfirm={() => void act(() => client.includeFlight(e.ref_id))} />
+            )}
           </div>
-        )}
-        {isEditing && e.kind === "limit_filter" && (
-          <FilterEditor
-            target={(e.where as { target: FilterTarget }).target}
-            onSaved={() => { notifyFiltersChanged(); void act(async () => {}); }}
-            onCancel={() => setEditing(null)}
-          />
-        )}
-        {isRemoving && e.kind !== "exclusion" && (
-          <div role="dialog" aria-label={REMOVE_LABEL[e.kind]} style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {scope && <ScopeCaption scope={scope} />}
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{removalPreview(e)}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" disabled={busy} style={BUTTON(true)} onClick={() => remove(e)}>
-                {scope ? APPLY_LABEL[scope] : REMOVE_LABEL[e.kind]}
-              </button>
-              <button type="button" style={BUTTON(false)} onClick={() => setRemoving(null)}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {e.reason && <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Reason: {e.reason}</div>}
-        {e.note && e.kind !== "annotation" && <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{e.note}</div>}
-        <span className="mono" style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
-          {`made ${formatDate(e.created_at)}` +
-            (formatDate(e.updated_at) !== formatDate(e.created_at) ? ` · changed ${formatDate(e.updated_at)}` : "")}
-        </span>
-        {isRemoving && e.kind === "exclusion" && (
-          <ExcludeConfirmDialog
-            mode="include"
-            flightId={e.ref_id}
-            flightLabel={e.what}
-            busy={busy}
-            onCancel={() => setRemoving(null)}
-            onConfirm={() => void act(() => client.includeFlight(e.ref_id))}
-          />
         )}
       </div>
     );
   }
 
-  const chip = (active: boolean, enabled = true): React.CSSProperties => ({
-    padding: "4px 10px", borderRadius: 20, fontSize: 11, cursor: enabled ? "pointer" : "default",
-    border: active ? "1px solid var(--brand-tint)" : "1px solid var(--border)",
-    background: active ? "var(--brand-fill)" : "transparent",
-    color: active ? "var(--brand-tint)" : enabled ? "var(--text-secondary)" : "var(--text-tertiary)",
-    opacity: enabled ? 1 : 0.5,
-  });
-  const tab = (active: boolean): React.CSSProperties => ({
-    padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: "pointer",
-    border: active ? "1px solid var(--text-secondary)" : "1px solid var(--border)",
-    background: active ? "var(--panel-control)" : "transparent", color: "var(--text-secondary)",
-  });
+  const searching = !!matches;
+  const visibleGroups = groups.map((g) => ({ ...g, entries: g.entries.filter(shown) })).filter((g) => g.entries.length > 0);
 
   return (
     <NavShell>
-      <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
-        <div>
-          <h1 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 700 }}>
-            Journal {usingFixture && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}>(sample)</span>}
-            {loading && <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-tertiary)" }}> · loading…</span>}
+      <div style={{ flexGrow: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 18, maxWidth: 1100 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>
+            Journal {usingFixture && <span style={{ ...QUIET, fontWeight: 400 }}>(sample)</span>}
+            {loading && <span style={{ ...QUIET, fontWeight: 400 }}> · loading…</span>}
           </h1>
-          <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-            Decisions in force, each with what it is doing now<InlineHelp id="journal.live_effect" />
-          </span>
+          <InlineHelp id="journal.live_effect" />
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setActiveTab("journal")} style={tab(activeTab === "journal")}>Journal ({entries.length})</button>
-          {!usingFixture && (
-            <button type="button" onClick={() => setActiveTab("filters")} style={tab(activeTab === "filters")}>
-              Limit filters{filterCount !== null ? ` (${filterCount})` : ""}
-            </button>
-          )}
-        </div>
+        {managing && !usingFixture && (
+          <section data-testid="journal-filters-manager" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button type="button" style={{ ...LINK, alignSelf: "flex-start" }} onClick={() => { setManaging(false); void refresh(); }}>← Back to the Journal</button>
+            <LimitFiltersSection />
+          </section>
+        )}
 
-        {activeTab === "filters" && !usingFixture && <LimitFiltersSection onCount={setFilterCount} />}
-
-        {activeTab === "journal" && loadError && (
+        {!managing && loadError && (
           <div role="alert" style={{ fontSize: 13, color: "var(--severity-warning)", lineHeight: 1.5 }}>
             Couldn't load the Journal — your decisions are still saved.
             {caps?.host !== "browser" && (
               <> If the local server was started before the app was updated, restart it (<span className="mono">slingology-eis serve</span>) and reload.</>
             )}
-            <div className="mono" style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>{loadError}</div>
+            <div className="mono" style={{ fontSize: 13, color: "var(--text-tertiary)", marginTop: 4 }}>{loadError}</div>
           </div>
         )}
 
-        {activeTab === "journal" && !loadError && noWorkspace && (
-          <div data-testid="journal-no-workspace" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+        {!managing && !loadError && noWorkspace && (
+          <div data-testid="journal-no-workspace" style={SECONDARY}>
             No workspace yet. Create one from the workspace menu at the top; the decisions you make about its flights are listed here.
           </div>
         )}
 
-        {activeTab === "journal" && !loadError && !noWorkspace && (
+        {!managing && !loadError && !noWorkspace && (
           <>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <button type="button" onClick={() => setKindFilter("all")} style={chip(kindFilter === "all")}>All ({entries.length})</button>
-              {KIND_ORDER.map((k) => {
-                const n = kindCounts.get(k) ?? 0;
-                return (
-                  <button key={k} type="button" onClick={() => setKindFilter(k)} disabled={n === 0 && kindFilter !== k} style={chip(kindFilter === k, n > 0)}>
-                    {KIND_LABELS[k]} ({n})
-                  </button>
-                );
-              })}
-              <span style={{ flexGrow: 1 }} />
-              <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Group by</span>
-              {(["date", "flight"] as GroupBy[]).map((g) => (
-                <button key={g} type="button" onClick={() => setGroupBy(g)} style={chip(groupBy === g)}>{g === "date" ? "Date" : "Flight"}</button>
-              ))}
-            </div>
+            {noticed.length > 0 && (
+              // §6.4 item 1: the page's one accent, and only when there is something.
+              <section data-testid="journal-notices" style={{ border: "1px solid var(--severity-warning)", borderRadius: 10, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--severity-warning)", display: "flex", alignItems: "center" }}>
+                  Needs a look<InlineHelp id="journal.change_notices" />
+                </h2>
+                {noticed.flatMap((e) => (e.notices ?? []).map((n) => (
+                  <div key={`${e.id}-${n.kind}`} data-testid="change-notice" data-entry={e.id} style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                    <span style={{ ...TITLE }}>{titleOf(e)}</span>
+                    <span style={SECONDARY}>{n.text || (n.kind === "breached" ? "Breached" : n.kind === "drifting" ? "Drifting" : "No effect")}</span>
+                    <span style={{ flexGrow: 1 }} />
+                    {noticeAction(e, n.kind)}
+                  </div>
+                )))}
+              </section>
+            )}
 
-            {visible.length === 0 ? (
-              <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-                {kindFilter === "all" ? "No decisions in force." : `No ${KIND_LABELS[kindFilter].toLowerCase()} decisions in force.`}
-              </div>
+            {entries.length === 0 ? (
+              <div style={QUIET}>No decisions in force.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {attention.length > 0 && (
-                  <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <h2 style={{ fontSize: 12, fontWeight: 600, color: "var(--severity-warning)", margin: 0 }}>
-                      Needs a look<InlineHelp id="journal.change_notices" />
-                    </h2>
-                    {attention.map(renderEntry)}
-                  </section>
-                )}
-                {groups.map((g) => (
-                  <section key={g.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <h2 style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", margin: 0 }}>{g.label}</h2>
-                    {g.entries.map(renderEntry)}
-                  </section>
-                ))}
-              </div>
+              <>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <input type="search" aria-label="Search the Journal" placeholder="Search titles, reasons, notes, flights" value={query}
+                    onChange={(ev) => setQuery(ev.target.value)}
+                    style={{ fontSize: 13, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)", width: 300 }} />
+                  <span style={{ flexGrow: 1 }} />
+                  <span style={QUIET}>Group</span>
+                  <span role="group" aria-label="Group the Journal" style={{ display: "inline-flex" }}>
+                    {(["kind", "date", "flight"] as GroupBy[]).map((g, i) => (
+                      <button key={g} type="button" aria-pressed={groupBy === g} onClick={() => setGroupBy(g)}
+                        style={{ ...SEGMENT(groupBy === g), borderRadius: i === 0 ? "6px 0 0 6px" : i === 2 ? "0 6px 6px 0" : 0, marginLeft: i ? -1 : 0 }}>
+                        by {g}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+
+                {searching && visibleGroups.length === 0 && <div style={QUIET}>Nothing in the Journal matches “{query.trim()}”.</div>}
+                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  {visibleGroups.map((g) => {
+                    const open = searching || (toggled[g.key] ?? g.open);
+                    return (
+                      <section key={g.key} data-testid={`journal-section-${g.key}`} data-open={open || undefined}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 10, paddingBottom: 4 }}>
+                          <button type="button" aria-expanded={open} onClick={() => setToggled((t) => ({ ...t, [g.key]: !open }))}
+                            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit", display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <span aria-hidden style={{ ...QUIET, width: 12 }}>{open ? "▾" : "▸"}</span>
+                            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{g.label}</h2>
+                          </button>
+                          {g.total
+                            ? <span style={SECONDARY} data-testid="journal-section-total">{g.total}</span>
+                            : <span style={SECONDARY}>{g.entries.length}</span>}
+                          <span style={{ flexGrow: 1 }} />
+                          {g.key === "filters" && !usingFixture && (
+                            <button type="button" style={LINK} onClick={() => setManaging(true)} data-testid="journal-manage-filters">Manage limit filters →</button>
+                          )}
+                        </div>
+                        {open && g.entries.map(renderEntry)}
+                      </section>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </>
         )}

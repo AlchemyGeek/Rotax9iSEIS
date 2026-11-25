@@ -72,7 +72,8 @@ def main() -> int:
         page.get_by_text("Rule changed").first.wait_for(timeout=60000)
         ok("a rule edited on a card", True)
         page.goto(url + "#/journal")
-        page.get_by_text("Rule: limit_exceedances").first.wait_for(timeout=30000)
+        # Spec 14 v0.20: one line per decision; a rule edit sits under "Changed settings and rule edits".
+        page.get_by_test_id("journal-section-settings").locator('[data-testid="journal-glyph"][title="Rule edit"]').first.wait_for(timeout=30000)
         ok("Journal lists the rule edit", True)
         page.goto(url + "#/settings?tab=app")
         page.get_by_text("Data location").first.wait_for(timeout=30000)

@@ -4,24 +4,21 @@ import { NavShell, DOCS_URL } from "../components/NavShell";
 import { EngineRpcError, getEngineClient } from "../lib/engineClient";
 import type { StudySummary } from "../types/contract";
 import { Inbox } from "../components/research/Inbox";
+import { NotebookGrid } from "../components/research/Notebooks";
+import { PageHelp } from "../components/research/bits";
 import { MoveWorkspaceBanner } from "../components/MoveWorkspace";
-import { BODY, BUTTON, LINK, MUTED, NOTICE, PANEL, PANEL_TITLE } from "../components/research/ui";
+import { BODY, BUTTON, LINK, MUTED, NOTICE } from "../components/research/ui";
 
 const client = getEngineClient();
 
-// Spec 16 D15 — Research home is the notebooks and the inbox: Claude
-// investigates, EIS measures. The user looks and marks in EIS (the Flight
-// view), asks in Claude Desktop, and reads the notebook here. The hand
-// studies, presets-to-study and the question forms are retired (Spec 06
-// v1.0); nothing here changes Flights, Trends or Journal.
+// Spec 03 v0.34 §5.10 (Spec 16 D15) — Research home, top to bottom: the
+// header (Research, its help, *Import a notebook…*), the *Move my
+// workspace* banner until dismissed, the notebooks as cards, the inbox as a
+// digest. The notebook is the page's object; the inbox is its to-do list;
+// nothing is expanded until asked. The model sentence is in the help.
+// Nothing here changes Flights, Trends or Journal.
 
-const KIND: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 0.3, color: "var(--text-tertiary)", textTransform: "uppercase" };
-
-function formatWhen(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
+const H2: React.CSSProperties = { margin: 0, fontSize: 15, fontWeight: 600 };
 
 export function Research() {
   const navigate = useNavigate();
@@ -65,12 +62,17 @@ export function Research() {
   return (
     <NavShell>
       <div style={{ width: "100%", overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Research</h1>
-          <span style={BODY} data-testid="research-model">
-            Claude investigates; EIS measures. Look at a flight and mark what looks odd, ask in Claude Desktop, and read the notebook here.{" "}
-            <a href={`${DOCS_URL}concepts/research/`} target="_blank" rel="noopener noreferrer" style={LINK}>How it works</a>
-          </span>
+          <PageHelp testid="research-help">
+            <p style={{ margin: "0 0 6px" }} data-testid="research-model">
+              <strong>Claude investigates; EIS measures.</strong> Look at a flight and mark what looks odd, ask in Claude Desktop, and read the notebook here.
+            </p>
+            <p style={{ margin: "0 0 6px" }}>
+              Notebooks are Claude's investigations, newest first; the inbox holds your questions with their marks and what EIS raised across the recent flights.
+            </p>
+            <a href={`${DOCS_URL}concepts/research/`} target="_blank" rel="noopener noreferrer" style={{ ...LINK, fontSize: 12 }}>How it works</a>
+          </PageHelp>
           <span style={{ flexGrow: 1 }} />
           <input ref={fileRef} type="file" accept=".zip,.ipynb" style={{ display: "none" }} data-testid="import-study-input"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportFile(f); e.target.value = ""; }} />
@@ -81,36 +83,20 @@ export function Research() {
         {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
         {importNote && <div style={NOTICE}>{importNote}</div>}
 
-        {!noWorkspace && <MoveWorkspaceBanner />}
-        {!noWorkspace && <Inbox />}
+        {!noWorkspace && <MoveWorkspaceBanner dismissable />}
 
-        <section style={PANEL}>
-          <div style={PANEL_TITLE}>Notebooks {studies && <span style={MUTED}>({studies.length})</span>}</div>
-          {studies === null && <div style={MUTED}>Loading…</div>}
-          {studies && studies.length === 0 && (
-            <div style={BODY}>
-              No notebooks yet. Mark a window on a flight for Claude, then ask in Claude Desktop — the investigation is written here as a notebook.
-            </div>
-          )}
-          {studies && studies.length > 0 && (
-            <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="studies-table">
-              <tbody>
-                {studies.map((s) => (
-                  <tr key={s.study_id} style={{ borderBottom: "1px solid var(--border)", cursor: "pointer" }} onClick={() => navigate(`/research/${s.study_id}`)} data-testid="study-row">
-                    <td style={{ padding: "9px 8px", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>{s.name}</td>
-                    <td style={{ padding: "9px 8px", whiteSpace: "nowrap", verticalAlign: "top" }} data-testid="study-kind">
-                      <span style={KIND} title="A notebook (Jupyter .ipynb)">{s.author === "claude" ? "Claude" : "you"}{s.status === "finished" || s.status === "reopened" ? ` · ${s.status}` : ""}</span>
-                    </td>
-                    <td style={{ padding: "9px 8px", fontSize: 12, color: "var(--text-secondary)" }}>
-                      {s.finding ?? <span style={MUTED}>{s.question ?? "open"}{s.pending ? ` · ${s.pending} cell${s.pending === 1 ? "" : "s"} pending` : ""}</span>}
-                    </td>
-                    <td className="mono" style={{ ...MUTED, padding: "9px 8px", whiteSpace: "nowrap", textAlign: "right" }}>{formatWhen(s.updated)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+        {!noWorkspace && (
+          <section style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="notebooks">
+            <h2 style={H2}>Notebooks {studies && studies.length > 0 && <span style={{ ...MUTED, fontSize: 12, fontWeight: 400 }}>({studies.length})</span>}</h2>
+            {studies === null && <div style={MUTED}>Loading…</div>}
+            {studies && studies.length === 0 && (
+              <div style={BODY} data-testid="notebooks-empty">No notebooks yet. Mark a window on a flight, then ask in Claude Desktop.</div>
+            )}
+            {studies && studies.length > 0 && <NotebookGrid studies={studies} onChanged={() => void load()} />}
+          </section>
+        )}
+
+        {!noWorkspace && <Inbox />}
       </div>
     </NavShell>
   );

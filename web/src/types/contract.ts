@@ -841,11 +841,30 @@ export interface JournalEntry {
   note?: string | null;
   created_at: string;
   updated_at: string;
-  // The live counted effect; zero is the "currently suppresses nothing" case.
-  effect?: { text: string; zero: boolean } | null;
+  // The live counted effect; zero is the "currently suppresses nothing" case. Since Spec 14
+  // v0.20 also one short phrase for the entry's line ("184 events · 50 flights") and its counts.
+  effect?: { text: string; zero: boolean; short?: string; n?: number; unit?: string; flights?: number } | null;
+  /** §6.4 (v0.20): the entry's title without its kind — the section says the kind. */
+  title?: string;
+  /** A research finding's one line, and the notebook's summary behind the expand. */
+  finding?: string | null;
+  summary?: string | null;
   // The decision's current values ("up to +1.5 psi", "trend.r2_min 0.3 (shipped 0.5)").
   current?: string | null;
   notices?: JournalNotice[];
+}
+
+/** Spec 14 v0.20 §6.4: a section of the Journal, in order of consequence, with its count and
+ * total effect in one phrase (the engine counts each flight once). Empty sections aren't sent. */
+export interface JournalSection {
+  key: string;
+  label: string;
+  kinds: JournalEntryKind[];
+  count: number;
+  total: string;
+  flights: number;
+  open: boolean;
+  entry_ids: string[];
 }
 
 export interface JournalNotice {
@@ -1726,6 +1745,25 @@ export interface StudySummary {
   summary?: string | null;
   cells?: number;
   pending?: number;
+  summaries?: { summary?: string; finished?: string | null }[];
+  // Spec 16 §5.5 (v1.1): what the notebook says about itself, derived by the engine.
+  card?: NotebookCard | null;
+}
+
+export type NotebookOrigin = "marks" | "candidate" | "asked" | "imported";
+export type NotebookTest = "cycling" | "coupling" | "groups" | "unusual";
+
+export interface NotebookCard {
+  v: number;
+  origin: NotebookOrigin;
+  channels: string[];
+  flights: number;
+  date_span: [string, string] | null;
+  evidence: { log_views: number; figures: number; tables: number };
+  tests: NotebookTest[];
+  outputs: "current" | "pending" | "elsewhere";
+  resolution: "nothing-here" | "watch" | "acted" | null;
+  tags: string[];
 }
 
 export interface StudyImportResult {

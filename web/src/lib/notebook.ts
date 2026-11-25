@@ -11,6 +11,8 @@
 // run); `text/html` is used only for the tables EIS writes (output metadata
 // `slingology.table`), and even then only table tags survive.
 
+import { shortWindow } from "./timeLabel";
+
 export const LOGVIEW_MIME = "application/vnd.slingology.logview+json";
 
 export type NbText = string | string[] | undefined | null;
@@ -241,8 +243,11 @@ export function logviewRef(o: NbOutput): LogViewRef | null {
   return (d[LOGVIEW_MIME] ?? {}) as LogViewRef;
 }
 
+/** The title and the short window (Spec 03 v0.34) — nbhtml.logview_caption. */
 export function logviewCaption(ref: LogViewRef): string {
-  return String(ref.title || ref.window_label || "log view");
+  const title = String(ref.title ?? "").trim();
+  const when = ref.window_label ? shortWindow(ref.window_label) : "";
+  return [title, when].filter(Boolean).join(" · ") || "log view";
 }
 
 export function outputHtml(o: NbOutput): string {
@@ -260,7 +265,8 @@ export function outputHtml(o: NbOutput): string {
   const ref = logviewRef(o);
   if (ref) {
     const cap = escapeHtml(logviewCaption(ref));
-    return `<figure class="logview">${img(text(data["image/svg+xml"]), "figure", cap)}<figcaption>${cap}</figcaption></figure>`;
+    const full = escapeHtml(String(ref.window_label ?? ""));
+    return `<figure class="logview">${img(text(data["image/svg+xml"]), "figure", cap)}<figcaption title="${full}">${cap}</figcaption></figure>`;
   }
   if ("image/svg+xml" in data) return img(text(data["image/svg+xml"]), "figure", text(data["text/plain"]) || "figure");
   if ("image/png" in data) return `<img class="figure" alt="figure" src="data:image/png;base64,${text(data["image/png"]).trim()}">`;
@@ -282,6 +288,17 @@ export function summaryHistory(summaries: { summary?: string; finished?: string 
   const items = [...summaries].reverse().map((e) =>
     `<div class="earlier"><p class="meta">Summary of ${escapeHtml((e.finished ?? "").slice(0, 10) || "undated")}</p>${markdown(e.summary ?? "")}</div>`);
   return `<details class="summary-history"><summary>Earlier summaries (${summaries.length})</summary>${items.join("")}</details>`;
+}
+
+/** The summary, open, with the earlier ones inside it — nbhtml.summary_block. */
+export function summaryBlock(summary: string, summaries: { summary?: string; finished?: string | null }[]): string {
+  return '<details class="summary" open><summary>Summary</summary>' + markdown(summary)
+    + (summaries.length ? summaryHistory(summaries) : "") + "</details>";
+}
+
+/** The setup cell (D14) — bound eis to the workspace; not shown (Spec 03 v0.34). */
+export function isSetupCell(c: NbCell): boolean {
+  return c.cell_type === "code" && (c.id === "setup" || cellMeta(c).role === "setup");
 }
 
 /** "by claude · finished · engine 1.0.2 · 2026-11-15" — the export's line. */

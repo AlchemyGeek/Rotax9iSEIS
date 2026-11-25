@@ -2387,12 +2387,134 @@ def op_get_journal(params: dict, ctx: dict) -> Any:
     workspace_dir = ctx["workspace_dir"]
     rules = _resolve_rules(ctx)
     ws.reconcile_journal(workspace_dir, active_rules=rules, shipped_rules=_default_rules())
+    findings = _refresh_study_findings(workspace_dir)
     live = _JournalEffects(ctx, rules)
     engine_cfg, _ = _current_engine(ctx)
     labels = {k: lim.get("label") for k, lim in _target_limits(engine_cfg).items()}
-    entries = [{**e, **live.describe(e)} for e in
-               (_journal_display(workspace_dir, e, labels) for e in ws.load_journal(workspace_dir)["entries"])]
-    return {"entries": sorted(entries, key=lambda e: e["updated_at"], reverse=True)}
+    notes = {a["id"]: a.get("note") or "" for a in ws.load_annotations(workspace_dir)["annotations"]}
+    entries = []
+    for e in ws.load_journal(workspace_dir)["entries"]:
+        e = _journal_display(workspace_dir, e, labels)
+        e = {**e, **live.describe(e)}
+        e.update(_journal_title(e, notes, findings))
+        entries.append(e)
+    entries.sort(key=lambda e: e["updated_at"], reverse=True)
+    sections = _journal_sections(entries)
+    for e in entries:                        # the flight sets served the sections' totals
+        if e.get("effect"):
+            e["effect"].pop("flight_ids", None)
+    return {"entries": entries, "sections": sections}
+
+
+# Spec 14 v0.20 §6.4: the sections, in order of consequence. Research
+# findings sit after the pinned reference (§6.4 doesn't place them; v0.21
+# as built). A section shows only with entries.
+_JOURNAL_SECTIONS = (
+    ("filters", "Limit filters", ("limit_filter",), True),
+    ("exclusions", "Excluded flights", ("exclusion",), True),
+    ("settings", "Changed settings and rule edits", ("changed_setting", "rule_edit"), True),
+    ("topics", "Disabled topics", ("disabled_topic",), True),
+    ("pins", "Pinned reference", ("reference_pin",), True),
+    ("findings", "Research findings", ("study_finding",), True),
+    ("annotations", "Annotations", ("annotation",), False),
+    ("acknowledged", "Acknowledged insights", ("acknowledged_insight",), False),
+)
+
+
+def _journal_sections(entries: list) -> list:
+    """Each section's count and total effect in one phrase (§6.4 item 2),
+    flights counted once across its entries."""
+    out = []
+    for key, label, kinds, open_ in _JOURNAL_SECTIONS:
+        mine = [e for e in entries if e["kind"] in kinds]
+        if not mine:
+            continue
+        n = len(mine)
+        effects = [e.get("effect") or {} for e in mine]
+        flights = set().union(*(set(x.get("flight_ids") or ()) for x in effects))
+        f = len(flights)
+        total_n = sum(int(x.get("n") or 0) for x in effects)
+        if key == "filters":
+            total = f"{_plural(n, 'filter')} · " + (f"hiding {_plural(total_n, 'event')} on {_plural(f, 'flight')}" if total_n else "hiding nothing")
+        elif key == "exclusions":
+            total = f"{_plural(n, 'flight')} · " + (f"changing the verdict on {_plural(f, 'other flight')}" if f else "changing no other flight's verdict")
+        elif key == "settings":
+            total = f"{n} changed · " + (f"changing insights on {_plural(f, 'flight')}" if f else "changing nothing on your flights")
+        elif key == "topics":
+            total = f"{_plural(n, 'topic')} off · " + (f"removing {_plural(total_n, 'insight')} on {_plural(f, 'flight')}" if total_n else "removing nothing")
+        elif key == "pins":
+            total = f"{_plural(n, 'metric')} pinned"
+        elif key == "findings":
+            total = _plural(n, "finding")
+        elif key == "annotations":
+            total = _plural(n, "note")
+        else:
+            total = _plural(n, "insight")
+        out.append({"key": key, "label": label, "kinds": list(kinds), "count": n, "total": total,
+                    "flights": f, "open": open_, "entry_ids": [e["id"] for e in mine]})
+    if len(out) == 1:
+        out[0]["open"] = True                # a Journal of one kind shows it open
+    return out
+
+
+def _journal_title(e: dict, notes: dict, findings: dict) -> dict:
+    """§6.4: the entry's title without its kind (the section and glyph say
+    the kind), computed here so the page parses nothing."""
+    kind, what = e["kind"], e.get("what") or ""
+    if kind == "limit_filter":
+        return {"title": what.removeprefix("Filter: ")}
+    if kind in ("rule_edit", "disabled_topic"):
+        return {"title": _topic_title(e["ref_id"])}
+    if kind == "changed_setting":
+        return {"title": what.removeprefix("Setting: ")}
+    if kind == "reference_pin":
+        return {"title": str(e["ref_id"]).replace("_", " ").capitalize()}
+    if kind == "annotation":
+        note = notes.get(e["ref_id"]) or what
+        return {"title": next((ln.strip() for ln in note.splitlines() if ln.strip()), note)}
+    if kind == "study_finding":
+        f = findings.get(e["id"]) or {}
+        return {"title": f.get("title") or (e.get("where") or {}).get("study_name") or "Research finding",
+                "finding": what, "summary": f.get("summary")}
+    return {"title": what}
+
+
+_TOPIC_TITLES: Optional[dict] = None
+
+
+def _topic_title(topic_id: str) -> str:
+    global _TOPIC_TITLES
+    if _TOPIC_TITLES is None:
+        try:
+            from . import help as _help
+            _TOPIC_TITLES = {k: v.title for k, v in _help.load_help_entries().items()}
+        except Exception:
+            _TOPIC_TITLES = {}
+    return _TOPIC_TITLES.get(topic_id) or topic_id
+
+
+def _refresh_study_findings(workspace_dir: Path) -> dict:
+    """Spec 14 v0.20 §6.1: a research finding's line is read again from its
+    notebook — the finding, else the note, else the summary's first
+    sentence — so entries written before v0.20 (the whole summary as the
+    title) read as the new ones do. Not dated: the decision didn't change.
+    Returns {entry id: {title, summary}}."""
+    entries = [e for e in ws.load_journal(workspace_dir)["entries"] if e["kind"] == "study_finding"]
+    if not entries:
+        return {}
+    from .investigations import ipynb as NBX
+    out = {}
+    for e in entries:
+        sid = str(e.get("ref_id") or "").split(":", 1)[0]
+        try:
+            m = NBX.meta(NBX.load(workspace_dir, sid))
+        except Exception:
+            continue                          # the notebook is gone: the entry keeps its words
+        title = m.get("name") or sid
+        ws.rewrite_journal_entry(workspace_dir, e["id"], what=NBX.journal_line(m, e.get("note")),
+                                 where={**(e.get("where") or {}), "study_id": sid, "study_name": title})
+        out[e["id"]] = {"title": title, "summary": m.get("summary")}
+    return out
 
 
 def op_confirm_journal_notice(params: dict, ctx: dict) -> Any:
@@ -2481,8 +2603,11 @@ class _JournalEffects:
         others = [x for x in self.filters if x["id"] != f["id"]]
         p = _filters.preview_limit_filter(self.flights, self.fleet, self.rules, others, f)
         n, m = p["events_hidden"], p["flights_affected"]
-        effect = ({"text": f"suppressing {_plural(n, 'event')} on {_plural(m, 'flight')}", "zero": False} if n
-                  else {"text": "currently suppresses nothing", "zero": True})
+        ids = [x["flight_id"] for x in p["flights"] if x["newly_suppressed"] or x["topic_insights_removed"]]
+        effect = ({"text": f"suppressing {_plural(n, 'event')} on {_plural(m, 'flight')}", "zero": False,
+                   "short": f"{_plural(n, 'event')} · {_plural(m, 'flight')}"} if n
+                  else {"text": "currently suppresses nothing", "zero": True, "short": "hides nothing"})
+        effect.update(n=n, unit="event", flights=m, flight_ids=ids)
         engine_cfg, _ = _current_engine(self.ctx)
         lim = _target_limits(engine_cfg).get(_filters.target_key(f))
         current = _filters.band_text(f, lim) if lim else None
@@ -2496,8 +2621,11 @@ class _JournalEffects:
         on = {**self.rules, "rules": {**self.rules["rules"], topic_id: {**self.rules["rules"][topic_id], "enabled": True}}}
         counts = [len(self._topic_insights(fa, on, topic_id, cache=False)) for fa in self.flights]
         n, m = sum(counts), sum(1 for c in counts if c)
-        effect = ({"text": f"removing {_plural(n, 'insight')} on {_plural(m, 'flight')}", "zero": False} if n
-                  else {"text": "currently removes nothing", "zero": True})
+        effect = ({"text": f"removing {_plural(n, 'insight')} on {_plural(m, 'flight')}", "zero": False,
+                   "short": f"{_plural(n, 'insight')} · {_plural(m, 'flight')}"} if n
+                  else {"text": "currently removes nothing", "zero": True, "short": "removes nothing"})
+        effect.update(n=n, unit="insight", flights=m,
+                      flight_ids=[fa.flight_id for fa, c in zip(self.flights, counts) if c])
         return effect, "off (shipped: on)", []
 
     def _rule_edit(self, e):
@@ -2505,9 +2633,11 @@ class _JournalEffects:
         current = self.rules["rules"].get(topic_id, {})
         shipped = _default_rules()["rules"].get(topic_id, {})
         if not current.get("enabled", True):
-            return {"text": "topic is off — see its disabled entry", "zero": False}, _rule_diff_text(current, shipped), []
+            return ({"text": "topic is off — see its disabled entry", "zero": False, "short": "topic off"},
+                    _rule_diff_text(current, shipped), [])
         cand = {**self.rules, "rules": {**self.rules["rules"], topic_id: {**shipped, "enabled": True}}}
         added = removed = fa_add = fa_rem = 0
+        ids: list = []
         for fa in self.flights:
             now = self._topic_insights(fa, self.rules, topic_id, cache=True)
             base = self._topic_insights(fa, cand, topic_id, cache=False)
@@ -2515,6 +2645,8 @@ class _JournalEffects:
             r = len([x for x in base if x not in now])
             added, removed = added + a, removed + r
             fa_add, fa_rem = fa_add + bool(a), fa_rem + bool(r)
+            if a or r:
+                ids.append(fa.flight_id)
         parts = []
         if added:
             parts.append(f"adds {_plural(added, 'insight')} on {_plural(fa_add, 'flight')}")
@@ -2522,6 +2654,7 @@ class _JournalEffects:
             parts.append(f"removes {_plural(removed, 'insight')} on {_plural(fa_rem, 'flight')}")
         effect = ({"text": "; ".join(parts) + " compared with shipped", "zero": False} if parts
                   else {"text": "currently changes nothing compared with shipped", "zero": True})
+        effect.update(_insight_delta(added, removed, ids))
         return effect, _rule_diff_text(current, shipped), []
 
     def _exclusion(self, e):
@@ -2531,8 +2664,10 @@ class _JournalEffects:
         proposed = ws.fleet_for_exclusions(self.workspace_dir, without)
         changed = _other_flights_whose_verdict_changes(self.workspace_dir, fid, self.fleet, proposed, self.rules, self.filters)
         n = len(changed)
-        effect = ({"text": f"changes {_plural(n, 'verdict')} on other flights", "zero": False} if n
-                  else {"text": "currently changes no other flight's verdict", "zero": True})
+        effect = ({"text": f"changes {_plural(n, 'verdict')} on other flights", "zero": False,
+                   "short": f"changes {_plural(n, 'verdict')}"} if n
+                  else {"text": "currently changes no other flight's verdict", "zero": True, "short": "changes no verdict"})
+        effect.update(n=n, unit="verdict", flights=n, flight_ids=list(changed))
         return effect, None, []
 
     def _all_insights(self, fa, fleet, cache: bool) -> list:
@@ -2558,6 +2693,7 @@ class _JournalEffects:
         shipped_cfg = ws.baseline_config_with_setting_reset(selection.baseline_config, e["ref_id"])
         shipped_fleet = ws.fleet_for_exclusions(self.workspace_dir, selection.excluded, baseline_config=shipped_cfg)
         added = removed = fa_add = fa_rem = 0
+        ids: list = []
         for fa in self.flights:
             now = self._all_insights(fa, self.fleet, cache=True)
             base = self._all_insights(fa, shipped_fleet, cache=False)
@@ -2565,6 +2701,8 @@ class _JournalEffects:
             r = len([x for x in base if x not in now])
             added, removed = added + a, removed + r
             fa_add, fa_rem = fa_add + bool(a), fa_rem + bool(r)
+            if a or r:
+                ids.append(fa.flight_id)
         listed = {c["metric_id"] for c in self.fleet.change_summary}
         listed_shipped = {c["metric_id"] for c in shipped_fleet.change_summary}
         trends = len(listed ^ listed_shipped)
@@ -2577,6 +2715,7 @@ class _JournalEffects:
             parts.append(f"changes {_plural(trends, 'metric')} in the Trends change list")
         effect = ({"text": "; ".join(parts) + " compared with shipped", "zero": False} if parts
                   else {"text": "currently changes nothing compared with shipped", "zero": True})
+        effect.update(_insight_delta(added, removed, ids, trends))
         return effect, _setting_text(d), []
 
     def _channel_assignment(self, e):
@@ -2598,7 +2737,8 @@ class _JournalEffects:
         else:
             text = (f"{named} on {_plural(applied, 'flight')}"
                     + (f"; {_plural(len(pending), 'more flight')} waiting for re-analysis" if pending else ""))
-        effect = {"text": text, "zero": n == 0}
+        effect = {"text": text, "zero": n == 0, "short": f"{_plural(n, 'flight')}" + (f" · {len(pending)} waiting" if pending else ""),
+                  "n": n, "unit": "flight", "flights": n, "flight_ids": [fa.flight_id for fa in carrying]}
         return effect, f"{_assignment_text(value)} (shipped: not assigned)", []
 
     def _reference_pin(self, e):
@@ -2608,8 +2748,22 @@ class _JournalEffects:
             return None, None, []
         n = len(ref.get("flight_ids", []))
         when = (ref.get("set_at") or "")[:10]
-        return ({"text": f"reference of {_plural(n, 'flight')}" + (f", pinned {when}" if when else ""), "zero": False},
+        return ({"text": f"reference of {_plural(n, 'flight')}" + (f", pinned {when}" if when else ""), "zero": False,
+                 "short": f"{_plural(n, 'flight')}" + (f" · pinned {when}" if when else ""), "n": n, "unit": "flight"},
                 ref.get("label"), [])
+
+
+def _insight_delta(added: int, removed: int, ids: list, trends: int = 0) -> dict:
+    """A rule edit's or setting's effect as one short phrase (§6.4):
+    '+2 −3 insights · 4 flights'."""
+    parts = []
+    if added or removed:
+        signed = " ".join(x for x in ((f"+{added}" if added else ""), (f"−{removed}" if removed else "")) if x)
+        parts.append(f"{signed} insight{'' if added + removed == 1 else 's'} · {_plural(len(ids), 'flight')}")
+    if trends:
+        parts.append(f"{_plural(trends, 'Trends metric')}")
+    return {"short": " · ".join(parts) or "no change", "n": added + removed, "unit": "insight",
+            "flights": len(ids), "flight_ids": ids}
 
 
 _NO_EFFECT_NOTICE = {
@@ -3190,7 +3344,7 @@ def _investigation_op(name: str):
 
 for _name in ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
               "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
-              "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete"):
+              "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete", "study_set_tags"):
     _OPS[_name] = _investigation_op(_name)
 
 

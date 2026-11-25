@@ -6,6 +6,7 @@ import { ChannelPicker } from "./ChannelPicker";
 import { PresetBar } from "./PresetBar";
 import { PhaseCaption } from "./PhaseCaption";
 import { PhaseMinimap } from "./PhaseMinimap";
+import { timelineRange } from "../lib/timeLabel";
 
 const ZOOM_BUTTON: React.CSSProperties = {
   width: 24, height: 24, borderRadius: 6, background: "var(--panel-control)", border: "1px solid var(--border)",
@@ -16,12 +17,15 @@ const ZOOM_BUTTON: React.CSSProperties = {
 // picker, the chart with phase tint (and, on a flight, event markers) and
 // the phase caption. Shared by Flight view and Log preview.
 export function TimelinePanel({
-  tl, phases, availableChannels, startUtc, hasPhaseWarning, markers, worst, emptyText, below,
+  tl, phases, availableChannels, startUtc, startLocal = null, tz = null, hasPhaseWarning, markers, worst, emptyText, below,
 }: {
   tl: Timeline;
   phases: Phase[];
   availableChannels: string[] | null | undefined;
   startUtc: string | null;
+  /** Spec 03 v0.37: the flight's local start and zone (get_flight's ident) — the header's clock. */
+  startLocal?: string | null;
+  tz?: string | null;
   hasPhaseWarning: boolean;
   markers?: EventMarker[];
   worst?: { x_s: number; label: string } | null;
@@ -32,10 +36,7 @@ export function TimelinePanel({
   const { visibleWindow } = tl;
 
   function formatTimeRange(startS: number, endS: number): string {
-    if (!startUtc) return "—";
-    const base = new Date(startUtc);
-    const fmt = (s: number) => new Date(base.getTime() + s * 1000).toISOString().slice(11, 16);
-    return `${fmt(startS)}–${fmt(endS)} (${Math.round((endS - startS) / 60)} min)`;
+    return timelineRange(startLocal, tz, startUtc, startS, endS);
   }
 
   // Spec 07 §5: an unavailable channel in the current selection applies
