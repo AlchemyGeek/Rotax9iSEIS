@@ -3,12 +3,15 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resetCapabilities } from "../lib/capabilities";
 
-// Spec 16 §6 (D5, D8, D16) — the inbox on Research home, both tiers: the
-// owner's questions with their marks (each opening its flight at the
-// window), Unassigned, edit / move / delete, the same statuses; candidates
-// with their evidence, sensitivity and status; Mark nothing here / watch /
-// acted with a note; the linked study opens; the install invitation and
-// the question's hand-off line where there is no bench. Synthetic data.
+// Spec 16 §6 (D5, D8, D16), Spec 03 v0.34 §5.10 item 3 — the inbox on
+// Research home as a digest: one line per item (status dot and word,
+// title, summary), questions first, then what EIS raised; a line expands in
+// place (a question's marks, each opening its flight at the window; a
+// candidate's explanation and evidence); *Open the investigation* the one
+// standing button; Nothing here / Watch / Acted with a note, Rename,
+// Delete and a mark's Edit / Move / Delete in ⋯ menus; resolved under *Show
+// resolved*; Unassigned one collapsed line; the install line where there
+// is no bench. Synthetic data.
 
 const FA = "aaaaaaaaaaaaaaaa", FB = "bbbbbbbbbbbbbbbb";
 type P = { id: string; question_id: string | null; flight: string; start_s: number; end_s: number; channels: string[]; note: string | null; created: string; flight_here?: boolean; date?: string; when?: string; status?: string; study_id?: string | null };
@@ -135,17 +138,45 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-describe("the inbox on Research home (§6)", () => {
-  it("lists candidates with summary, what fired, the sensitivity, status and evidence", async () => {
+/** Open a ⋯ menu inside `scope` and choose an item (the menu is portalled to the page). */
+function choose(scope: HTMLElement, menuTestId: string, itemTestId: string) {
+  fireEvent.click(within(scope).getAllByTestId(menuTestId)[0]);
+  fireEvent.click(screen.getByTestId(itemTestId));
+}
+
+function expand(line: HTMLElement) {
+  fireEvent.click(within(line).getAllByTestId("inbox-line")[0]);
+}
+
+describe("the inbox digest (Spec 03 v0.34)", () => {
+  it("one line per item, questions first, nothing expanded; the title counts what is open", async () => {
     app();
-    const cards = await screen.findAllByTestId("inbox-candidate");
-    expect(cards.length).toBe(2);
-    const first = cards.find((c) => c.dataset.status === "new")!;
-    expect(first.textContent).toContain("Full-power segment");
-    expect(first.textContent).toContain("recurring pattern · rpm.period");
+    const inbox = await screen.findByTestId("inbox");
+    await waitFor(() => expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (3 open)"));   // 1 question + 2 candidates
+    const lines = within(inbox).getAllByTestId("inbox-line");
+    // the question, the unassigned line, then the two candidates
+    expect(lines.map((l) => within(l).getByTestId("inbox-line-title").textContent)).toEqual(["rough climbs", "Unassigned", "Full-power segment", "Full-power segment"]);
+    expect(lines.map((l) => within(l).getByTestId("inbox-line-summary").textContent)).toEqual(["2 marks", "1 mark", "recurring pattern · 8 of 10", "recurring pattern · 8 of 10"]);
+    expect(lines.every((l) => l.getAttribute("aria-expanded") === "false")).toBe(true);
+    expect(screen.queryByTestId("inbox-expanded")).toBeNull();
+    expect(screen.queryAllByTestId("pin")).toEqual([]);
+    // the status vocabulary: a dot and a lower-case word
+    expect(within(screen.getByTestId("question")).getByTestId("status-mark").textContent).toBe("new");
+    const watched = screen.getAllByTestId("inbox-candidate").find((c) => c.dataset.status === "watch")!;
+    expect(within(watched).getByTestId("status-mark").textContent).toBe("watch");
+    // no buttons standing on a collapsed line but the ⋯ menu
+    expect(within(inbox).queryAllByTestId("inbox-open-study")).toEqual([]);
+    expect(screen.getByTestId("inbox-scan").textContent).toContain("EIS looked at 3 flights");
+  });
+
+  it("a candidate expands to its explanation and evidence; the evidence opens a flight at the slice", async () => {
+    app();
+    const first = (await screen.findAllByTestId("inbox-candidate")).find((c) => c.dataset.status === "new")!;
+    expand(first);
+    expect(first.textContent).toContain("RPM repeats with a prominent period in 8 of the last 10 slices");
     expect(within(first).getByTestId("inbox-sensitivity").textContent).toBe(
-      "prominent rpm period in a governed-rpm preset — 8 of 10 · normal sensitivity: a pattern in 6 of 10 recent slices, a shift beyond 3");
-    expect(screen.getByTestId("inbox-scan").textContent).toContain("looked at 3 flights");
+      "rpm.period · prominent rpm period in a governed-rpm preset — 8 of 10 · normal sensitivity: a pattern in 6 of 10 recent slices, a shift beyond 3");
+    expect(within(first).queryByTestId("inbox-open-study")).toBeNull();          // no notebook took it up
     fireEvent.click(within(first).getByTestId("inbox-evidence-toggle"));
     const table = within(first).getByTestId("inbox-evidence");
     expect(table.querySelectorAll("tbody tr").length).toBe(2);
@@ -153,113 +184,127 @@ describe("the inbox on Research home (§6)", () => {
     expect((await screen.findByTestId("where")).textContent).toBe(`/flights/${FA}?window=600-660`);
   });
 
-  it("marks a candidate with a note; resolved ones fold away; the linked investigation opens", async () => {
+  it("the ⋯ menu marks a candidate with a note; resolved ones fold under Show resolved; Open the investigation is the one button", async () => {
     app();
     const first = (await screen.findAllByTestId("inbox-candidate")).find((c) => c.dataset.status === "new")!;
-    fireEvent.click(within(first).getByTestId("inbox-mark-acted"));
+    choose(first, "inbox-item-menu", "inbox-mark-acted");
     fireEvent.change(within(first).getByLabelText("Note"), { target: { value: "Governor re-adjusted" } });
-    fireEvent.click(within(first).getByTestId("inbox-mark-confirm"));
+    fireEvent.click(within(first).getByTestId("inbox-resolve-confirm"));
     await waitFor(() => expect(state.calls.find((c) => c.op === "inbox_resolve")?.params).toMatchObject({ candidate_id: "ib-1", status: "acted", note: "Governor re-adjusted" }));
     await waitFor(() => expect(screen.getAllByTestId("inbox-candidate").length).toBe(1));
+    expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (2 open)");
     fireEvent.click(screen.getByTestId("inbox-show-resolved"));
-    expect(screen.getAllByTestId("inbox-candidate").length).toBe(2);
+    const resolved = within(screen.getByTestId("inbox-resolved")).getByTestId("inbox-candidate");
+    expect(within(resolved).getByTestId("status-mark").textContent).toBe("acted");
     const watched = screen.getAllByTestId("inbox-candidate").find((c) => c.dataset.status === "watch")!;
+    expand(watched);
     expect(within(watched).getByTestId("inbox-note").textContent).toContain("Pending the bulletin.");
+    expect(within(watched).getAllByRole("button").filter((b) => b.textContent === "Open the investigation").length).toBe(1);
     fireEvent.click(within(watched).getByTestId("inbox-open-study"));
     expect((await screen.findByTestId("where")).textContent).toBe("/research/st-linked");
   });
 
-  it("on the website (no bench) the inbox is there with the install invitation", async () => {
+  it("on the website (no bench) one line invites the install, naming the newest open question", async () => {
     state.bench = false;
     app();
-    await screen.findAllByTestId("inbox-candidate");
-    expect((await screen.findByTestId("inbox-install")).textContent).toContain("install EIS for Claude Desktop");
-    state.bench = true;
-  });
-
-  it("with a bench there is no install invitation", async () => {
-    app();
-    await screen.findAllByTestId("inbox-candidate");
-    await new Promise((r) => setTimeout(r, 20));
-    expect(screen.queryByTestId("inbox-install")).toBeNull();
-  });
-});
-
-describe("the owner's questions in the inbox (D16)", () => {
-  it("one question with its two marks beside the candidates, each opening its flight at the window with its channels", async () => {
-    app();
-    const q = await screen.findByTestId("question");
-    expect(q.dataset.status).toBe("new");
-    expect(within(q).getByTestId("question-title").textContent).toBe("rough climbs");
-    expect(q.textContent).toContain("2 marks");
-    const pins = within(q).getAllByTestId("pin");
-    expect(pins.map((p) => within(p).getByTestId("pin-note").textContent)).toEqual(["“rpm wanders in the climb”", "“again, less”"]);
-    expect(pins[0].textContent).toContain("+01:40–+02:40 into the flight");
-    expect(pins[0].textContent).toContain("RPM, MAP");
-    // Unassigned holds the loose mark; the candidates are still there.
-    expect(within(screen.getByTestId("questions-unassigned")).getAllByTestId("pin").length).toBe(1);
-    expect((await screen.findAllByTestId("inbox-candidate")).length).toBe(2);
-    fireEvent.click(within(pins[0]).getByTestId("pin-open"));
-    expect((await screen.findByTestId("where")).textContent).toBe(`/flights/${FA}?window=100-160&channels=rpm,map_inhg`);
-  });
-
-  it("a question takes the candidates' statuses with a note", async () => {
-    app();
-    const q = await screen.findByTestId("question");
-    fireEvent.click(within(q).getByTestId("question-mark-nothing-here"));
-    fireEvent.change(within(q).getByLabelText("Note"), { target: { value: "the governor, known" } });
-    fireEvent.click(within(q).getByTestId("question-mark-confirm"));
-    await waitFor(() => expect(state.calls.find((c) => c.op === "question_resolve")?.params).toMatchObject({ question_id: "q-rough", status: "nothing-here", note: "the governor, known" }));
-    await waitFor(() => expect(screen.queryByTestId("question")).toBeNull());       // resolved ones fold away
-    fireEvent.click(screen.getByTestId("questions-show-resolved"));
-    expect(screen.getByTestId("question").dataset.status).toBe("nothing-here");
-  });
-
-  it("edit a mark's note, move a mark to a new question, delete a mark, rename and delete a question", async () => {
-    app();
-    const loose = within(await screen.findByTestId("questions-unassigned")).getByTestId("pin");
-    fireEvent.click(within(loose).getByTestId("pin-edit"));
-    fireEvent.change(within(loose).getByLabelText("Mark note"), { target: { value: "a dip at 30 s" } });
-    fireEvent.click(within(loose).getByTestId("pin-note-save"));
-    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_edit")?.params).toEqual({ pin_id: "p-3", note: "a dip at 30 s" }));
-    const again = within(await screen.findByTestId("questions-unassigned")).getByTestId("pin");
-    fireEvent.click(within(again).getByTestId("pin-move"));
-    fireEvent.change(within(again).getByLabelText("Move to"), { target: { value: "__new__" } });
-    fireEvent.change(within(again).getByLabelText("New question title"), { target: { value: "dips" } });
-    fireEvent.click(within(again).getByTestId("pin-move-confirm"));
-    await waitFor(() => expect(state.calls.filter((c) => c.op === "pin_edit").at(-1)?.params).toEqual({ pin_id: "p-3", question: { title: "dips" } }));
-    await waitFor(() => expect(screen.getAllByTestId("question").length).toBe(2));
-    expect(screen.queryByTestId("questions-unassigned")).toBeNull();
-    const rough = screen.getAllByTestId("question").find((x) => x.dataset.question === "q-rough")!;
-    fireEvent.click(within(within(rough).getAllByTestId("pin")[1]).getByTestId("pin-delete"));
-    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_delete")?.params).toBe("p-2"));
-    const r2 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
-    fireEvent.click(within(r2).getByTestId("question-rename"));
-    fireEvent.change(within(r2).getByLabelText("Question title"), { target: { value: "rough climbs in summer" } });
-    fireEvent.click(within(r2).getByText("Save"));
-    await waitFor(() => expect(state.calls.find((c) => c.op === "question_edit")?.params).toEqual({ question_id: "q-rough", title: "rough climbs in summer" }));
-    const r3 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
-    fireEvent.click(within(r3).getByTestId("question-delete"));
-    expect(r3.textContent).toContain("Its marks stay, unassigned.");
-    fireEvent.click(within(r3).getByTestId("question-delete-confirm"));
-    await waitFor(() => expect(within(screen.getByTestId("questions-unassigned")).getAllByTestId("pin").length).toBe(1));
-  });
-
-  it("on the website the question waits, with the hand-off line and the install link", async () => {
-    state.bench = false;
-    app();
-    const line = await screen.findByTestId("questions-handoff");
-    expect(line.textContent).toContain("“rough climbs” is waiting for Claude.");
-    expect(line.textContent).toContain("Investigate");
+    const line = await screen.findByTestId("inbox-install");
+    expect(line.textContent).toContain("“rough climbs” is waiting for Claude");
+    expect(line.textContent).toContain("install EIS for Claude Desktop");
     expect(line.querySelector("a")!.getAttribute("href")).toContain("walkthroughs/install-extension/");
     state.bench = true;
   });
 
-  it("with a bench there is no hand-off line; with no marks the inbox says how to mark", async () => {
+  it("with a bench there is no install line; an empty inbox is one sentence", async () => {
     state.questions = [];
     state.pins = [];
+    state.candidates = [];
     app();
-    expect((await screen.findByTestId("questions-empty")).textContent).toContain("Mark for Claude");
-    expect(screen.queryByTestId("questions-handoff")).toBeNull();
+    expect((await screen.findByTestId("inbox-empty")).textContent).toContain("Mark for Claude");
+    expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (0 open)");
+    expect(screen.queryByTestId("inbox-install")).toBeNull();
+  });
+});
+
+describe("the owner's questions in the digest (D16)", () => {
+  it("a question expands to its marks: flight, short local window, channel tags, the note; a mark opens its flight", async () => {
+    app();
+    const q = await screen.findByTestId("question");
+    expand(q);
+    const pins = within(q).getAllByTestId("pin");
+    expect(pins.map((p) => within(p).getByTestId("pin-note").textContent)).toEqual(["“rpm wanders in the climb”", "“again, less”"]);
+    const when = within(pins[0]).getByTestId("pin-when");
+    expect(when.textContent).toBe("Jan 2 · 10:01–10:02 (+1:40 into the flight)");
+    expect(when.getAttribute("title")).toBe("2026-01-02 10:01:40–10:02:40 PST (+01:40–+02:40 into the flight)");
+    expect(within(pins[1]).getByTestId("pin-when").textContent).toBe("+2:00–+2:50 into the flight");     // no local time known
+    const tags = within(pins[0]).getByTestId("channel-tags");
+    expect([...tags.querySelectorAll("[data-channel]")].map((t) => t.textContent)).toEqual(["RPM", "MAP"]);
+    // the loose mark is one collapsed line
+    const loose = screen.getByTestId("questions-unassigned");
+    expect(within(loose).queryAllByTestId("pin")).toEqual([]);
+    expand(loose);
+    expect(within(loose).getAllByTestId("pin").length).toBe(1);
+    fireEvent.click(within(pins[0]).getByTestId("pin-open"));
+    expect((await screen.findByTestId("where")).textContent).toBe(`/flights/${FA}?window=100-160&channels=rpm,map_inhg`);
+  });
+
+  it("a question takes the candidates' statuses with a note, from its ⋯ menu", async () => {
+    app();
+    const q = await screen.findByTestId("question");
+    choose(q, "inbox-item-menu", "question-mark-nothing-here");
+    fireEvent.change(within(q).getByLabelText("Note"), { target: { value: "the governor, known" } });
+    fireEvent.click(within(q).getByTestId("inbox-resolve-confirm"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "question_resolve")?.params).toMatchObject({ question_id: "q-rough", status: "nothing-here", note: "the governor, known" }));
+    await waitFor(() => expect(screen.queryByTestId("question")).toBeNull());       // resolved ones fold away
+    fireEvent.click(screen.getByTestId("inbox-show-resolved"));
+    const r = screen.getByTestId("question");
+    expect(r.dataset.status).toBe("nothing-here");
+    expect(within(r).getByTestId("status-mark").textContent).toBe("nothing here");
+  });
+
+  it("edit a mark's note, move a mark to a new question, delete a mark, rename and delete a question — all from menus", async () => {
+    app();
+    let loose = await screen.findByTestId("questions-unassigned");
+    expand(loose);
+    let pin = within(loose).getByTestId("pin");
+    choose(pin, "pin-menu", "pin-edit");
+    fireEvent.change(within(pin).getByLabelText("Mark note"), { target: { value: "a dip at 30 s" } });
+    fireEvent.click(within(pin).getByTestId("pin-note-save"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_edit")?.params).toEqual({ pin_id: "p-3", note: "a dip at 30 s" }));
+    loose = await screen.findByTestId("questions-unassigned");
+    pin = within(loose).getByTestId("pin");
+    choose(pin, "pin-menu", "pin-move");
+    fireEvent.change(within(pin).getByLabelText("Move to"), { target: { value: "__new__" } });
+    fireEvent.change(within(pin).getByLabelText("New question title"), { target: { value: "dips" } });
+    fireEvent.click(within(pin).getByTestId("pin-move-confirm"));
+    await waitFor(() => expect(state.calls.filter((c) => c.op === "pin_edit").at(-1)?.params).toEqual({ pin_id: "p-3", question: { title: "dips" } }));
+    await waitFor(() => expect(screen.getAllByTestId("question").length).toBe(2));
+    expect(screen.queryByTestId("questions-unassigned")).toBeNull();
+    const rough = screen.getAllByTestId("question").find((x) => x.dataset.question === "q-rough")!;
+    expand(rough);
+    choose(within(rough).getAllByTestId("pin")[1], "pin-menu", "pin-delete");
+    await waitFor(() => expect(state.calls.find((c) => c.op === "pin_delete")?.params).toBe("p-2"));
+    const r2 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
+    choose(r2, "inbox-item-menu", "question-rename");
+    fireEvent.change(within(r2).getByLabelText("Question title"), { target: { value: "rough climbs in summer" } });
+    fireEvent.click(within(r2).getByTestId("question-rename-save"));
+    await waitFor(() => expect(state.calls.find((c) => c.op === "question_edit")?.params).toEqual({ question_id: "q-rough", title: "rough climbs in summer" }));
+    const r3 = (await screen.findAllByTestId("question")).find((x) => x.dataset.question === "q-rough")!;
+    choose(r3, "inbox-item-menu", "question-delete");
+    expect(r3.textContent).toContain("Its marks stay, unassigned.");
+    fireEvent.click(within(r3).getByTestId("question-delete-confirm"));
+    await waitFor(() => expect(within(screen.getByTestId("questions-unassigned")).getByTestId("inbox-line-summary").textContent).toBe("1 mark"));
+  });
+
+  it("a question a notebook took up shows Open the investigation when expanded, and nothing else stands", async () => {
+    state.questions[0].study_id = "st-q";
+    state.questions[0].status = "investigating";
+    app();
+    const q = await screen.findByTestId("question");
+    expect(within(q).queryByTestId("question-open-study")).toBeNull();
+    expand(q);
+    const buttons = within(within(q).getByTestId("inbox-expanded")).getAllByRole("button").map((b) => b.textContent);
+    expect(buttons.filter((t) => !t?.startsWith("⋯") && t !== "⋯")).toEqual(["Open the investigation"]);
+    fireEvent.click(within(q).getByTestId("question-open-study"));
+    expect((await screen.findByTestId("where")).textContent).toBe("/research/st-q");
   });
 });

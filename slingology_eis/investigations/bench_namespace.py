@@ -60,6 +60,14 @@ class Workspace:
         self.study = req.get("study") or {}
         self._assignments = req.get("assignments") or {}
         self.touched: set[str] = set()
+        # Spec 16 §5.5: the channels the tests and log views used, and the tests run — the card's facts.
+        self.channels_used: list[str] = []
+        self.tests_used: list[str] = []
+
+    def used(self, channels=(), test: Optional[str] = None) -> None:
+        self.channels_used += [str(c) for c in channels or [] if c and str(c) not in self.channels_used]
+        if test and test not in self.tests_used:
+            self.tests_used.append(test)
 
     def __repr__(self) -> str:
         return f"<EIS workspace {self.dir.name}: {len(_ws.list_flight_ids(self.dir))} flights, engine {self.engine}>"

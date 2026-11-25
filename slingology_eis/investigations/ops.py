@@ -481,6 +481,10 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     if lacking:
         raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
                                        "saying what it shows; add one beside cell " + ", ".join(lacking))
+    try:
+        tags = NBX.clean_tags(params.get("tags")) if params.get("tags") is not None else None
+    except NBX.NotebookError as e:
+        raise _err(e)
     m = NBX.meta(nb)
     # F17: a follow-up's summary replaces the earlier one; the earlier one
     # stays, with the date it was written, as the notebook's history.
@@ -489,6 +493,10 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
         m["summaries"] = [*(m.get("summaries") or []), {"summary": prev, "finished": m.get("finished")}]
     m.pop("reopened", None)
     m.update({"summary": summary.strip(), "status": "finished", "finished": H._now_iso()})
+    if tags is not None:            # §5.5: Claude's topic words; a follow-up may leave them as they were
+        m["tags"] = tags
+    # §5.5: the resolution this finish gave, for the card (a question's defaults to watch, as below).
+    m["resolution"] = params.get("resolution") or ("watch" if (params.get("question") or m.get("question_id")) else None)
     resolved = None
     cand = params.get("inbox_candidate") or m.get("inbox_candidate")
     if cand:

@@ -31,7 +31,8 @@ it), take that one. Otherwise it is a new question in my words.
 5. Read what my manuals say about it (`documents_list`, `document_read`) and cite the pages.
 6. State the mechanism as a hypothesis, name the alternatives you ruled out with the cells that did it, and
    finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
-   one of mine, so it and its marks are resolved.
+   one of mine, so it and its marks are resolved, and `tags`: two or three topic words for what the notebook is
+   about (not what it found).
 
 The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
 cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you

@@ -138,6 +138,7 @@ export interface EngineClient {
   getFlight(flightId: string): Promise<{
     flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
     reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+    ident?: { start_local?: string | null; tz_abbrev?: string | null } | null;
   }>;
   getFleet(): Promise<FleetAnalysis>;
   rebuildFleet(): Promise<FleetAnalysis>;
@@ -469,6 +470,7 @@ export class LocalServerClient implements EngineClient {
     return this.rpc<{
       flight_analysis: FlightAnalysis; insight_set: InsightSet; source_filename: string | null;
       reference_state: ReferenceState; reference_changes: ReferenceChangeMarker[];
+      ident?: { start_local?: string | null; tz_abbrev?: string | null } | null;
     }>(
       "get_flight",
       { flight_id: flightId }

@@ -10,7 +10,7 @@ The exported notebook holds the question, Claude's narrative, the code and every
 
 ### 1. Read it as they will
 
-Open the notebook on the Research page and press **Export as a page (.html)**. Open the page in your browser: that is everything the recipient will read. If a note or a cell names a person or a place you'd rather not send, ask Claude to change it.
+Open the notebook on the Research page and choose **Actions → Export as a page (.html)**. Open the page in your browser: that is everything the recipient will read. If a note or a cell names a person or a place you'd rather not send, ask Claude to change it.
 
 ### 2. Export
 

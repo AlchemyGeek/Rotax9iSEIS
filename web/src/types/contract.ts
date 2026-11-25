@@ -1726,6 +1726,25 @@ export interface StudySummary {
   summary?: string | null;
   cells?: number;
   pending?: number;
+  summaries?: { summary?: string; finished?: string | null }[];
+  // Spec 16 §5.5 (v1.1): what the notebook says about itself, derived by the engine.
+  card?: NotebookCard | null;
+}
+
+export type NotebookOrigin = "marks" | "candidate" | "asked" | "imported";
+export type NotebookTest = "cycling" | "coupling" | "groups" | "unusual";
+
+export interface NotebookCard {
+  v: number;
+  origin: NotebookOrigin;
+  channels: string[];
+  flights: number;
+  date_span: [string, string] | null;
+  evidence: { log_views: number; figures: number; tables: number };
+  tests: NotebookTest[];
+  outputs: "current" | "pending" | "elsewhere";
+  resolution: "nothing-here" | "watch" | "acted" | null;
+  tags: string[];
 }
 
 export interface StudyImportResult {

@@ -30,11 +30,20 @@ beforeEach(() => {
   state.open = [];
 });
 
-function mark(zoomed = true) {
-  render(<MarkForClaude flightId="fa" window={[616.2, 661.7]} channels={["rpm", "map_inhg"]} zoomed={zoomed} />);
+function mark(zoomed = true, local = true) {
+  // Spec 03 v0.34: the flight's local start and zone (get_flight's ident) give the window its time.
+  render(<MarkForClaude flightId="fa" window={[616.2, 661.7]} channels={["rpm", "map_inhg"]} zoomed={zoomed}
+    startLocal={local ? "2026-10-24T22:15:51-07:00" : null} tz={local ? "PDT" : null} />);
 }
 
 describe("Mark for Claude (D16)", () => {
+  it("without the flight's local time, the window is its offsets into the flight", async () => {
+    mark(true, false);
+    fireEvent.click(screen.getByTestId("mark-open"));
+    await screen.findByTestId("mark-dialog");
+    expect(screen.getByTestId("mark-window").textContent).toBe("+10:16–+11:02 into the flight · RPM, MAP");
+  });
+
   it("needs a window: without a zoom the button is off and says why", () => {
     mark(false);
     const b = screen.getByTestId("mark-open") as HTMLButtonElement;
@@ -46,7 +55,8 @@ describe("Mark for Claude (D16)", () => {
     mark();
     fireEvent.click(screen.getByTestId("mark-open"));
     const dialog = await screen.findByTestId("mark-dialog");
-    expect(screen.getByTestId("mark-window").textContent).toBe("10:16–11:02 into the flight · RPM, MAP");
+    expect(screen.getByTestId("mark-window").textContent).toBe("Oct 24 · 22:26–22:26 (+10:16 into the flight) · RPM, MAP".replace("22:26–22:26", "22:26:07–22:26:53"));
+    expect(screen.getByTestId("mark-window").getAttribute("title")).toBe("2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight)");
     expect((screen.getByTestId("mark-save") as HTMLButtonElement).disabled).toBe(true);   // a new question needs a title
     fireEvent.change(screen.getByLabelText("Note"), { target: { value: "rpm wanders by about 100" } });
     fireEvent.change(screen.getByLabelText("New question title"), { target: { value: "rough climbs" } });
@@ -54,7 +64,7 @@ describe("Mark for Claude (D16)", () => {
     await waitFor(() => expect(state.calls).toEqual([{ flight_id: "fa", start_s: 616, end_s: 662, channels: ["rpm", "map_inhg"],
       note: "rpm wanders by about 100", question: { title: "rough climbs" } }]));
     expect((await screen.findByTestId("mark-done")).textContent).toBe(
-      "Marked 10:16–11:02 under “rough climbs” (1 mark) in Research → Inbox. In Claude Desktop, choose Investigate — with no text it takes your newest open question.");
+      "Marked Oct 24 · 22:26:07–22:26:53 (+10:16 into the flight) under “rough climbs” (1 mark) in Research → Inbox. In Claude Desktop, choose Investigate — with no text it takes your newest open question.");
     expect(dialog.isConnected).toBe(false);
   });
 

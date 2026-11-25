@@ -8,7 +8,8 @@ generator: a climb, cruise and a minute of full power with rpm and manifold
 pressure cycling together) — no real log, tail number, airport or time — then:
 an aircraft record with notes, an inbox scan, the owner's marks under two
 questions (Spec 16 D16), a short notebook written through the MCP tools as
-Claude would write it — taking up one of the questions — and a flight name. It starts
+Claude would write it — taking up one of the questions — two smaller ones so
+Research home shows its cards (Spec 03 v0.34), and a flight name. It starts
 `slingology-eis serve` on a free port against that root and shoots the pages
 in the installed Chrome (Playwright). The data root is deleted afterwards.
 
@@ -107,7 +108,19 @@ class Demo:
         self.tool("study_finish", {"study_id": sid, "summary":
                                    "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step; the swing is 180 rpm on 8 and 60 rpm on 2. "
                                    "A hypothesis to test next: the governor and the boost control acting on each other.",
+                                   "tags": ["governor", "full power"],
                                    **({"inbox_candidate": cand, "resolution": "investigating"} if cand else {})})
+        # Two smaller notebooks, so Research home shows cards of each kind (Spec 03 v0.34 §5.10).
+        oil = self.tool("study_create", {"name": "Oil temperature in cruise"})["study_id"]
+        self.tool("cell_append", {"study_id": oil, "kind": "logview", "flight": ids[7], "start_s": 200, "end_s": 300,
+                                  "channels": ["oil_temp_f"], "title": "8 January — after the climb"})
+        self.tool("cell_append", {"study_id": oil, "kind": "code", "source":
+                                  "r = eis.unusual(\"stable_cruise\", [\"oil_temp_f\"])\nprint(r.finding)"})
+        self.tool("study_finish", {"study_id": oil, "resolution": "nothing-here", "tags": ["oil", "cruise"], "summary":
+                                   "Cruise oil temperature is steady flight to flight; the warm reading on 8 January is the climb, not cruise."})
+        new = self.tool("study_create", {"name": "Manifold pressure at takeoff"})["study_id"]
+        self.tool("cell_append", {"study_id": new, "kind": "markdown", "source":
+                                  "## The question\n\nDoes manifold pressure reach the same value at every takeoff?"})
         return {"ids": ids, "study_id": sid, "question_id": qid}
 
 
@@ -144,10 +157,23 @@ def shoot(url: str, out: Path, study_id: str, headed: bool, flight: str = "") ->
         save("mark-for-claude.png", page.get_by_test_id("mark-for-claude"))
         page.set_viewport_size({"width": 1100, "height": 820})
 
-        go("/research", "inbox")
+        # Spec 03 v0.34 §5.10: Research home — the notebooks as cards, the inbox as a digest.
+        go("/research", "notebook-card")
         page.get_by_test_id("question").first.wait_for(timeout=60000)
+        dismiss = page.get_by_test_id("move-dismiss")
+        if dismiss.count():
+            dismiss.click()
+        time.sleep(0.5)
+        save("investigations-home.png")
+        q = page.get_by_test_id("question").filter(has_text="rpm swing at full power").first
+        q.get_by_test_id("inbox-line").first.click()               # a digest line expands in place
+        q.get_by_test_id("pin").first.wait_for(timeout=30000)
+        time.sleep(0.5)
         save("investigations-inbox.png", page.get_by_test_id("inbox"))
-        page.get_by_test_id("inbox-candidate").first.get_by_test_id("inbox-evidence-toggle").click()
+        q.get_by_test_id("inbox-line").first.click()
+        c = page.get_by_test_id("inbox-candidate").first
+        c.get_by_test_id("inbox-line").first.click()
+        c.get_by_test_id("inbox-evidence-toggle").click()
         time.sleep(0.5)
         save("investigations-inbox-evidence.png", page.get_by_test_id("inbox"))
 

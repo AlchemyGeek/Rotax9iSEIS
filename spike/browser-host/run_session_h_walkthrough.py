@@ -196,6 +196,8 @@ def run_move(args, work: Path, step, shot, errors) -> None:
             page.get_by_test_id("nav-research").click()
             q = page.get_by_test_id("question").first
             q.wait_for(timeout=60000)
+            q.get_by_test_id("inbox-line").first.click()          # Spec 03 v0.34: a digest line expands in place
+            q.get_by_test_id("pin").first.wait_for(timeout=30000)
             step("local: the question arrived with its two marks",
                  "rough climbs" in q.inner_text() and q.get_by_test_id("pin").count() == 2)
             q.get_by_test_id("pin").first.get_by_test_id("pin-open").click()
@@ -327,11 +329,11 @@ def run_record(args, work: Path, step, shot, errors) -> None:
 
         def check(page, mode):
             page.get_by_test_id("nav-research").click(timeout=120000)
-            page.get_by_test_id("study-row").first.wait_for(timeout=60000)
-            listed = page.get_by_test_id("study-row").filter(has_text="Oil temperature in cruise").first.inner_text()
-            page.get_by_test_id("study-row").filter(has_text="Oil temperature in cruise").first.click()
+            page.get_by_test_id("notebook-card").first.wait_for(timeout=60000)      # Spec 03 v0.34: cards
+            listed = page.get_by_test_id("notebook-card").filter(has_text="Oil temperature in cruise").first.inner_text()
+            page.get_by_test_id("notebook-card").filter(has_text="Oil temperature in cruise").first.get_by_test_id("card-link").click()
             page.get_by_test_id("notebook").wait_for(timeout=60000)
-            hist = page.get_by_test_id("nb-summary-history")
+            hist = page.get_by_test_id("nb-summary").locator("details.summary-history")
             hist.locator("summary").click()
             step(f"{mode}: the notebook says reopened, keeps its summary and the earlier one with its date",
                  "reopened" in page.get_by_test_id("nb-meta").inner_text()

@@ -8,6 +8,12 @@ question-for-type), author (claude | user), question, status (open |
 finished), summary, inbox_candidate, engine, created, updated — and, when
 they apply, engine_type (D9), imported, converted_from.
 
+v1.1 (§5.5): `card` — what the notebook says about itself, derived from
+the cells and metadata on every save, never typed: origin, channels,
+flights and date span, evidence counts, tests, outputs state, resolution,
+tags. Recomputed on import and on the first load of a notebook that lacks
+it (or holds an older `CARD_VERSION`).
+
 Cells are markdown and code. A code cell's `metadata.slingology` holds
 `ran` {engine, flights, at, ms, status, digest, caps?} and, after a re-run
 whose outputs differ, `pending` {outputs, ran} until accepted or discarded
@@ -59,6 +65,12 @@ FIGURE_MIMES = ("image/svg+xml", "image/png", LOGVIEW_MIME)
 _ID = re.compile(r"^st-[0-9a-f]{12}$")
 _ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 SETUP_ID = "setup"
+CARD_VERSION = 1
+TESTS = ("cycling", "coupling", "groups", "unusual")
+_TEST_CALL = re.compile(r"\beis\.(cycling|coupling|groups|unusual)\s*\(")
+MAX_TAGS = 5
+RESOLUTIONS = ("nothing-here", "watch", "acted")
+MAX_TAG_CHARS = 32
 _SETUP_OPEN = re.compile(r'eis\.open\(\s*(["\'])([^"\']*)\1')
 
 
@@ -270,12 +282,16 @@ def accept_external(nb: dict, cell_ids: Optional[list] = None) -> list[str]:
     return done
 
 
-def save(ws_dir: Path, nb: dict) -> dict:
+def save(ws_dir: Path, nb: dict, *, touch: bool = True) -> dict:
+    """Write the notebook (its card recomputed). `touch=False` keeps `updated`:
+    a derived field filled in is not a change to the notebook (§5.5)."""
     m = meta(nb)
     if not m.get("id") or not _ID.match(m["id"]):
         raise NotebookError("BAD_PARAMS", "a notebook's id is st-<12 hex>")
-    m["updated"] = _now()
+    if touch or not m.get("updated"):
+        m["updated"] = _now()
     m["created"] = m.get("created") or m["updated"]
+    m["card"] = card(nb, ws_dir)
     for c in nb["cells"]:
         if len(text(c.get("source"))) > MAX_SOURCE_CHARS:
             raise NotebookError("BAD_PARAMS", f"cell {c['id']}: source is longer than {MAX_SOURCE_CHARS} characters")
@@ -309,6 +325,8 @@ def load(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) -> 
     mark_external(nb)
     if json.dumps(nb, sort_keys=True) != before:
         save(ws_dir, nb)
+    elif (meta(nb).get("card") or {}).get("v") != CARD_VERSION:    # §5.5: an older notebook gets its card, its date kept
+        save(ws_dir, nb, touch=False)
     return nb
 
 
@@ -411,6 +429,112 @@ def flights_of(nb: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+# ── §5.5: what a notebook says about itself ─────────────────────────────────
+
+def clean_tags(tags) -> list[str]:
+    """study_finish's `tags`: ≤ MAX_TAGS short words, trimmed, duplicates
+    dropped (case-insensitively); refused rather than cut when too many."""
+    if tags is None:
+        return []
+    if isinstance(tags, str):
+        tags = re.split(r"[,;]", tags)
+    if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
+        raise NotebookError("BAD_PARAMS", "tags is a list of short words, e.g. [\"governor\", \"cruise rpm\"]")
+    out: list[str] = []
+    for t in tags:
+        t = " ".join(t.split())
+        if not t or t.lower() in (o.lower() for o in out):
+            continue
+        if len(t) > MAX_TAG_CHARS:
+            raise NotebookError("BAD_PARAMS", f"a tag is a word or two (at most {MAX_TAG_CHARS} characters): {t[:40]!r}")
+        out.append(t)
+    if len(out) > MAX_TAGS:
+        raise NotebookError("BAD_PARAMS", f"at most {MAX_TAGS} tags; two or three topic words are enough")
+    return out
+
+
+def _flight_date(ws_dir: Optional[Path], fid: str, known: dict) -> Optional[str]:
+    if fid in known:
+        return known[fid]
+    if ws_dir is None:
+        return None
+    from .. import flight_ident as fi
+    d = (fi.load(ws_dir, fid) or {}).get("local_date")
+    if not d:
+        from .. import workspace as ws
+        fa = ws.load_flight_analysis(ws_dir, fid)
+        d = (fa.header or {}).get("date") if fa is not None else None
+    return str(d)[:10] if d else None
+
+
+def _linked_resolution(ws_dir: Optional[Path], m: dict) -> Optional[str]:
+    """A notebook finished before v1.1 recorded no resolution: the status
+    its linked question or candidate holds, when that is a resolution."""
+    if ws_dir is None or m.get("status") != "finished":
+        return None
+    try:
+        if m.get("question_id"):
+            from . import pins as PN
+            st = PN.question(PN.load(ws_dir), m["question_id"]).get("status")
+        elif m.get("inbox_candidate"):
+            from . import inbox as IB
+            st = next((c.get("status") for c in IB.load(ws_dir)["candidates"] if c.get("id") == m["inbox_candidate"]),
+                      None)
+        else:
+            return None
+    except Exception:   # noqa: BLE001 — no record of the item: no resolution to show
+        return None
+    return st if st in RESOLUTIONS else None
+
+
+def card(nb: dict, ws_dir: Optional[Path] = None) -> dict:
+    """§5.5, derived from the notebook as it stands (and the flights' dates
+    in `ws_dir`). Channels are those the log views drew and the tests ran
+    on, as the cells recorded them (`ran.channels`); tests those the cells
+    recorded (`ran.tests`) — for a cell run before the eis library recorded
+    them, the eis.<test>( calls in its code."""
+    m = meta(nb)
+    origin = ("imported" if m.get("imported") else "marks" if m.get("question_id")
+              else "candidate" if m.get("inbox_candidate") else "asked")
+    channels: list[str] = []
+    tests: list[str] = []
+    evidence = {"log_views": 0, "figures": 0, "tables": 0}
+    known: dict = {}
+    pending = elsewhere = False
+    for c in nb["cells"]:
+        if c.get("cell_type") != "code" or _is_setup(c):
+            continue
+        sm = slmeta_get(c)
+        ran = sm.get("ran") or {}
+        pending = pending or bool(sm.get("pending"))
+        elsewhere = elsewhere or bool(sm.get("ran_elsewhere"))
+        channels += [str(x) for x in ran.get("channels") or []]
+        tests += [str(x) for x in (ran["tests"] if "tests" in ran else _TEST_CALL.findall(text(c.get("source"))))]
+        for o in c.get("outputs") or []:
+            data = o.get("data") or {}
+            if LOGVIEW_MIME in data:
+                evidence["log_views"] += 1
+                ref = data[LOGVIEW_MIME] or {}
+                channels += [str(x) for x in ref.get("channels") or []]
+                if ref.get("flight") and ref.get("flight_date_local"):
+                    known[ref["flight"]] = str(ref["flight_date_local"])[:10]
+            elif "image/svg+xml" in data or "image/png" in data:
+                evidence["figures"] += 1
+            elif "text/html" in data:
+                evidence["tables"] += 1
+    flights = flights_of(nb)
+    dates = sorted(d for d in (_flight_date(ws_dir, f, known) for f in flights) if d)
+    resolution = m.get("resolution") if m.get("status") == "finished" else None
+    resolution = resolution if resolution in RESOLUTIONS else None
+    return {"v": CARD_VERSION, "origin": origin,
+            "channels": list(dict.fromkeys(channels)), "flights": len(flights),
+            "date_span": [dates[0], dates[-1]] if dates else None,
+            "evidence": evidence, "tests": [t for t in TESTS if t in tests],
+            "outputs": "pending" if pending else "elsewhere" if elsewhere else "current",
+            "resolution": resolution or _linked_resolution(ws_dir, m),
+            "tags": list(m.get("tags") or [])}
+
+
 def summary(nb: dict) -> dict:
     """The list_studies row of a notebook (the hand-study row's shape)."""
     m = meta(nb)
@@ -421,7 +545,7 @@ def summary(nb: dict) -> dict:
             "question": m.get("question"),
             "status": "reopened" if m.get("status") == "open" and m.get("reopened") else m.get("status"),
             "summary": m.get("summary"), "summaries": m.get("summaries") or [],
-            "cells": len(nb["cells"]), "format": "ipynb",
+            "cells": len(nb["cells"]), "format": "ipynb", "card": m.get("card"),
             "pending": sum(1 for c in nb["cells"] if ((c.get("metadata") or {}).get("slingology") or {}).get("pending"))}
 
 

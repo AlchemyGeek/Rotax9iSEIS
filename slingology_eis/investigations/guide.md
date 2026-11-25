@@ -191,7 +191,10 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
   - a summary: what was found, what it means, what to do — no verdict words without their references.
   With `resolution` it resolves the inbox candidate; with `question` the owner's question it answers (and its
   marks; `resolution` defaults to watch); with `journal: true` it notes the finding in the owner's Journal
-  (the one entry you may write there).
+  (the one entry you may write there). Give it `tags`: two or three topic words for the notebook's card on
+  Research home — what the notebook is **about**, not what it found (`["governor", "cruise rpm"]`, not
+  `["governor fault"]`). The card's channels, tests, flights and evidence are recorded by EIS; don't repeat them
+  as tags.
 
 Write the finding in the notebook as you go; the conversation is not where the owner will look for it later.
 

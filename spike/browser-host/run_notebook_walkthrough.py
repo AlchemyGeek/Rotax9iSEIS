@@ -59,7 +59,8 @@ COMPARE_JS = """async (html) => {
   });
   return {md: [exMd.length, pgMd.length], mdSame: exMd.length === pgMd.length && exMd.every((m, i) => m === pgMd[i]),
           code: [exCode.length, pgCode.length], codeSame: code.filter(Boolean).length,
-          meta: doc.querySelector('header .meta').innerHTML === document.querySelector('[data-testid=nb-meta]').innerHTML,
+          // Spec 03 v0.34: the page shows the status as its dot and word; the words are the export's
+          meta: doc.querySelector('header .meta:not(.card):not(.outputs)').textContent.replace(/\s+/g, ' ').trim() === document.querySelector('[data-testid=nb-meta]').textContent.replace(/\s+/g, ' ').trim(),
           outputs: doc.querySelector('header .outputs').textContent === document.querySelector('[data-testid=nb-outputs]').textContent};
 }"""
 
@@ -161,9 +162,10 @@ def main() -> int:
                 step("the inbox is on Research home in the browser, with the install invitation", True, candidates=n,
                      scan=page.get_by_test_id("inbox-scan").inner_text() if page.get_by_test_id("inbox-scan").count() else None)
                 if n:
-                    page.get_by_test_id("inbox-candidate").first.get_by_test_id("inbox-mark-watch").click()
+                    page.get_by_test_id("inbox-candidate").first.get_by_test_id("inbox-item-menu").click()   # the ⋯ menu
+                    page.get_by_test_id("inbox-mark-watch").click()
                     page.get_by_label("Note").fill("walkthrough")
-                    page.get_by_test_id("inbox-mark-confirm").click()
+                    page.get_by_test_id("inbox-resolve-confirm").click()
                     page.wait_for_function("() => document.querySelector('[data-testid=inbox-candidate]')?.dataset.status === 'watch'", timeout=30000)
                     step("a candidate is marked (watch, with a note)", True)
 
@@ -194,6 +196,7 @@ def main() -> int:
                 step("log views whose flight is absent fall back to the SVG", info["absent"] >= 1 and info["live"] == 0, absent=info["absent"])
 
             with page.expect_download(timeout=120000) as dl:
+                page.get_by_test_id("nb-actions").click()            # Spec 03 v0.34: the Actions menu
                 page.get_by_test_id("nb-export-html").click()
             saved = work / dl.value.suggested_filename
             dl.value.save_as(saved)

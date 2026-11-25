@@ -45,4 +45,4 @@ Saving in place (**⌘S**) updates the notebook EIS holds — it *is* that file.
 - **Keep outputs that ran elsewhere** — accept them as they are; or
 - **Re-run** — EIS runs the cells again on its own bench, and you accept or discard what changed.
 
-If you saved a copy instead, import it from **Research → Import a study or notebook…**: it arrives as a new notebook.
+If you saved a copy instead, import it from **Research → Import a notebook…**: it arrives as a new notebook.

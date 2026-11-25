@@ -208,6 +208,9 @@ def run_cell(*, source: str, cell_id: str, ws_dir: Path, files_dir: Path, scratc
     ran = {"engine": __version__, "flights": (result or {}).get("flights") or [], "at": at, "ms": ms,
            "status": status, "caps": {"timeout_s": cap["timeout_s"], "memory_mb": cap["memory_mb"],
                                       "os_sandbox": os_sandbox}}
+    if result is not None:     # Spec 16 §5.5: what the cell's tests and log views used (absent if it never reported)
+        ran["channels"] = result.get("channels") or []
+        ran["tests"] = result.get("tests") or []
     for p in work.iterdir():
         p.unlink()
     work.rmdir()

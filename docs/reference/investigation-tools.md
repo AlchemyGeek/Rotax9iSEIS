@@ -31,7 +31,7 @@ Every result is `{engine_version, workspace_id, result}`. Tools marked **writes*
 | [`documents_list`](#documents_list) |  | The aircraft's documents — the Operators Manual, service bulletins, manuals, notes — read in place from the folders the owner named (Settings → Aircraft → Documents folders; subfolders included): name, folder, kind, pages, first line |
 | [`document_read`](#document_read) |  | Pages of one document (at most 3 at a time), or the pages where a phrase occurs (find: case-insensitive, accents ignored, with snippets) |
 | [`journal_list`](#journal_list) |  | The Journal entries as the UI shows them; 50 per page. |
-| [`studies_list`](#studies_list) |  | The studies in the workspace: kind, author, question, status, finding. |
+| [`studies_list`](#studies_list) |  | The notebooks in the workspace, newest first: kind, author, question, status, finding, and each one's card — origin, channels, flights and dates, evidence, tests, outputs, resolution, tags. |
 | [`study_read`](#study_read) |  | One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged). |
 | [`study_create`](#study_create) | writes | Start an investigation notebook for a question; its first cell holds the question |
 | [`cell_append`](#cell_append) | writes | Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight view |
@@ -263,7 +263,7 @@ The Journal entries as the UI shows them; 50 per page.
 
 ## `studies_list`
 
-The studies in the workspace: kind, author, question, status, finding.
+The notebooks in the workspace, newest first: kind, author, question, status, finding, and each one's card — origin, channels, flights and dates, evidence, tests, outputs, resolution, tags.
 
 No parameters.
 
@@ -349,7 +349,7 @@ Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.
 
 *Writes.*
 
-End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "journal": true}.
+End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). tags: two or three topic words for the notebook's card on Research home — what it is about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "tags": ["governor", "cruise rpm"], "journal": true}.
 
 | Parameter | Type | |
 |---|---|---|
@@ -361,6 +361,7 @@ End an investigation with its summary (what was found, what it means, what to do
 | `note` | string |  |
 | `journal` | boolean |  |
 | `finding` | string |  |
+| `tags` | list of string | Two or three topic words (at most 5): what the notebook is about |
 
 ## `inbox_list`
 

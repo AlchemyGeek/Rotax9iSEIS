@@ -56,6 +56,7 @@ export function FlightView() {
   const navigate = useNavigate();
 
   const [flightAnalysis, setFlightAnalysis] = useState<FlightAnalysis>(fixtureFlight);
+  const [ident, setIdent] = useState<{ start_local?: string | null; tz_abbrev?: string | null } | null>(null);
   const [insightSet, setInsightSet] = useState<InsightSet>(fixtureInsights);
   const [filename, setFilename] = useState(sourceFilename(fixtureFlight.source_keys[0]));
   const [usingFixture, setUsingFixture] = useState(true);
@@ -121,6 +122,7 @@ export function FlightView() {
         ]);
         if (cancelled) return;
         setFlightAnalysis(got.flight_analysis);
+        setIdent(got.ident ?? null);
         setInsightSet(got.insight_set);
         setReferenceState(got.reference_state);
         setReferenceChanges(got.reference_changes);
@@ -660,6 +662,7 @@ export function FlightView() {
                   fullEnd={tl.fullEnd} enabled={caps?.features.research === true && !usingFixture}
                   actions={caps?.features.investigations === true && !usingFixture ? (
                     <MarkForClaude flightId={flightId} window={tl.visibleWindow} channels={tl.activeChannelIds}
+                      startLocal={ident?.start_local ?? null} tz={ident?.tz_abbrev ?? null}
                       zoomed={tl.fullEnd > 0 && (tl.visibleWindow[0] > 1 || tl.visibleWindow[1] < tl.fullEnd - 1)} />
                   ) : undefined} />
               )}

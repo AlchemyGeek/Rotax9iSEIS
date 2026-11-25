@@ -49,7 +49,8 @@ cells = [
            "data": {"image/svg+xml": SVG, "text/plain": "<LogView>",
                     LOGVIEW_MIME: {"flight": FLIGHT, "flight_date_local": "2026-01-02", "start_s": 360, "end_s": 420,
                                    "channels": ["rpm", "map_inhg"], "marks": [{"t_s": 367.0, "label": "takeoff power"}],
-                                   "title": "First takeoff", "window_label": "06:00–07:00 into the flight"}}}]),
+                                   "title": "First takeoff",
+                                   "window_label": "2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)"}}}]),
     code("c11", "1/0", [{"output_type": "error", "ename": "ZeroDivisionError", "evalue": "division by zero",
                          "traceback": ["\x1b[0;31mZeroDivisionError\x1b[0m", "division by zero"]}],
          pending={"outputs": [{"output_type": "stream", "name": "stdout", "text": "now fine\n"}]}),
@@ -63,7 +64,9 @@ nb = {"nbformat": 4, "nbformat_minor": 5, "cells": cells,
                                   "status": "finished", "summary": "RPM swings **180 rpm** about the setpoint.\n\nWatch it.",
                                   "inbox_candidate": None, "engine": "1.0.2", "engine_type": "916iS",
                                   "created": "2026-01-02T09:00:00Z", "updated": "2026-01-02T10:00:00Z",
-                                  "workspace_id": "ws_000000000000"}}}
+                                  "workspace_id": "ws_000000000000", "resolution": "watch",
+                                  "tags": ["governor", "full power"]}}}
+NBX.meta(nb)["card"] = NBX.card(nb)     # Spec 16 §5.5, as save() stores it
 view = {**NBX.read_view(nb), "files": {"files/chart.svg": "data:image/svg+xml;base64,PHN2Zy8+"}}
 out = Path(sys.argv[1])
 out.write_text(json.dumps(view, indent=1, ensure_ascii=False) + "\n")

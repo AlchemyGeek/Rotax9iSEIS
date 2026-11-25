@@ -580,8 +580,16 @@ def run_journal_list(args: dict, call: Call) -> dict:
     return shape_journal(args, call("get_journal", {}))
 
 
+def shape_studies(args: dict, doc: dict) -> dict:
+    """studies_list: each notebook's row with its card (§5.5), without the
+    earlier summaries (study_read has them) or the card's version."""
+    return {**doc, "studies": [{**{k: v for k, v in s.items() if k != "summaries"},
+                                **({"card": {k: v for k, v in s["card"].items() if k != "v"}} if s.get("card") else {})}
+                               for s in doc.get("studies") or []]}
+
+
 def run_studies_list(args: dict, call: Call) -> dict:
-    return call("list_studies", {})
+    return shape_studies(args, call("list_studies", {}))
 
 
 def shape_study(args: dict, doc: dict) -> dict:
@@ -672,7 +680,7 @@ def _pending_call(op: str):
 
 def run_study_finish(args: dict, call: Call) -> dict:
     p = {k: args[k] for k in ("study_id", "summary", "inbox_candidate", "question", "resolution", "note", "journal",
-                              "finding") if args.get(k) is not None}
+                              "finding", "tags") if args.get(k) is not None}
     return call("study_finish", p)
 
 
@@ -849,7 +857,8 @@ TOOLS: list[Tool] = [
     Tool("journal_list", "Journal",
          f"The Journal entries as the UI shows them; {PAGE_ROWS} per page.", {**_PAGE}, run_journal_list,
          ops=("get_journal",)),
-    Tool("studies_list", "Studies", "The studies in the workspace: kind, author, question, status, finding.",
+    Tool("studies_list", "Studies", "The notebooks in the workspace, newest first: kind, author, question, status, "
+         "finding, and each one's card — origin, channels, flights and dates, evidence, tests, outputs, resolution, tags.",
          {}, run_studies_list, ops=("list_studies",)),
     Tool("study_read", "Read a study",
          "One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures "
@@ -901,13 +910,16 @@ TOOLS: list[Tool] = [
          "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
          "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
          "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
-         "Claude may write). Reports the flights the cells read and the inbox's open candidates. Example: "
+         "Claude may write). tags: two or three topic words for the notebook's card on Research home — what it is "
+         "about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: "
          "{\"study_id\": \"…\", \"summary\": \"…\", \"question\": \"q-1a2b3c4d\", \"resolution\": \"watch\", "
-         "\"journal\": true}.",
+         "\"tags\": [\"governor\", \"cruise rpm\"], \"journal\": true}.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
           "question": {**_S, "description": "The owner's question this answers (pins_list); it and its marks take the resolution"},
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
-          "note": _S, "journal": {"type": "boolean"}, "finding": _S}, run_study_finish,
+          "note": _S, "journal": {"type": "boolean"}, "finding": _S,
+          "tags": {**_STRS, "description": "Two or three topic words (at most 5): what the notebook is about"}},
+         run_study_finish,
          required=("study_id", "summary"), writes=True, ops=("study_finish",)),
     Tool("inbox_list", "Inbox",
          "The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence "

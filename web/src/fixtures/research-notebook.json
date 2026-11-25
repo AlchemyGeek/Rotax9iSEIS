@@ -12,8 +12,36 @@
  "question": "Is there a cycle in rpm at full power?",
  "status": "finished",
  "summary": "RPM swings **180 rpm** about the setpoint.\n\nWatch it.",
+ "summaries": [],
  "cells": 13,
  "format": "ipynb",
+ "card": {
+  "v": 1,
+  "origin": "asked",
+  "channels": [
+   "rpm",
+   "map_inhg"
+  ],
+  "flights": 1,
+  "date_span": [
+   "2026-01-02",
+   "2026-01-02"
+  ],
+  "evidence": {
+   "log_views": 1,
+   "figures": 2,
+   "tables": 2
+  },
+  "tests": [
+   "cycling"
+  ],
+  "outputs": "pending",
+  "resolution": "watch",
+  "tags": [
+   "governor",
+   "full power"
+  ]
+ },
  "pending": 1,
  "inbox_candidate": null,
  "engine": "1.0.2",
@@ -249,7 +277,7 @@
          }
         ],
         "title": "First takeoff",
-        "window_label": "06:00–07:00 into the flight"
+        "window_label": "2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)"
        }
       }
      }
@@ -354,7 +382,39 @@
     "engine_type": "916iS",
     "created": "2026-01-02T09:00:00Z",
     "updated": "2026-01-02T10:00:00Z",
-    "workspace_id": "ws_000000000000"
+    "workspace_id": "ws_000000000000",
+    "resolution": "watch",
+    "tags": [
+     "governor",
+     "full power"
+    ],
+    "card": {
+     "v": 1,
+     "origin": "asked",
+     "channels": [
+      "rpm",
+      "map_inhg"
+     ],
+     "flights": 1,
+     "date_span": [
+      "2026-01-02",
+      "2026-01-02"
+     ],
+     "evidence": {
+      "log_views": 1,
+      "figures": 2,
+      "tables": 2
+     },
+     "tests": [
+      "cycling"
+     ],
+     "outputs": "pending",
+     "resolution": "watch",
+     "tags": [
+      "governor",
+      "full power"
+     ]
+    }
    }
   }
  },

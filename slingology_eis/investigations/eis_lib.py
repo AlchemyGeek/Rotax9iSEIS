@@ -244,6 +244,8 @@ class EIS:
             assignments=self._ws._assignments, cache=self._ws._cache()))
         self._ws.touched.update(r.get("flight") for r in (out.get("block") or {}).get("per_slice") or []
                                 if r.get("flight"))
+        if hasattr(self._ws, "used"):
+            self._ws.used(channels, test_id)
         return Result(out)
 
     def cycling(self, rule="full_power", channel: str = "rpm", **params) -> Result:
@@ -294,6 +296,8 @@ class EIS:
         from .. import workspace as ws
         channels = list(channels or ["rpm"])
         df = self._ws.load_flight(flight, channels, start_s, end_s)
+        if hasattr(self._ws, "used"):
+            self._ws.used(channels)
         fa = ws.load_flight_analysis(self._ws.dir, flight)
         ident = fi.load(self._ws.dir, flight) or {}
         marks = [(float(m[0]), str(m[1])) if isinstance(m, (list, tuple)) else (float(m["t_s"]), str(m.get("label", "")))

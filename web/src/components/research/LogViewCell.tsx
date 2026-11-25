@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { windowTime } from "../../lib/timeLabel";
 import { useNavigate } from "react-router-dom";
 import { EngineRpcError, getEngineClient } from "../../lib/engineClient";
 import { ChartSessionProvider } from "../../lib/chartSession";
@@ -101,8 +102,9 @@ function LiveLogView({ view, fa, onFail }: { view: LogViewRef; fa: FlightAnalysi
   return (
     <div data-testid="logview-live">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>{logviewCaption(view)}</span>
-        {view.flight_date_local && <span className="mono" style={MUTED}>{view.flight_date_local} · {clock(view.start_s)}–{clock(view.end_s)} into the flight</span>}
+        {/* Spec 03 v0.34: the title and the short window; the full local form with its zone on hover. */}
+        <span style={{ fontSize: 15, fontWeight: 600 }} title={view.window_label ?? undefined} data-testid="logview-caption">{logviewCaption(view)}</span>
+        {!view.window_label && view.flight_date_local && <span className="mono" style={MUTED}>{view.flight_date_local} · {windowTime(null, null, view.start_s, view.end_s).short}</span>}
         <span style={{ flexGrow: 1 }} />
         <button type="button" style={BUTTON} onClick={openFlight} data-testid="open-flight">Open flight</button>
       </div>

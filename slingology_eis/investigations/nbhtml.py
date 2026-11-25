@@ -30,6 +30,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-widt
 color:#1d2433;line-height:1.5}
 header{border-bottom:1px solid #d6dae3;margin-bottom:1.5rem}
 header .meta{color:#5b6475;font-size:.9rem}
+details.summary{margin:.5rem 0 1rem}details.summary>summary{cursor:pointer;font-weight:600}
 .cell{margin:1rem 0}
 details.code summary{cursor:pointer;color:#5b6475;font-size:.85rem}
 details.summary-history{margin:.5rem 0 1rem}details.summary-history>summary{cursor:pointer;color:#5b6475;font-size:.9rem}details.summary-history .earlier{border-left:3px solid #d5d9e0;padding-left:.8rem;margin:.6rem 0;color:#3b4250}
@@ -177,9 +178,105 @@ def outputs_line(nb: dict) -> str:
     return "outputs: " + " · ".join(parts) if parts else "outputs current for this workspace"
 
 
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_LABEL = re.compile(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:–(\d{2}):(\d{2}):(\d{2}))?(?: ([^ (]+))? "
+                    r"\((\+[\d:]+)(?:–\+[\d:]+)? into the flight\)$")
+_NO_CLOCK = re.compile(r"^(\+[\d:]+)(?:–(\+[\d:]+))? into the flight$")
+
+
+def _trim_into(s: str) -> str:
+    return re.sub(r"^\+0(\d:)", r"+\1", s)
+
+
+def short_window(label) -> str:
+    """Spec 03 v0.34: a window_label made short — 'Jan 1 · 12:01–12:03 (+1:50 into the flight)' — the full form
+    stays on hover (web/src/lib/timeLabel.ts shortWindow, string for string)."""
+    lab = str(label or "").strip()
+    m = _LABEL.match(lab)
+    if m:
+        g = m.groups()
+        date = f"{_MONTHS[int(g[1]) - 1]} {int(g[2])}"
+        clock = f"{g[3]}:{g[4]}"
+        if g[6] is not None:
+            same = g[6] == g[3] and g[7] == g[4]
+            clock = f"{g[3]}:{g[4]}:{g[5]}–{g[6]}:{g[7]}:{g[8]}" if same else f"{g[3]}:{g[4]}–{g[6]}:{g[7]}"
+        return f"{date} · {clock} ({_trim_into(g[10])} into the flight)"
+    n = _NO_CLOCK.match(lab)
+    if not n:
+        return lab
+    return _trim_into(n.group(1)) + (f"–{_trim_into(n.group(2))}" if n.group(2) else "") + " into the flight"
+
+
+# Spec 16 §5.5 — the card as one line of the header (web/src/lib/notebookCard.ts cardLine, string for string).
+_ORIGIN = {"marks": ("✎", "From your marks"), "candidate": ("◉", "From something EIS raised"),
+           "asked": ("?", "From a question asked in Claude Desktop"), "imported": ("↓", "Imported")}
+_TEST_GLYPH = {"cycling": "↻", "coupling": "⇄", "groups": "⊟", "unusual": "◇"}
+_EVIDENCE = (("log_views", "∿", "log view", "log views"), ("figures", "◫", "figure", "figures"),
+             ("tables", "▦", "table", "tables"))
+_SHORT = {"rpm": "RPM", "map_inhg": "MAP", "fuel_flow_gph": "FF", "fuel_press_psi": "FP", "oil_temp_f": "OIL T",
+          "oil_press_psi": "OIL P", "coolant_temp_f": "CT", "egt_spread_f": "EGT Δ", "egt_mean_f": "EGT",
+          "ias_kt": "IAS", "vs_fpm": "VS", "power_pct": "PWR", "main_volts": "V", "batt_amps": "A",
+          "throttle_pct": "THR", "press_alt_ft": "ALT", "oat_c": "OAT", "oat_f": "OAT"}
+
+
+def channel_short(cid: str) -> str:
+    m = re.match(r"^egt([1-4])_f$", cid)
+    return f"EGT {m.group(1)}" if m else _SHORT.get(cid, cid)
+
+
+def span_text(span) -> str:
+    if not span:
+        return ""
+    a, b = (re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(x) or "") for x in span)
+    if not a or not b:
+        return ""
+    (ay, am, ad), (by, bm, bd) = ((int(v) for v in x.groups()) for x in (a, b))
+    if ay != by:
+        return f"{_MONTHS[am - 1]} {ay}–{_MONTHS[bm - 1]} {by}"
+    if am != bm:
+        return f"{_MONTHS[am - 1]}–{_MONTHS[bm - 1]}"
+    if ad != bd:
+        return f"{_MONTHS[am - 1]} {ad}–{bd}"
+    return f"{_MONTHS[am - 1]} {ad}"
+
+
+def scope_text(card: dict) -> str:
+    n = card.get("flights") or 0
+    if not n:
+        return "no flights read"
+    s = span_text(card.get("date_span"))
+    return f"{n} flight{'' if n == 1 else 's'}" + (f" · {s}" if s else "")
+
+
+def card_line(card) -> str:
+    if not card:
+        return ""
+    glyph, label = _ORIGIN.get(card.get("origin"), ("?", str(card.get("origin"))))
+    parts = [f"{glyph} {label}"]
+    if card.get("channels"):
+        parts.append(" ".join(channel_short(c) for c in card["channels"]))
+    parts.append(scope_text(card))
+    ev = card.get("evidence") or {}
+    shown = [f"{g} {ev[k]} {one if ev[k] == 1 else many}" for k, g, one, many in _EVIDENCE if ev.get(k)]
+    if shown:
+        parts.append(" ".join(shown))
+    if card.get("tests"):
+        parts.append(" ".join(f"{_TEST_GLYPH.get(t, '')} {t}" for t in card["tests"]))
+    if card.get("tags"):
+        parts.append("tags: " + ", ".join(card["tags"]))
+    return '<p class="meta card">' + " · ".join(html.escape(x) for x in parts) + "</p>"
+
+
 def _img(svg: str, cls: str = "figure", alt: str = "figure") -> str:
     b64 = base64.b64encode(svg.encode("utf-8")).decode()
     return f'<img class="{cls}" alt="{html.escape(alt)}" src="data:image/svg+xml;base64,{b64}">'
+
+
+def logview_caption(ref: dict) -> str:
+    """The title and the short window — 'First takeoff · Jan 2 · 06:06–06:07 (+6:00 into the flight)'."""
+    title = str(ref.get("title") or "").strip()
+    when = short_window(ref.get("window_label")) if ref.get("window_label") else ""
+    return " · ".join(x for x in (title, when) if x) or "log view"
 
 
 def output(o: dict) -> str:
@@ -194,8 +291,10 @@ def output(o: dict) -> str:
     data = o.get("data") or {}
     if LOGVIEW_MIME in data and "image/svg+xml" in data:
         ref = data[LOGVIEW_MIME] or {}
-        cap = html.escape(str(ref.get("title") or ref.get("window_label") or "log view"))
-        return f'<figure class="logview">{_img(text(data["image/svg+xml"]), "figure", cap)}<figcaption>{cap}</figcaption></figure>'
+        cap = html.escape(logview_caption(ref))
+        full = html.escape(str(ref.get("window_label") or ""))
+        return (f'<figure class="logview">{_img(text(data["image/svg+xml"]), "figure", cap)}'
+                f'<figcaption title="{full}">{cap}</figcaption></figure>')
     if "image/svg+xml" in data:
         return _img(text(data["image/svg+xml"]), alt=text(data.get("text/plain")) or "figure")
     if "image/png" in data:
@@ -219,6 +318,26 @@ def summary_history(summaries: list) -> str:
             + "".join(items) + "</details>")
 
 
+def is_setup(c: dict) -> bool:
+    sm = (c.get("metadata") or {}).get("slingology") or {}
+    return c.get("cell_type") == "code" and (c.get("id") == "setup" or sm.get("role") == "setup")
+
+
+def meta_line(m: dict) -> str:
+    """'by claude · finished · engine 1.0.2 · 2026-11-15' (notebook.ts metaLine)."""
+    status = m.get("status") or "open"
+    if status == "open" and m.get("reopened"):
+        status = "reopened"      # F17: finished before, a follow-up under way
+    return " · ".join(html.escape(str(x)) for x in (
+        f"by {m.get('author') or 'user'}", status, f"engine {m.get('engine') or ''}", (m.get("updated") or "")[:10]) if x)
+
+
+def summary_block(summary: str, summaries: list) -> str:
+    """The summary, open, with the earlier ones inside it (notebook.ts summaryBlock)."""
+    return ('<details class="summary" open><summary>Summary</summary>' + markdown(summary)
+            + (summary_history(summaries) if summaries else "") + "</details>")
+
+
 def render(nb: dict, read_file=None) -> str:
     """`read_file(ref)` gives a files/ document's bytes (images a markdown
     cell shows are inlined)."""
@@ -226,19 +345,19 @@ def render(nb: dict, read_file=None) -> str:
     status = m.get("status") or "open"
     if status == "open" and m.get("reopened"):
         status = "reopened"      # F17: finished before, a follow-up under way
-    head = [f"<h1>{html.escape(m.get('name') or 'Notebook')}</h1>",
-            '<p class="meta">' + " · ".join(html.escape(str(x)) for x in (
-                f"by {m.get('author') or 'user'}", status, f"engine {m.get('engine') or ''}",
-                (m.get("updated") or "")[:10]) if x) + "</p>",
+    # Spec 03 v0.34: title, the card's line, author · status · engine · updated, the question, the summary
+    # (open, with the earlier ones inside); the setup cell is not shown.
+    head = [f"<h1>{html.escape(m.get('name') or 'Notebook')}</h1>", card_line(m.get("card")),
+            '<p class="meta">' + meta_line(m) + "</p>",
             '<p class="meta outputs">' + html.escape(outputs_line(nb)) + "</p>"]
     if m.get("question"):
         head.append(f"<p><strong>Question:</strong> {_inline(m['question'])}</p>")
     if m.get("summary"):
-        head.append("<section class=\"summary\"><h2>Summary</h2>" + markdown(m["summary"]) + "</section>")
-    if m.get("summaries"):
-        head.append(summary_history(m["summaries"]))
+        head.append(summary_block(m["summary"], m.get("summaries") or []))
     body = []
     for c in nb.get("cells") or []:
+        if is_setup(c):
+            continue
         src = text(c.get("source"))
         if c.get("cell_type") == "markdown":
             body.append(f'<div class="cell markdown" id="{html.escape(str(c.get("id")))}">{markdown(src, read_file)}</div>')
