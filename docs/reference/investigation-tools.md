@@ -349,7 +349,7 @@ Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.
 
 *Writes.*
 
-End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). tags: two or three topic words for the notebook's card on Research home — what it is about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "tags": ["governor", "cruise rpm"], "journal": true}.
+End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title (else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "tags": ["governor", "cruise rpm"], "journal": true, "finding": "RPM swings 180 rpm at full power on 94 of 100 slices."}.
 
 | Parameter | Type | |
 |---|---|---|
@@ -360,7 +360,7 @@ End an investigation with its summary (what was found, what it means, what to do
 | `resolution` | `investigating` \| `nothing-here` \| `watch` \| `acted` |  |
 | `note` | string |  |
 | `journal` | boolean |  |
-| `finding` | string |  |
+| `finding` | string | One sentence, what was found: the Journal's line (at most 240 characters) |
 | `tags` | list of string | Two or three topic words (at most 5): what the notebook is about |
 
 ## `inbox_list`

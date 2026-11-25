@@ -149,10 +149,15 @@ function expand(line: HTMLElement) {
 }
 
 describe("the inbox digest (Spec 03 v0.34)", () => {
-  it("one line per item, questions first, nothing expanded; the title counts what is open", async () => {
+  it("one line per item, questions first, nothing expanded; the title counts what is open and what is watched", async () => {
     app();
     const inbox = await screen.findByTestId("inbox");
-    await waitFor(() => expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (3 open)"));   // 1 question + 2 candidates
+    // Spec 03 v0.37 (R3 revised): open is new + investigating (1 question, 1 candidate); watch is beside it.
+    await waitFor(() => expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (2 open · 1 watching)"));
+    // the watched candidate under its own subhead, after Raised by EIS and before Show resolved
+    const order = [...inbox.querySelectorAll("[data-testid=inbox-watching], [data-testid=inbox-candidate]")].map((n) =>
+      n.getAttribute("data-testid") === "inbox-watching" ? "Watching" : (n as HTMLElement).dataset.status);
+    expect(order).toEqual(["new", "Watching", "watch"]);
     const lines = within(inbox).getAllByTestId("inbox-line");
     // the question, the unassigned line, then the two candidates
     expect(lines.map((l) => within(l).getByTestId("inbox-line-title").textContent)).toEqual(["rough climbs", "Unassigned", "Full-power segment", "Full-power segment"]);
@@ -192,7 +197,7 @@ describe("the inbox digest (Spec 03 v0.34)", () => {
     fireEvent.click(within(first).getByTestId("inbox-resolve-confirm"));
     await waitFor(() => expect(state.calls.find((c) => c.op === "inbox_resolve")?.params).toMatchObject({ candidate_id: "ib-1", status: "acted", note: "Governor re-adjusted" }));
     await waitFor(() => expect(screen.getAllByTestId("inbox-candidate").length).toBe(1));
-    expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (2 open)");
+    expect(screen.getByTestId("inbox-title").textContent).toBe("Inbox (1 open · 1 watching)");
     fireEvent.click(screen.getByTestId("inbox-show-resolved"));
     const resolved = within(screen.getByTestId("inbox-resolved")).getByTestId("inbox-candidate");
     expect(within(resolved).getByTestId("status-mark").textContent).toBe("acted");

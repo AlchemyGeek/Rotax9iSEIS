@@ -8,7 +8,7 @@ import {
 } from "../../lib/notebook";
 import { EVIDENCE, ORIGIN, TEST, evidenceText, scopeText } from "../../lib/notebookCard";
 import type { NotebookCard } from "../../types/contract";
-import { ActionMenu, ChannelTags, StatusMark, statusColor, type MenuItem } from "./bits";
+import { TagEditor, ActionMenu, ChannelTags, StatusMark, statusColor, type MenuItem } from "./bits";
 import { LogViewCell } from "./LogViewCell";
 import { BODY, BUTTON, MUTED, NOTICE, PANEL, PRIMARY } from "./ui";
 
@@ -173,6 +173,8 @@ export function NotebookView({ view, onChanged, onDeleted }: {
             {card.tags.map((t) => (
               <span key={t} data-testid="nb-tag" style={{ background: "var(--panel-control)", borderRadius: 4, padding: "0 6px", fontSize: 10, lineHeight: "16px", color: "var(--text-secondary)" }}>{t}</span>
             ))}
+            <TagEditor studyId={id} tags={card.tags} testid="nb-tag-add"
+              onSaved={() => void act("tags", async () => null)} />
           </div>
         )}
         {/* author · status · engine · updated — the export's line, with the status as its dot and word */}

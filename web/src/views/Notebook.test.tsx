@@ -37,6 +37,13 @@ vi.mock("../lib/engineClient", async () => {
     listSlicePresets: async () => ({ presets: [], phase_rules: [], engine: "916iS", status: "measured", note: null }),
     listFlights: async () => [],
     loadStudy: async (id: string) => { rec("load_study", id); return state.view; },
+    studySetTags: async (a: { study_id: string; tags: string[] }) => {
+      rec("study_set_tags", a);
+      state.view = structuredClone(state.view);          // as the real client: a new object on reload
+      const m = (state.view as { notebook: { metadata: { slingology: { card: { tags: string[] } } } } }).notebook.metadata.slingology;
+      m.card = { ...m.card, tags: a.tags };
+      return { study: {} };
+    },
     getFlight: async (id: string) => {
       rec("get_flight", id);
       if (!state.flightHere) throw new actual.EngineRpcError("NOT_FOUND", `no flight ${id} in this workspace`);
@@ -168,7 +175,8 @@ describe("the notebook on the Research page (§5.3)", () => {
     await screen.findByTestId("notebook");
     // Re-run is the one visible button; everything else is in Actions.
     const header = screen.getByTestId("notebook-header");
-    expect(within(header).getAllByRole("button").map((b) => b.textContent)).toEqual(["Re-run", "Actions ▾"]);
+    // the tag + (Spec 03 v0.37) is filing, not an action
+    expect(within(header).getAllByRole("button").filter((b) => b.dataset.testid !== "nb-tag-add").map((b) => b.textContent)).toEqual(["Re-run", "Actions ▾"]);
     fireEvent.click(await screen.findByTestId("nb-rerun"));
     expect((await screen.findByTestId("nb-notice")).textContent).toContain("Re-ran 2 code cells: 1 with different outputs");
     action("nb-accept-all");
@@ -198,6 +206,18 @@ describe("the notebook on the Research page (§5.3)", () => {
     expect(items).toEqual(["Export notebook (.zip)", "Export as a page (.html)", "Run this on my flights", "Delete…"]);
     fireEvent.click(screen.getByTestId("nb-run-mine"));
     await waitFor(() => expect(state.calls.some((c) => c.op === "run_study_on_my_flights")).toBe(true));
+  });
+
+  it("the owner adds a tag from the header's + (Spec 03 v0.37)", async () => {
+    app();
+    await screen.findByTestId("notebook-header");
+    expect(screen.getAllByTestId("nb-tag").map((t) => t.textContent)).toEqual(["governor", "full power"]);
+    fireEvent.click(screen.getByTestId("nb-tag-add"));
+    const editor = screen.getByRole("dialog", { name: "Tags" });
+    fireEvent.change(within(editor).getByLabelText("Add a tag"), { target: { value: "takeoff" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(screen.getAllByTestId("nb-tag").map((t) => t.textContent)).toEqual(["governor", "full power", "takeoff"]));
+    expect(state.calls.find((c) => c.op === "study_set_tags")!.params).toEqual({ study_id: nbFixture.study_id, tags: ["governor", "full power", "takeoff"] });
   });
 
   it("F17: a reopened notebook says so, and the summaries a follow-up replaced are kept under the summary", async () => {

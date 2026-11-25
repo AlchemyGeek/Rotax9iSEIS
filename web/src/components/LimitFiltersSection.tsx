@@ -258,7 +258,7 @@ export function LimitFiltersSection({ onCount }: Props = {}) {
       {entries.map(({ filter, limit, valid, diagnostics, summary, target_label }) => {
         const h = health[filter.id];
         return (
-          <div key={filter.id} style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div key={filter.id} data-testid="filter-card" style={{ background: "var(--panel)", borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {h && <StatusBadge status={h.status} />}
               <span style={{ fontSize: 13, fontWeight: 600 }}>{target_label ?? targetLabel(filter.target, limit?.label)}</span>

@@ -6,7 +6,7 @@
 
 ## Three ways out
 
-**The Journal.** Ask Claude to note the finding in the Journal when it finishes — the one entry Claude may write there. It becomes a *study finding* entry with the date and a link to the notebook. The Journal is the record of what you decided and why; a finding that led to a call, a change or a deliberate decision to do nothing belongs there. Then mark your question *Watch* or *Acted*, with a note, in the inbox.
+**The Journal.** Ask Claude to note the finding in the Journal when it finishes — the one entry Claude may write there. It becomes one line under *Research findings*: the notebook's title and the finding in one sentence, with the date and a link to the notebook. The Journal is the record of what you decided and why; a finding that led to a call, a change or a deliberate decision to do nothing belongs there. Then mark your question *Watch* or *Acted*, with a note, in the inbox.
 
 **A page for the person who can act.** *Export as a page (.html)* on the notebook gives one file anyone can open: the question, the narrative, every number beside its reference, the tables and figures. In the oscillation case the propeller controller's manufacturer recognised a known behaviour from one email with a plot and the per-takeoff table, and offered a firmware update the same day.
 

@@ -57,11 +57,11 @@ What does **not** change: the Operators Manual limit still reads 46 psi, the eve
 
 ## 6. What the app keeps watching
 
-Open the **Journal**. The filter is listed with its status — *Stable* to begin with — and a live count of what it is doing. From now on every new flight is compared with the frozen reference. If the sender starts reading five psi high instead of three, or events become more frequent, the status changes to **Drifting**; an event the band does not cover shows as a **Breach**; after 50 engine hours it asks for a **Review**. Each of these is counted on the Journal badge in the top bar and announced in a banner on the Flights page, so a filter never becomes a blind spot.
+Open the **Journal**. The filter is listed on one line under *Limit filters*, with what it hides now; **Manage limit filters →** opens its card with its status — *Stable* to begin with. From now on every new flight is compared with the frozen reference. If the sender starts reading five psi high instead of three, or events become more frequent, the status changes to **Drifting**; an event the band does not cover shows as a **Breach**; after 50 engine hours it asks for a **Review**. Each of these is counted on the Journal badge in the top bar and announced in a banner on the Flights page, so a filter never becomes a blind spot.
 
 <figure class="screenshot" markdown>
-![The Journal's Limit filters tab: the filter's status, its two charts and its reference](../img/journal-filter-card.png){ .screenshot }
-<figcaption>Journal → Limit filters: status, how far past the limit each flight went, time past the limit, and the frozen reference.</figcaption>
+![The filter's card under Manage limit filters: its status, its two charts and its reference](../img/journal-filter-card.png){ .screenshot }
+<figcaption>Journal → Manage limit filters: status, how far past the limit each flight went, time past the limit, and the frozen reference.</figcaption>
 </figure>
 
 ## The other decisions

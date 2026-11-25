@@ -30,6 +30,11 @@ vi.mock("../lib/engineClient", async () => {
     filterHealth: async () => ({ health: [], attention_count: 0 }),
     getFleet: async () => ({ shift_history: [] }),
     listStudies: async () => { rec("list_studies", null); return { studies: state.studies }; },
+    studySetTags: async (a: { study_id: string; tags: string[] }) => {
+      rec("study_set_tags", a);
+      state.studies = state.studies.map((x) => (x.study_id === a.study_id ? { ...x, card: { ...(x.card as object), tags: a.tags } } : x)) as typeof state.studies;
+      return { study: state.studies.find((x) => x.study_id === a.study_id) };
+    },
     inboxList: async () => ({ candidates: [], scan: null, sensitivity: "normal" }),
     pinsList: async () => ({ questions: [], unassigned: [], counts: {}, pins: 0, newest_open: null }),
     loadStudy: async (id: string) => {
@@ -160,6 +165,21 @@ describe("Research home (Spec 03 v0.34)", () => {
     expect(screen.queryByTestId("notebook")).toBeNull();                 // a tag doesn't open the notebook
     fireEvent.click(within(screen.getByTestId("notebook-filters")).getByTestId("notebook-filter-tag"));
     expect(screen.getAllByTestId("notebook-card").length).toBe(2);
+  });
+
+  it("the owner adds and removes a card's tags with +; one list with Claude's (Spec 03 v0.37)", async () => {
+    state.studies = [study("st-1", "2026-01-03T10:00:00Z", { card: card({ tags: ["governor"] }) })];
+    app("/research");
+    const c = await screen.findByTestId("notebook-card");
+    fireEvent.click(within(c).getByTestId("card-tag-add"));
+    expect(screen.queryByTestId("notebook")).toBeNull();                 // + doesn't open the notebook
+    const editor = screen.getByRole("dialog", { name: "Tags" });
+    fireEvent.change(within(editor).getByLabelText("Add a tag"), { target: { value: "takeoff" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(within(screen.getByTestId("notebook-card")).getAllByTestId("card-tag").map((t) => t.textContent)).toEqual(["governor", "takeoff"]));
+    expect(state.calls.filter((x) => x.op === "study_set_tags").at(-1)!.params).toEqual({ study_id: "st-1", tags: ["governor", "takeoff"] });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Tags" })).getByRole("button", { name: "Remove “governor”" }));
+    await waitFor(() => expect(within(screen.getByTestId("notebook-card")).getAllByTestId("card-tag").map((t) => t.textContent)).toEqual(["takeoff"]));
   });
 
   it("above six notebooks a filter row: All · Open · Finished and the tags present", async () => {

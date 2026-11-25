@@ -2,7 +2,7 @@
 // mark dialog): short, with the engine's full window_label on hover. The export's port is checked against
 // the same strings (research-notebook.render.json → short_windows; notebook.test.ts).
 import { describe, expect, it } from "vitest";
-import { into, labelTime, shortWindow, windowLabel, windowTime } from "./timeLabel";
+import { into, labelTime, shortWindow, timelineRange, windowLabel, windowTime } from "./timeLabel";
 
 describe("window time", () => {
   it("the spec's form: date without year · hh:mm–hh:mm (+m:ss into the flight)", () => {
@@ -30,4 +30,11 @@ describe("window time", () => {
     expect(t).toEqual({ short: "Oct 24 · 22:26:07–22:26:53 (+10:16 into the flight)", full: "2026-10-24 22:26:07–22:26:53 PDT (+10:16–+11:02 into the flight)" });
     expect(labelTime(t.full)).toEqual(t);
   });
+  it("the timeline header: the flight's local clock and zone; UTC said so when the flight's local time is unknown", () => {
+    expect(timelineRange("2026-10-24T22:15:51-07:00", "PDT", "2026-10-25T05:15:51Z", 616, 662)).toBe("22:26–22:26 PDT (1 min)");
+    expect(timelineRange("2026-10-24T08:16:00", "PDT", null, 600, 3600)).toBe("08:26–09:16 PDT (50 min)");
+    expect(timelineRange(null, null, "2026-01-01T12:00:00Z", 110, 190)).toBe("12:01–12:03 UTC (1 min)");
+    expect(timelineRange(null, null, null, 0, 60)).toBe("—");
+  });
 });
+

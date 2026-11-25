@@ -725,7 +725,13 @@ def test_journal_is_a_register_of_decisions_in_force(registry_server):
     assert entry["note"] == "third" and entry["created_at"] == created and entry["updated_at"] > first_update
     # +0.2 psi tolerates nothing on this flight (it runs +1.0 past): zero
     # wording, and the "currently has no effect" notice.
-    assert entry["effect"] == {"text": "currently suppresses nothing", "zero": True}
+    # Spec 14 v0.20 §6.4: the effect is structured — one short phrase and its counts — and the
+    # title carries no kind; the sections come with the entries, totals counted by the engine.
+    assert entry["effect"] == {"text": "currently suppresses nothing", "zero": True, "short": "hides nothing",
+                               "n": 0, "unit": "event", "flights": 0}
+    assert entry["title"] == entry["what"].removeprefix("Filter: ") and not entry["title"].startswith("Filter")
+    sec = next(x for x in rpc(registry_server, "get_journal", {})["result"]["sections"] if x["key"] == "filters")
+    assert sec["count"] == 1 and sec["total"] == "1 filter · hiding nothing" and sec["open"] is True
     assert [n["kind"] for n in entry["notices"]] == ["no_effect"]
     rpc(registry_server, "confirm_journal_notice", {"entry_id": entry["id"], "notice": "no_effect"})
     assert [e for e in journal() if e["kind"] == "limit_filter"][0]["notices"] == []
@@ -1850,7 +1856,8 @@ def test_exclusion_journal_entry_counted_effect_and_reference_changed_marker(reg
     entry = next(e for e in entries if e["kind"] == "exclusion" and e["ref_id"] == outlier_id)
     assert entry["reason"] == "230F is a clear outlier"
     # Live effect (Spec 14 v0.10): recomputed now, same count as the preview.
-    assert entry["effect"] == {"text": "changes 1 verdict on other flights", "zero": False}
+    assert {k: entry["effect"][k] for k in ("text", "zero", "short")} == {
+        "text": "changes 1 verdict on other flights", "zero": False, "short": "changes 1 verdict"}
 
     # Editing the reason updates the one entry; the exclusion stands.
     rpc(registry_server, "update_exclusion_reason", {"flight_id": outlier_id, "reason": "sender fault on that flight"})
@@ -1930,7 +1937,8 @@ def test_apply_card_rule_edit_counted_effect_journal_entry_and_revert(registry_s
     entry = next(e for e in entries if e["kind"] == "rule_edit")
     assert entry["ref_id"] == "oil_temp_peak"
     assert entry["current"] == "baseline_deviation.n_min 5 (shipped 10)"
-    assert entry["effect"] == {"text": "adds 1 insight on 1 flight compared with shipped", "zero": False}
+    assert {k: entry["effect"][k] for k in ("text", "zero", "short")} == {
+        "text": "adds 1 insight on 1 flight compared with shipped", "zero": False, "short": "+1 insight · 1 flight"}
 
     changes = rpc(registry_server, "get_flight", {"flight_id": outlier_id})["result"]["reference_changes"]
     assert len(changes) == 1

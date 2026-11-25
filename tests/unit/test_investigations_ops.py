@@ -335,6 +335,8 @@ def test_guide(research_ws):
     assert "Give it `tags`: two or three topic words" in doc and "not what it found" in doc
     from slingology_eis.investigations import ops as O
     assert "`tags`: two or three topic words" in (O.PROMPTS_DIR / "investigate.md").read_text()
+    # Spec 16 v1.2: and for a one-line finding beside the summary.
+    assert "Give it `finding`: **one sentence**" in doc and "`finding`: one sentence" in (O.PROMPTS_DIR / "investigate.md").read_text()
     assert g["workspace"]["flights"] == len(ids) and "6 flights" in doc and "Inbox: 0 open" in doc
     _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop"}, "notes": "Governor adjusted 2026-01-03."}))
     g2 = _ok(rpc(h, "guide", {}))
@@ -643,3 +645,81 @@ def test_spec16_5_5_an_older_notebook_gets_its_card_on_first_load_and_on_import(
                                       "filename": "S.ipynb"}))
     card = got["notebook"]["metadata"]["slingology"]["card"]
     assert card["origin"] == "imported" and card["tags"] == [] and card["tests"] == ["coupling"]
+
+
+def test_spec14_6_1_a_research_finding_is_the_title_and_one_line(research_ws):
+    """Spec 14 v0.20 §6.1 / Spec 16 v1.2: study_finish's `finding` is the
+    Journal line, under the notebook's title; without one, the note, else
+    the summary's first sentence. The summary is behind the expand."""
+    h, _ = research_ws
+    sid = _notebook(h, "Oil temperature in cruise")
+    summary = "Oil runs 6 °F warmer in cruise since April. It follows OAT; nothing points at the cooler."
+
+    def finding():
+        j = _ok(rpc(h, "get_journal", {}))
+        e = next(e for e in j["entries"] if e["kind"] == "study_finding")
+        return e, next(s for s in j["sections"] if s["key"] == "findings")
+
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "finding": "Oil runs warmer with OAT, not with age.",
+                                "journal": True}))
+    e, sec = finding()
+    assert (e["title"], e["finding"], e["what"]) == ("Oil temperature in cruise", "Oil runs warmer with OAT, not with age.",
+                                                     "Oil runs warmer with OAT, not with age.")
+    assert e["summary"] == summary and sec["count"] == 1 and sec["total"] == "1 finding"
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "note": "shown to the mechanic", "journal": True}))
+    assert finding()[0]["finding"] == "shown to the mechanic"
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "journal": True}))
+    assert finding()[0]["finding"] == "Oil runs 6 °F warmer in cruise since April."
+    assert len([e for e in _ok(rpc(h, "get_journal", {}))["entries"] if e["kind"] == "study_finding"]) == 1
+    long = "x" * 300
+    assert rpc(h, "study_finish", {"study_id": sid, "summary": summary, "finding": long})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_spec14_6_1_an_older_finding_is_rewritten_from_its_notebook(research_ws, isolated_packaged_home):
+    """Entries written before v0.20 carried the whole summary; the next
+    Journal read rewrites them from the notebook, without dating them."""
+    h, _ = research_ws
+    if isinstance(h, NodeHost):
+        pytest.skip("rewrites journal.json straight in the workspace folder")
+    sid = _notebook(h, "Takeoff oscillation")
+    summary = "RPM swings 180 rpm at full power on 94 of 100 slices.\n\nWhat it means: the governor and the boost control."
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": summary, "journal": True}))
+    ws_dir = next(p.parent for p in (isolated_packaged_home / "workspaces").glob("*/manifest.json"))
+    store = json.loads((ws_dir / "journal.json").read_text())
+    e = next(e for e in store["entries"] if e["kind"] == "study_finding")
+    e["what"], e["updated_at"] = summary, "2026-01-02T03:04:05+00:00"           # as 1.1.0 wrote it
+    (ws_dir / "journal.json").write_text(json.dumps(store))
+    got = next(x for x in _ok(rpc(h, "get_journal", {}))["entries"] if x["kind"] == "study_finding")
+    assert got["what"] == got["finding"] == "RPM swings 180 rpm at full power on 94 of 100 slices."
+    assert got["title"] == "Takeoff oscillation" and got["updated_at"] == "2026-01-02T03:04:05+00:00"
+    assert next(x for x in json.loads((ws_dir / "journal.json").read_text())["entries"]
+                if x["kind"] == "study_finding")["what"] == got["what"]                 # rewritten, once
+
+
+def test_spec03_v037_the_owner_sets_a_notebooks_tags(research_ws):
+    """study_set_tags (page-only): the owner's tags and Claude's are one list,
+    on the card at once; the notebook's date is kept."""
+    h, _ = research_ws
+    sid = _notebook(h, "Tags")
+    _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Done.", "tags": ["governor"]}))
+
+    def row():
+        return next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)
+
+    before = row()["updated"]
+    out = _ok(rpc(h, "study_set_tags", {"study_id": sid, "tags": ["governor", "takeoff"]}))
+    assert out["study"]["card"]["tags"] == ["governor", "takeoff"]
+    assert row()["card"]["tags"] == ["governor", "takeoff"] and row()["updated"] == before
+    assert _ok(rpc(h, "study_set_tags", {"study_id": sid, "tags": []}))["study"]["card"]["tags"] == []
+    assert rpc(h, "study_set_tags", {"study_id": sid, "tags": list("abcdef")})["error"]["code"] == "BAD_PARAMS"
+
+
+def test_spec14_6_1_the_summarys_first_sentence():
+    """Without a finding or a note, the Journal line is the summary's first
+    sentence — not cut inside a citation's brackets or at an abbreviation."""
+    from slingology_eis.investigations.ipynb import first_sentence as f
+    assert f("Found: against the OM's values (OM 916 i A/C24 Ed. 0 Rev. 1, p. 30: 29–72.5 psi) the logs stay inside. "
+             "What it means: nothing.") == "Found: against the OM's values (OM 916 i A/C24 Ed. 0 Rev. 1, p. 30: 29–72.5 psi) the logs stay inside."
+    assert f("RPM swings 180 rpm.\n\nWhat it means.") == "RPM swings 180 rpm."
+    assert f("Peaks e.g. at 5,820 rpm stay brief. More.") == "Peaks e.g. at 5,820 rpm stay brief."
+    assert f("## Found: yes. Then") == "Found: yes." and f("No full stop") == "No full stop" and f(None) == ""

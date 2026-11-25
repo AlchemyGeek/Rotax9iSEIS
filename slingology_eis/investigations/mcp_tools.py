@@ -570,7 +570,8 @@ def run_document_read(args: dict, call: Call) -> dict:
 
 
 def shape_journal(args: dict, j: dict) -> dict:
-    keep = ("id", "kind", "ref_id", "what", "where", "reason", "note", "created_at", "updated_at", "effect", "current")
+    keep = ("id", "kind", "ref_id", "title", "what", "finding", "where", "reason", "note", "created_at", "updated_at",
+            "effect", "current")
     out = {k: v for k, v in j.items() if k != "entries"}
     out.update(page([{k: e.get(k) for k in keep} for e in j.get("entries") or []], args, "entries"))
     return out
@@ -910,14 +911,16 @@ TOOLS: list[Tool] = [
          "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
          "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
          "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
-         "Claude may write). tags: two or three topic words for the notebook's card on Research home — what it is "
+         "Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title "
+         "(else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is "
          "about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: "
          "{\"study_id\": \"…\", \"summary\": \"…\", \"question\": \"q-1a2b3c4d\", \"resolution\": \"watch\", "
-         "\"tags\": [\"governor\", \"cruise rpm\"], \"journal\": true}.",
+         "\"tags\": [\"governor\", \"cruise rpm\"], \"journal\": true, \"finding\": \"RPM swings 180 rpm at full power on 94 of 100 slices.\"}.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
           "question": {**_S, "description": "The owner's question this answers (pins_list); it and its marks take the resolution"},
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
-          "note": _S, "journal": {"type": "boolean"}, "finding": _S,
+          "note": _S, "journal": {"type": "boolean"},
+          "finding": {**_S, "description": "One sentence, what was found: the Journal's line (at most 240 characters)"},
           "tags": {**_STRS, "description": "Two or three topic words (at most 5): what the notebook is about"}},
          run_study_finish,
          required=("study_id", "summary"), writes=True, ops=("study_finish",)),

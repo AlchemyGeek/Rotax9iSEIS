@@ -76,3 +76,18 @@ export function labelTime(label: string | null | undefined): WindowTime {
   const full = String(label ?? "");
   return { short: shortWindow(full), full };
 }
+
+/** Spec 03 v0.37 §5.2 — the timeline header's visible range in the flight's local time and zone,
+ * as the captions are: "08:26–08:27 PDT (1 min)". Without the flight's local time, UTC, said so. */
+export function timelineRange(startLocal: string | null | undefined, tz: string | null | undefined,
+  startUtc: string | null | undefined, startS: number, endS: number): string {
+  const mins = `(${Math.round((endS - startS) / 60)} min)`;
+  const a = startLocal ? clockAt(startLocal, startS) : null;
+  const b = startLocal ? clockAt(startLocal, endS) : null;
+  if (a && b) return `${a.slice(11, 16)}–${b.slice(11, 16)}${tz ? ` ${tz}` : ""} ${mins}`;
+  if (!startUtc) return "—";
+  const base = new Date(startUtc);
+  if (isNaN(base.getTime())) return "—";
+  const fmt = (t: number) => new Date(base.getTime() + t * 1000).toISOString().slice(11, 16);
+  return `${fmt(startS)}–${fmt(endS)} UTC ${mins}`;
+}

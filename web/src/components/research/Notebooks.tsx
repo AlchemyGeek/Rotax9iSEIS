@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { NotebookCard as Card, StudySummary } from "../../types/contract";
 import { EVIDENCE, ORIGIN, OUTPUTS, TEST, evidenceText, scopeText } from "../../lib/notebookCard";
-import { ChannelTags, StatusMark, shortDate, statusColor } from "./bits";
+import { TagEditor, ChannelTags, StatusMark, shortDate, statusColor } from "./bits";
 
 // Spec 03 v0.34 §5.10 item 2 — the workspace's notebooks as cards, newest
 // first, two or three to a row (one on a narrow window). Each card is what
@@ -48,7 +48,7 @@ function sorted(studies: StudySummary[]): StudySummary[] {
   return [...studies].sort((a, b) => String(b.updated ?? b.created ?? "").localeCompare(String(a.updated ?? a.created ?? "")));
 }
 
-export function NotebookGrid({ studies }: { studies: StudySummary[] }) {
+export function NotebookGrid({ studies, onChanged }: { studies: StudySummary[]; onChanged?: () => void }) {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [tag, setTag] = useState<string | null>(null);
   const tags = useMemo(() => [...new Set(studies.flatMap((s) => s.card?.tags ?? []))].sort((a, b) => a.localeCompare(b)), [studies]);
@@ -78,14 +78,16 @@ export function NotebookGrid({ studies }: { studies: StudySummary[] }) {
         </div>
       )}
       <div style={GRID} data-testid="notebook-grid">
-        {shown.map((s) => <NotebookCard key={s.study_id} s={s} onTag={(t) => setTag(tag === t ? null : t)} activeTag={tag} />)}
+        {shown.map((s) => <NotebookCard key={s.study_id} s={s} onTag={(t) => setTag(tag === t ? null : t)} activeTag={tag} onChanged={onChanged} />)}
       </div>
       {shown.length === 0 && <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No notebook matches.</div>}
     </div>
   );
 }
 
-export function NotebookCard({ s, onTag, activeTag }: { s: StudySummary; onTag?: (t: string) => void; activeTag?: string | null }) {
+export function NotebookCard({ s, onTag, activeTag, onChanged }: {
+  s: StudySummary; onTag?: (t: string) => void; activeTag?: string | null; onChanged?: () => void;
+}) {
   const c = s.card ?? EMPTY_CARD;
   const st = status(s);
   const resolved = st === "finished" && c.resolution;
@@ -136,6 +138,7 @@ export function NotebookCard({ s, onTag, activeTag }: { s: StudySummary; onTag?:
               {t}
             </button>
           ))}
+          {onChanged && <TagEditor studyId={s.study_id} tags={c.tags} onSaved={onChanged} testid="card-tag-add" />}
         </span>
         <span style={{ flexGrow: 1 }} />
         <span style={{ ...GLYPH, display: "inline-flex", gap: 6, alignItems: "center" }} data-testid="card-author">

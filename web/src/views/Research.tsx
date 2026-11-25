@@ -92,7 +92,7 @@ export function Research() {
             {studies && studies.length === 0 && (
               <div style={BODY} data-testid="notebooks-empty">No notebooks yet. Mark a window on a flight, then ask in Claude Desktop.</div>
             )}
-            {studies && studies.length > 0 && <NotebookGrid studies={studies} />}
+            {studies && studies.length > 0 && <NotebookGrid studies={studies} onChanged={() => void load()} />}
           </section>
         )}
 

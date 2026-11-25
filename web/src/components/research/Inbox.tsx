@@ -23,7 +23,10 @@ const client = getEngineClient();
 // item's or the mark's ⋯ menu, with the confirmations they always had.
 // EIS never says what a candidate means.
 
-const OPEN: InboxStatus[] = ["new", "investigating", "watch"];
+// Spec 03 v0.37 (R3 revised): *open* is new and investigating; *watch* is counted beside it and
+// listed under its own subhead above *Show resolved*; acted and nothing here are resolved.
+const OPEN: InboxStatus[] = ["new", "investigating"];
+const WATCH: InboxStatus = "watch";
 const KIND_LABEL: Record<string, string> = { recurring: "recurring pattern", shift: "shift", group: "group apart" };
 const RESOLVE: { status: InboxStatus; label: string; hint: string }[] = [
   { status: "nothing-here", label: "Nothing here…", hint: "Looked at, nothing to follow (a candidate comes back only once the recent window has moved on)" },
@@ -88,12 +91,15 @@ export function Inbox() {
   const cands = listing?.candidates ?? [];
   const openQ = questions.filter((q) => OPEN.includes(q.status));
   const openC = cands.filter((c) => OPEN.includes(c.status));
-  const resolvedQ = questions.filter((q) => !openQ.includes(q));
-  const resolvedC = cands.filter((c) => !openC.includes(c));
+  const watchQ = questions.filter((q) => q.status === WATCH);
+  const watchC = cands.filter((c) => c.status === WATCH);
+  const resolvedQ = questions.filter((q) => !openQ.includes(q) && !watchQ.includes(q));
+  const resolvedC = cands.filter((c) => !openC.includes(c) && !watchC.includes(c));
   const unassigned = pins?.unassigned ?? [];
   const nOpen = openQ.length + openC.length;
+  const nWatch = watchQ.length + watchC.length;
   const loaded = !!pins && !!listing;
-  const nothing = loaded && nOpen === 0 && unassigned.length === 0 && resolvedQ.length + resolvedC.length === 0;
+  const nothing = loaded && nOpen + nWatch === 0 && unassigned.length === 0 && resolvedQ.length + resolvedC.length === 0;
   const newestOpen = questions.find((q) => q.id === pins?.newest_open) ?? null;
 
   const question = (q: OwnerQuestionWithPins) => (
@@ -107,7 +113,7 @@ export function Inbox() {
   return (
     <section style={PANEL} data-testid="inbox">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }} data-testid="inbox-title">Inbox{loaded ? ` (${nOpen} open)` : ""}</h2>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }} data-testid="inbox-title">Inbox{loaded ? ` (${nOpen} open${nWatch ? ` · ${nWatch} watching` : ""})` : ""}</h2>
         <span style={{ flexGrow: 1 }} />
         {listing?.last_scan && (
           <span style={{ ...MUTED, fontWeight: 400 }} data-testid="inbox-scan">
@@ -131,6 +137,10 @@ export function Inbox() {
       {openC.length > 0 && <div style={SUBHEAD}>Raised by EIS</div>}
       {openC.map(candidate)}
       {loaded && openC.length === 0 && !nothing && <div style={{ ...MUTED, padding: "6px 0" }} data-testid="inbox-nothing-raised">EIS has raised nothing new over the recent flights.</div>}
+
+      {nWatch > 0 && <div style={SUBHEAD} data-testid="inbox-watching">Watching</div>}
+      {watchQ.map(question)}
+      {watchC.map(candidate)}
 
       {resolvedQ.length + resolvedC.length > 0 && (
         <div style={{ marginTop: 8 }}>

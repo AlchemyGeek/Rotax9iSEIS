@@ -85,7 +85,9 @@ def main() -> int:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
         origin = url.rstrip("/")
-        ctx.on("request", lambda r: None if r.url.startswith((origin, "data:", "blob:")) else elsewhere.append(r.url))
+        # The one request off the site by design (1.1.0, Spec 16): *Move my workspace* asks a local EIS
+        # on this computer whether it is running. Nothing else may leave.
+        ctx.on("request", lambda r: None if r.url.startswith((origin, "data:", "blob:", "http://127.0.0.1:8420/eis/probe")) else elsewhere.append(r.url))
         return ctx, page
 
     try:
@@ -168,7 +170,8 @@ def main() -> int:
             step("a rule edited on a card", True, flights_tried=tried)
 
             page.goto(url + "#/journal")
-            page.get_by_text("Rule:").first.wait_for(timeout=30000)
+            # Spec 14 v0.20: one line per decision; a rule edit sits under "Changed settings and rule edits".
+            page.get_by_test_id("journal-section-settings").locator('[data-testid="journal-glyph"][title="Rule edit"]').first.wait_for(timeout=30000)
             step("Journal lists the rule edit", True)
             page.goto(url + "#/trends")
             page.get_by_text("cylinder balance").first.wait_for(timeout=60000)

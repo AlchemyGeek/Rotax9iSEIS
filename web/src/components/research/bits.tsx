@@ -3,6 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { assignChannelColors } from "../../lib/channels";
 import { channelShort, channelTitle } from "../../lib/notebookCard";
+import { getEngineClient } from "../../lib/engineClient";
+
+const tagClient = () => getEngineClient();
 
 // Spec 03 v0.34 §5.10 — the small parts Research home and the notebook page
 // share: one status vocabulary, the ⋯ / Actions menu, channel tags in the
@@ -194,4 +197,67 @@ export function shortDate(iso: string | null | undefined, now = new Date()): str
   if (isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString(undefined, d.getFullYear() === now.getFullYear()
     ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Spec 03 v0.37 — the owner's tags: `+` on a card or the notebook header opens a small editor
+ * that adds or removes tags (study_set_tags). One list with Claude's study_finish tags. */
+export function TagEditor({ studyId, tags, onSaved, testid = "tag-add" }: {
+  studyId: string; tags: string[]; onSaved: () => void; testid?: string;
+}) {
+  const p = usePopover(240);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(next: string[]) {
+    setBusy(true);
+    setError(null);
+    try {
+      await tagClient().studySetTags({ study_id: studyId, tags: next });
+      setDraft("");
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function add() {
+    const t = draft.trim();
+    if (!t || tags.some((x) => x.toLowerCase() === t.toLowerCase())) { setDraft(""); return; }
+    void save([...tags, t]);
+  }
+
+  return (
+    <>
+      <button ref={p.anchor} type="button" aria-label="Add or remove tags" title="Add or remove tags" aria-expanded={p.open} data-testid={testid}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); p.setOpen((o) => !o); }}
+        style={{ position: "relative", zIndex: 1, background: "none", border: "1px dashed var(--border)", borderRadius: 4, padding: "0 5px",
+          fontSize: 11, lineHeight: "14px", color: "var(--text-tertiary)", cursor: "pointer" }}>
+        +
+      </button>
+      {p.open && createPortal(
+        <div ref={p.pop} role="dialog" aria-label="Tags" data-testid={`${testid}-editor`} onClick={(e) => e.stopPropagation()}
+          style={{ ...POP, width: 240, padding: "8px 10px", gap: 6, top: p.pos?.top ?? -9999, left: p.pos?.left ?? -9999 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {tags.length === 0 && <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>No tags yet.</span>}
+            {tags.map((t) => (
+              <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 2, background: "var(--panel-control)", borderRadius: 4, padding: "0 2px 0 6px", fontSize: 12, color: "var(--text-secondary)" }}>
+                {t}
+                <button type="button" aria-label={`Remove “${t}”`} disabled={busy} onClick={() => void save(tags.filter((x) => x !== t))}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 12, padding: "0 3px" }}>×</button>
+              </span>
+            ))}
+          </div>
+          <form onSubmit={(e) => { e.preventDefault(); add(); }} style={{ display: "flex", gap: 6 }}>
+            <input aria-label="Add a tag" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="a word or two" autoFocus
+              style={{ flexGrow: 1, minWidth: 0, fontSize: 12, padding: "3px 6px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-primary)" }} />
+            <button type="submit" disabled={busy || !draft.trim()} style={{ fontSize: 12, padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--panel-control)", color: "var(--text-primary)", cursor: "pointer" }}>Add</button>
+          </form>
+          {error && <div style={{ fontSize: 12, color: "var(--severity-warning)" }}>{error}</div>}
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Your tags and Claude's are one list.</div>
+        </div>,
+        document.body)}
+    </>
+  );
 }

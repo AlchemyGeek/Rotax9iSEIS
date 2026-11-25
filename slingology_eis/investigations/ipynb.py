@@ -431,6 +431,48 @@ def flights_of(nb: dict) -> list[str]:
 
 # ── §5.5: what a notebook says about itself ─────────────────────────────────
 
+MAX_FINDING_CHARS = 240
+
+
+def first_sentence(text: Optional[str]) -> str:
+    """The first sentence of a summary: the Journal line when there is no
+    finding (Spec 14 §6.1). Its first line, cut at a full stop that ends a
+    sentence — outside brackets and before a capital or the line's end, so
+    a citation's "Ed. 0 Rev. 1, p. 30" or "e.g. at 5,800" doesn't cut it."""
+    line = next((ln.strip() for ln in str(text or "").splitlines() if ln.strip()), "")
+    line = re.sub(r"^[#>*\-\s]+", "", line)
+    depth = 0
+    for i, ch in enumerate(line):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(0, depth - 1)
+        elif ch in ".!?" and depth == 0:
+            rest = line[i + 1:]
+            if not rest.strip() or re.match(r"\s+[A-Z\"“(]", rest):
+                return line[:i + 1].strip()
+    return line.strip()
+
+
+def clean_finding(text) -> Optional[str]:
+    """`study_finish finding`: one sentence, what was found."""
+    if text is None:
+        return None
+    t = " ".join(str(text).split())
+    if not t:
+        return None
+    if len(t) > MAX_FINDING_CHARS:
+        raise NotebookError("BAD_PARAMS", f"a finding is one sentence (at most {MAX_FINDING_CHARS} characters); "
+                                          "the summary holds the rest")
+    return t
+
+
+def journal_line(m: dict, note: Optional[str] = None) -> str:
+    """Spec 14 v0.20 §6.1 / Spec 16 v1.2: the research finding's Journal
+    line — the finding, else the note, else the summary's first sentence."""
+    return m.get("finding") or (" ".join(str(note).split()) if note else "") or first_sentence(m.get("summary"))
+
+
 def clean_tags(tags) -> list[str]:
     """study_finish's `tags`: ≤ MAX_TAGS short words, trimmed, duplicates
     dropped (case-insensitively); refused rather than cut when too many."""

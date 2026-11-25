@@ -42,6 +42,17 @@ NOTES = """2026-01-03 — Propeller governor checked at annual; no change.
 """
 
 
+def _warm_oil(log: bytes) -> bytes:
+    """A short oil-temperature peak just over the OM maximum, late in the flight and away from the
+    windows the notebooks chart, so the Journal's filter has something to hide."""
+    lines = log.decode().splitlines()
+    for i in range(602, 615):
+        cells = lines[i].split(",")
+        cells[-1] = "268"
+        lines[i] = ",".join(cells)
+    return ("\n".join(lines) + "\n").encode()
+
+
 def free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -77,6 +88,8 @@ class Demo:
         ids = []
         for day in range(1, 11):
             log = _research_log(f"2026-01-{day:02d}", swing_rpm=30 if day in (4, 9) else 90)
+            if day in (2, 5, 6, 8):
+                log = _warm_oil(log)
             files = [{"content_base64": base64.b64encode(log).decode(), "filename": f"log_202601{day:02d}_120000_DEMO.csv"}]
             ids.append(self.rpc("import_files", {"files": files})["results"][0]["flight_id"])
         self.rpc("aircraft_set", {"aircraft": {"name": "Demo aircraft", "airframe": "Kit, two seats, 2024",
@@ -105,7 +118,8 @@ class Demo:
                                   "## Across the flights\n\nEvery full-power slice: is rpm cycling, how fast and how far?"})
         self.tool("cell_append", {"study_id": sid, "kind": "code", "source":
                                   "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r.finding)\nr.rows.head(10)"})
-        self.tool("study_finish", {"study_id": sid, "summary":
+        self.tool("study_finish", {"study_id": sid, "journal": True, "finding": "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step.",
+                                   "summary":
                                    "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step; the swing is 180 rpm on 8 and 60 rpm on 2. "
                                    "A hypothesis to test next: the governor and the boost control acting on each other.",
                                    "tags": ["governor", "full power"],
@@ -121,6 +135,15 @@ class Demo:
         new = self.tool("study_create", {"name": "Manifold pressure at takeoff"})["study_id"]
         self.tool("cell_append", {"study_id": new, "kind": "markdown", "source":
                                   "## The question\n\nDoes manifold pressure reach the same value at every takeoff?"})
+        # A few decisions in force, so the Journal (Spec 14 §6.4) shows its sections.
+        self.rpc("save_filter", {"filter": {"limit_id": "oil_temp_max", "magnitude": {"mode": "absolute", "value": 4},
+                                            "duration": {"max_event_s": 30},
+                                            "note": "Oil probe reads a few degrees high after the descent; checked against a second probe at the annual."}})
+        self.rpc("exclude_flight", {"flight_id": ids[3], "reason": "Ground run after the oil change, not a flight"})
+        self.rpc("save_baseline_config", {"baseline_config": {"membership": "leave_one_out", "band_kind_by_metric": {},
+                                                              "outlier_z_threshold": 2.5}})
+        self.rpc("save_annotation", {"flight_id": ids[6], "ref": {"kind": "flight"},
+                                     "note": "First flight after the prop balance; smoother at 5,000 rpm."})
         return {"ids": ids, "study_id": sid, "question_id": qid}
 
 
@@ -186,6 +209,16 @@ def shoot(url: str, out: Path, study_id: str, headed: bool, flight: str = "") ->
         save("settings-aircraft.png")
         go("/settings?tab=research", "research-settings")
         save("settings-research.png", page.get_by_test_id("research-settings"))
+
+        # Spec 14 §6.4 v0.20: the Journal, one line per decision; and a filter's card under Manage limit filters.
+        go("/journal", "journal-section-filters")
+        time.sleep(1)
+        page.get_by_test_id("journal-section-findings").get_by_test_id("journal-line").first.click()
+        time.sleep(0.5)
+        save("journal.png")
+        go("/journal?filters=1", "filter-card")
+        time.sleep(2)
+        save("journal-filter-card.png", page.get_by_test_id("filter-card").first)
 
         go("/flights", "flight-route-cell")
         page.get_by_label("Find a flight").fill("balance")

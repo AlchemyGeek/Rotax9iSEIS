@@ -252,15 +252,22 @@ def test_anonymised_round_trip_same_results_and_no_identity_in_the_zip(registry_
     _f, fids = _sender(url, tmp_path)
     before = _snapshot(url)
     _res, data = _export(url, include_logs=True, anonymise=True)
-    blob = b""
-    z = zipfile.ZipFile(io.BytesIO(data))
-    for n in z.namelist():
-        blob += n.encode() + z.read(n)
-        if n.endswith(".eisworkspace"):
-            inner = zipfile.ZipFile(io.BytesIO(z.read(n)))
-            blob += b"".join(inner.read(m) for m in inner.namelist())
+    # Every entry's name and decompressed content, nested zips opened in turn — never the
+    # compressed bytes themselves, which can spell "47.9" by chance.
+    def entries(zbytes: bytes):
+        with zipfile.ZipFile(io.BytesIO(zbytes)) as z:
+            for n in z.namelist():
+                body = z.read(n)
+                if zipfile.is_zipfile(io.BytesIO(body)):
+                    yield n, b""
+                    yield from entries(body)
+                else:
+                    yield n, body
+    found = list(entries(data))
+    assert any(n.endswith(".eisworkspace") for n, _ in found) and any(n.endswith(".csv") for n, _ in found)
     for leak in (TAIL, SYSTEM, "KAWO", "log_2026", "47.9", "-122.2", *fids):
-        assert leak.encode() not in blob, leak
+        for n, body in found:
+            assert leak not in n and leak.encode() not in body, (leak, n)
     rpc(url, "import_workspace", {"upload_id": _upload(url, data, "Sender.zip")})
     rpc(url, "scan_workspace", {})
     rpc(url, "rebuild_fleet", {})

@@ -2535,6 +2535,22 @@ def upsert_journal_entry(
         return entry
 
 
+def rewrite_journal_entry(ws_dir: Path, entry_id: str, **fields: Any) -> Optional[dict]:
+    """Spec 14 v0.20 §6.1: replace an entry's derived text (a research
+    finding's line, read again from its notebook) without dating it — the
+    decision didn't change, only how it is worded."""
+    with _JOURNAL_LOCK:
+        store = load_journal(ws_dir)
+        for e in store["entries"]:
+            if e["id"] == entry_id:
+                if all(e.get(k) == v for k, v in fields.items()):
+                    return e
+                e.update(fields)
+                _write_json(ws_dir / "journal.json", store)
+                return e
+        return None
+
+
 def remove_journal_entry(ws_dir: Path, *, kind: str, ref_id: str) -> Optional[dict]:
     """The decision is no longer in force: remove its entry, and resolve
     the reference-change markers it caused."""

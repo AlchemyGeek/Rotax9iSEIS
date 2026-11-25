@@ -653,6 +653,7 @@ export function FlightView() {
               phases={flightAnalysis.phases}
               availableChannels={pickableChannels(flightAnalysis.available_channels, flightAnalysis.provenance.channel_assignments)}
               startUtc={h.start_utc}
+              startLocal={ident?.start_local ?? null} tz={ident?.tz_abbrev ?? null}
               hasPhaseWarning={hasPhaseWarning}
               markers={markers}
               worst={worst}
