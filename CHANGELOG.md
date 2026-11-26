@@ -15,6 +15,53 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
+## 1.1.1 — November 25, 2026
+
+**The Research page and the Journal, redesigned** after the owner's review of his own workspace: both
+had grown by accretion, every item expanded, every action a button, every field in one grey. A page
+release — the engine stays at 1.1.0 and nothing is re-analysed.
+
+### Research home (Spec 03 v0.34–v0.39, Spec 16 v1.1–v1.5)
+
+- **Notebooks first, as cards.** Each card says what the notebook can say about itself without
+  anyone typing it: where it started (your marks ✎, raised by EIS ◉, asked in Claude Desktop ?,
+  imported ↓), its status coloured by the resolution it gave, the question in one line, the
+  channels it touched in the Flight view's colours, how many flights over which dates, how much
+  evidence (log views, figures, tables) and which tests it used, whether its outputs are current,
+  and its **tags** — two or three topic words Claude gives at `study_finish`, or that you add with
+  the `+`. Click a tag to filter. Newest first; the filter row appears above six notebooks.
+- **The inbox as a digest.** One line per item — status, title, *2 marks* or *recurring pattern ·
+  10 of 10* — that opens in place; the only standing button is *Open the investigation*; every
+  other action is in a `⋯` menu. *Inbox (n open · m watching)*: *open* is *new* and
+  *investigating*; watched items sit under their own subhead above *Show resolved*.
+- **Notebook page**: *Re-run* and an *Actions* menu; the summary folds; the setup cell is hidden;
+  the chart's timeline header reads the flight's local clock and zone, as the captions do (also on
+  the Flight view). Time strings are short everywhere — `Jan 1 · 12:01–12:03 (+1:50 into the
+  flight)` — with the full form on hover. The HTML export's header follows the page.
+- The model sentence and *How it works* moved into the page's help; the *Move my workspace* banner
+  can be dismissed (it stays in Settings → App).
+
+### Journal (Spec 14 v0.20–v0.22)
+
+- **A register you can read at a glance.** Change notices first, and only when there are any.
+  Then one line per decision — a kind glyph, the title, the live effect as one phrase (*193 events
+  · 51 flights*; grey and hollow when it does nothing), the date — grouped by kind in order of
+  consequence: limit filters, excluded flights, changed settings and rule edits, disabled topics,
+  pinned reference, research findings, annotations, acknowledged insights. Section headers carry
+  the count and the total effect; annotations and acknowledgements start folded. A line expands to
+  the value, the scope, the reason and note, the dates and a `⋯` menu with the actions. A search
+  box and *by kind · by date · by flight* replace the nine kind chips; *Manage limit filters →*
+  replaces the tab.
+- **A research finding is a line, not a report.** `study_finish` now takes a one-sentence
+  `finding`; the Journal shows the notebook's title and that sentence, with the summary one click
+  away. Entries written before 1.1.1 are re-derived from their notebooks.
+
+### Fixes
+
+- The browser walkthrough's "nothing loaded from elsewhere" check had been failing since 1.1.0 on
+  *Move my workspace*'s probe of `127.0.0.1:8420`; it now allows that one address and nothing else.
+- The anonymised-export test searched compressed zip bytes; it now reads the entries.
+
 ## 1.1.0 — November 18, 2026
 
 **Investigations: Claude investigates, EIS measures.** SlingologyEIS gains a third way in beside the
