@@ -38,8 +38,13 @@ Click its card on Research. When Claude finishes, the card carries the channels,
 
 ![A notebook on the Research page](../img/investigations-notebook.png){ .screenshot }
 
-- **The header**: the title, the card's marks and topic words, who wrote it, *finished* or still open, the engine version, the date, the question, and whether its outputs are current for this workspace. Then the **summary**: what was found, what it means, what to do — click *Summary* to fold it away; earlier summaries, if Claude came back to the notebook, are inside it.
-- **The cells**, in order. Markdown says what comes next or what a result means. A **log view** is the Flight view's chart for the window that matters — channels, zoom and read-outs as on the Flight view — with **Open flight** to see it in the whole flight. A **code cell** shows its output; the code is folded under *show code*, for anyone who wants to check it.
+- **The header**: the title, the card's marks and topic words, who wrote it, *finished* or still open, the engine version, the date, and whether its outputs are current for this workspace.
+- **The answer first** — a notebook is laid out in seven sections, and the first three are the part to read when you have five minutes: **1 The question**, as you asked it, with its scope (the flights looked at, the manual pages used, what was taken as given, what the logs can't tell); **2 Answer** — *What the data shows*, three to five sentences with their numbers, and *What it means*, a hypothesis with how sure Claude is and what would change it; **3 Proposed actions** — each with who would do it and what it would settle, or *None* and why. If Claude came back to the notebook, the earlier answers are folded inside.
+
+![A notebook's findings: a sentence, its table, the calculation folded](../img/investigations-notebook-findings.png){ .screenshot }
+
+- **4 Findings** — each one a sentence and the table, figure or log view it rests on, numbered (*Table 3*) with a caption saying what it shows. A **log view** is the Flight view's chart for the window that matters, with **Open flight** to see it in the whole flight. The code is folded under *show code*, and a calculation behind a finding under *show the calculation*, for anyone who wants to check it.
+- **5 How this was done** — the plan, the method, the alternatives Claude ruled out, and anything from outside your logs (a forum, another owner) labelled as context. **6 Follow-ups** — dated, each ending with what changed above. **7 Working** — the exploring Claude did on the way, folded.
 - Every number comes from a tool result, a code cell's output or a cited page; a mechanism is called a hypothesis. If something reads as a verdict without its reference, ask Claude where it came from.
 
 ## 5. Keep it, use it

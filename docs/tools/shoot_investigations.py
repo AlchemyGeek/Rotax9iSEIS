@@ -109,27 +109,55 @@ class Demo:
         st = self.tool("study_create", {"name": "Full-power rpm cycle", "question_id": qid,
                                         **({"inbox_candidate": cand} if cand else {})})
         sid = st["study_id"]
+        # Written as guide v2 asks (Spec 16 D19): the plan under 5 first, a probe as scratch, each finding a
+        # sentence and one captioned evidence cell, the calculation as support, then the structured Answer.
+        self.tool("cell_append", {"study_id": sid, "kind": "markdown", "section": 5, "source":
+                                  "**Plan.** Start from the two marks, then every full-power slice: is rpm cycling, how "
+                                  "fast and how far, and does manifold pressure move with it?"})
+        self.tool("code_run", {"study_id": sid, "role": "scratch", "source":
+                               "list(eis.slices(\"full_power\", [\"rpm\", \"map_inhg\"]).columns)"})
         self.tool("cell_append", {"study_id": sid, "kind": "markdown", "source":
-                                  "## One flight first\n\nThe minute of full power on 1 January, rpm and manifold pressure together."})
-        self.tool("cell_append", {"study_id": sid, "kind": "logview", "flight": ids[0], "start_s": 110, "end_s": 190,
-                                  "channels": ["rpm", "map_inhg"], "marks": [[120, "full power"]],
-                                  "title": "1 January — full power"})
+                                  "**1.** RPM swings 180 rpm at full power on 8 of the 10 flights and 60 rpm on the other "
+                                  "two, and manifold pressure swings with it (Table 3)."})
+        self.tool("code_run", {"study_id": sid, "role": "evidence", "source":
+                               "s = eis.slices(\"full_power\", [\"rpm\", \"map_inhg\"])\n"
+                               "t = s.groupby(\"flight_id\")[[\"rpm.swing\", \"map_inhg.swing\"]].median().reset_index()\n"
+                               "t = eis.flights()[[\"flight_id\", \"date\"]].merge(t).drop(columns=\"flight_id\")\n"
+                               "eis.table(t, caption=\"Full-power swing per flight, the median of its slices\")"})
         self.tool("cell_append", {"study_id": sid, "kind": "markdown", "source":
-                                  "## Across the flights\n\nEvery full-power slice: is rpm cycling, how fast and how far?"})
-        self.tool("cell_append", {"study_id": sid, "kind": "code", "source":
-                                  "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r.finding)\nr.rows.head(10)"})
-        self.tool("study_finish", {"study_id": sid, "journal": True, "finding": "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step.",
-                                   "summary":
-                                   "RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure in step; the swing is 180 rpm on 8 and 60 rpm on 2. "
-                                   "A hypothesis to test next: the governor and the boost control acting on each other.",
+                                  "**2.** The cycle repeats every 4.4 s on every flight — the cycling test's period, "
+                                  "under *show the calculation*."})
+        self.tool("code_run", {"study_id": sid, "role": "support", "source":
+                               "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r)"})
+        self.tool("cell_append", {"study_id": sid, "kind": "markdown", "source":
+                                  "A period that steady, on every flight, points to a control loop hunting rather than turbulence — a hypothesis."})
+        self.tool("study_finish", {"study_id": sid, "journal": True,
+                                   "question_scope": "- 10 flights, 1–10 January 2026\n- Every full-power slice (the "
+                                                     "*full power* preset)\n- The logs can't tell: the governor's and "
+                                                     "the boost control's settings",
+                                   "shows": ["RPM cycles every 4.4 s at full power on all 10 flights, manifold pressure "
+                                             "in step (Table 3).",
+                                             "The swing is 180 rpm on 8 flights and 60 rpm on 2 (Table 3).",
+                                             "Your two marks show the same cycle (Log views 1 and 2)."],
+                                   "means": "A hypothesis: the propeller governor and the boost control acting on each "
+                                            "other. Confidence is moderate — the cycle is steady and in step on every "
+                                            "flight, but neither controller's settings are in the logs. A flight with "
+                                            "the governor's gain changed would settle it.",
+                                   "actions": [{"what": "Ask the propeller shop for the governor's gain setting",
+                                                "who": "propeller shop", "settles": "whether the governor is tuned to hunt",
+                                                "recheck_after_flights": 5}],
                                    "tags": ["governor", "full power"],
                                    **({"inbox_candidate": cand, "resolution": "investigating"} if cand else {})})
         # Two smaller notebooks, so Research home shows cards of each kind (Spec 03 v0.34 §5.10).
         oil = self.tool("study_create", {"name": "Oil temperature in cruise"})["study_id"]
         self.tool("cell_append", {"study_id": oil, "kind": "logview", "flight": ids[7], "start_s": 200, "end_s": 300,
-                                  "channels": ["oil_temp_f"], "title": "8 January — after the climb"})
+                                  "channels": ["oil_temp_f"], "title": "8 January — after the climb",
+                                  "caption": "8 January: the warm reading is the climb"})
         self.tool("cell_append", {"study_id": oil, "kind": "code", "source":
                                   "r = eis.unusual(\"stable_cruise\", [\"oil_temp_f\"])\nprint(r.finding)"})
+        self.tool("cell_append", {"study_id": oil, "kind": "markdown", "source":
+                                  "No cruise slice stands out on oil temperature (the unusual test, under *show the "
+                                  "calculation*)."})
         self.tool("study_finish", {"study_id": oil, "resolution": "nothing-here", "tags": ["oil", "cruise"], "summary":
                                    "Cruise oil temperature is steady flight to flight; the warm reading on 8 January is the climb, not cruise."})
         new = self.tool("study_create", {"name": "Manifold pressure at takeoff"})["study_id"]
@@ -204,6 +232,11 @@ def shoot(url: str, out: Path, study_id: str, headed: bool, flight: str = "") ->
         page.get_by_test_id("logview-live").first.wait_for(timeout=60000)
         time.sleep(2)
         save("investigations-notebook.png")
+        # D19: the Findings — a sentence, its numbered and captioned evidence, the calculation folded.
+        page.get_by_text("RPM swings 180 rpm").first.evaluate("e => e.scrollIntoView({block: 'start'})")
+        page.evaluate("window.scrollBy(0, -80)")
+        time.sleep(1)
+        save("investigations-notebook-findings.png")
 
         go("/settings?tab=aircraft", "aircraft-settings")
         save("settings-aircraft.png")

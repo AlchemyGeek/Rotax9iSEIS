@@ -69,14 +69,33 @@ print(r)
 r.rows.head()
 ```
 
-## Log views
+## Evidence: tables, figures and log views
+
+A finding in a notebook is one sentence and one **evidence** cell — a table, figure or log view the reader can read without the code ([the notebook format](notebook-format.md#the-shape)). Three calls make one; each takes a **caption**, one line saying what it shows, and EIS numbers them in order on the page (*Table 1*, *Figure 2*, *Log view 3*), so a finding's sentence can point at its evidence by number. Raw `print` output is never evidence.
+
+```python
+eis.table(df, caption="Full-power swing per slice", units={"swing": "rpm"}, digits=None)
+```
+
+A DataFrame (or Series) as a table: column names in words with their units (`fuel_press_psi.mean` → *Fuel pressure mean (psi)*, `duration_s` → *Duration (s)*; a `units` entry wins), numbers rounded (`digits`: one number for every column, a `{column: digits}` dict, or by size — none from 100, one from 10, else two), at most 500 rows (the rest counted below). A caption is required.
+
+```python
+fig, ax = plt.subplots()
+...
+eis.figure(fig, caption="Fuel pressure by phase")
+```
+
+A matplotlib figure (or Axes) as a figure, drawn as SVG with its caption.
 
 ```python
 eis.logview(flight, start_s, end_s, channels=("rpm", "map_inhg"),
-            marks=[(367, "takeoff power")], title=None, rule=None)
+            marks=[(367, "takeoff power")], title=None, rule=None,
+            caption="First takeoff: the swing starts at full power")
 ```
 
-A strip chart of one flight's window. The cell's output carries both a picture (what JupyterLab, the exported page and a PDF show) and a reference to the flight and window, which the EIS pages show as the Flight view's live chart with **Open flight** ([the notebook format](notebook-format.md)). Marks are `(seconds, label)`.
+A strip chart of one flight's window. The cell's output carries both a picture (what JupyterLab, the exported page and a PDF show) and a reference to the flight and window, which the EIS pages show as the Flight view's live chart with **Open flight** ([the notebook format](notebook-format.md)). Marks are `(seconds, label)`. Without a caption, a log view's title stands in for it.
+
+All three render the same in your own Jupyter kernel: the table as HTML, the figure as SVG, each with its caption.
 
 ## Documents
 
