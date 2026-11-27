@@ -1,6 +1,6 @@
 # SlingologyEIS — Rotax iS Engine Analytics
 
-**Version 1.1.1** — check yours with `slingology-eis --version`.
+**Version 1.1.2** — check yours with `slingology-eis --version`.
 
 Free, open-source engine health analytics for Rotax iS FADEC-controlled aircraft engines
 (912iS, 915iS, 916iS), built for how these engines actually work rather than retrofitted

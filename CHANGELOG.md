@@ -15,6 +15,38 @@ flights whose stored result predates the running engine. Web-only changes don't 
 
 ---
 
+## 1.1.2 — November 27, 2026
+
+**The notebook has a shape** (Spec 16 D19, after the owner's first full investigation read as sound
+analysis in an unreadable document). A page and notebook release; the engine stays at 1.1.0.
+
+- **Seven sections, in a fixed order, written by EIS**: *1 The question* (as asked, with scope and
+  qualifications — flights, references, what was taken as given, what the logs cannot tell),
+  *2 Answer* (what the data shows, in up to five bullets with numbers; what it means), *3 Proposed
+  actions* (what · who · what it would settle; *none* allowed; *re-check after N flights* when EIS
+  can watch), *4 Findings* (one sentence each, with one numbered, captioned evidence cell),
+  *5 How this was done*, *6 Follow-ups* (dated; each ends with *What changed above*), *7 Working*
+  (everything exploratory, folded). Sections 1–3 are structured fields of `study_finish`, typeset
+  on the page, in the HTML export and as a generated cell in JupyterLab; a re-finish rewrites them
+  in place and keeps the previous version in history.
+- **Cell roles**: `evidence` (open, numbered *Table n / Figure n / Log view n*, captioned),
+  `support` (the calculation, folded as *show the calculation*), `scratch` (under *Working*),
+  `narrative`. `eis.table(df, caption, units)` and `eis.figure(fig, caption)` produce evidence with
+  readable headers, units and rounding; raw `print` output is refused as evidence at finish, and a
+  calculation with nothing after it is named. New tools `study_followup` and `cell_edit` (role,
+  section, text) let Claude reshape without re-running.
+- **Guide v2**: plan before computing; explore in scratch; a finding is one sentence and one
+  evidence cell; outside context (forums, bulletins) labelled and kept out of *Findings*; a
+  follow-up rewrites the Answer and says what changed.
+- The card says *n actions*; the Journal line is the Answer's first bullet. Older notebooks are not
+  moved until finished again.
+- **Found by the acceptance run**: re-finishing the owner's fuel-pressure notebook on a copy showed
+  its 2026-11-26 phase table wrong (a hand-rolled time-in-phase share that counted only crossings
+  inside one phase); measured second by second, approach is above 46 psi 92 % of its time, not 4 %.
+  The next release adds `eis.phase_share` and the guide's check of each finding against its
+  evidence (Spec 16 F19), raises the bench's cell limit (F20) and resolves a relative data root
+  (F21).
+
 ## 1.1.1 — November 25, 2026
 
 **The Research page and the Journal, redesigned** after the owner's review of his own workspace: both
