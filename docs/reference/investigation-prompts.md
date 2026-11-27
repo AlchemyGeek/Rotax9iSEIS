@@ -29,22 +29,31 @@ Investigate a question about the engine in a notebook, following the EIS method.
        `aircraft_get` — my notes say what changed and when.
     3. Start a notebook with `study_create`: for one of my questions pass its `question_id`, and the notebook opens
        with my marks — my note, then a log view of the window — so start from what I saw; otherwise the
-       question as I asked it.
+       question as I asked it. Write the plan under *How this was done* (`"section": 5`) before you measure.
     4. Look at one flight first (a log view of the window, `eis.load`), then across all my flights with a slice
        rule, measuring what the question is about — the guide's table says which instrument fits (a test only
        when the question is about steadiness, coupling, a difference or an outlier; otherwise load, slice, plot
-       and look). Each measurement is a notebook cell whose output states the number; a test used for another
-       reason says why beside it.
-    5. Read what my manuals say about it (`documents_list`, `document_read`) and cite the pages.
-    6. State the mechanism as a hypothesis, name the alternatives you ruled out with the cells that did it, and
-       finish with `study_finish`: what was found, what it means, what I should do — with `question` when it was
-       one of mine, so it and its marks are resolved; `tags`: two or three topic words for what the notebook is
-       about (not what it found); and `finding`: one sentence, what was found — my Journal's line if I keep it there.
+       and look). Each finding is one sentence and one evidence cell (`eis.table`, `eis.figure`, a log view, each
+       with a caption); a test used for another reason says why beside it. Explore in `scratch` cells.
+    5. Read what my manuals say about it (`documents_list`, `document_read`) and cite the pages. Anything from
+       outside my logs and documents (forums, other owners) is context, under *How this was done*, labelled so.
+    6. State the mechanism as a hypothesis and name the alternatives you ruled out, each with its evidence, under
+       *How this was done*.
+    7. Finish with the structured Answer: `study_finish` with `question_scope` (flights and dates, references, what
+       was taken as given, what the logs can't tell), `shows` (3–5 sentences with numbers — the first is my
+       Journal's line), `means` (the hypothesis, your confidence, what would change it) and `actions` (what · who ·
+       what it would settle; `recheck_after_flights` when EIS can watch it; or `actions_none` and why); `question`
+       when it was one of mine, so it and its marks are resolved; `tags`: two or three topic words for what the
+       notebook is about (not what it found).
 
-    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
-    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
-    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
-    to the same notebook and `study_finish` again.
+    The notebook is the record (the guide's *The notebook is the record*): every finding is one sentence and one
+    evidence cell (`eis.table`, `eis.figure` or a log view, with a caption — never a `print`); the plan and the
+    method go under *How this was done*; exploring is `scratch`. A quick look to decide where to go next is a probe
+    and stays in the chat. If we talk on after you finish and it changes what the notebook says — or I say "put
+    that in the notebook" — open a follow-up (`study_followup`), add its cells, and `study_finish` again with the
+    Answer rewritten as it now stands and `changed` saying what changed above.
+
+    Finish with the structured Answer.
 
 ## Look at this inbox item
 
@@ -60,18 +69,22 @@ Investigate one candidate the EIS detectors raised and resolve it.
 
     1. Call `guide` first and follow its method.
     2. Read the candidate with `inbox_list`: its preset, measurement, the slices involved and the evidence.
-    3. Start a notebook with `study_create`, passing `inbox_candidate: "{{candidate_id}}"`.
+    3. Start a notebook with `study_create`, passing `inbox_candidate: "{{candidate_id}}"`, and write the plan
+       under *How this was done*.
     4. Look at one of its slices in one flight (a log view), then measure across the flights what the candidate
        raised (the same preset, the same measurement — the guide's table names its instrument) and check the
        alternatives that fit it: one log source only, one flight only, the 1 Hz sampling floor for a period,
        altitude or temperature.
-    5. Finish with `study_finish`, resolving the candidate (`resolution`: nothing-here, watch or acted) with a
-       one-line note saying why.
+    5. Finish with the structured Answer — `study_finish` with `question_scope`, `shows`, `means`, `actions` (or
+       `actions_none`) — resolving the candidate (`resolution`: nothing-here, watch or acted) with a one-line
+       note saying why.
 
-    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
-    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
-    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
-    to the same notebook and `study_finish` again.
+    The notebook is the record (the guide's *The notebook is the record*): every finding is one sentence and one
+    evidence cell (`eis.table`, `eis.figure` or a log view, with a caption — never a `print`); the plan and the
+    method go under *How this was done*; exploring is `scratch`. A quick look to decide where to go next is a probe
+    and stays in the chat. If we talk on after you finish and it changes what the notebook says — or I say "put
+    that in the notebook" — open a follow-up (`study_followup`), add its cells, and `study_finish` again with the
+    Answer rewritten as it now stands and `changed` saying what changed above.
 
 ## Before / after
 
@@ -88,18 +101,22 @@ Compare the engine before and after a change (a date, or the change in words).
     1. Call `guide` first and follow its method.
     2. If I gave the change in words, find its date in my notes (`aircraft_get`) or the Journal (`journal_list`);
        if you can't, ask me.
-    3. Start a notebook with `study_create`.
+    3. Start a notebook with `study_create`, and write the plan under *How this was done* before measuring.
     4. For the conditions the change could affect (full power, governed climb, stable cruise), compare the
        slices before and after with `groups` split by date — `eis.groups("full_power", "rpm.swing", by="date",
        date="…")` — for the measurements the change could have moved (for a propeller: rpm, its swing and period,
        MAP, fuel flow; for an oil change: oil temperature and pressure). Say why each measurement was chosen.
-    5. Say what changed and what did not, each with its numbers and the group sizes, and the caveats (fewer
-       flights after, different seasons or sources). Finish with `study_finish`.
+    5. Each thing that changed or did not is a finding: one sentence with its numbers and the group sizes, and
+       its evidence table. The caveats (fewer flights after, different seasons or sources) go in
+       `question_scope`. Finish with the structured Answer — `study_finish` with `question_scope`, `shows`,
+       `means` and `actions` (or `actions_none`).
 
-    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
-    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
-    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
-    to the same notebook and `study_finish` again.
+    The notebook is the record (the guide's *The notebook is the record*): every finding is one sentence and one
+    evidence cell (`eis.table`, `eis.figure` or a log view, with a caption — never a `print`); the plan and the
+    method go under *How this was done*; exploring is `scratch`. A quick look to decide where to go next is a probe
+    and stays in the chat. If we talk on after you finish and it changes what the notebook says — or I say "put
+    that in the notebook" — open a follow-up (`study_followup`), add its cells, and `study_finish` again with the
+    Answer rewritten as it now stands and `changed` saying what changed above.
 
 ## Review new flights
 
@@ -116,9 +133,12 @@ A short review of the flights since the last study finding, the inbox, and anyth
     4. For each new flight: one line on where it went and anything that stands out (events, Trends shifts, and
        `eis.unusual` — this review is about what stands out). For each open inbox candidate and each open
        question of mine: what it is, and whether it needs a closer look (*Investigate* takes a question).
-    5. Finish with `study_finish`: what stands out, what needs a closer look, what doesn't — briefly.
+    5. Finish with the structured Answer, briefly: `shows` — what stands out; `means` — what needs a closer look
+       and what doesn't; `actions` — each closer look as *what · who · what it would settle*, or `actions_none`.
 
-    The notebook is the record (the guide's *The notebook is the record*): analysis behind anything you tell me is a
-    cell; a quick look to decide where to go next is a probe and stays in the chat. If we talk on after you
-    finish and it changes what the notebook says — or I say "put that in the notebook" — append a dated section
-    to the same notebook and `study_finish` again.
+    The notebook is the record (the guide's *The notebook is the record*): every finding is one sentence and one
+    evidence cell (`eis.table`, `eis.figure` or a log view, with a caption — never a `print`); the plan and the
+    method go under *How this was done*; exploring is `scratch`. A quick look to decide where to go next is a probe
+    and stays in the chat. If we talk on after you finish and it changes what the notebook says — or I say "put
+    that in the notebook" — open a follow-up (`study_followup`), add its cells, and `study_finish` again with the
+    Answer rewritten as it now stands and `changed` saying what changed above.

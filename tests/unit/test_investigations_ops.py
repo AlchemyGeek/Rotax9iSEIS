@@ -366,11 +366,20 @@ def test_guide(research_ws):
         assert form in doc, form
     assert "aircraft_record_empty" in g["flags"] and "The record is empty" in doc
     # Spec 16 §5.5: the guide and the Investigate prompt ask for two or three topic tags at study_finish.
-    assert "Give it `tags`: two or three topic words" in doc and "not what it found" in doc
     from slingology_eis.investigations import ops as O
-    assert "`tags`: two or three topic words" in (O.PROMPTS_DIR / "investigate.md").read_text()
-    # Spec 16 v1.2: and for a one-line finding beside the summary.
-    assert "Give it `finding`: **one sentence**" in doc and "`finding`: one sentence" in (O.PROMPTS_DIR / "investigate.md").read_text()
+    inv = (O.PROMPTS_DIR / "investigate.md").read_text()
+    assert "`tags`: two or three topic words" in doc and "not what it found" in doc
+    assert "`tags`: two or three topic words" in inv
+    # Guide v2 (D19): the shape — plan first, scratch, a finding is one sentence and one evidence cell, print is
+    # never evidence, context kept out of Findings, the structured Answer, a follow-up rewrites it; none is an answer.
+    for rule in ("**Plan before computing.**", "in `scratch` cells", "**one sentence and one evidence cell**",
+                 "**Raw `print` output is\n  never evidence**", "labelled as context", "**rewritten Answer**",
+                 "**\"None\" is\n    an answer**", "`recheck_after_flights`", "| **7 Working** |"):
+        assert rule in doc, rule
+    # The prompts: Investigate ends with the structured Answer; every prompt asks for it.
+    assert inv.rstrip().endswith("Finish with the structured Answer.")
+    for p in O.PROMPTS_DIR.glob("*.md"):
+        assert "study_followup" in p.read_text() and ("shows" in p.read_text() or "structured Answer" in p.read_text()), p
     assert g["workspace"]["flights"] == len(ids) and "6 flights" in doc and "Inbox: 0 open" in doc
     _ok(rpc(h, "aircraft_set", {"aircraft": {"propeller": "Test prop"}, "notes": "Governor adjusted 2026-01-03."}))
     g2 = _ok(rpc(h, "guide", {}))
