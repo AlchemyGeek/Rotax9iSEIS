@@ -7,6 +7,7 @@ host's own file doesn't grow by a feature's worth of code.
     study_create                               (D12: a notebook, studies/<id>/notebook.ipynb)
     code_run                                   (D3 — server host only; refused without a notebook)
     study_cells_append / _rerun / _accept / _discard, study_finish   (§5.1)
+    study_followup, study_cell_edit            (D19, §5.6: a dated follow-up; a cell's role, section, text)
     aircraft_get / aircraft_set / list_aircraft (§4.4 — the registry's record, D10)
     documents_list / document_read             (D11: the aircraft's documents_dirs, read in place)
     inbox_scan / inbox_list / inbox_resolve    (D5)
@@ -29,6 +30,7 @@ from . import documents as DOC
 from . import inbox as IB
 from . import pins as PN
 from . import ipynb as NBX
+from . import shape as SH
 
 
 def _err(e) -> H.RpcError:
@@ -90,6 +92,16 @@ def _reopen(nb: dict) -> None:
     if m.get("status") == "finished":
         m["status"] = "open"
         m["reopened"] = H._now_iso()
+        # D19: in a shaped notebook the new analysis is a follow-up, dated, under section 6.
+        if SH.is_shaped(nb) and not m.get("followup"):
+            SH.open_followup(nb)
+
+
+def _nbx(fn, *a, **kw):
+    try:
+        return fn(*a, **kw)
+    except NBX.NotebookError as e:
+        raise _err(e)
 
 
 def op_study_create(params: dict, ctx: dict) -> Any:
@@ -126,14 +138,16 @@ def op_study_create(params: dict, ctx: dict) -> Any:
         for p in pins:
             note = p.get("note") or "*(no note)*"
             when = _pin_when(ctx, p)
-            nb["cells"].append(NBX.markdown_cell(NBX.next_id(nb), f"**The owner's mark** — {when}\n\n> {note}",
-                                                 role="pin"))
+            SH.place(nb, NBX.markdown_cell(NBX.next_id(nb), f"**The owner's mark** — {when}\n\n> {note}",
+                                           role="pin"))
             src = logview_source({"flight": p["flight"], "start_s": p["start_s"], "end_s": p["end_s"],
                                   "channels": p.get("channels") or ["rpm", "map_inhg"], "title": note[:80]})
             if H._FEATURES[ctx.get("host", "server")].get("bench", False) and B.available():
-                _append_code(ctx, nb, src)
+                _append_code(ctx, nb, src, role="evidence")
             else:   # the website: the cell waits for a bench to run it
-                nb["cells"].append(NBX.code_cell(NBX.next_id(nb), src))
+                lv = NBX.code_cell(NBX.next_id(nb), src)
+                NBX.slmeta(lv)["role"] = "evidence"
+                SH.place(nb, lv)
                 _save_nb(ctx, nb)
         try:
             PN.resolve(ctx["workspace_dir"], qid, "investigating", study_id=m["id"])
@@ -331,23 +345,35 @@ def _run_code(ctx: dict, nb: dict, cell_id: str, source: str, timeout_s=None, me
     return {**got, "outputs": NBX.fresh_namespace_hint(nb, cell_id, got["outputs"])}
 
 
-def _append_code(ctx: dict, nb: dict, source: str, timeout_s=None, memory_mb=None, cell_id=None) -> dict:
+def _append_code(ctx: dict, nb: dict, source: str, timeout_s=None, memory_mb=None, cell_id=None,
+                 role=None, section=None) -> dict:
+    """A code cell run and kept: appended — in a shaped notebook at the end of
+    its section (`section`, else the default for its `role`: Findings, the
+    open follow-up, Working for scratch) — or replacing `cell_id`'s source
+    and outputs (with `role` / `section`, re-roled and moved)."""
     if not isinstance(source, str) or not source.strip():
         raise H.RpcError("BAD_PARAMS", "a code cell needs source")
+    role = _nbx(SH.check_role, "code", role)
+    section = _nbx(SH.check_section, section)
+    if section is not None:
+        _nbx(SH.ensure_shape, nb)
+    _reopen(nb)
     if cell_id:
-        try:
-            cell = NBX.find(nb, cell_id)
-        except NBX.NotebookError as e:
-            raise _err(e)
+        cell = _nbx(NBX.find, nb, cell_id)
         if cell["cell_type"] != "code":
             raise H.RpcError("BAD_PARAMS", f"cell {cell_id} isn't a code cell")
+        if SH.fixed(cell):
+            raise H.RpcError("BAD_PARAMS", f"cell {cell_id} is the setup cell; it stays as it is")
+        SH.set_role(cell, role)
+        if section is not None:
+            _nbx(SH.move, nb, cell, section)
     else:
         cell = NBX.code_cell(NBX.next_id(nb), source)
-        nb["cells"].append(cell)
+        NBX.slmeta(cell)["role"] = role or "support"
+        _nbx(SH.place, nb, cell, section)
     got = _run_code(ctx, nb, cell["id"], source, timeout_s, memory_mb)
     cell["source"] = source
     NBX.set_run(cell, got["outputs"], got["ran"])
-    _reopen(nb)
     _save_nb(ctx, nb)
     return {"study_id": NBX.meta(nb)["id"], "cell": cell, "previews": got["previews"]}
 
@@ -360,7 +386,7 @@ def op_code_run(params: dict, ctx: dict) -> Any:
     H._require_active(ctx)
     nb = notebook(ctx, params.get("study_id"))
     return _append_code(ctx, nb, params.get("source"), params.get("timeout_s"), params.get("memory_mb"),
-                        params.get("cell_id"))
+                        params.get("cell_id"), params.get("role"), params.get("section"))
 
 
 def logview_source(cell: dict) -> str:
@@ -382,6 +408,8 @@ def logview_source(cell: dict) -> str:
         args.append(f"title={str(cell['title'])!r}")
     if cell.get("rule"):
         args.append(f"rule={str(cell['rule'])!r}")
+    if cell.get("caption"):
+        args.append(f"caption={str(cell['caption'])!r}")
     return "eis.logview(" + ", ".join(args) + ")\n"
 
 
@@ -395,19 +423,26 @@ def op_study_cells_append(params: dict, ctx: dict) -> Any:
     nb = notebook(ctx, params.get("study_id"))
     cell = dict(params.get("cell") or {})
     kind = cell.get("kind")
+    section = cell.get("section", params.get("section"))
+    role = cell.get("role", params.get("role"))
     if kind == "markdown":
         src = cell.get("source")
         if not isinstance(src, str) or not src.strip():
             raise H.RpcError("BAD_PARAMS", "a markdown cell needs source")
-        new = NBX.markdown_cell(NBX.next_id(nb), src, role=cell.get("role"))
-        nb["cells"].append(new)
+        role = _nbx(SH.check_role, "markdown", role)
+        section = _nbx(SH.check_section, section)
+        if section is not None:
+            _nbx(SH.ensure_shape, nb)
         _reopen(nb)
+        new = NBX.markdown_cell(NBX.next_id(nb), src, role=role or "narrative")
+        _nbx(SH.place, nb, new, section)
         _save_nb(ctx, nb)
         return {"study_id": NBX.meta(nb)["id"], "cell": new, "previews": {}}
     if kind == "code":
-        return _append_code(ctx, nb, cell.get("source"), cell.get("timeout_s"), cell.get("memory_mb"))
+        return _append_code(ctx, nb, cell.get("source"), cell.get("timeout_s"), cell.get("memory_mb"),
+                            role=role, section=section)
     if kind == "logview":
-        return _append_code(ctx, nb, logview_source(cell))
+        return _append_code(ctx, nb, logview_source(cell), role=role or "evidence", section=section)
     raise H.RpcError("BAD_PARAMS", f"a cell's kind is markdown, code or logview; got {kind!r}")
 
 
@@ -466,32 +501,114 @@ def op_study_cells_discard(params: dict, ctx: dict) -> Any:
     return _pending(params, ctx, NBX.discard)
 
 
-def op_study_finish(params: dict, ctx: dict) -> Any:
-    """An investigation ends (§5.1): the floor rule first — a summary, and a
-    markdown cell next to every figure and log view (refused, naming the
-    cells, otherwise); then status, summary, the inbox candidate resolved,
-    and optionally the Journal study finding (the one Journal entry an
-    investigation may write, D7). Reports the inbox's open candidates (F6)
-    and the flights the cells read, one count (F7)."""
+def op_study_followup(params: dict, ctx: dict) -> Any:
+    """D19 §5.6: open a dated follow-up under section 6 (`date` YYYY-MM-DD,
+    default today; `title`). Cells appended without a section land in it;
+    study_finish closes it with what changed above. Opens the notebook again
+    if it was finished (F17); an older notebook gets its sections first."""
     H._require_active(ctx)
     nb = notebook(ctx, params.get("study_id"))
+    m = NBX.meta(nb)
+    was = m.get("status")
+    if was == "finished":
+        m["status"] = "open"
+        m["reopened"] = H._now_iso()
+    cell = _nbx(SH.open_followup, nb, params.get("date"), params.get("title"))
+    _save_nb(ctx, nb)
+    return {"study_id": m["id"], "cell": cell, "status": m["status"]}
+
+
+def op_study_cell_edit(params: dict, ctx: dict) -> Any:
+    """D19: a cell's `role` (evidence · support · scratch · narrative),
+    its `section` (4–7: moved to the end of it) and — a markdown cell — its
+    `source`. Code is changed with code_run and cell_id (it runs). The setup
+    cell, the section headings and follow-up headings stay as the engine
+    wrote them. Moving or re-roling a cell isn't new analysis; new text in
+    a finished notebook opens it again (F17)."""
+    H._require_active(ctx)
+    nb = notebook(ctx, params.get("study_id"))
+    cell = _nbx(NBX.find, nb, params.get("cell_id") or "")
+    if SH.fixed(cell) or NBX.slmeta_get(cell).get("generated"):
+        raise H.RpcError("BAD_PARAMS", f"cell {cell['id']} is written by EIS (the setup cell, a heading, or sections "
+                                       "1–3, which study_finish writes); it isn't edited by hand")
+    role = _nbx(SH.check_role, cell["cell_type"], params.get("role"))
+    section = _nbx(SH.check_section, params.get("section"))
+    src = params.get("source")
+    if src is not None:
+        if cell["cell_type"] != "markdown":
+            raise H.RpcError("BAD_PARAMS", "a code cell's source changes with code_run and its cell_id (so it runs)")
+        if not isinstance(src, str) or not src.strip():
+            raise H.RpcError("BAD_PARAMS", "a markdown cell needs source")
+    if role is None and section is None and src is None:
+        raise H.RpcError("BAD_PARAMS", "cell_edit changes role, section or (markdown) source; none was given")
+    if section is not None:
+        _nbx(SH.ensure_shape, nb)
+        cell = _nbx(NBX.find, nb, cell["id"])
+    SH.set_role(cell, role)
+    if section is not None:
+        _nbx(SH.move, nb, cell, section)
+    if src is not None and src != NBX.text(cell.get("source")):
+        cell["source"] = src
+        _reopen(nb)
+    _save_nb(ctx, nb)
+    return {"study_id": NBX.meta(nb)["id"], "cell": cell,
+            "section": SH.section_at(nb, nb["cells"].index(cell)) if SH.is_shaped(nb) else None}
+
+
+def op_study_finish(params: dict, ctx: dict) -> Any:
+    """An investigation ends (§5.1, D19 §5.6). The structured top —
+    `question_scope`, `shows` (3–5 sentences), `means`, `actions`
+    ({what, who, settles, recheck_after_flights?}, or `actions_none`) —
+    writes sections 1–3; `summary` alone still finishes (it stands as *What
+    it means*). The floor rule first, naming the cells: a figure or log view
+    with nothing saying what it shows, a code cell ending in an error, an
+    evidence cell whose output is plain text, a support cell with nothing
+    after it. Then: an open follow-up closes with `changed`; scratch cells
+    move under *Working*; status, the top (the previous one kept in history),
+    the inbox candidate resolved, and optionally the Journal study finding —
+    `shows[0]` (D7). Reports the inbox's open candidates (F6) and the flights
+    the cells read, one count (F7)."""
+    H._require_active(ctx)
+    nb = notebook(ctx, params.get("study_id"))
+    top = _nbx(SH.clean_top, params)
     summary = params.get("summary")
-    if not isinstance(summary, str) or not summary.strip():
-        raise H.RpcError("BAD_PARAMS", "study_finish needs a summary: what was found, what it means, what to do")
+    if summary is not None and not isinstance(summary, str):
+        raise H.RpcError("BAD_PARAMS", "summary is text")
+    if not (summary or "").strip() and not (top or {}).get("means") and not (top or {}).get("shows"):
+        raise H.RpcError("BAD_PARAMS", "study_finish needs the Answer: shows (what the data shows) and means (what "
+                                       "it means) — or a summary")
+    if top is not None:
+        _nbx(SH.ensure_shape, nb)
     lacking = NBX.floor_lacking(nb)
     if lacking:
         raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
-                                       "saying what it shows; add one beside cell " + ", ".join(lacking))
+                                       "saying what it shows (or, as evidence, a caption); add one beside cell "
+                                       + ", ".join(lacking))
     failed = NBX.failed_cells(nb)
     if failed:
         raise H.RpcError("FLOOR_RULE", "cell " + ", ".join(failed) + (" ends" if len(failed) == 1 else " end")
                          + " in an error; replace each (code_run with its cell_id) with code that runs — "
                            "the same step done right, or a cell that prints why that path was dropped")
+    plain = SH.evidence_refusals(nb)
+    if plain:
+        raise H.RpcError("FLOOR_RULE", "evidence cell " + ", ".join(plain) + " shows plain text; evidence is "
+                         "eis.table(df, caption=…), eis.figure(fig, caption=…) or eis.logview(…, caption=…), with no "
+                         "print — replace it (code_run with its cell_id), or make it support (cell_edit role)")
+    dangling = SH.support_dangling(nb)
+    if dangling:
+        raise H.RpcError("FLOOR_RULE", "support cell " + ", ".join(dangling) + " has nothing after it: a support "
+                         "cell is the calculation behind the evidence or narrative that follows it — add that, or "
+                         "make it scratch (cell_edit role)")
     try:
         tags = NBX.clean_tags(params.get("tags")) if params.get("tags") is not None else None
-        finding = NBX.clean_finding(params.get("finding"))
+        finding = NBX.clean_finding((top or {}).get("shows", [None])[0] if (top or {}).get("shows")
+                                    else params.get("finding"))
     except NBX.NotebookError as e:
         raise _err(e)
+    _nbx(SH.close_followup, nb, params.get("changed"))
+    moved = SH.gather_scratch(nb)
+    if top is not None:
+        summary = top.get("means") or summary or "\n".join(top.get("shows") or [])
     m = NBX.meta(nb)
     # F17: a follow-up's summary replaces the earlier one; the earlier one
     # stays, with the date it was written, as the notebook's history.
@@ -499,7 +616,11 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     if prev and prev != summary.strip():
         m["summaries"] = [*(m.get("summaries") or []), {"summary": prev, "finished": m.get("finished")}]
     m.pop("reopened", None)
+    if top is not None:
+        SH.record_top(nb, top)
     m.update({"summary": summary.strip(), "status": "finished", "finished": H._now_iso()})
+    if SH.is_shaped(nb):
+        SH.refresh_generated(nb)
     if tags is not None:            # §5.5: Claude's topic words; a follow-up may leave them as they were
         m["tags"] = tags
     # v1.2: the one-line finding (the Journal's line); a finish without one drops an earlier one,
@@ -540,7 +661,7 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     open_ = [c for c in IB.load(ctx["workspace_dir"])["candidates"] if c.get("status") in IB.OPEN]
     flights = NBX.flights_of(nb)
     return {"study": NBX.summary(nb), "inbox_candidate": resolved, "question": question, "journal_entry": entry,
-            "flights": len(flights), "flight_ids": flights,
+            "flights": len(flights), "flight_ids": flights, "moved_to_working": moved,
             "inbox": {"open": len(open_), "new": sum(1 for c in open_ if c.get("status") == "new"),
                       "unresolved_here": bool(cand) and not params.get("resolution")}}
 
@@ -870,5 +991,6 @@ def op_study_set_tags(params: dict, ctx: dict) -> Any:
 
 OPS = ("guide", "study_create", "code_run", "study_cells_append", "study_cells_rerun", "study_cells_accept", "study_cells_discard",
        "study_finish", "aircraft_get", "aircraft_set", "aircraft_assign", "list_aircraft", "documents_list", "document_read", "inbox_scan", "inbox_list", "inbox_resolve",
-       "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete", "study_set_tags")
+       "flight_pin", "pins_list", "question_resolve", "pin_edit", "pin_delete", "question_edit", "question_delete", "study_set_tags",
+       "study_followup", "study_cell_edit")
 

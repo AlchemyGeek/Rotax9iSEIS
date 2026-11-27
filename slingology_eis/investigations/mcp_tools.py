@@ -500,6 +500,7 @@ def _trim_outputs(outputs: list, stream_chars: int) -> list:
             lines = tb if isinstance(tb, list) else str(tb).splitlines()
             out.append({"error": o.get("ename"), "evalue": o.get("evalue"),
                         "traceback": (["[…]"] + lines[-20:]) if len(lines) > 20 else lines})
+            continue
         else:
             data = o.get("data") or {}
             item: dict = {}
@@ -516,6 +517,9 @@ def _trim_outputs(outputs: list, stream_chars: int) -> list:
             lv = data.get("application/vnd.slingology.logview+json")
             if lv:
                 item["logview"] = lv
+            ev = ((o.get("metadata") or {}).get("slingology") or {}).get("evidence")
+            if ev:
+                item["evidence"] = {"kind": ev.get("kind"), "caption": ev.get("caption")}
             out.append(item)
     return out
 
@@ -527,6 +531,9 @@ def _ran(cell: dict) -> dict:
 def shape_code_run(args: dict, r: dict) -> dict:
     cell = r["cell"]
     out = {"study_id": r["study_id"], "cell_id": cell["id"], "kind": cell.get("cell_type")}
+    role = ((cell.get("metadata") or {}).get("slingology") or {}).get("role")
+    if role:
+        out["role"] = role
     if cell.get("cell_type") == "code":
         out.update({"status": _ran(cell).get("status"), "ran": _ran(cell),
                     "outputs": _trim_outputs(cell.get("outputs"), CODE_STREAM_CHARS),
@@ -541,7 +548,7 @@ def code_run_images(r: dict) -> list:
 
 def run_code_run(args: dict, call: Call) -> dict:
     p = {"study_id": args["study_id"], "source": args["source"]}
-    for k in ("cell_id", "timeout_s", "memory_mb"):
+    for k in ("cell_id", "timeout_s", "memory_mb", "role", "section"):
         if args.get(k) is not None:
             p[k] = args[k]
     return call("code_run", p)
@@ -617,6 +624,10 @@ def shape_notebook(args: dict, view: dict) -> dict:
         sm = (c.get("metadata") or {}).get("slingology") or {}
         src, _ = _clip(_text(c.get("source")), TEXT_CHARS)
         cell = {"cell_id": c.get("id"), "kind": c.get("cell_type"), "source": src}
+        if sm.get("role"):
+            cell["role"] = sm["role"]       # D19: evidence · support · scratch · narrative (section, followup …)
+        if sm.get("section"):
+            cell["section"] = sm["section"]
         if c.get("cell_type") == "code":
             cell["ran"] = sm.get("ran")
             cell["outputs"] = _trim_outputs(c.get("outputs"), TEXT_CHARS)
@@ -655,8 +666,8 @@ def run_study_create(args: dict, call: Call) -> dict:
 
 
 def run_cell_append(args: dict, call: Call) -> dict:
-    cell = {k: args[k] for k in ("kind", "source", "role", "flight", "start_s", "end_s", "channels", "marks",
-                                 "title", "rule", "timeout_s", "memory_mb") if args.get(k) is not None}
+    cell = {k: args[k] for k in ("kind", "source", "role", "section", "flight", "start_s", "end_s", "channels", "marks",
+                                 "title", "caption", "rule", "timeout_s", "memory_mb") if args.get(k) is not None}
     return call("study_cells_append", {"study_id": args["study_id"], "cell": cell})
 
 
@@ -681,8 +692,27 @@ def _pending_call(op: str):
 
 def run_study_finish(args: dict, call: Call) -> dict:
     p = {k: args[k] for k in ("study_id", "summary", "inbox_candidate", "question", "resolution", "note", "journal",
-                              "finding", "tags") if args.get(k) is not None}
+                              "finding", "tags", "question_scope", "shows", "means", "actions", "actions_none",
+                              "changed") if args.get(k) is not None}
     return call("study_finish", p)
+
+
+def run_study_followup(args: dict, call: Call) -> dict:
+    return call("study_followup", {k: args[k] for k in ("study_id", "date", "title") if args.get(k) is not None})
+
+
+def run_cell_edit(args: dict, call: Call) -> dict:
+    return shape_cell_edit(args, call("study_cell_edit", {k: args[k] for k in ("study_id", "cell_id", "role", "section",
+                                                                               "source") if args.get(k) is not None}))
+
+
+def shape_cell_edit(args: dict, r: dict) -> dict:
+    """cell_edit: the cell as study_read shows it, and where it now sits."""
+    c = r["cell"]
+    sm = (c.get("metadata") or {}).get("slingology") or {}
+    src, _ = _clip(_text(c.get("source")), TEXT_CHARS)
+    return {"study_id": r["study_id"], "cell_id": c.get("id"), "kind": c.get("cell_type"), "role": sm.get("role"),
+            "section": r.get("section"), "source": src}
 
 
 def run_pins_list(args: dict, call: Call) -> dict:
@@ -828,6 +858,10 @@ TOOLS: list[Tool] = [
          "by=\"source\") or by=\"date\", date=\"2026-10-01\", eis.unusual(rule), eis.signal(flight, start_s, end_s, "
          "[\"rpm\"]), eis.compare(rule), eis.logview(flight, start_s, end_s, [\"rpm\", \"map_inhg\"], "
          "marks=[(t_s, \"label\")]), eis.document(\"om.pdf\").find(\"boost\"), eis.aircraft, eis.profile, eis.notes. "
+         "eis.table(df, caption=\"…\", units={col: unit}) and eis.figure(fig, caption=\"…\") make evidence. "
+         "role: evidence (one captioned eis.table / eis.figure / eis.logview, no print), support (the calculation "
+         "behind the evidence after it; the default), scratch (exploring — kept under Working). section: 4 Findings "
+         "(default), 5 How this was done, 6 Follow-ups, 7 Working. "
          "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. Each cell "
          "starts afresh: nothing carries over from earlier cells, so load what it needs in it. A cell that fails is "
          "fixed by running it again with its cell_id, not by adding another. The last "
@@ -836,6 +870,8 @@ TOOLS: list[Tool] = [
          "figures as images. Example: {\"study_id\": \"…\", \"source\": \"r = eis.cycling('full_power', "
          "'rpm')\\nprint(r)\"}.",
          {"study_id": _S, "source": _S, "cell_id": _S,
+          "role": {"type": "string", "enum": ["evidence", "support", "scratch"]},
+          "section": {"type": "integer", "enum": [4, 5, 6, 7]},
           "timeout_s": {"type": "number", "minimum": 1, "maximum": 300, "description": "Default 60"},
           "memory_mb": {"type": "number", "minimum": 256, "maximum": 8192, "description": "Default 2048"}},
          run_code_run, required=("study_id", "source"), writes=True, images=code_run_images, ops=("code_run",)),
@@ -879,14 +915,18 @@ TOOLS: list[Tool] = [
                                                "and a markdown cell with each mark's note followed by its log view"},
           "engine_type": _S}, run_study_create, required=("name",), writes=True, ops=("study_create",)),
     Tool("cell_append", "Add a cell",
-         "Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; "
-         "code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "
-         "\"label\"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight "
-         "view. Example: {\"kind\": \"logview\", \"flight\": \"…\", \"start_s\": 360, \"end_s\": 420, "
+         "Append a cell to a notebook, at the end of its section: markdown (source) — a finding's one sentence, "
+         "what a result means, the plan; code (source, run at once, as code_run); logview (flight, start_s, end_s, "
+         "channels, marks [[t_s, \"label\"], …], title, caption) — a strip chart of a window of one flight that the "
+         "EIS pages open as the Flight view (evidence by default). role: markdown narrative (default) or scratch; "
+         "code evidence, support (default) or scratch. section: 4 Findings (default; the open follow-up when there "
+         "is one), 5 How this was done, 6 Follow-ups, 7 Working (scratch goes there). Example: {\"kind\": \"logview\", \"flight\": \"…\", \"start_s\": 360, \"end_s\": 420, "
          "\"channels\": [\"rpm\", \"map_inhg\"], \"marks\": [[367, \"takeoff power\"]]}.",
          {"study_id": _S, "kind": {"type": "string", "enum": ["markdown", "code", "logview"]},
-          "source": _S, "role": _S, "flight": _S, "start_s": _N, "end_s": _N, "channels": _STRS,
-          "marks": {"type": "array", "items": {"type": "array"}}, "title": _S, "rule": _S,
+          "source": _S, "role": {"type": "string", "enum": ["evidence", "support", "scratch", "narrative"]},
+          "section": {"type": "integer", "enum": [4, 5, 6, 7]},
+          "flight": _S, "start_s": _N, "end_s": _N, "channels": _STRS,
+          "marks": {"type": "array", "items": {"type": "array"}}, "title": _S, "caption": _S, "rule": _S,
           "timeout_s": _N, "memory_mb": _N},
          run_cell_append, required=("study_id", "kind"), writes=True, images=code_run_images,
          ops=("study_cells_append",)),
@@ -909,24 +949,55 @@ TOOLS: list[Tool] = [
          {"study_id": _S, "cell_ids": _STRS}, _pending_call("study_cells_discard"), required=("study_id",),
          writes=True, ops=("study_cells_discard",)),
     Tool("study_finish", "Finish a notebook",
-         "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
-         "or log view has no markdown cell right before or after it, or while a code cell ends in an error (the "
-         "answer names the cells). Optionally "
+         "End an investigation with its Answer, which EIS writes as sections 1–3: question_scope (the flights and "
+         "dates looked at, the references used, what was taken as given, what the logs can't tell — a short list), "
+         "shows (3–5 sentences, each a number the data shows; shows[0] is the Journal's line), means (the hypothesis, "
+         "confidence in words, what would change the view), actions ([{what, who, settles, recheck_after_flights?}], "
+         "or [] with actions_none saying why). summary alone still finishes. With a follow-up open, changed: what "
+         "changed above. Scratch cells move under Working. Refused, naming the cells, while a figure or log view has "
+         "nothing saying what it shows, a code cell ends in an error, an evidence cell shows plain text, or a support "
+         "cell has nothing after it. Optionally "
          "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
          "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
          "Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title "
-         "(else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is "
+         "(shows[0] when shows is given; else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is "
          "about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: "
          "{\"study_id\": \"…\", \"summary\": \"…\", \"question\": \"q-1a2b3c4d\", \"resolution\": \"watch\", "
-         "\"tags\": [\"governor\", \"cruise rpm\"], \"journal\": true, \"finding\": \"RPM swings 180 rpm at full power on 94 of 100 slices.\"}.",
+         "\"tags\": [\"governor\", \"cruise rpm\"], \"journal\": true, \"question_scope\": \"- 63 flights, Mar–Nov 2026\\n- OM "
+         "Ed. 0 Rev. 1 p. 30 limits\", \"shows\": [\"RPM swings 180 rpm at full power on 94 of 100 slices (Table 1).\"], "
+         "\"means\": \"…\", \"actions\": [{\"what\": \"Ask the shop to check the governor\", \"who\": \"A&P\", \"settles\": "
+         "\"whether the governor is the cause\", \"recheck_after_flights\": 10}]}.",
          {"study_id": _S, "summary": _S, "inbox_candidate": _S,
           "question": {**_S, "description": "The owner's question this answers (pins_list); it and its marks take the resolution"},
           "resolution": {"type": "string", "enum": ["investigating", "nothing-here", "watch", "acted"]},
           "note": _S, "journal": {"type": "boolean"},
           "finding": {**_S, "description": "One sentence, what was found: the Journal's line (at most 240 characters)"},
-          "tags": {**_STRS, "description": "Two or three topic words (at most 5): what the notebook is about"}},
+          "tags": {**_STRS, "description": "Two or three topic words (at most 5): what the notebook is about"},
+          "question_scope": {**_S, "description": "Scope and qualifications: flights and dates, references, what was taken as given, what the logs can't tell"},
+          "shows": {**_STRS, "description": "What the data shows: 3–5 sentences with numbers, each pointing at its evidence"},
+          "means": {**_S, "description": "What it means: the hypothesis, confidence in words, what would change the view"},
+          "actions": {"type": "array", "items": {"type": "object", "properties": {
+              "what": _S, "who": _S, "settles": _S, "recheck_after_flights": {"type": "integer", "minimum": 1}},
+              "required": ["what"]}, "description": "Proposed actions; [] with actions_none when there are none"},
+          "actions_none": {**_S, "description": "Why there is nothing to do (with actions: [])"},
+          "changed": {**_S, "description": "With a follow-up open: what changed above (the Answer, the actions)"}},
          run_study_finish,
-         required=("study_id", "summary"), writes=True, ops=("study_finish",)),
+         required=("study_id",), writes=True, ops=("study_finish",)),
+    Tool("study_followup", "Open a follow-up",
+         "Open a dated follow-up in a notebook (section 6): later cells appended without a section land in it, and "
+         "study_finish closes it with changed — what changed above. New analysis in a finished notebook opens one "
+         "itself, dated today. Example: {\"study_id\": \"…\", \"date\": \"2026-11-27\", \"title\": \"Is phase a factor?\"}.",
+         {"study_id": _S, "date": {**_S, "description": "YYYY-MM-DD (default today)"}, "title": _S},
+         run_study_followup, required=("study_id",), writes=True, ops=("study_followup",)),
+    Tool("cell_edit", "Edit a cell",
+         "Change a cell's role (code: evidence, support, scratch; markdown: narrative, scratch), move it to the end of "
+         "a section (4 Findings, 5 How this was done, 6 Follow-ups, 7 Working), or replace a markdown cell's text. "
+         "Code changes with code_run and its cell_id, so it runs. Sections 1–3 are study_finish's. Example: "
+         "{\"study_id\": \"…\", \"cell_id\": \"c3\", \"role\": \"scratch\"} or {\"study_id\": \"…\", \"cell_id\": \"c19\", "
+         "\"section\": 5}.",
+         {"study_id": _S, "cell_id": _S, "role": {"type": "string", "enum": ["evidence", "support", "scratch", "narrative"]},
+          "section": {"type": "integer", "enum": [4, 5, 6, 7]}, "source": _S},
+         run_cell_edit, required=("study_id", "cell_id"), writes=True, ops=("study_cell_edit",)),
     Tool("inbox_list", "Inbox",
          "The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence "
          "and status; scans first when there are new flights. Example: {\"status\": [\"new\", \"investigating\"]}.",

@@ -26,8 +26,8 @@ from tests.unit.test_research_ops import FULL_POWER, FP_START, _import, _ok
 from tests.unit.test_server import InProcess, isolated_packaged_home, rpc  # noqa: F401 — fixture
 
 WRITING = {"code_run", "study_create", "cell_append", "study_rerun", "study_accept", "study_discard", "study_finish",
-           "inbox_resolve", "question_resolve", "workspace_use"}
-TOOL_COUNT = 33
+           "inbox_resolve", "question_resolve", "workspace_use", "study_followup", "cell_edit"}
+TOOL_COUNT = 35
 
 
 @pytest.fixture
@@ -198,8 +198,10 @@ def test_writing_tools(ws):
     assert rr["study"]["pending"] == 0 and all(c["identical"] for c in rr["cells"])
     assert _tool(server, "study_accept", {"study_id": st})[0]["cells"] == []
     read, _ = _tool(server, "study_read", {"study_id": st})
-    assert [c["kind"] for c in read["cells"]] == ["code", "markdown", "code", "code", "markdown"]   # setup first
-    assert read["cells"][3]["outputs"][-1] == {"text": "<Figure>", "figure": True}
+    # setup first; D19's sections s1–s4, the cells under Findings, then s5–s7
+    assert [c["kind"] for c in read["cells"]] == ["code"] + ["markdown"] * 4 + ["code", "code", "markdown"] + ["markdown"] * 3
+    assert [c.get("role") for c in read["cells"][5:8]] == ["support", "support", "narrative"]
+    assert read["cells"][6]["outputs"][-1] == {"text": "<Figure>", "figure": True}
     cand = _ok(rpc(h, "inbox_list", {}))["candidates"]
     fin, _ = _tool(server, "study_finish", {"study_id": st, "summary": "It cycles.", "journal": True,
                                             **({"inbox_candidate": cand[0]["id"], "resolution": "watch"} if cand else {})})
@@ -224,6 +226,52 @@ def test_writing_tools(ws):
     res, seen = _tool(server, "question_resolve", {"question_id": q["id"], "status": "acted", "note": "prop balanced"})
     assert seen == [("question_resolve", {"question_id": q["id"], "status": "acted", "note": "prop balanced"})]
     assert res["question"]["status"] == "acted"
+
+
+def test_spec16_d19_the_shape_through_the_tools(ws):
+    """D19: cell_append and code_run take role and section; cell_edit and
+    study_followup call their operations; study_finish carries the
+    structured top; each trim is the operation's JSON re-applied."""
+    pytest.importorskip("matplotlib")
+    h, ids, _sid, _ws_id, _home = ws
+    server = M.Server()
+    st = _tool(server, "study_create", {"name": "Shape", "question": "Does rpm cycle?"})[0]["study_id"]
+    plan, seen = _tool(server, "cell_append", {"study_id": st, "kind": "markdown", "source": "Plan.", "section": 5})
+    assert seen == [("study_cells_append", {"study_id": st, "cell": {"kind": "markdown", "source": "Plan.", "section": 5}})]
+    assert plan["role"] == "narrative"
+    raw = []
+
+    def call(op, params):
+        out = server.call_op(op, params)
+        raw.append(out)
+        return out
+    out = T.call_tool("code_run", {"study_id": st, "role": "evidence", "source":
+                                   "eis.table(eis.flights()[['flight_id']], caption='The flights')"},
+                      call, engine_version=__version__, workspace_id=server._refresh())
+    res = out["structuredContent"]["result"]
+    assert res == _norm(T.shape_code_run({}, raw[0])) and res["role"] == "evidence"
+    assert res["outputs"][-1]["evidence"] == {"kind": "table", "caption": "The flights"}
+    scratch, _ = _tool(server, "code_run", {"study_id": st, "source": "1", "role": "scratch"})
+    edited, seen = _tool(server, "cell_edit", {"study_id": st, "cell_id": scratch["cell_id"], "role": "support",
+                                               "section": 5})
+    assert seen == [("study_cell_edit", {"study_id": st, "cell_id": scratch["cell_id"], "role": "support", "section": 5})]
+    raw_edit = server.call_op("load_study", {"study_id": st})
+    assert edited == _norm(T.shape_cell_edit({}, {"study_id": st, "cell": next(
+        c for c in raw_edit["notebook"]["cells"] if c["id"] == scratch["cell_id"]), "section": 5}))
+    assert edited["section"] == 5 and edited["role"] == "support"
+    _tool(server, "cell_append", {"study_id": st, "kind": "markdown", "source": "That is the count.", "section": 5})
+    read, _ = _tool(server, "study_read", {"study_id": st})
+    assert [c.get("section") for c in read["cells"] if c.get("role") == "section"] == [1, 2, 3, 4, 5, 6, 7]
+    top = {"question_scope": "- 7 flights", "shows": ["Seven flights (Table 1)."], "means": "It's a test.",
+           "actions": [{"what": "Nothing to check", "who": "owner", "settles": "nothing"}]}
+    fin, seen = _tool(server, "study_finish", {"study_id": st, **top, "journal": True})
+    assert seen == [("study_finish", {"study_id": st, **top, "journal": True})]
+    assert fin["journal_entry"]["what"] == "Seven flights (Table 1)." and fin["study"]["card"]["actions"] == 1
+    fu, seen = _tool(server, "study_followup", {"study_id": st, "date": "2026-11-27", "title": "More"})
+    assert seen == [("study_followup", {"study_id": st, "date": "2026-11-27", "title": "More"})]
+    assert fu["status"] == "open" and fu["cell"]["metadata"]["slingology"]["role"] == "followup"
+    refused, _ = _tool(server, "study_finish", {"study_id": st, **top}, error=True)
+    assert "changed" in refused
 
 
 def test_annotations_mark_writing_tools():

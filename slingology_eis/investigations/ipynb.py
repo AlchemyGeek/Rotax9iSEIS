@@ -66,7 +66,7 @@ FIGURE_MIMES = ("image/svg+xml", "image/png", LOGVIEW_MIME)
 _ID = re.compile(r"^st-[0-9a-f]{12}$")
 _ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 SETUP_ID = "setup"
-CARD_VERSION = 1
+CARD_VERSION = 2
 TESTS = ("cycling", "coupling", "groups", "unusual")
 _TEST_CALL = re.compile(r"\beis\.(cycling|coupling|groups|unusual)\s*\(")
 MAX_TAGS = 5
@@ -117,9 +117,11 @@ def text(src) -> str:
 
 def new(*, name: str, question: Optional[str] = None, kind: str = "investigation", author: str = "claude",
         inbox_candidate: Optional[str] = None, engine_type: Optional[str] = None,
-        study_id: Optional[str] = None, workspace_id: Optional[str] = None) -> dict:
+        study_id: Optional[str] = None, workspace_id: Optional[str] = None, shaped: bool = True) -> dict:
     """A notebook that begins with the setup cell (D14) when the workspace
-    is named, then the question (§5.1)."""
+    is named, then the seven sections of D19 with the question under the
+    first (§5.6) — or, `shaped=False` (a conversion of an older study), the
+    question cell alone (§5.1)."""
     if kind not in KINDS:
         raise NotebookError("BAD_PARAMS", f"a notebook's kind is one of {', '.join(KINDS)}")
     if author not in AUTHORS:
@@ -133,7 +135,13 @@ def new(*, name: str, question: Optional[str] = None, kind: str = "investigation
     head = f"# {name}\n" + (f"\n**Question:** {question}\n" if question else "")
     if workspace_id:
         m["workspace_id"] = workspace_id
-    cells = ([setup_cell(workspace_id)] if workspace_id else []) + [markdown_cell("c1", head, role="question")]
+    if shaped:
+        from . import shape as SH
+        m["shape"] = SH.SHAPE_VERSION
+        body = SH.new_cells(m)
+    else:
+        body = [markdown_cell("c1", head, role="question")]
+    cells = ([setup_cell(workspace_id)] if workspace_id else []) + body
     return {"nbformat": 4, "nbformat_minor": 5,
             "metadata": {"kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
                          "language_info": {"name": "python"}, "slingology": m},
@@ -324,9 +332,12 @@ def load(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) -> 
     before = json.dumps(nb, sort_keys=True)
     ensure_setup(nb, Path(ws_dir).name)
     mark_external(nb)
+    from . import shape as SH
     if json.dumps(nb, sort_keys=True) != before:
+        SH.fill_roles(nb)
         save(ws_dir, nb)
-    elif (meta(nb).get("card") or {}).get("v") != CARD_VERSION:    # §5.5: an older notebook gets its card, its date kept
+    elif SH.fill_roles(nb) or (meta(nb).get("card") or {}).get("v") != CARD_VERSION:
+        # §5.5 / D19: an older notebook gets its card and its cells' roles, its date kept — derived, not an edit.
         save(ws_dir, nb, touch=False)
     return nb
 
@@ -408,15 +419,28 @@ def has_figure(cell: dict) -> bool:
     return any(k in (o.get("data") or {}) for o in cell.get("outputs") or [] for k in FIGURE_MIMES)
 
 
+def _captioned(c: dict) -> bool:
+    """D19: an evidence cell whose figures and log views each carry a caption
+    (eis.figure / eis.logview caption=) says what it shows itself."""
+    if slmeta_get(c).get("role") != "evidence":
+        return False
+    figs = [o for o in c.get("outputs") or [] if any(k in (o.get("data") or {}) for k in FIGURE_MIMES)]
+    return bool(figs) and all((((o.get("metadata") or {}).get("slingology") or {}).get("evidence") or {}).get("caption")
+                              for o in figs)
+
+
 def floor_lacking(nb: dict) -> list[str]:
     """§5.1 floor rule: every cell showing a figure or a log view has a
-    markdown cell immediately before or after it. The cells that don't."""
+    markdown cell immediately before or after it — or (D19) is an evidence
+    cell with its caption. The cells that don't."""
     cells = nb["cells"]
     out = []
     for i, c in enumerate(cells):
-        if c["cell_type"] == "code" and has_figure(c):
+        if c["cell_type"] == "code" and has_figure(c) and not _captioned(c):
             near = [cells[j] for j in (i - 1, i + 1) if 0 <= j < len(cells)]
-            if not any(n["cell_type"] == "markdown" and text(n.get("source")).strip() for n in near):
+            # A section or follow-up heading (D19) is not a sentence about the figure.
+            if not any(n["cell_type"] == "markdown" and text(n.get("source")).strip()
+                       and slmeta_get(n).get("role") not in ("section", "followup") for n in near):
                 out.append(c["id"])
     return out
 
@@ -629,7 +653,9 @@ def card(nb: dict, ws_dir: Optional[Path] = None) -> dict:
             "evidence": evidence, "tests": [t for t in TESTS if t in tests],
             "outputs": "pending" if pending else "elsewhere" if elsewhere else "current",
             "resolution": resolution or _linked_resolution(ws_dir, m),
-            "tags": list(m.get("tags") or [])}
+            "tags": list(m.get("tags") or []),
+            # D19: the proposed actions of the last structured finish (None before one).
+            "actions": len((m.get("top") or {}).get("actions") or []) if m.get("top") else None}
 
 
 def summary(nb: dict) -> dict:
@@ -787,7 +813,8 @@ def convert(ws_dir: Path, study_id: str, *, presets: Optional[Callable] = None) 
     kind = doc.get("kind") if doc.get("kind") in KINDS else "investigation"
     nb = new(name=doc.get("name"), question=doc.get("question"), kind=kind,
              author=doc.get("author") if doc.get("author") in AUTHORS else "user",
-             inbox_candidate=doc.get("inbox_candidate"), engine_type=doc.get("engine_type"), study_id=study_id)
+             inbox_candidate=doc.get("inbox_candidate"), engine_type=doc.get("engine_type"), study_id=study_id,
+             shaped=False)
     m = meta(nb)
     if hand:
         # A hand study's findings are its questions' findings (the list row showed the first).

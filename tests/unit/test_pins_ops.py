@@ -95,8 +95,11 @@ def test_study_create_with_the_question_opens_with_the_marks_and_finish_resolves
     cells = view["notebook"]["cells"]
     assert view["question"] == "rough climbs"
     # setup, the question, then per mark: the owner's note, its log view.
-    body = cells[2:]
+    # D19: the marks open Findings (section 4), after s1–s4.
+    assert [c["id"] for c in cells[:5]] == ["setup", "s1", "s2", "s3", "s4"]
+    body = cells[5:9]
     assert [c["cell_type"] for c in body] == ["markdown", "code", "markdown", "code"]
+    assert [c["metadata"]["slingology"]["role"] for c in body] == ["pin", "evidence", "pin", "evidence"]
     assert "> rpm wanders in the climb" in _src(body[0]) and "> again, less" in _src(body[2])
     assert _src(body[1]).startswith(f"eis.logview({ids[0]!r}, 100, 160, channels=['rpm', 'map_inhg']")
     assert _src(body[3]).startswith(f"eis.logview({ids[1]!r}, 120, 170, channels=['rpm']")

@@ -85,8 +85,10 @@ def test_code_run_keeps_a_cell(research_ws):
     assert r2["cell"]["outputs"] == [{"output_type": "execute_result", "execution_count": None, "metadata": {},
                                       "data": {"text/plain": "2"}}]
     view = _ok(rpc(h, "load_study", {"study_id": sid}))
-    assert [c["id"] for c in view["notebook"]["cells"]] == ["setup", "c1", cell["id"]]
+    # D19: the setup cell, the seven sections (the question under 1), the cell under Findings.
+    assert [c["id"] for c in view["notebook"]["cells"]] == ["setup", "s1", "s2", "s3", "s4", cell["id"], "s5", "s6", "s7"]
     assert view["notebook"]["cells"][1]["cell_type"] == "markdown"          # the question, after the setup cell
+    assert "Why does rpm cycle at full power?" in "".join(view["notebook"]["cells"][1]["source"])
 
 
 def test_code_run_errors_are_outputs(research_ws):
@@ -131,6 +133,7 @@ def test_spec16_v1_5_a_failed_cell_is_named_and_fixed_in_place(research_ws):
     re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
     assert all(c["identical"] for c in re["cells"]), re["cells"]
     _ok(rpc(h, "code_run", {"study_id": sid, "cell_id": bad["id"], "source": "high = [1, 2, 3]\nprint(high[0])"}))
+    _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "The first is 1."}}))
     done = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "x"}))
     assert done["study"]["status"] == "finished"
 
@@ -141,7 +144,7 @@ def test_cells_append_rerun_accept_finish(research_ws):
     h, ids = research_ws
     sid = _notebook(h)
     md = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown", "source": "# Plan"}}))
-    assert md["cell"]["cell_type"] == "markdown" and md["cell"]["id"] == "c2"
+    assert md["cell"]["cell_type"] == "markdown" and md["cell"]["id"] == "c1"
     old = rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "question", "test_id": "cycling"}})
     assert not old["ok"] and "markdown, code or logview" in old["error"]["message"]
     bench = _has_bench(h)
@@ -157,7 +160,7 @@ def test_cells_append_rerun_accept_finish(research_ws):
         # A log view (§5.2): the SVG and the reference, never samples.
         lv = _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
             "kind": "logview", "flight": ids[0], "start_s": 10, "end_s": 70, "channels": ["rpm", "map_inhg"],
-            "marks": [[20, "takeoff power"]], "title": "Full power"}}))
+            "marks": [[20, "takeoff power"]]}}))           # no title or caption: nothing says what it shows
         out = lv["cell"]["outputs"][-1]["data"]
         ref = out["application/vnd.slingology.logview+json"]
         assert ref["flight"] == ids[0] and ref["start_s"] == 10 and ref["end_s"] == 70
@@ -170,7 +173,8 @@ def test_cells_append_rerun_accept_finish(research_ws):
         _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {"kind": "markdown",
                                                                      "source": "The window shows the swing."}}))
         # A cell whose output changes on re-run waits in pending.
-        rnd = _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())"}))["cell"]
+        rnd = _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())",
+                                      "role": "scratch"}))["cell"]
     re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
     if bench:
         by = {c["cell_id"]: c for c in re["cells"]}
@@ -194,7 +198,7 @@ def test_cells_append_rerun_accept_finish(research_ws):
     assert [e["kind"] for e in j["entries"]].count("study_finding") == 1
     listed = _ok(rpc(h, "list_studies", {}))["studies"]
     row = next(s for s in listed if s["study_id"] == sid)
-    assert row["format"] == "ipynb" and row["cells"] == (7 if bench else 3)   # the setup cell (D14) first and row["status"] == "finished"
+    assert row["format"] == "ipynb" and row["cells"] == (13 if bench else 9)   # the setup cell (D14) first and row["status"] == "finished"
     assert not rpc(h, "study_finish", {"study_id": sid, "summary": " "})["ok"]
 
 
@@ -234,7 +238,7 @@ def test_notebook_round_trip(research_ws):
     assert page.startswith("<!DOCTYPE html>") and "<strong>look</strong>" in page and "<script" not in page
     assert page == _download(h, _ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))["download_url"]).decode()
     if code is not None:
-        assert "show code" in page and "data:image/svg+xml;base64," in page
+        assert ("show code" in page or "show the calculation" in page) and "data:image/svg+xml;base64," in page
         # S5: what leaves names flights by content fingerprint, never flight_id…
         sent_code = next(c for c in sent["cells"] if c["cell_type"] == "code" and c["id"] != "setup")
         fl = _sm(sent_code)["ran"]["flights"]
@@ -563,11 +567,15 @@ def test_spec16_23_a_follow_up_reopens_the_notebook_and_keeps_the_earlier_summar
     assert view["status"] == "reopened" and view["notebook"]["metadata"]["slingology"]["status"] == "open"
     if _has_bench(h):
         _bench_stack()
-        _ok(rpc(h, "code_run", {"study_id": sid, "source": "print(1 + 1)"}))
+        _ok(rpc(h, "code_run", {"study_id": sid, "source": "print(1 + 1)", "role": "scratch"}))
         assert row()["status"] == "reopened"
 
-    # Finishing again: the new summary, the earlier one kept with its date.
-    again = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Oil runs warmer with OAT, not on its own."}))["study"]
+    # Finishing again: the new summary, the earlier one kept with its date. D19: the follow-up the
+    # reopening opened ends with what changed.
+    no = rpc(h, "study_finish", {"study_id": sid, "summary": "Oil runs warmer with OAT, not on its own."})
+    assert not no["ok"] and "changed" in no["error"]["message"]
+    again = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "Oil runs warmer with OAT, not on its own.",
+                                        "changed": "The answer: OAT, not the engine."}))["study"]
     assert again["status"] == "finished" and again["summary"] == "Oil runs warmer with OAT, not on its own."
     assert [e["summary"] for e in again["summaries"]] == ["Oil runs 6 °F warmer this month."]
     assert again["summaries"][0]["finished"][:2] == "20"
@@ -597,9 +605,9 @@ def test_spec16_5_5_the_card_is_derived_and_listed(research_ws):
         return next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)["card"]
 
     c0 = card()
-    assert c0 == {"v": 1, "origin": "asked", "channels": [], "flights": 0, "date_span": None,
+    assert c0 == {"v": 2, "origin": "asked", "channels": [], "flights": 0, "date_span": None,
                   "evidence": {"log_views": 0, "figures": 0, "tables": 0}, "tests": [], "outputs": "current",
-                  "resolution": None, "tags": []}
+                  "resolution": None, "tags": [], "actions": None}
     if _has_bench(h):
         _bench_stack()
         _ok(rpc(h, "study_cells_append", {"study_id": sid, "cell": {
@@ -615,7 +623,8 @@ def test_spec16_5_5_the_card_is_derived_and_listed(research_ws):
         nb = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
         ran = _sm(next(c for c in nb["cells"] if "eis.cycling" in "".join(c["source"])))["ran"]
         assert ran["tests"] == ["cycling"] and ran["channels"] == ["rpm"]
-        _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())"}))
+        _ok(rpc(h, "code_run", {"study_id": sid, "source": "import random\nprint(random.random())",
+                                "role": "scratch"}))
         _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
         assert card()["outputs"] == "pending"
         _ok(rpc(h, "study_cells_discard", {"study_id": sid}))
@@ -642,7 +651,8 @@ def test_spec16_5_5_the_card_is_derived_and_listed(research_ws):
     # A follow-up reopens it: no resolution shown until it is finished again.
     _ok(rpc(h, "study_cells_append", {"study_id": q_sid, "cell": {"kind": "markdown", "source": "## Follow-up"}}))
     assert next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == q_sid)["card"]["resolution"] is None
-    fin = _ok(rpc(h, "study_finish", {"study_id": q_sid, "summary": "Acted.", "resolution": "acted"}))
+    fin = _ok(rpc(h, "study_finish", {"study_id": q_sid, "summary": "Acted.", "resolution": "acted",
+                                      "changed": "Resolved as acted."}))
     assert fin["study"]["card"]["resolution"] == "acted" and fin["study"]["card"]["tags"] == []
 
 
@@ -663,7 +673,7 @@ def test_spec16_5_5_an_older_notebook_gets_its_card_on_first_load_and_on_import(
     nb["metadata"]["slingology"]["updated"] = "2026-01-02T03:04:05+00:00"
     p.write_text(json.dumps(nb))
     row = next(s for s in _ok(rpc(h, "list_studies", {}))["studies"] if s["study_id"] == sid)
-    assert row["card"]["v"] == 1 and row["card"]["tests"] == ["coupling"] and row["card"]["origin"] == "asked"
+    assert row["card"]["v"] == 2 and row["card"]["tests"] == ["coupling"] and row["card"]["origin"] == "asked"
     assert row["updated"] == "2026-01-02T03:04:05+00:00"      # filling in the card isn't an edit: newest-first holds
     assert "card" in json.loads(p.read_text())["metadata"]["slingology"]       # stored, not recomputed per listing
     # Import: recomputed (origin imported), whatever card the sender's file carried.

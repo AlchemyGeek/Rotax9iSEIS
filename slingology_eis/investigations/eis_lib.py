@@ -19,7 +19,9 @@ the tool's number (acceptance 12).
     eis.unusual(rule, channels=None, **params)
     eis.signal(flight, start_s=None, end_s=None, channels=None, **kw)   the Signal view's analysis (dict)
     eis.compare(rule, channels=None, pinned=None, collapse=False)       a frame, one row per slice
-    eis.logview(flight, start_s, end_s, channels, marks=[(t_s, "label")], title=None)
+    eis.logview(flight, start_s, end_s, channels, marks=[(t_s, "label")], title=None, caption=None)
+    eis.table(df, caption, units={col: unit}, digits=None)     an evidence table (D19)
+    eis.figure(fig, caption)                                    an evidence figure (D19)
     eis.document(name).find(phrase) / .page(n)
     eis.aircraft, eis.profile, eis.notes
 
@@ -104,11 +106,14 @@ class LogView:
         with matplotlib.rc_context({"svg.hashsalt": "slingology-eis"}):
             self.fig.savefig(buf, format="svg", metadata={"Date": None}, bbox_inches="tight")
         title = self.ref.get("title") or f"Flight {self.ref['flight']}"
-        return {"image/svg+xml": buf.getvalue(), LOGVIEW_MIME: dict(self.ref),
+        data = {"image/svg+xml": buf.getvalue(), LOGVIEW_MIME: dict(self.ref),
                 "text/plain": f"<log view: {title}, {self.ref.get('window_label') or ''}>"}
+        # D19: every log view is an evidence output; its caption is caption=, else the title.
+        cap = " ".join(str(self.ref.get("caption") or self.ref.get("title") or "").split())
+        return data, {"slingology": {"evidence": {"kind": "logview", "caption": cap}}}
 
     def __repr__(self) -> str:
-        return self._repr_mimebundle_()["text/plain"]
+        return self._repr_mimebundle_()[0]["text/plain"]
 
 
 _TREND_COLUMNS = ["rank", "metric_id", "reference_n", "reference_mean", "reference_std", "reference_min",
@@ -128,7 +133,18 @@ class EIS:
 
     def __repr__(self) -> str:
         return "<eis: flights, find, metrics, trends, load, slices, samples, cycling, coupling, groups, unusual, " \
-               "signal, compare, logview, document, aircraft, profile, notes>"
+               "signal, compare, logview, table, figure, document, aircraft, profile, notes>"
+
+    # ── evidence (D19) ──
+    def table(self, df, caption=None, units: Optional[dict] = None, digits=None):
+        """An evidence table: headers in words with units, values rounded, the caption."""
+        from . import evidence as EV
+        return EV.table(df, caption, units=units, digits=digits)
+
+    def figure(self, fig, caption=None):
+        """An evidence figure: the matplotlib figure with its caption."""
+        from . import evidence as EV
+        return EV.figure(fig, caption)
 
     # ── flights ──
     def _flight_rows(self) -> list[dict]:
@@ -290,7 +306,8 @@ class EIS:
 
     # ── the log view (§5.2) ──
     def logview(self, flight: str, start_s: float, end_s: float, channels=("rpm", "map_inhg"),
-                marks: Optional[list] = None, title: Optional[str] = None, rule: Optional[str] = None) -> LogView:
+                marks: Optional[list] = None, title: Optional[str] = None, rule: Optional[str] = None,
+                caption: Optional[str] = None) -> LogView:
         import matplotlib.pyplot as plt
         from .. import flight_ident as fi
         from .. import workspace as ws
@@ -325,6 +342,8 @@ class EIS:
                "window_label": when}
         if rule:
             ref["rule"] = rule
+        if caption and str(caption).strip():
+            ref["caption"] = " ".join(str(caption).split())
         plt.close(fig)
         return LogView(ref, fig)
 

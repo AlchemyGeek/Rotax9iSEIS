@@ -6,7 +6,7 @@ The tools the EIS extension gives Claude (Spec 16 §4.2). Claude calls them; you
 
 Every result is `{engine_version, workspace_id, result}`. Tools marked **writes** change something in the workspace (a notebook, the inbox, the workspace used for the conversation); the others only read. None reaches the internet. A refusal is an error whose text says why and what to ask instead.
 
-33 tools, in the order Claude sees them.
+35 tools, in the order Claude sees them.
 
 | Tool | | What it does |
 |---|---|---|
@@ -34,11 +34,13 @@ Every result is `{engine_version, workspace_id, result}`. Tools marked **writes*
 | [`studies_list`](#studies_list) |  | The notebooks in the workspace, newest first: kind, author, question, status, finding, and each one's card — origin, channels, flights and dates, evidence, tests, outputs, resolution, tags. |
 | [`study_read`](#study_read) |  | One study: a notebook's metadata (question, status, summary) and its cells with their outputs (figures named, not drawn; pending re-run outputs flagged). |
 | [`study_create`](#study_create) | writes | Start an investigation notebook for a question; its first cell holds the question |
-| [`cell_append`](#cell_append) | writes | Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight view |
+| [`cell_append`](#cell_append) | writes | Append a cell to a notebook, at the end of its section: markdown (source) — a finding's one sentence, what a result means, the plan; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title, caption) — a strip chart of a window of one flight that the EIS pages open as the Flight view (evidence by default) |
 | [`study_rerun`](#study_rerun) | writes | Re-run every code cell of a notebook against this workspace; outputs that differ wait as pending until study_accept or study_discard. |
 | [`study_accept`](#study_accept) | writes | Accept the pending re-run outputs (all, or cell_ids): they become the cells' outputs |
 | [`study_discard`](#study_discard) | writes | Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand |
-| [`study_finish`](#study_finish) | writes | End an investigation with its summary (what was found, what it means, what to do) |
+| [`study_finish`](#study_finish) | writes | End an investigation with its Answer, which EIS writes as sections 1–3: question_scope (the flights and dates looked at, the references used, what was taken as given, what the logs can't tell — a short list), shows (3–5 sentences, each a number the data shows; shows[0] is the Journal's line), means (the hypothesis, confidence in words, what would change the view), actions ([{what, who, settles, recheck_after_flights?}], or [] with actions_none saying why) |
+| [`study_followup`](#study_followup) | writes | Open a dated follow-up in a notebook (section 6): later cells appended without a section land in it, and study_finish closes it with changed — what changed above |
+| [`cell_edit`](#cell_edit) | writes | Change a cell's role (code: evidence, support, scratch; markdown: narrative, scratch), move it to the end of a section (4 Findings, 5 How this was done, 6 Follow-ups, 7 Working), or replace a markdown cell's text |
 | [`inbox_list`](#inbox_list) |  | The candidates the detectors raised (recurring patterns, stand-out flights, shifts, groups) with evidence and status; scans first when there are new flights |
 | [`inbox_resolve`](#inbox_resolve) | writes | Set a candidate's status — investigating, nothing-here, watch, acted (or new) — with its study and a note |
 | [`pins_list`](#pins_list) |  | The owner's questions and marks (Mark for Claude on the Flight view): each question with its status, notebook and marks — flight, window (start_s, end_s and the local time), the channels shown, the owner's note — and the unassigned marks |
@@ -213,13 +215,15 @@ One row per slice, grouped by flight, with deltas to a pinned row; 50 rows per p
 
 *Writes.*
 
-Run Python on the bench and keep it as a code cell in the notebook study_id (study_create first: every executed cell belongs to a notebook) — appended, or replacing cell_id. The namespace has numpy (np), pandas (pd), scipy, matplotlib (plt) and the eis library, the tools' own code: eis.flights(), eis.find("Oct 24 Bellingham"), eis.load(flight, ["rpm"], start_s, end_s), eis.slices("full_power"), eis.cycling("full_power", "rpm") → Result (.finding, .magnitude, .caveats, .rows, .figure(); print(r) is the §8 text), eis.coupling(rule, ["rpm", "map_inhg"]), eis.groups(rule, "rpm.swing", by="source") or by="date", date="2026-10-01", eis.unusual(rule), eis.signal(flight, start_s, end_s, ["rpm"]), eis.compare(rule), eis.logview(flight, start_s, end_s, ["rpm", "map_inhg"], marks=[(t_s, "label")]), eis.document("om.pdf").find("boost"), eis.aircraft, eis.profile, eis.notes. A rule is a preset id, "phase:CLIMB", a rule object or {selection, slice_rules, hand_slices}. Each cell starts afresh: nothing carries over from earlier cells, so load what it needs in it. A cell that fails is fixed by running it again with its cell_id, not by adding another. The last expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and memory capped. Returns stdout (≤ 8000 characters), tables (text) and up to 4 figures as images. Example: {"study_id": "…", "source": "r = eis.cycling('full_power', 'rpm')\nprint(r)"}.
+Run Python on the bench and keep it as a code cell in the notebook study_id (study_create first: every executed cell belongs to a notebook) — appended, or replacing cell_id. The namespace has numpy (np), pandas (pd), scipy, matplotlib (plt) and the eis library, the tools' own code: eis.flights(), eis.find("Oct 24 Bellingham"), eis.load(flight, ["rpm"], start_s, end_s), eis.slices("full_power"), eis.cycling("full_power", "rpm") → Result (.finding, .magnitude, .caveats, .rows, .figure(); print(r) is the §8 text), eis.coupling(rule, ["rpm", "map_inhg"]), eis.groups(rule, "rpm.swing", by="source") or by="date", date="2026-10-01", eis.unusual(rule), eis.signal(flight, start_s, end_s, ["rpm"]), eis.compare(rule), eis.logview(flight, start_s, end_s, ["rpm", "map_inhg"], marks=[(t_s, "label")]), eis.document("om.pdf").find("boost"), eis.aircraft, eis.profile, eis.notes. eis.table(df, caption="…", units={col: unit}) and eis.figure(fig, caption="…") make evidence. role: evidence (one captioned eis.table / eis.figure / eis.logview, no print), support (the calculation behind the evidence after it; the default), scratch (exploring — kept under Working). section: 4 Findings (default), 5 How this was done, 6 Follow-ups, 7 Working. A rule is a preset id, "phase:CLIMB", a rule object or {selection, slice_rules, hand_slices}. Each cell starts afresh: nothing carries over from earlier cells, so load what it needs in it. A cell that fails is fixed by running it again with its cell_id, not by adding another. The last expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and memory capped. Returns stdout (≤ 8000 characters), tables (text) and up to 4 figures as images. Example: {"study_id": "…", "source": "r = eis.cycling('full_power', 'rpm')\nprint(r)"}.
 
 | Parameter | Type | |
 |---|---|---|
 | `study_id` | string | required |
 | `source` | string | required |
 | `cell_id` | string |  |
+| `role` | `evidence` \| `support` \| `scratch` |  |
+| `section` | `4` \| `5` \| `6` \| `7` |  |
 | `timeout_s` | number (minimum 1, maximum 300) | Default 60 |
 | `memory_mb` | number (minimum 256, maximum 8192) | Default 2048 |
 
@@ -294,20 +298,22 @@ Start an investigation notebook for a question; its first cell holds the questio
 
 *Writes.*
 
-Append a cell to a notebook: markdown (source) — say what the next figure shows, or what a result means; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title) — a strip chart of a window of one flight that the EIS pages open as the Flight view. Example: {"kind": "logview", "flight": "…", "start_s": 360, "end_s": 420, "channels": ["rpm", "map_inhg"], "marks": [[367, "takeoff power"]]}.
+Append a cell to a notebook, at the end of its section: markdown (source) — a finding's one sentence, what a result means, the plan; code (source, run at once, as code_run); logview (flight, start_s, end_s, channels, marks [[t_s, "label"], …], title, caption) — a strip chart of a window of one flight that the EIS pages open as the Flight view (evidence by default). role: markdown narrative (default) or scratch; code evidence, support (default) or scratch. section: 4 Findings (default; the open follow-up when there is one), 5 How this was done, 6 Follow-ups, 7 Working (scratch goes there). Example: {"kind": "logview", "flight": "…", "start_s": 360, "end_s": 420, "channels": ["rpm", "map_inhg"], "marks": [[367, "takeoff power"]]}.
 
 | Parameter | Type | |
 |---|---|---|
 | `study_id` | string | required |
 | `kind` | `markdown` \| `code` \| `logview` | required |
 | `source` | string |  |
-| `role` | string |  |
+| `role` | `evidence` \| `support` \| `scratch` \| `narrative` |  |
+| `section` | `4` \| `5` \| `6` \| `7` |  |
 | `flight` | string |  |
 | `start_s` | number |  |
 | `end_s` | number |  |
 | `channels` | list of string |  |
 | `marks` | list of list of values |  |
 | `title` | string |  |
+| `caption` | string |  |
 | `rule` | string |  |
 | `timeout_s` | number |  |
 | `memory_mb` | number |  |
@@ -349,12 +355,12 @@ Discard the pending re-run outputs (all, or cell_ids); the stored outputs stand.
 
 *Writes.*
 
-End an investigation with its summary (what was found, what it means, what to do). Refused while a figure or log view has no markdown cell right before or after it, or while a code cell ends in an error (the answer names the cells). Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title (else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "tags": ["governor", "cruise rpm"], "journal": true, "finding": "RPM swings 180 rpm at full power on 94 of 100 slices."}.
+End an investigation with its Answer, which EIS writes as sections 1–3: question_scope (the flights and dates looked at, the references used, what was taken as given, what the logs can't tell — a short list), shows (3–5 sentences, each a number the data shows; shows[0] is the Journal's line), means (the hypothesis, confidence in words, what would change the view), actions ([{what, who, settles, recheck_after_flights?}], or [] with actions_none saying why). summary alone still finishes. With a follow-up open, changed: what changed above. Scratch cells move under Working. Refused, naming the cells, while a figure or log view has nothing saying what it shows, a code cell ends in an error, an evidence cell shows plain text, or a support cell has nothing after it. Optionally resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title (shows[0] when shows is given; else the note, else the summary's first sentence). tags: two or three topic words for the notebook's card on Research home — what it is about, not what it found. Reports the flights the cells read and the inbox's open candidates. Example: {"study_id": "…", "summary": "…", "question": "q-1a2b3c4d", "resolution": "watch", "tags": ["governor", "cruise rpm"], "journal": true, "question_scope": "- 63 flights, Mar–Nov 2026\n- OM Ed. 0 Rev. 1 p. 30 limits", "shows": ["RPM swings 180 rpm at full power on 94 of 100 slices (Table 1)."], "means": "…", "actions": [{"what": "Ask the shop to check the governor", "who": "A&P", "settles": "whether the governor is the cause", "recheck_after_flights": 10}]}.
 
 | Parameter | Type | |
 |---|---|---|
 | `study_id` | string | required |
-| `summary` | string | required |
+| `summary` | string |  |
 | `inbox_candidate` | string |  |
 | `question` | string | The owner's question this answers (pins_list); it and its marks take the resolution |
 | `resolution` | `investigating` \| `nothing-here` \| `watch` \| `acted` |  |
@@ -362,6 +368,38 @@ End an investigation with its summary (what was found, what it means, what to do
 | `journal` | boolean |  |
 | `finding` | string | One sentence, what was found: the Journal's line (at most 240 characters) |
 | `tags` | list of string | Two or three topic words (at most 5): what the notebook is about |
+| `question_scope` | string | Scope and qualifications: flights and dates, references, what was taken as given, what the logs can't tell |
+| `shows` | list of string | What the data shows: 3–5 sentences with numbers, each pointing at its evidence |
+| `means` | string | What it means: the hypothesis, confidence in words, what would change the view |
+| `actions` | list of object | Proposed actions; [] with actions_none when there are none |
+| `actions_none` | string | Why there is nothing to do (with actions: []) |
+| `changed` | string | With a follow-up open: what changed above (the Answer, the actions) |
+
+## `study_followup`
+
+*Writes.*
+
+Open a dated follow-up in a notebook (section 6): later cells appended without a section land in it, and study_finish closes it with changed — what changed above. New analysis in a finished notebook opens one itself, dated today. Example: {"study_id": "…", "date": "2026-11-27", "title": "Is phase a factor?"}.
+
+| Parameter | Type | |
+|---|---|---|
+| `study_id` | string | required |
+| `date` | string | YYYY-MM-DD (default today) |
+| `title` | string |  |
+
+## `cell_edit`
+
+*Writes.*
+
+Change a cell's role (code: evidence, support, scratch; markdown: narrative, scratch), move it to the end of a section (4 Findings, 5 How this was done, 6 Follow-ups, 7 Working), or replace a markdown cell's text. Code changes with code_run and its cell_id, so it runs. Sections 1–3 are study_finish's. Example: {"study_id": "…", "cell_id": "c3", "role": "scratch"} or {"study_id": "…", "cell_id": "c19", "section": 5}.
+
+| Parameter | Type | |
+|---|---|---|
+| `study_id` | string | required |
+| `cell_id` | string | required |
+| `role` | `evidence` \| `support` \| `scratch` \| `narrative` |  |
+| `section` | `4` \| `5` \| `6` \| `7` |  |
+| `source` | string |  |
 
 ## `inbox_list`
 

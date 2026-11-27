@@ -249,9 +249,12 @@ def render(obj, caps: dict, title=None, result: bool = False):
         return render_figure(obj.figure, title, result)          # an Axes
     if hasattr(obj, "_repr_mimebundle_"):
         data = obj._repr_mimebundle_()
+        md = None
+        if isinstance(data, tuple):         # (data, metadata), as IPython takes it — D19's evidence mark
+            data, md = data
         data = {k: v for k, v in data.items() if v is not None}
         data["text/plain"] = _text(str(data.get("text/plain") or repr(obj)))
-        out = _bundle(data, None, result)
+        out = _bundle(data, md or None, result)
         if getattr(obj, "fig", None) is not None:
             out["_png"] = _png(obj.fig)
         return out

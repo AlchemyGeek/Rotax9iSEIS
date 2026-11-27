@@ -60,7 +60,9 @@ def test_study_create_writes_the_setup_cell_first(ws):
     assert first["id"] == "setup" and first["cell_type"] == "code" and first["outputs"] == []
     assert f'from slingology_eis import eis\neis.open("{ws_id}")' in first["source"]
     assert nb["metadata"]["slingology"]["workspace_id"] == ws_id
-    assert nb["cells"][1]["metadata"]["slingology"]["role"] == "question"
+    # D19: then the seven section headings, the question under the first (a generated cell).
+    assert [c["id"] for c in nb["cells"]] == ["setup", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]
+    assert nb["cells"][1]["metadata"]["slingology"]["role"] == "section" and "?" in "".join(nb["cells"][1]["source"])
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the bench's caps are POSIX")
@@ -133,7 +135,7 @@ def test_a_notebook_without_the_setup_cell_gets_it(ws):
     nb["metadata"]["slingology"].pop("workspace_id")
     p.write_text(json.dumps(nb))
     nb = _ok(rpc(h, "load_study", {"study_id": sid}))["notebook"]
-    assert [c["id"] for c in nb["cells"]][:2] == ["setup", "c1"]
+    assert [c["id"] for c in nb["cells"]][:2] == ["setup", "s1"]
     assert json.loads(p.read_text())["cells"][0]["id"] == "setup"          # saved
 
 
