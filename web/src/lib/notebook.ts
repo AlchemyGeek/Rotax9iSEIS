@@ -340,3 +340,107 @@ export function cellFlags(c: NbCell): string[] {
   const sm = cellMeta(c);
   return [["ran elsewhere", sm.ran_elsewhere], ["read-only", sm.read_only]].filter(([, on]) => on).map(([f]) => f as string);
 }
+
+// ── Spec 16 D19 §5.6: the shaped notebook's reading order (nbhtml.layout, value for value) ──
+
+export const EVIDENCE_LABEL: Record<string, string> = { table: "Table", figure: "Figure", logview: "Log view" };
+
+export function isShaped(nb: Notebook): boolean {
+  return nbMeta(nb).shape === 1;
+}
+
+/** A cell's role; a code cell with none is support, a markdown cell narrative. */
+export function cellRole(c: NbCell): string {
+  return cellMeta(c).role || (c.cell_type === "code" ? "support" : "narrative");
+}
+
+function evidenceMark(o: NbOutput): [string, string] | null {
+  const ev = ((o.metadata?.slingology ?? {}) as { evidence?: { kind?: string; caption?: string } }).evidence;
+  if (ev) return [ev.kind || "table", String(ev.caption ?? "")];
+  const ref = o.data?.[LOGVIEW_MIME] as { caption?: string; title?: string } | undefined;
+  if (ref && typeof ref === "object") return ["logview", String(ref.caption || ref.title || "")];
+  return null;
+}
+
+/** Section 1's markdown without the notebook's title (the header has it). */
+export function topSource(src: string): string {
+  return src.replace(/^# [^\n]*\n+/, "");
+}
+
+export interface EvidenceLabel { output: number; label: string; caption: string }
+export type LayoutBlock =
+  | { kind: "section"; n: number; id: string }
+  | { kind: "working"; ids: string[] }
+  | { kind: "markdown" | "support" | "code"; id: string }
+  | { kind: "evidence"; id: string; labels: EvidenceLabel[] };
+
+/** Sections 1–3's markdown (`top`) and the blocks in reading order: headings,
+ *  markdown, evidence (each evidence output numbered with its caption),
+ *  support (folded), other code, and *Working* — section 7's cells as one. */
+export function layout(nb: Notebook): { top: string[]; blocks: LayoutBlock[] } {
+  const top: string[] = [];
+  const blocks: LayoutBlock[] = [];
+  let n = 0;
+  let section: number | null = null;
+  const working: string[] = [];
+  for (const c of nb.cells) {
+    const sm = cellMeta(c);
+    if (isSetupCell(c)) continue;
+    if (sm.role === "section") {
+      section = Number(sm.section);
+      if (sm.generated) {
+        const src = text(c.source);
+        top.push(section === 1 ? topSource(src) : src);
+        continue;
+      }
+      blocks.push({ kind: "section", n: section, id: c.id });
+      if (section === 7) blocks.push({ kind: "working", ids: working });
+      continue;
+    }
+    if (section === 7) { working.push(c.id); continue; }
+    if (c.cell_type === "markdown") { blocks.push({ kind: "markdown", id: c.id }); continue; }
+    if (c.cell_type !== "code") continue;
+    const r = cellRole(c);
+    if (r === "evidence") {
+      const labels: EvidenceLabel[] = [];
+      (c.outputs ?? []).forEach((o, i) => {
+        const mark = evidenceMark(o);
+        if (mark) { n++; labels.push({ output: i, label: `${EVIDENCE_LABEL[mark[0]] ?? "Table"} ${n}`, caption: mark[1] }); }
+      });
+      blocks.push({ kind: "evidence", id: c.id, labels });
+    } else blocks.push({ kind: r === "support" ? "support" : "code", id: c.id });
+  }
+  return { top, blocks };
+}
+
+export function evidenceCaption(label: string, caption: string): string {
+  return caption ? `<figcaption><strong>${escapeHtml(label)}.</strong> ${inline(caption)}</figcaption>`
+    : `<figcaption><strong>${escapeHtml(label)}.</strong></figcaption>`;
+}
+
+/** An evidence output without the table's own <caption> (the numbered caption replaces it). */
+export function evidenceOutput(o: NbOutput): string {
+  return outputHtml(o).replace(/<caption>[\s\S]*?<\/caption>/, "");
+}
+
+export function workingSummary(k: number): string {
+  return `Working (${k} cell${k === 1 ? "" : "s"})`;
+}
+
+export interface EarlierAnswer { shows?: string[]; means?: string | null; finished?: string | null }
+
+/** The Answers a re-finish replaced, newest first, each with its date — nbhtml.answer_history. */
+export function answerHistory(history: EarlierAnswer[]): string {
+  const items = [...history].reverse().map((e) => {
+    const body = (e.shows ?? []).map((x) => `<li>${inline(x)}</li>`).join("");
+    return `<div class="earlier"><p class="meta">Answer of ${escapeHtml((e.finished ?? "").slice(0, 10) || "undated")}</p>`
+      + (body ? `<ul>${body}</ul>` : "") + (e.means ? markdown(e.means) : "") + "</div>";
+  });
+  return `<details class="answer-history"><summary>Earlier answers (${history.length})</summary>${items.join("")}</details>`;
+}
+
+/** Sections 1–3 in one block with the earlier Answers (or summaries) inside — nbhtml.answer_block. */
+export function answerBlock(top: string[], history: EarlierAnswer[], summaries: { summary?: string; finished?: string | null }[]): string {
+  const earlier = history.length ? answerHistory(history) : summaries.length ? summaryHistory(summaries) : "";
+  return '<section class="answer">' + top.map((t) => markdown(t)).join("") + earlier + "</section>";
+}

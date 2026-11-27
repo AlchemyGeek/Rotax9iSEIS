@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { getEngineClient } from "../../lib/engineClient";
 import { useCapabilities } from "../../lib/capabilities";
 import {
-  cellFlags, cellMeta, isSetupCell, logviewRef, markdown, nbMeta, notebookStatus, outputHtml, outputsLine, outputsState,
-  summaryBlock, text, type FileImages, type NbCell, type NbOutput, type Notebook,
+  answerBlock, cellFlags, cellMeta, evidenceCaption, evidenceOutput, isSetupCell, isShaped, layout, logviewRef, markdown,
+  nbMeta, notebookStatus, outputHtml, outputsLine, outputsState, summaryBlock, text, workingSummary,
+  type EarlierAnswer, type EvidenceLabel, type FileImages, type LayoutBlock, type NbCell, type NbOutput, type Notebook,
 } from "../../lib/notebook";
 import { EVIDENCE, ORIGIN, TEST, evidenceText, scopeText } from "../../lib/notebookCard";
 import type { NotebookCard } from "../../types/contract";
@@ -135,6 +136,12 @@ export function NotebookView({ view, onChanged, onDeleted }: {
   }
 
   const card = (m.card ?? null) as NotebookCard | null;
+  // Spec 16 D19: a shaped notebook reads as its sections (lib/notebook.ts layout, the export's own order).
+  const shaped = isShaped(nb);
+  const lay = shaped ? layout(nb) : null;
+  const byId = new Map(nb.cells.map((c) => [c.id, c] as const));
+  const cellProps = (c: NbCell) => ({ files: view.files, bench, busy: !!busy, onAccept: () => void accept([c.id]),
+    onDiscard: () => void discard([c.id]), onKeep: () => void keepExternal([c.id]) });
   const actions: MenuItem[] = [
     ...(bench && state.pending > 0 ? [
       { label: "Accept all new outputs", testid: "nb-accept-all", onSelect: () => void accept() },
@@ -185,31 +192,91 @@ export function NotebookView({ view, onChanged, onDeleted }: {
             title={card?.resolution && notebookStatus(m) === "finished" ? `Finished: ${card.resolution === "nothing-here" ? "nothing here" : card.resolution}` : undefined} />{" · "}
           <span>engine {m.engine ?? ""}</span>{m.updated ? <>{" · "}<span title={m.updated}>{String(m.updated).slice(0, 10)}</span></> : null}
         </div>
-        {m.question && <div style={{ ...BODY, fontSize: 14, color: "var(--text-primary)" }} data-testid="nb-question"><strong>Question:</strong> {m.question}</div>}
+        {!shaped && m.question && <div style={{ ...BODY, fontSize: 14, color: "var(--text-primary)" }} data-testid="nb-question"><strong>Question:</strong> {m.question}</div>}
         <div style={{ ...MUTED, color: state.pending || state.ranElsewhere || state.readOnly ? "var(--severity-watch)" : "var(--text-tertiary)" }} data-testid="nb-outputs">{outputsLine(state)}</div>
         {!bench && caps && (state.ranElsewhere > 0 || state.readOnly > 0) && (
           <div style={MUTED}>This page shows the outputs as they were saved; re-running a notebook needs EIS on your computer (the Claude Desktop extension or a pip install).</div>
         )}
         {m.reopened && m.status === "open" && (
           <div style={NOTICE} data-testid="nb-reopened">
-            Reopened {String(m.reopened).slice(0, 10)}: a follow-up is adding to this notebook. The summary below is from before it; Claude finishes again with a new one.
+            Reopened {String(m.reopened).slice(0, 10)}: a follow-up is adding to this notebook. The {shaped ? "Answer" : "summary"} below is from before it; Claude finishes again with a new one.
           </div>
         )}
-        {m.summary && <Html className="nb-summary" testid="nb-summary" html={summaryBlock(m.summary, m.summaries ?? [])} />}
+        {!shaped && m.summary && <Html className="nb-summary" testid="nb-summary" html={summaryBlock(m.summary, m.summaries ?? [])} />}
       </header>
       {error && <div style={{ ...NOTICE, color: "var(--severity-warning)" }}>{error}</div>}
       {notice && <div style={NOTICE} data-testid="nb-notice">{notice}</div>}
+      {shaped && lay && (
+        <Html className="nb-answer" testid="nb-answer"
+          html={answerBlock(lay.top, (m.history ?? []) as EarlierAnswer[], m.summaries ?? [])} />
+      )}
       <main style={{ ...PANEL, display: "flex", flexDirection: "column" }}>
-        {nb.cells.filter((c) => !isSetupCell(c)).map((c) => <Cell key={c.id} c={c} files={view.files} bench={bench} busy={!!busy}
-          onAccept={() => void accept([c.id])} onDiscard={() => void discard([c.id])} onKeep={() => void keepExternal([c.id])} />)}
+        {shaped && lay
+          ? lay.blocks.map((b, i) => <Block key={"id" in b ? b.id : `w${i}`} b={b} cells={byId} cellProps={cellProps} />)
+          : nb.cells.filter((c) => !isSetupCell(c)).map((c) => <Cell key={c.id} c={c} {...cellProps(c)} />)}
       </main>
     </div>
   );
 }
 
-function Cell({ c, files, bench, busy, onAccept, onDiscard, onKeep }: {
-  c: NbCell; files: FileImages; bench: boolean; busy: boolean; onAccept: () => void; onDiscard: () => void; onKeep: () => void;
-}) {
+type CellProps = { files: FileImages; bench: boolean; busy: boolean; onAccept: () => void; onDiscard: () => void; onKeep: () => void };
+
+/** One block of a shaped notebook (Spec 16 §5.6): a section heading; a finding's
+ *  markdown; evidence open with its number and caption, code folded; support
+ *  folded whole (*show the calculation*); *Working* folded at the end. */
+function Block({ b, cells, cellProps }: { b: LayoutBlock; cells: Map<string, NbCell>; cellProps: (c: NbCell) => CellProps }) {
+  if (b.kind === "working") {
+    if (!b.ids.length) return null;
+    return (
+      <details className="working" data-testid="nb-working">
+        <summary>{workingSummary(b.ids.length)}</summary>
+        {b.ids.map((id) => { const c = cells.get(id)!; return <Cell key={id} c={c} {...cellProps(c)} />; })}
+      </details>
+    );
+  }
+  const c = cells.get(b.id);
+  if (!c) return null;
+  if (b.kind === "section") {
+    return <h2 className="section" data-testid="nb-section" data-section={b.n}>{text(c.source).trim().replace(/^#+\s*/, "")}</h2>;
+  }
+  if (b.kind === "markdown" || b.kind === "code") return <Cell c={c} {...cellProps(c)} />;
+  if (b.kind === "support") {
+    return (
+      <div className="cell support" data-testid="nb-cell-support" data-cell={c.id}>
+        <details className="calc">
+          <summary>show the calculation</summary>
+          <Cell c={c} {...cellProps(c)} />
+        </details>
+      </div>
+    );
+  }
+  if (b.kind !== "evidence") return null;
+  const labels = new Map(b.labels.map((l: EvidenceLabel) => [l.output, l] as const));
+  const flags = cellFlags(c);
+  return (
+    <div className="cell evidence" data-testid="nb-cell-evidence" data-cell={c.id}>
+      {flags.length > 0 && <p className="flag" data-testid="nb-flag">{flags.join(" · ")}</p>}
+      {(c.outputs ?? []).map((o, i) => {
+        const l = labels.get(i);
+        if (!l) return <Output key={i} o={o} />;
+        const ref = logviewRef(o);
+        return (
+          <figure className="evidence" key={i} data-testid="nb-evidence">
+            {ref ? <LogViewCell view={ref} svgHtml={outputHtml(o)} /> : <Html html={evidenceOutput(o)} />}
+            <span dangerouslySetInnerHTML={{ __html: evidenceCaption(l.label, l.caption).replace(/^<figcaption>|<\/figcaption>$/g, "") }}
+              style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }} data-testid="nb-evidence-caption" />
+          </figure>
+        );
+      })}
+      <details className="code">
+        <summary>show code</summary>
+        <pre><code>{text(c.source)}</code></pre>
+      </details>
+    </div>
+  );
+}
+
+function Cell({ c, files, bench, busy, onAccept, onDiscard, onKeep }: { c: NbCell } & CellProps) {
   if (c.cell_type === "markdown") return <Html className="cell markdown" testid="nb-cell-markdown" html={markdown(text(c.source), files)} />;
   if (c.cell_type !== "code") return null;
   const sm = cellMeta(c);

@@ -1,0 +1,445 @@
+{
+ "study_id": "st-0000000d1900",
+ "name": "Fuel pressure by phase",
+ "format": "ipynb",
+ "notebook": {
+  "nbformat": 4,
+  "nbformat_minor": 5,
+  "metadata": {
+   "kernelspec": {
+    "name": "python3",
+    "display_name": "Python 3",
+    "language": "python"
+   },
+   "language_info": {
+    "name": "python"
+   },
+   "slingology": {
+    "id": "st-0000000d1900",
+    "name": "Fuel pressure by phase",
+    "kind": "investigation",
+    "author": "claude",
+    "question": "Is fuel pressure high only when pump 2 is on?",
+    "status": "finished",
+    "summary": "Phase is a factor, the other way round from the hypothesis.",
+    "inbox_candidate": null,
+    "engine": "1.1.0",
+    "created": "2026-11-27T10:00:00+00:00",
+    "updated": "2026-11-27T12:00:00+00:00",
+    "workspace_id": "ws_fixture",
+    "shape": 1,
+    "top": {
+     "question_scope": "- 2 flights, Jan 2026\n- The logs can't tell: the pump 2 switch",
+     "shows": [
+      "Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).",
+      "Climb is 13% of its time above."
+     ],
+     "means": "Phase is a factor, the other way round from the hypothesis.",
+     "actions": [
+      {
+       "what": "Ask the shop to check the regulator",
+       "who": "A&P",
+       "settles": "whether it is the setting",
+       "recheck_after_flights": 10
+      }
+     ]
+    },
+    "history": [
+     {
+      "shows": [
+       "Fuel pressure runs high on every flight."
+      ],
+      "means": "Not momentary.",
+      "actions": [],
+      "finished": "2026-11-26T02:00:00+00:00"
+     }
+    ],
+    "finished": "2026-11-27T12:00:00+00:00",
+    "finding": "Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).",
+    "tags": [
+     "fuel pressure"
+    ],
+    "card": {
+     "v": 2,
+     "origin": "asked",
+     "channels": [
+      "fuel_press_psi",
+      "rpm"
+     ],
+     "flights": 2,
+     "date_span": [
+      "2026-01-02",
+      "2026-01-02"
+     ],
+     "evidence": {
+      "log_views": 1,
+      "figures": 1,
+      "tables": 1
+     },
+     "tests": [],
+     "outputs": "current",
+     "resolution": null,
+     "tags": [
+      "fuel pressure"
+     ],
+     "actions": 1
+    }
+   }
+  },
+  "cells": [
+   {
+    "id": "setup",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "role": "setup"
+     }
+    },
+    "source": "# Setup: binds `eis` to this workspace and imports what the EIS bench predefines. A no-op on the\n# bench; in JupyterLab (a kernel with slingology-eis[investigations]) it is the binding (Spec 16 D14).\nimport numpy as np, pandas as pd, scipy, matplotlib\nimport matplotlib.pyplot as plt\nfrom slingology_eis import eis\neis.open(\"ws_fixture\")",
+    "outputs": []
+   },
+   {
+    "id": "s1",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 1,
+      "generated": true
+     }
+    },
+    "source": "# Fuel pressure by phase\n\n## 1 The question\n\nIs fuel pressure high only when pump 2 is on?\n\n**Scope and qualifications**\n\n- 2 flights, Jan 2026\n- The logs can't tell: the pump 2 switch\n"
+   },
+   {
+    "id": "s2",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 2,
+      "generated": true
+     }
+    },
+    "source": "## 2 Answer\n\n**What the data shows**\n\n- Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).\n- Climb is 13% of its time above.\n\n**What it means**\n\nPhase is a factor, the other way round from the hypothesis.\n"
+   },
+   {
+    "id": "s3",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 3,
+      "generated": true
+     }
+    },
+    "source": "## 3 Proposed actions\n\n1. **Ask the shop to check the regulator** · A&P · settles: whether it is the setting · re-check after the next 10 flights\n"
+   },
+   {
+    "id": "s4",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 4
+     }
+    },
+    "source": "## 4 Findings\n"
+   },
+   {
+    "id": "c2",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "narrative"
+     }
+    },
+    "source": "Fuel pressure is at or above **46 psi** for 81% of idle time (Table 1)."
+   },
+   {
+    "id": "c3",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.1.0",
+       "flights": [
+        "f1",
+        "f2"
+       ],
+       "at": "2026-11-27T11:00:00+00:00",
+       "ms": 10,
+       "status": "ok",
+       "digest": "692b3835b5b4ee86"
+      },
+      "role": "support"
+     }
+    },
+    "source": "share = …",
+    "outputs": [
+     {
+      "output_type": "stream",
+      "name": "stdout",
+      "text": "computed 7 phases\n"
+     }
+    ]
+   },
+   {
+    "id": "c4",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.1.0",
+       "flights": [
+        "f1",
+        "f2"
+       ],
+       "at": "2026-11-27T11:00:00+00:00",
+       "ms": 10,
+       "status": "ok",
+       "digest": "e14a720053a80ef4"
+      },
+      "role": "evidence"
+     }
+    },
+    "source": "eis.table(share, caption=…)",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "metadata": {
+       "slingology": {
+        "evidence": {
+         "kind": "table",
+         "caption": "Share of each phase's time at or above 46 psi"
+        },
+        "table": {
+         "n_rows": 2,
+         "n_cols": 3,
+         "truncated": false
+        }
+       }
+      },
+      "data": {
+       "text/html": "<table class=\"eis-table\"><caption>Share of each phase's time at or above 46 psi</caption><thead><tr><th>Detected flight phase</th><th>Exceed share (%)</th><th>Count</th></tr></thead><tbody><tr><td>IDLE</td><td>81.1</td><td>1,281</td></tr><tr><td>CLIMB</td><td>13.0</td><td>356</td></tr></tbody></table>",
+       "text/plain": "Share of each phase's time at or above 46 psi\nDetected flight phase  Exceed share (%)  Count\n                 IDLE              81.1  1,281\n                CLIMB              13.0    356"
+      }
+     }
+    ]
+   },
+   {
+    "id": "c5",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "narrative"
+     }
+    },
+    "source": "The climb looks like this on one flight (Log view 3)."
+   },
+   {
+    "id": "c6",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.1.0",
+       "flights": [
+        "f1",
+        "f2"
+       ],
+       "at": "2026-11-27T11:00:00+00:00",
+       "ms": 10,
+       "status": "ok",
+       "digest": "20e5b545c9f362d5"
+      },
+      "role": "evidence"
+     }
+    },
+    "source": "fig, ax = plt.subplots() …",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "data": {
+       "image/svg+xml": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"2\"><path d=\"M0 1h4\"/></svg>",
+       "text/plain": "<Figure: by phase>"
+      },
+      "metadata": {
+       "slingology": {
+        "evidence": {
+         "kind": "figure",
+         "caption": "Time above 46 psi, by phase"
+        }
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "c7",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.1.0",
+       "flights": [
+        "f1",
+        "f2"
+       ],
+       "at": "2026-11-27T11:00:00+00:00",
+       "ms": 10,
+       "status": "ok",
+       "digest": "d6002942b99fdb52"
+      },
+      "role": "evidence"
+     }
+    },
+    "source": "eis.logview('f1', 360, 420, …)",
+    "outputs": [
+     {
+      "output_type": "display_data",
+      "data": {
+       "image/svg+xml": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"2\"><path d=\"M0 1h4\"/></svg>",
+       "application/vnd.slingology.logview+json": {
+        "flight": "f1",
+        "flight_date_local": "2026-01-02",
+        "start_s": 360,
+        "end_s": 420,
+        "channels": [
+         "fuel_press_psi",
+         "rpm"
+        ],
+        "marks": [
+         {
+          "t_s": 367.0,
+          "label": "pump 2 on"
+         }
+        ],
+        "title": "First climb",
+        "caption": "First climb: above 46 psi from the start",
+        "window_label": "2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)"
+       },
+       "text/plain": "<log view>"
+      },
+      "metadata": {
+       "slingology": {
+        "evidence": {
+         "kind": "logview",
+         "caption": "First climb: above 46 psi from the start"
+        }
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "s5",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 5
+     }
+    },
+    "source": "## 5 How this was done\n"
+   },
+   {
+    "id": "c1",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "narrative"
+     }
+    },
+    "source": "Plan: one flight first, then every flight by phase."
+   },
+   {
+    "id": "s6",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 6
+     }
+    },
+    "source": "## 6 Follow-ups\n"
+   },
+   {
+    "id": "c9",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "followup",
+      "date": "2026-11-27"
+     }
+    },
+    "source": "### Follow-up — 2026-11-27: Is phase a factor?\n"
+   },
+   {
+    "id": "c10",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "narrative"
+     }
+    },
+    "source": "By phase, idle is the most affected."
+   },
+   {
+    "id": "c11",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "changed"
+     }
+    },
+    "source": "**What changed above:** Answer: phase is a factor; action 1 added.\n"
+   },
+   {
+    "id": "s7",
+    "cell_type": "markdown",
+    "metadata": {
+     "slingology": {
+      "role": "section",
+      "section": 7
+     }
+    },
+    "source": "## 7 Working\n"
+   },
+   {
+    "id": "c8",
+    "cell_type": "code",
+    "execution_count": null,
+    "metadata": {
+     "slingology": {
+      "ran": {
+       "engine": "1.1.0",
+       "flights": [
+        "f1",
+        "f2"
+       ],
+       "at": "2026-11-27T11:00:00+00:00",
+       "ms": 10,
+       "status": "ok",
+       "digest": "e71ecb1908662fbf"
+      },
+      "role": "scratch"
+     }
+    },
+    "source": "eis.slices('idle').columns",
+    "outputs": [
+     {
+      "output_type": "stream",
+      "name": "stdout",
+      "text": "['a', 'b']\n"
+     }
+    ]
+   }
+  ]
+ },
+ "files": {}
+}

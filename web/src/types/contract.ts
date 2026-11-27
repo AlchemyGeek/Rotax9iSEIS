@@ -1764,6 +1764,8 @@ export interface NotebookCard {
   outputs: "current" | "pending" | "elsewhere";
   resolution: "nothing-here" | "watch" | "acted" | null;
   tags: string[];
+  /** Spec 16 D19: the proposed actions of the last structured finish (null before one; absent on a v1 card). */
+  actions?: number | null;
 }
 
 export interface StudyImportResult {

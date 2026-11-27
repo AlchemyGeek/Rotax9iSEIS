@@ -83,6 +83,11 @@ export function evidenceText(e: NotebookCard["evidence"]): string {
   return EVIDENCE.filter((x) => e[x.key]).map((x) => `${e[x.key]} ${e[x.key] === 1 ? x.one : x.many}`).join(", ");
 }
 
+/** D19: "n actions" ("no actions" when the Answer proposes none) — nbhtml.actions_text. */
+export function actionsText(n: number): string {
+  return !n ? "no actions" : `${n} action${n === 1 ? "" : "s"}`;
+}
+
 /** The card as one line of the HTML export's header (nbhtml.card_line). */
 export function cardLine(card: NotebookCard | null | undefined): string {
   if (!card) return "";
@@ -92,6 +97,7 @@ export function cardLine(card: NotebookCard | null | undefined): string {
   const ev = EVIDENCE.filter((x) => card.evidence[x.key]).map((x) => `${x.glyph} ${card.evidence[x.key]} ${card.evidence[x.key] === 1 ? x.one : x.many}`);
   if (ev.length) parts.push(ev.join(" "));
   if (card.tests.length) parts.push(card.tests.map((t) => `${TEST[t]?.glyph ?? ""} ${t}`).join(" "));
+  if (card.actions !== undefined && card.actions !== null) parts.push(actionsText(card.actions));
   if (card.tags.length) parts.push("tags: " + card.tags.join(", "));
   return '<p class="meta card">' + parts.map((p) => escapeHtml(p)).join(" · ") + "</p>";
 }

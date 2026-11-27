@@ -2,7 +2,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { NotebookCard as Card, StudySummary } from "../../types/contract";
-import { EVIDENCE, ORIGIN, OUTPUTS, TEST, evidenceText, scopeText } from "../../lib/notebookCard";
+import { EVIDENCE, ORIGIN, OUTPUTS, TEST, actionsText, evidenceText, scopeText } from "../../lib/notebookCard";
 import { TagEditor, ChannelTags, StatusMark, shortDate, statusColor } from "./bits";
 
 // Spec 03 v0.34 §5.10 item 2 — the workspace's notebooks as cards, newest
@@ -126,6 +126,12 @@ export function NotebookCard({ s, onTag, activeTag, onChanged }: {
             {TEST[t]?.glyph} {t}
           </span>
         ))}
+        {c.actions !== undefined && c.actions !== null && (
+          <span style={{ ...GLYPH, color: c.actions ? "var(--text-secondary)" : undefined }} data-testid="card-actions"
+            title={c.actions ? "Proposed actions in the notebook's Answer" : "The Answer proposes no action"}>
+            → {actionsText(c.actions)}
+          </span>
+        )}
       </div>
       <div style={{ ...ROW, marginTop: "auto" }}>
         <span aria-label={out.label} title={out.label} data-testid="card-outputs" data-outputs={c.outputs}

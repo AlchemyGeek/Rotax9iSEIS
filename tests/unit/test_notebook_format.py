@@ -59,7 +59,8 @@ def test_own_render_is_deterministic_and_inert(notebook):
     b = h.download(_ok(rpc(h, "export_study", {"study_id": sid, "format": "html"}))["download_url"])
     assert a == b
     page = a.decode()
-    assert page.count('<details class="code">') == 3 and "<script" not in page      # the setup cell isn't shown (Spec 03 v0.34)
+    # the setup cell isn't shown (Spec 03 v0.34); D19: a support cell folds as "show the calculation"
+    assert page.count('<details class="code">') + page.count('<details class="calc">') == 3 and "<script" not in page
     assert page.count("data:image/svg+xml;base64,") == 2 and 'class="logview"' in page
     assert "<table" in page and json.dumps(nb)  # the notebook is JSON
 

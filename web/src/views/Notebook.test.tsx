@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-route
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import casFlight from "../fixtures/flight-cas-analysis.json";
 import nbFixture from "../fixtures/research-notebook.json";
+import shapedFixture from "../fixtures/research-notebook-shaped.json";
 import golden from "../fixtures/research-notebook.render.json";
 import { resetCapabilities } from "../lib/capabilities";
 import { ChartSessionProvider } from "../lib/chartSession";
@@ -73,9 +74,9 @@ function FlightStub() {
   return <div data-testid="flight-page">{flightId}{loc.search}</div>;
 }
 
-function app() {
+function app(id = "st-000000fixture") {
   return render(
-    <MemoryRouter initialEntries={["/research/st-000000fixture"]}>
+    <MemoryRouter initialEntries={[`/research/${id}`]}>
       <ChartSessionProvider>
         <Routes>
           <Route path="/research/:studyId" element={<Study />} />
@@ -237,5 +238,39 @@ describe("the notebook on the Research page (§5.3)", () => {
     // Kept oldest first, shown newest first.
     expect(earlier[0].textContent).toContain("Summary of 2026-11-15");
     expect(earlier[1].textContent).toContain("A first look.");
+  });
+});
+
+// Spec 16 D19 §5.6: a shaped notebook reads as its sections.
+describe("the shaped notebook on the Research page (§5.6)", () => {
+  it("typesets 1–3 as the Answer, numbers the evidence, folds the calculation and Working", async () => {
+    state.view = structuredClone(shapedFixture) as unknown as Record<string, unknown>;
+    app(shapedFixture.study_id);
+    const answer = await screen.findByTestId("nb-answer");
+    expect(within(answer).getByText("2 Answer")).toBeTruthy();
+    expect(answer.textContent).toContain("Scope and qualifications");
+    expect(answer.textContent).toContain("Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).");
+    expect(answer.textContent).toContain("re-check after the next 10 flights");
+    expect(answer.textContent).toContain("Earlier answers (1)");
+    expect(answer.querySelector("h1")).toBeNull();                       // the title is the header's
+    expect(screen.queryByTestId("nb-question")).toBeNull();               // the question is in section 1
+    expect(screen.queryByTestId("nb-summary")).toBeNull();
+    expect(screen.getAllByTestId("nb-section").map((h) => h.textContent)).toEqual(
+      ["4 Findings", "5 How this was done", "6 Follow-ups", "7 Working"]);
+    expect(screen.getAllByTestId("nb-evidence-caption").map((c) => c.textContent)).toEqual([
+      "Table 1. Share of each phase's time at or above 46 psi", "Figure 2. Time above 46 psi, by phase",
+      "Log view 3. First climb: above 46 psi from the start"]);
+    const calc = screen.getByTestId("nb-cell-support");
+    expect(calc.querySelector("details.calc > summary")!.textContent).toBe("show the calculation");
+    expect((calc.querySelector("details.calc") as HTMLDetailsElement).open).toBe(false);
+    const working = screen.getByTestId("nb-working");
+    expect(working.querySelector("summary")!.textContent).toBe("Working (1 cell)");
+    expect((working as HTMLDetailsElement).open).toBe(false);
+    // The order: findings, then How this was done, the dated follow-up, Working last.
+    const main = document.querySelector("main")!.textContent!;
+    expect(main.indexOf("4 Findings")).toBeLessThan(main.indexOf("Plan: one flight first"));
+    expect(main.indexOf("Plan: one flight first")).toBeLessThan(main.indexOf("Follow-up — 2026-11-27"));
+    expect(main.indexOf("What changed above:")).toBeLessThan(main.indexOf("Working (1 cell)"));
+    expect(screen.getByTestId("nb-card").textContent).not.toContain("eis.open");
   });
 });

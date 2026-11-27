@@ -43,6 +43,13 @@ table.eis-table th{background:#f0f2f6}
 img.figure{max-width:100%}
 .logview figcaption{color:#5b6475;font-size:.85rem}
 .flag{font-size:.8rem;color:#8a5a00}
+section.answer{border:1px solid #d6dae3;border-radius:6px;padding:.4rem 1.2rem;margin:1rem 0 1.5rem;background:#fbfcfd}
+section.answer h2{font-size:1.15rem;margin:1rem 0 .4rem}
+h2.section{font-size:1.15rem;border-bottom:1px solid #d6dae3;padding-bottom:.2rem;margin-top:2rem}
+figure.evidence{margin:.6rem 0 1rem}figure.evidence>figcaption{color:#3b4250;font-size:.9rem;margin-top:.3rem}
+details.calc>summary,details.working>summary{cursor:pointer;color:#5b6475;font-size:.85rem}
+details.working{margin-top:1rem;border-top:1px solid #d6dae3;padding-top:.5rem}
+details.answer-history>summary{cursor:pointer;color:#5b6475;font-size:.9rem}
 """
 
 
@@ -248,6 +255,11 @@ def scope_text(card: dict) -> str:
     return f"{n} flight{'' if n == 1 else 's'}" + (f" · {s}" if s else "")
 
 
+def actions_text(n: int) -> str:
+    """D19: the card's 'n actions' ('no actions' when the Answer proposes none)."""
+    return "no actions" if not n else f"{n} action{'' if n == 1 else 's'}"
+
+
 def card_line(card) -> str:
     if not card:
         return ""
@@ -262,6 +274,8 @@ def card_line(card) -> str:
         parts.append(" ".join(shown))
     if card.get("tests"):
         parts.append(" ".join(f"{_TEST_GLYPH.get(t, '')} {t}" for t in card["tests"]))
+    if card.get("actions") is not None:
+        parts.append(actions_text(card["actions"]))
     if card.get("tags"):
         parts.append("tags: " + ", ".join(card["tags"]))
     return '<p class="meta card">' + " · ".join(html.escape(x) for x in parts) + "</p>"
@@ -338,9 +352,184 @@ def summary_block(summary: str, summaries: list) -> str:
             + (summary_history(summaries) if summaries else "") + "</details>")
 
 
+# ── D19: the shaped notebook's reading order (notebook.ts layout, value for value) ──
+
+EVIDENCE_LABEL = {"table": "Table", "figure": "Figure", "logview": "Log view"}
+
+
+def _sm(c: dict) -> dict:
+    return (c.get("metadata") or {}).get("slingology") or {}
+
+
+def cell_role(c: dict) -> str:
+    r = _sm(c).get("role")
+    return r or ("support" if c.get("cell_type") == "code" else "narrative")
+
+
+def is_shaped(nb: dict) -> bool:
+    return meta(nb).get("shape") == 1
+
+
+def _evidence_mark(o: dict):
+    ev = ((o.get("metadata") or {}).get("slingology") or {}).get("evidence")
+    if ev:
+        return ev.get("kind") or "table", str(ev.get("caption") or "")
+    ref = (o.get("data") or {}).get(LOGVIEW_MIME)
+    if isinstance(ref, dict):
+        return "logview", str(ref.get("caption") or ref.get("title") or "")
+    return None
+
+
+def top_source(src: str) -> str:
+    """Section 1's markdown without the notebook's title (the page's header has it)."""
+    return re.sub(r"\A# [^\n]*\n+", "", src)
+
+
+def layout(nb: dict) -> dict:
+    """A shaped notebook as it reads: `top` — sections 1–3's markdown, from
+    the generated cells — and `blocks` in order: a section heading, a
+    markdown cell, an evidence cell (each evidence output numbered, *Table
+    1*, *Figure 2*, *Log view 3*, with its caption), a support cell (folded),
+    any other code cell, and *Working* — the cells of section 7, one block."""
+    top, blocks = [], []
+    n = 0
+    section = None
+    working: list = []
+    for c in nb.get("cells") or []:
+        sm = _sm(c)
+        if is_setup(c):
+            continue
+        if sm.get("role") == "section":
+            section = sm.get("section")
+            if sm.get("generated"):
+                src = text(c.get("source"))
+                top.append(top_source(src) if section == 1 else src)
+                continue
+            blocks.append({"kind": "section", "n": section, "id": c.get("id")})
+            if section == 7:
+                blocks.append({"kind": "working", "ids": working})
+            continue
+        if section == 7:
+            working.append(c.get("id"))
+            continue
+        if c.get("cell_type") == "markdown":
+            blocks.append({"kind": "markdown", "id": c.get("id")})
+            continue
+        if c.get("cell_type") != "code":
+            continue
+        r = cell_role(c)
+        if r == "evidence":
+            labels = []
+            for i, o in enumerate(c.get("outputs") or []):
+                mark = _evidence_mark(o)
+                if mark:
+                    n += 1
+                    labels.append({"output": i, "label": f"{EVIDENCE_LABEL.get(mark[0], 'Table')} {n}",
+                                   "caption": mark[1]})
+            blocks.append({"kind": "evidence", "id": c.get("id"), "labels": labels})
+        elif r == "support":
+            blocks.append({"kind": "support", "id": c.get("id")})
+        else:
+            blocks.append({"kind": "code", "id": c.get("id")})
+    return {"top": top, "blocks": blocks}
+
+
+def evidence_caption(label: str, caption: str) -> str:
+    return f"<figcaption><strong>{html.escape(label)}.</strong> {_inline(caption)}</figcaption>" if caption \
+        else f"<figcaption><strong>{html.escape(label)}.</strong></figcaption>"
+
+
+def evidence_output(o: dict) -> str:
+    """An evidence output without the table's own <caption> (the numbered caption replaces it)."""
+    return re.sub(r"<caption>.*?</caption>", "", output(o), count=1, flags=re.S)
+
+
+def working_summary(k: int) -> str:
+    return f"Working ({k} cell{'' if k == 1 else 's'})"
+
+
+def answer_block(top: list, history: list, summaries: list) -> str:
+    """Sections 1–3, typeset in one block, with the earlier Answers inside it
+    (or, for finishes that gave only a summary, the earlier summaries)."""
+    earlier = answer_history(history) if history else summary_history(summaries) if summaries else ""
+    return '<section class="answer">' + "".join(markdown(t) for t in top) + earlier + "</section>"
+
+
+def answer_history(history: list) -> str:
+    """D19: the Answers a re-finish replaced, newest first, each with its date."""
+    items = []
+    for e in reversed(history):
+        when = (e.get("finished") or "")[:10] or "undated"
+        body = "".join(f"<li>{_inline(x)}</li>" for x in e.get("shows") or [])
+        items.append(f'<div class="earlier"><p class="meta">Answer of {html.escape(when)}</p>'
+                     + (f"<ul>{body}</ul>" if body else "") + (markdown(e.get("means") or "") if e.get("means") else "")
+                     + "</div>")
+    return ('<details class="answer-history"><summary>Earlier answers (' + str(len(history)) + ")</summary>"
+            + "".join(items) + "</details>")
+
+
+def _flags(c: dict) -> list:
+    sm = _sm(c)
+    return [f for f, on in (("ran elsewhere", sm.get("ran_elsewhere")), ("read-only", sm.get("read_only"))) if on]
+
+
+def _plain_cell(c: dict, read_file=None) -> str:
+    src = text(c.get("source"))
+    cid = html.escape(str(c.get("id")))
+    if c.get("cell_type") == "markdown":
+        return f'<div class="cell markdown" id="{cid}">{markdown(src, read_file)}</div>'
+    parts = [f'<div class="cell code" id="{cid}">',
+             '<details class="code"><summary>show code</summary><pre><code>' + html.escape(src) + "</code></pre></details>"]
+    if _flags(c):
+        parts.append('<p class="flag">' + " · ".join(_flags(c)) + "</p>")
+    parts += [output(o) for o in c.get("outputs") or []]
+    return "".join(parts) + "</div>"
+
+
+def _render_shaped(nb: dict, read_file=None) -> str:
+    by = {c.get("id"): c for c in nb.get("cells") or []}
+    lay = layout(nb)
+    body = [answer_block(lay["top"], meta(nb).get("history") or [], meta(nb).get("summaries") or [])]
+    for b in lay["blocks"]:
+        c = by.get(b.get("id"))
+        k = b["kind"]
+        if k == "section":
+            body.append(f'<h2 class="section" id="{html.escape(str(b["id"]))}">'
+                        + _inline(re.sub(r"^#+\s*", "", text(c.get("source")).strip())) + "</h2>")
+        elif k == "working":
+            if b["ids"]:
+                body.append(f'<details class="working"><summary>{working_summary(len(b["ids"]))}</summary>'
+                            + "".join(_plain_cell(by[i], read_file) for i in b["ids"]) + "</details>")
+        elif k == "markdown" or k == "code":
+            body.append(_plain_cell(c, read_file))
+        elif k == "support":
+            src = text(c.get("source"))
+            body.append(f'<div class="cell support" id="{html.escape(str(c.get("id")))}"><details class="calc">'
+                        '<summary>show the calculation</summary><pre><code>' + html.escape(src) + "</code></pre>"
+                        + ('<p class="flag">' + " · ".join(_flags(c)) + "</p>" if _flags(c) else "")
+                        + "".join(output(o) for o in c.get("outputs") or []) + "</details></div>")
+        elif k == "evidence":
+            labels = {x["output"]: x for x in b["labels"]}
+            parts = [f'<div class="cell evidence" id="{html.escape(str(c.get("id")))}">']
+            if _flags(c):
+                parts.append('<p class="flag">' + " · ".join(_flags(c)) + "</p>")
+            for i, o in enumerate(c.get("outputs") or []):
+                if i in labels:
+                    parts.append('<figure class="evidence">' + evidence_output(o)
+                                 + evidence_caption(labels[i]["label"], labels[i]["caption"]) + "</figure>")
+                else:
+                    parts.append(output(o))
+            parts.append('<details class="code"><summary>show code</summary><pre><code>'
+                         + html.escape(text(c.get("source"))) + "</code></pre></details></div>")
+            body.append("".join(parts))
+    return "\n".join(body)
+
+
 def render(nb: dict, read_file=None) -> str:
     """`read_file(ref)` gives a files/ document's bytes (images a markdown
-    cell shows are inlined)."""
+    cell shows are inlined). D19: a shaped notebook reads as its sections —
+    the Answer block, the findings with their evidence open and the
+    calculation folded, *Working* folded at the end."""
     m = meta(nb)
     status = m.get("status") or "open"
     if status == "open" and m.get("reopened"):
@@ -350,6 +539,11 @@ def render(nb: dict, read_file=None) -> str:
     head = [f"<h1>{html.escape(m.get('name') or 'Notebook')}</h1>", card_line(m.get("card")),
             '<p class="meta">' + meta_line(m) + "</p>",
             '<p class="meta outputs">' + html.escape(outputs_line(nb)) + "</p>"]
+    if is_shaped(nb):
+        main = _render_shaped(nb, read_file)
+        return ("<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+                f"<title>{html.escape(m.get('name') or 'Notebook')}</title><style>{_CSS}</style></head><body>"
+                "<header>" + "".join(head) + "</header><main>\n" + main + "\n</main></body></html>\n")
     if m.get("question"):
         head.append(f"<p><strong>Question:</strong> {_inline(m['question'])}</p>")
     if m.get("summary"):

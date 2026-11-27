@@ -1,0 +1,120 @@
+{
+ "layout": {
+  "top": [
+   "## 1 The question\n\nIs fuel pressure high only when pump 2 is on?\n\n**Scope and qualifications**\n\n- 2 flights, Jan 2026\n- The logs can't tell: the pump 2 switch\n",
+   "## 2 Answer\n\n**What the data shows**\n\n- Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).\n- Climb is 13% of its time above.\n\n**What it means**\n\nPhase is a factor, the other way round from the hypothesis.\n",
+   "## 3 Proposed actions\n\n1. **Ask the shop to check the regulator** · A&P · settles: whether it is the setting · re-check after the next 10 flights\n"
+  ],
+  "blocks": [
+   {
+    "kind": "section",
+    "n": 4,
+    "id": "s4"
+   },
+   {
+    "kind": "markdown",
+    "id": "c2"
+   },
+   {
+    "kind": "support",
+    "id": "c3"
+   },
+   {
+    "kind": "evidence",
+    "id": "c4",
+    "labels": [
+     {
+      "output": 0,
+      "label": "Table 1",
+      "caption": "Share of each phase's time at or above 46 psi"
+     }
+    ]
+   },
+   {
+    "kind": "markdown",
+    "id": "c5"
+   },
+   {
+    "kind": "evidence",
+    "id": "c6",
+    "labels": [
+     {
+      "output": 0,
+      "label": "Figure 2",
+      "caption": "Time above 46 psi, by phase"
+     }
+    ]
+   },
+   {
+    "kind": "evidence",
+    "id": "c7",
+    "labels": [
+     {
+      "output": 0,
+      "label": "Log view 3",
+      "caption": "First climb: above 46 psi from the start"
+     }
+    ]
+   },
+   {
+    "kind": "section",
+    "n": 5,
+    "id": "s5"
+   },
+   {
+    "kind": "markdown",
+    "id": "c1"
+   },
+   {
+    "kind": "section",
+    "n": 6,
+    "id": "s6"
+   },
+   {
+    "kind": "markdown",
+    "id": "c9"
+   },
+   {
+    "kind": "markdown",
+    "id": "c10"
+   },
+   {
+    "kind": "markdown",
+    "id": "c11"
+   },
+   {
+    "kind": "section",
+    "n": 7,
+    "id": "s7"
+   },
+   {
+    "kind": "working",
+    "ids": [
+     "c8"
+    ]
+   }
+  ]
+ },
+ "answer_block": "<section class=\"answer\"><h2>1 The question</h2>\n<p>Is fuel pressure high only when pump 2 is on?</p>\n<p><strong>Scope and qualifications</strong></p>\n<ul><li>2 flights, Jan 2026</li><li>The logs can't tell: the pump 2 switch</li></ul><h2>2 Answer</h2>\n<p><strong>What the data shows</strong></p>\n<ul><li>Fuel pressure is at or above 46 psi for 81% of idle time (Table 1).</li><li>Climb is 13% of its time above.</li></ul>\n<p><strong>What it means</strong></p>\n<p>Phase is a factor, the other way round from the hypothesis.</p><h2>3 Proposed actions</h2>\n<ol><li><strong>Ask the shop to check the regulator</strong> · A&amp;P · settles: whether it is the setting · re-check after the next 10 flights</li></ol><details class=\"answer-history\"><summary>Earlier answers (1)</summary><div class=\"earlier\"><p class=\"meta\">Answer of 2026-11-26</p><ul><li>Fuel pressure runs high on every flight.</li></ul><p>Not momentary.</p></div></details></section>",
+ "evidence": {
+  "c4": [
+   "<table class=\"eis-table\"><thead><tr><th>Detected flight phase</th><th>Exceed share (%)</th><th>Count</th></tr></thead><tbody><tr><td>IDLE</td><td>81.1</td><td>1,281</td></tr><tr><td>CLIMB</td><td>13.0</td><td>356</td></tr></tbody></table><figcaption><strong>Table 1.</strong> Share of each phase's time at or above 46 psi</figcaption>"
+  ],
+  "c6": [
+   "<img class=\"figure\" alt=\"&lt;Figure: by phase&gt;\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjIiPjxwYXRoIGQ9Ik0wIDFoNCIvPjwvc3ZnPg==\"><figcaption><strong>Figure 2.</strong> Time above 46 psi, by phase</figcaption>"
+  ],
+  "c7": [
+   "<figure class=\"logview\"><img class=\"figure\" alt=\"First climb · Jan 2 · 09:06–09:07 (+6:00 into the flight)\" src=\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjIiPjxwYXRoIGQ9Ik0wIDFoNCIvPjwvc3ZnPg==\"><figcaption title=\"2026-01-02 09:06:00–09:07:00 UTC (+06:00–+07:00 into the flight)\">First climb · Jan 2 · 09:06–09:07 (+6:00 into the flight)</figcaption></figure><figcaption><strong>Log view 3.</strong> First climb: above 46 psi from the start</figcaption>"
+  ]
+ },
+ "working_summary": [
+  "Working (1 cell)",
+  "Working (2 cells)"
+ ],
+ "card_line": "<p class=\"meta card\">? From a question asked in Claude Desktop · FP RPM · 2 flights · Jan 2 · ∿ 1 log view ◫ 1 figure ▦ 1 table · 1 action · tags: fuel pressure</p>",
+ "actions_text": [
+  "no actions",
+  "1 action",
+  "3 actions"
+ ]
+}

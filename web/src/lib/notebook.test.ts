@@ -41,3 +41,38 @@ describe("notebook markup = the HTML export's", () => {
       .toBe('<table class="eis-table"><tr><td>alert(1)</td></tr></table>');
   });
 });
+
+// Spec 16 D19 §5.6: the shaped notebook — the page's layout, Answer block and evidence captions are the
+// export's (tests/unit/test_nbhtml_parity.py writes the fixture and the golden).
+import shapedView from "../fixtures/research-notebook-shaped.json";
+import shapedGolden from "../fixtures/research-notebook-shaped.render.json";
+import { actionsText } from "./notebookCard";
+import { answerBlock, evidenceCaption, evidenceOutput, layout, workingSummary, type EarlierAnswer } from "./notebook";
+
+describe("the shaped notebook = the export's", () => {
+  const snb = shapedView.notebook as unknown as Notebook;
+  const sg = shapedGolden as unknown as {
+    layout: ReturnType<typeof layout>; answer_block: string; evidence: Record<string, string[]>;
+    working_summary: string[]; card_line: string; actions_text: string[];
+  };
+  it("reads in the same order, evidence numbered the same", () => {
+    expect(layout(snb)).toEqual(sg.layout);
+  });
+  it("the Answer block (sections 1–3, the earlier Answer inside)", () => {
+    const m = nbMeta(snb);
+    expect(answerBlock(layout(snb).top, (m.history ?? []) as EarlierAnswer[], m.summaries ?? [])).toBe(sg.answer_block);
+  });
+  it("each evidence output with its numbered caption", () => {
+    const by = new Map(snb.cells.map((c) => [c.id, c]));
+    for (const b of layout(snb).blocks) {
+      if (b.kind !== "evidence") continue;
+      expect(b.labels.map((x) => evidenceOutput(by.get(b.id)!.outputs![x.output]) + evidenceCaption(x.label, x.caption)))
+        .toEqual(sg.evidence[b.id]);
+    }
+  });
+  it("the card's actions, Working's count", () => {
+    expect(cardLine(nbMeta(snb).card as NotebookCard)).toBe(sg.card_line);
+    expect([0, 1, 3].map(actionsText)).toEqual(sg.actions_text);
+    expect([1, 2].map(workingSummary)).toEqual(sg.working_summary);
+  });
+});
