@@ -322,12 +322,13 @@ def _run_code(ctx: dict, nb: dict, cell_id: str, source: str, timeout_s=None, me
     study = {"study_id": m["id"], "name": m.get("name"), "question": m.get("question")}
     r = eis_request(ctx)
     try:
-        return B.run_cell(source=source, cell_id=cell_id, ws_dir=Path(r.pop("ws_dir")),
-                          files_dir=NBX.files_dir(ctx["workspace_dir"], m["id"]),
-                          scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), study=study,
-                          cap=B.caps(timeout_s, memory_mb), **r)
+        got = B.run_cell(source=source, cell_id=cell_id, ws_dir=Path(r.pop("ws_dir")),
+                         files_dir=NBX.files_dir(ctx["workspace_dir"], m["id"]),
+                         scratch=H._export_dir(ctx), mpl_dir=_mpl_dir(ctx), study=study,
+                         cap=B.caps(timeout_s, memory_mb), **r)
     except B.BenchError as e:
         raise _err(e)
+    return {**got, "outputs": NBX.fresh_namespace_hint(nb, cell_id, got["outputs"])}
 
 
 def _append_code(ctx: dict, nb: dict, source: str, timeout_s=None, memory_mb=None, cell_id=None) -> dict:
@@ -481,6 +482,11 @@ def op_study_finish(params: dict, ctx: dict) -> Any:
     if lacking:
         raise H.RpcError("FLOOR_RULE", "a figure or log view needs a markdown cell right before or after it, "
                                        "saying what it shows; add one beside cell " + ", ".join(lacking))
+    failed = NBX.failed_cells(nb)
+    if failed:
+        raise H.RpcError("FLOOR_RULE", "cell " + ", ".join(failed) + (" ends" if len(failed) == 1 else " end")
+                         + " in an error; replace each (code_run with its cell_id) with code that runs — "
+                           "the same step done right, or a cell that prints why that path was dropped")
     try:
         tags = NBX.clean_tags(params.get("tags")) if params.get("tags") is not None else None
         finding = NBX.clean_finding(params.get("finding"))

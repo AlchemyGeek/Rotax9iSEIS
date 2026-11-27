@@ -828,7 +828,9 @@ TOOLS: list[Tool] = [
          "by=\"source\") or by=\"date\", date=\"2026-10-01\", eis.unusual(rule), eis.signal(flight, start_s, end_s, "
          "[\"rpm\"]), eis.compare(rule), eis.logview(flight, start_s, end_s, [\"rpm\", \"map_inhg\"], "
          "marks=[(t_s, \"label\")]), eis.document(\"om.pdf\").find(\"boost\"), eis.aircraft, eis.profile, eis.notes. "
-         "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. The last "
+         "A rule is a preset id, \"phase:CLIMB\", a rule object or {selection, slice_rules, hand_slices}. Each cell "
+         "starts afresh: nothing carries over from earlier cells, so load what it needs in it. A cell that fails is "
+         "fixed by running it again with its cell_id, not by adding another. The last "
          "expression's value is shown, as in Jupyter. No network, no subprocesses, writes only under FILES, time and "
          f"memory capped. Returns stdout (≤ {CODE_STREAM_CHARS} characters), tables (text) and up to {CODE_FIGURES} "
          "figures as images. Example: {\"study_id\": \"…\", \"source\": \"r = eis.cycling('full_power', "
@@ -908,7 +910,8 @@ TOOLS: list[Tool] = [
          writes=True, ops=("study_cells_discard",)),
     Tool("study_finish", "Finish a notebook",
          "End an investigation with its summary (what was found, what it means, what to do). Refused while a figure "
-         "or log view has no markdown cell right before or after it (the answer names the cells). Optionally "
+         "or log view has no markdown cell right before or after it, or while a code cell ends in an error (the "
+         "answer names the cells). Optionally "
          "resolves its inbox candidate, resolves the owner's question it answered (question; with its marks; "
          "resolution defaults to watch for a question) and notes the finding in the Journal (the one Journal entry "
          "Claude may write). finding: one sentence, what was found — the Journal's line under the notebook's title "

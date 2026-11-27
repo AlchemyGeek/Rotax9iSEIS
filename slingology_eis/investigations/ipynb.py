@@ -39,6 +39,7 @@ kept as `.hand-study.json`.
 """
 from __future__ import annotations
 
+import ast
 import copy
 import io
 import json
@@ -417,6 +418,60 @@ def floor_lacking(nb: dict) -> list[str]:
             near = [cells[j] for j in (i - 1, i + 1) if 0 <= j < len(cells)]
             if not any(n["cell_type"] == "markdown" and text(n.get("source")).strip() for n in near):
                 out.append(c["id"])
+    return out
+
+
+def failed_cells(nb: dict) -> list[str]:
+    """v1.5 finish rule: the code cells whose stored outputs end in an
+    error. A notebook is the record; a dead end in it is fixed in place
+    (`code_run` with its `cell_id`), not left behind a working copy."""
+    return [c["id"] for c in nb["cells"] if c["cell_type"] == "code"
+            and any(o.get("output_type") == "error" for o in c.get("outputs") or [])]
+
+
+def _bound_names(source: str) -> set[str]:
+    """The names a cell's code binds at its top level and inside blocks —
+    assignments, imports, defs, loop and with targets."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return set()
+    out: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            out.add(n.id)
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            out.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            out.update((a.asname or a.name.split(".")[0]) for a in n.names)
+    return out
+
+
+_NAME_ERROR = re.compile(r"name '([A-Za-z_][A-Za-z0-9_]*)' is not defined")
+
+
+def fresh_namespace_hint(nb: dict, cell_id: str, outputs: list) -> list:
+    """v1.5: a cell that fails on a name an earlier cell set is told so in
+    its error — each cell starts afresh (S3), so it must set the name
+    itself. The outputs with the hint added to the error's traceback, or
+    as they were."""
+    ids = [c.get("id") for c in nb["cells"]]
+    upto = ids.index(cell_id) if cell_id in ids else len(ids)
+    out = []
+    for o in outputs or []:
+        m = _NAME_ERROR.search(str(o.get("evalue") or "")) if o.get("output_type") == "error" \
+            and o.get("ename") == "NameError" else None
+        where = None
+        if m:
+            where = next((c["id"] for c in reversed(nb["cells"][:upto]) if c["cell_type"] == "code"
+                          and m.group(1) in _bound_names(text(c.get("source")))), None)
+        if where:
+            tb = o.get("traceback") or []
+            tb = list(tb) if isinstance(tb, list) else str(tb).splitlines()
+            o = {**o, "traceback": [*tb, f"Each cell starts afresh: `{m.group(1)}` was set in cell {where}, "
+                                         f"not here. Set it in this cell too, and replace this cell "
+                                         f"(code_run with cell_id {cell_id}) rather than adding another."]}
+        out.append(o)
     return out
 
 

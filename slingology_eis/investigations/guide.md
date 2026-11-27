@@ -176,8 +176,15 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
   "source": "r = eis.cycling(\"full_power\", \"rpm\")\nprint(r)"}` runs at once and keeps its output; `{"kind":
   "logview", "flight": "…", "start_s": 360, "end_s": 420, "channels": ["rpm", "map_inhg"], "marks": [[367,
   "takeoff power"]], "title": "First takeoff"}` keeps a strip chart of that window.
-- `code_run` — the same as a code cell (`cell_id` replaces one). Each cell starts afresh: re-load what you
-  need. The last expression's value is shown, as in Jupyter. `FILES` is the only folder a cell may write.
+- `code_run` — the same as a code cell (`cell_id` replaces one). **Each cell starts afresh**: nothing an
+  earlier cell set is there, so every cell loads or builds what it uses (`high = eis.slices(...)` again, not
+  `high.columns` on its own). The last expression's value is shown, as in Jupyter. `FILES` is the only folder a
+  cell may write.
+- **A cell that fails is fixed in place**: `code_run` with that cell's `cell_id` and the corrected source — never
+  a new cell after it, which leaves the error in the owner's notebook. If the path was a dead end, replace the
+  cell with one that prints why it was dropped. `study_finish` refuses while any code cell ends in an error.
+- Looking around the library or a frame (`dir(eis)`, a column list) is a probe: `code_run`'s description lists the
+  library, and `slices_build` or `series_get` show a set's or a flight's columns — not a notebook cell.
 - `study_rerun` re-runs every code cell; outputs that changed wait for `study_accept` / `study_discard`.
   Cells the owner ran in JupyterLab and saved are marked *ran elsewhere*; `study_accept` with `"source":
   "external"` keeps those outputs as they are, or `study_rerun` recomputes them on the bench.
@@ -187,6 +194,7 @@ Every investigation is a notebook (a Jupyter `.ipynb` the owner can open in EIS,
     across-flights measurement the question needs, each as a cell whose output states the number;
   - **a markdown cell right before or after every figure and log view** saying what it shows (study_finish
     refuses otherwise and names the cell);
+  - no code cell ending in an error (study_finish refuses otherwise and names the cell);
   - the mechanism as a hypothesis, the alternatives ruled out (each with its cell);
   - a summary: what was found, what it means, what to do — no verdict words without their references.
   With `resolution` it resolves the inbox candidate; with `question` the owner's question it answers (and its

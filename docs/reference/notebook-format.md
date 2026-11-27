@@ -57,7 +57,7 @@ The EIS pages read the reference and show the Flight view's chart for that windo
 
 ## The finish rule
 
-`study_finish` refuses a notebook that has no summary, or a figure or log view without a markdown cell right before or after it saying what it shows — and names the cells. A notebook says what each picture means.
+`study_finish` refuses a notebook that has no summary, a figure or log view without a markdown cell right before or after it saying what it shows, or a code cell that ends in an error — and names the cells. A notebook says what each picture means, and a cell that failed is replaced, not left behind a working copy. Each code cell starts afresh, so it loads what it uses itself; when one fails on a name an earlier cell set, its error says which cell that was.
 
 ## The two renderings
 

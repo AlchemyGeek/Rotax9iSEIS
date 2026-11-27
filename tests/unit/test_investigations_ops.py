@@ -105,6 +105,36 @@ def test_code_run_errors_are_outputs(research_ws):
     assert not bad["ok"] and bad["error"]["code"] == "BAD_PARAMS"
 
 
+def test_spec16_v1_5_a_failed_cell_is_named_and_fixed_in_place(research_ws):
+    """v1.5: each cell starts afresh (S3); a cell failing on a name an earlier
+    cell set is told so; study_finish refuses while a code cell ends in an
+    error, naming it, and finishes once that cell is replaced."""
+    h, _ids = research_ws
+    if not _has_bench(h):
+        pytest.skip("no bench under Pyodide")
+    _bench_stack()
+    sid = _notebook(h)
+    first = _ok(rpc(h, "code_run", {"study_id": sid, "source": "high = [1, 2, 3]\nprint(len(high))"}))["cell"]
+    bad = _ok(rpc(h, "code_run", {"study_id": sid, "source": "print(high[0])"}))["cell"]
+    err = bad["outputs"][-1]
+    assert err["ename"] == "NameError" and err["evalue"] == "name 'high' is not defined"
+    hint = err["traceback"][-1]
+    assert f"`high` was set in cell {first['id']}" in hint and f"cell_id {bad['id']}" in hint
+    # A name no earlier cell set gets no hint; nor does any other error.
+    other = _ok(rpc(h, "code_run", {"study_id": sid, "source": "print(nowhere)"}))["cell"]
+    assert "starts afresh" not in "\n".join(other["outputs"][-1]["traceback"])
+    _ok(rpc(h, "code_run", {"study_id": sid, "cell_id": other["id"], "source": "print('dropped: no such channel')"}))
+    fl = rpc(h, "study_finish", {"study_id": sid, "summary": "x"})
+    assert not fl["ok"] and fl["error"]["code"] == "FLOOR_RULE"
+    assert f"cell {bad['id']} ends in an error" in fl["error"]["message"] and other["id"] not in fl["error"]["message"]
+    # The re-run gives the same hinted error, so it stays identical rather than pending.
+    re = _ok(rpc(h, "study_cells_rerun", {"study_id": sid}))
+    assert all(c["identical"] for c in re["cells"]), re["cells"]
+    _ok(rpc(h, "code_run", {"study_id": sid, "cell_id": bad["id"], "source": "high = [1, 2, 3]\nprint(high[0])"}))
+    done = _ok(rpc(h, "study_finish", {"study_id": sid, "summary": "x"}))
+    assert done["study"]["status"] == "finished"
+
+
 # ── cells (§5.1) ──────────────────────────────────────────────────────────
 
 def test_cells_append_rerun_accept_finish(research_ws):
