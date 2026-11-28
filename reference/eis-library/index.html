@@ -1804,10 +1804,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#log-views" class="md-nav__link">
+  <a href="#evidence-tables-figures-and-log-views" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Log views
+        Evidence: tables, figures and log views
       
     </span>
   </a>
@@ -2131,10 +2131,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#log-views" class="md-nav__link">
+  <a href="#evidence-tables-figures-and-log-views" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Log views
+        Evidence: tables, figures and log views
       
     </span>
   </a>
@@ -2298,11 +2298,22 @@
 <span class="nb">print</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
 <span class="n">r</span><span class="o">.</span><span class="n">rows</span><span class="o">.</span><span class="n">head</span><span class="p">()</span>
 </code></pre></div>
-<h2 id="log-views">Log views<a class="headerlink" href="#log-views" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="n">eis</span><span class="o">.</span><span class="n">logview</span><span class="p">(</span><span class="n">flight</span><span class="p">,</span> <span class="n">start_s</span><span class="p">,</span> <span class="n">end_s</span><span class="p">,</span> <span class="n">channels</span><span class="o">=</span><span class="p">(</span><span class="s2">"rpm"</span><span class="p">,</span> <span class="s2">"map_inhg"</span><span class="p">),</span>
-            <span class="n">marks</span><span class="o">=</span><span class="p">[(</span><span class="mi">367</span><span class="p">,</span> <span class="s2">"takeoff power"</span><span class="p">)],</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rule</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<h2 id="evidence-tables-figures-and-log-views">Evidence: tables, figures and log views<a class="headerlink" href="#evidence-tables-figures-and-log-views" title="Permanent link">&para;</a></h2>
+<p>A finding in a notebook is one sentence and one <strong>evidence</strong> cell — a table, figure or log view the reader can read without the code (<a href="../notebook-format/#the-shape">the notebook format</a>). Three calls make one; each takes a <strong>caption</strong>, one line saying what it shows, and EIS numbers them in order on the page (<em>Table 1</em>, <em>Figure 2</em>, <em>Log view 3</em>), so a finding's sentence can point at its evidence by number. Raw <code>print</code> output is never evidence.</p>
+<div class="highlight"><pre><span></span><code><span class="n">eis</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">caption</span><span class="o">=</span><span class="s2">"Full-power swing per slice"</span><span class="p">,</span> <span class="n">units</span><span class="o">=</span><span class="p">{</span><span class="s2">"swing"</span><span class="p">:</span> <span class="s2">"rpm"</span><span class="p">},</span> <span class="n">digits</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 </code></pre></div>
-<p>A strip chart of one flight's window. The cell's output carries both a picture (what JupyterLab, the exported page and a PDF show) and a reference to the flight and window, which the EIS pages show as the Flight view's live chart with <strong>Open flight</strong> (<a href="../notebook-format/">the notebook format</a>). Marks are <code>(seconds, label)</code>.</p>
+<p>A DataFrame (or Series) as a table: column names in words with their units (<code>fuel_press_psi.mean</code> → <em>Fuel pressure mean (psi)</em>, <code>duration_s</code> → <em>Duration (s)</em>; a <code>units</code> entry wins), numbers rounded (<code>digits</code>: one number for every column, a <code>{column: digits}</code> dict, or by size — none from 100, one from 10, else two), at most 500 rows (the rest counted below). A caption is required.</p>
+<div class="highlight"><pre><span></span><code><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+<span class="o">...</span>
+<span class="n">eis</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">caption</span><span class="o">=</span><span class="s2">"Fuel pressure by phase"</span><span class="p">)</span>
+</code></pre></div>
+<p>A matplotlib figure (or Axes) as a figure, drawn as SVG with its caption.</p>
+<div class="highlight"><pre><span></span><code><span class="n">eis</span><span class="o">.</span><span class="n">logview</span><span class="p">(</span><span class="n">flight</span><span class="p">,</span> <span class="n">start_s</span><span class="p">,</span> <span class="n">end_s</span><span class="p">,</span> <span class="n">channels</span><span class="o">=</span><span class="p">(</span><span class="s2">"rpm"</span><span class="p">,</span> <span class="s2">"map_inhg"</span><span class="p">),</span>
+            <span class="n">marks</span><span class="o">=</span><span class="p">[(</span><span class="mi">367</span><span class="p">,</span> <span class="s2">"takeoff power"</span><span class="p">)],</span> <span class="n">title</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rule</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">caption</span><span class="o">=</span><span class="s2">"First takeoff: the swing starts at full power"</span><span class="p">)</span>
+</code></pre></div>
+<p>A strip chart of one flight's window. The cell's output carries both a picture (what JupyterLab, the exported page and a PDF show) and a reference to the flight and window, which the EIS pages show as the Flight view's live chart with <strong>Open flight</strong> (<a href="../notebook-format/">the notebook format</a>). Marks are <code>(seconds, label)</code>. Without a caption, a log view's title stands in for it.</p>
+<p>All three render the same in your own Jupyter kernel: the table as HTML, the figure as SVG, each with its caption.</p>
 <h2 id="documents">Documents<a class="headerlink" href="#documents" title="Permanent link">&para;</a></h2>
 <p><code>eis.document(name)</code> opens one of the aircraft's documents (<a href="../../walkthroughs/aircraft-documents/">Set up your aircraft and documents</a>), read in place and read-only, for a cell that quotes a page.</p>
 <h2 id="what-the-bench-allows">What the bench allows<a class="headerlink" href="#what-the-bench-allows" title="Permanent link">&para;</a></h2>

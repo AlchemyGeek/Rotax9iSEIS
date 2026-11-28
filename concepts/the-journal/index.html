@@ -852,6 +852,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#how-the-page-reads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the page reads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-is-listed" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2043,6 +2054,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#how-the-page-reads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the page reads
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-is-listed" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2094,58 +2116,82 @@
 
 <h1 id="the-journal">The Journal<a class="headerlink" href="#the-journal" title="Permanent link">&para;</a></h1>
 <div class="in-brief">
-<p><strong>In brief.</strong> The <strong>Journal</strong> lists every decision currently in force in the workspace — each filter, rule edit, excluded flight, pinned reference, changed setting and annotation — with what it is doing <em>right now</em>. It is a register, not a log: reverse a decision and its entry disappears; edit one and its entry updates. Anything that needs your attention — a filter that has been breached or is drifting, a decision that no longer does anything — floats to the top, and the count on the <strong>Journal</strong> item in the top bar tells you how many.</p>
+<p><strong>In brief.</strong> The <strong>Journal</strong> lists every decision currently in force in the workspace — each filter, rule edit, excluded flight, pinned reference, changed setting, research finding and annotation — with what it is doing <em>right now</em>. It is a register, not a log: reverse a decision and its entry disappears; edit one and its entry updates. Anything that needs your attention — a filter that has been breached or is drifting, a decision that no longer does anything — floats to the top, and the count on the <strong>Journal</strong> item in the top bar tells you how many.</p>
 </div>
 <h2 id="why-a-register-and-not-a-history">Why a register and not a history<a class="headerlink" href="#why-a-register-and-not-a-history" title="Permanent link">&para;</a></h2>
 <p>A pilot managing an aircraft wants to know <em>what is in effect</em>. Which limits have I tolerated, and within what bounds? Which rules have I changed from the defaults? Which flights are out of the reference, and why? A history of every change ever made answers a different question, and buries the first one. So the Journal keeps one entry per live decision and nothing else. There is no settings changelog; if a setting differs from the app's default, the Journal lists it with both values.</p>
 <figure class="screenshot">
-<p><img alt="The Journal with several decisions in force" class="screenshot" src="../../img/journal.png" /></p>
-<figcaption>Decisions in force, each with what it is doing now.</figcaption>
+<p><img alt="The Journal: a notices block, then one line per decision, grouped by kind" class="screenshot" src="../../img/journal.png" /></p>
+<figcaption>One line per decision, grouped by kind, each with what it is doing now. A research finding is expanded.</figcaption>
+</figure>
+<h2 id="how-the-page-reads">How the page reads<a class="headerlink" href="#how-the-page-reads" title="Permanent link">&para;</a></h2>
+<p>Anything that needs you comes first, in a <strong>Needs a look</strong> block — and only when there is something in it. Below it, every decision is <strong>one line</strong>: a small mark for its kind, its title, what it is doing now in a few words (<em>4 events · 4 flights</em>, <em>changes no verdict</em>, <em>+1 insight · 1 flight</em>), and the date it was last changed. A decision that currently does nothing says so in grey with a hollow dot.</p>
+<p>The lines are grouped by kind, each group under a header with its count and its total effect — <em>1 filter · hiding 4 events on 4 flights</em>. Filters, exclusions, changed settings and research findings are open; annotations and acknowledgements start folded; a kind with nothing in it is not shown at all. Above the list, a <strong>search</strong> box finds a word in any title, reason, note or flight, and <strong>Group</strong> switches between <em>by kind</em>, <em>by date</em> and <em>by flight</em>.</p>
+<p>Click a line and it opens in place: the value (your band, the new setting beside the shipped one), what it applies to, your reason and note in quotes, and when it was made and changed. The <strong>⋯</strong> menu at the end of the line holds the actions: <em>Edit</em>, the decision's reversal — <em>Remove filter</em>, <em>Include again</em>, <em>Enable</em>, <em>Unpin</em>, <em>Reset to shipped</em>, <em>Remove from Journal</em> — which first says what it would change, and <em>Open the notebook</em> for a research finding.</p>
+<p><strong>Manage limit filters →</strong> in the filters header opens each filter's full card — its status, how far past the limit and how long each flight went, and the reference it watches against — with <em>Edit</em>, <em>Reset reference</em>, <em>Mark reviewed</em> and <em>Copy filters from…</em> another workspace with the same engine.</p>
+<figure class="screenshot">
+<p><img alt="A filter's card under Manage limit filters" class="screenshot" src="../../img/journal-filter-card.png" /></p>
+<figcaption>A filter's card: status, its band, your note, and every flight's excess against the band.</figcaption>
 </figure>
 <h2 id="what-is-listed">What is listed<a class="headerlink" href="#what-is-listed" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
 <th>Kind</th>
-<th>Entry shows</th>
+<th>The line shows</th>
+<th>Opened, it adds</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Filter</strong></td>
-<td>The limit, its OM value, your band, duration and excluded phases, your note; the filter's status (<em>Stable</em>, <em>Drifting</em>, <em>Breached</em>, <em>Review due</em>, <em>Quiet</em>, <em>Collecting</em>); two small charts of how far past the limit and how long, with the filter's reference shaded and breaches ringed; actions to edit, re-baseline, mark reviewed or remove; <em>Copy filters from…</em> another workspace with the same engine.</td>
+<td><strong>Limit filter</strong></td>
+<td>The limit, and the events and flights it hides now.</td>
+<td>Your band and duration, the phases it leaves out, your note; <em>Remove filter</em>.</td>
 </tr>
 <tr>
-<td><strong>Rule edit</strong></td>
-<td>The topic and trigger, the current value beside the shipped default.</td>
-</tr>
-<tr>
-<td><strong>Disabled topic</strong></td>
-<td>The topic, with <em>Enable</em>.</td>
-</tr>
-<tr>
-<td><strong>Excluded from reference</strong></td>
-<td>The flight and your reason, with <em>Include again</em>.</td>
-</tr>
-<tr>
-<td><strong>Reference pinned</strong></td>
-<td>The metric, the pinned flights and your label, with <em>Unpin</em>.</td>
+<td><strong>Excluded flight</strong></td>
+<td>The flight, and whether excluding it changes a verdict.</td>
+<td>Your reason; <em>Include again</em>.</td>
 </tr>
 <tr>
 <td><strong>Changed setting</strong></td>
-<td>Any <em>Reference &amp; Models</em> value that differs from the default, one entry per setting.</td>
+<td>The setting, and the insights it changes.</td>
+<td>The value beside the shipped default; <em>Reset to shipped</em>.</td>
+</tr>
+<tr>
+<td><strong>Rule edit</strong></td>
+<td>The topic, and the insights the edit adds or removes.</td>
+<td>The trigger's value beside the shipped one; <em>Reset to shipped</em>.</td>
+</tr>
+<tr>
+<td><strong>Disabled topic</strong></td>
+<td>The topic, and the insights it would have raised.</td>
+<td><em>Enable</em>.</td>
+</tr>
+<tr>
+<td><strong>Pinned reference</strong></td>
+<td>The metric, and how many flights it is pinned to.</td>
+<td>The pinned flights and your label; <em>Unpin</em>.</td>
+</tr>
+<tr>
+<td><strong>Research finding</strong></td>
+<td>The notebook's title and its finding in one sentence.</td>
+<td>The notebook's Answer; <em>Open the notebook</em>, <em>Remove from Journal</em>.</td>
 </tr>
 <tr>
 <td><strong>Annotation</strong></td>
-<td>A note you attached to a flight or event — the only thing the Journal creates itself.</td>
+<td>The first line of your note.</td>
+<td>The whole note and what it is attached to; <em>Delete</em>.</td>
 </tr>
 <tr>
 <td><strong>Acknowledged insight</strong></td>
 <td>Reserved for single-insight acknowledgements, which are planned.</td>
+<td></td>
 </tr>
 </tbody>
 </table>
-<p>Every entry carries a link to the flight, limit, topic or metric it concerns, when it was made and last changed, and a <strong>live count of its effect</strong>, recomputed when you open the page: <em>suppressing 9 events on 6 flights</em>, <em>currently suppresses nothing</em>. Entries can be filtered by kind and grouped by date or by flight.</p>
+<p>The counts are recomputed every time you open the page.</p>
+<p><strong>Research findings.</strong> When Claude finishes a notebook and you ask it to keep the finding, the Journal records the notebook's title and one sentence of what was found (<a href="../research-action/">From a finding to action</a>). The line follows the notebook: if the notebook is reopened and finished again, the line is rewritten from it.</p>
 <h2 id="change-notices">Change notices<a class="headerlink" href="#change-notices" title="Permanent link">&para;</a></h2>
 <p>Some entries need you. They move to the top and are counted on the nav badge:</p>
 <ul>

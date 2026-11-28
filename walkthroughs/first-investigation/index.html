@@ -2123,7 +2123,7 @@
 <li><em>Is there an oscillation during takeoff and initial climb?</em></li>
 <li><em>Has the oil temperature in cruise changed since the new propeller?</em></li>
 </ul>
-<p>Or start from the inbox: a candidate on the Research page is a question EIS noticed for you.</p>
+<p>Or start from the inbox, below the notebooks on the Research page: a pattern EIS raised is a question EIS noticed for you. Click its line to open it, then <em>Show the evidence</em>.</p>
 <p><img alt="An inbox candidate with its evidence: one row per slice, each opening its flight at that moment" class="screenshot" src="../../img/investigations-inbox-evidence.png" /></p>
 <h2 id="2-ask">2. Ask<a class="headerlink" href="#2-ask" title="Permanent link">&para;</a></h2>
 <p>In Claude Desktop, open a new chat. Either type the question, or pick <strong>Investigate</strong> from the chat's <strong>+</strong> menu and give it the question — the prompt puts the EIS method in front of Claude: one flight first, then all of them; the manuals; a hypothesis with the alternatives ruled out; what it means and what to do.</p>
@@ -2135,23 +2135,29 @@
 Does it depend on density altitude?
 What does the controller manual say about its governing band?</p>
 </blockquote>
-<p>Open <strong>Research</strong> in the EIS pages (http://127.0.0.1:8420/): the notebook is listed as <em>notebook · Claude</em> and fills in as Claude appends cells.</p>
+<p>Open <strong>Research</strong> in the EIS pages (http://127.0.0.1:8420/): the notebook is the first card, marked <em>open</em>, and fills in as Claude appends cells.</p>
+<p><img alt="Research home: the notebooks as cards, the inbox below" class="screenshot" src="../../img/investigations-home.png" /></p>
 <h2 id="4-read-the-notebook">4. Read the notebook<a class="headerlink" href="#4-read-the-notebook" title="Permanent link">&para;</a></h2>
-<p>Open it from Research.</p>
+<p>Click its card on Research. When Claude finishes, the card carries the channels, flights, evidence and tests the notebook used, and two or three topic words Claude chose — click one to see every notebook about the same thing.</p>
 <p><img alt="A notebook on the Research page" class="screenshot" src="../../img/investigations-notebook.png" /></p>
 <ul>
-<li><strong>The header</strong>: the question, who wrote it, <em>finished</em> or still open, the engine version, and whether its outputs are current for this workspace. Then the <strong>summary</strong>: what was found, what it means, what to do.</li>
-<li><strong>The cells</strong>, in order. Markdown says what comes next or what a result means. A <strong>log view</strong> is the Flight view's chart for the window that matters — channels, zoom and read-outs as on the Flight view — with <strong>Open flight</strong> to see it in the whole flight. A <strong>code cell</strong> shows its output; the code is folded under <em>show code</em>, for anyone who wants to check it.</li>
+<li><strong>The header</strong>: the title, the card's marks and topic words, who wrote it, <em>finished</em> or still open, the engine version, the date, and whether its outputs are current for this workspace.</li>
+<li><strong>The answer first</strong> — a notebook is laid out in seven sections, and the first three are the part to read when you have five minutes: <strong>1 The question</strong>, as you asked it, with its scope (the flights looked at, the manual pages used, what was taken as given, what the logs can't tell); <strong>2 Answer</strong> — <em>What the data shows</em>, three to five sentences with their numbers, and <em>What it means</em>, a hypothesis with how sure Claude is and what would change it; <strong>3 Proposed actions</strong> — each with who would do it and what it would settle, or <em>None</em> and why. If Claude came back to the notebook, the earlier answers are folded inside.</li>
+</ul>
+<p><img alt="A notebook's findings: a sentence, its table, the calculation folded" class="screenshot" src="../../img/investigations-notebook-findings.png" /></p>
+<ul>
+<li><strong>4 Findings</strong> — each one a sentence and the table, figure or log view it rests on, numbered (<em>Table 3</em>) with a caption saying what it shows. A <strong>log view</strong> is the Flight view's chart for the window that matters, with <strong>Open flight</strong> to see it in the whole flight. The code is folded under <em>show code</em>, and a calculation behind a finding under <em>show the calculation</em>, for anyone who wants to check it.</li>
+<li><strong>5 How this was done</strong> — the plan, the method, the alternatives Claude ruled out, and anything from outside your logs (a forum, another owner) labelled as context. <strong>6 Follow-ups</strong> — dated, each ending with what changed above. <strong>7 Working</strong> — the exploring Claude did on the way, folded.</li>
 <li>Every number comes from a tool result, a code cell's output or a cited page; a mechanism is called a hypothesis. If something reads as a verdict without its reference, ask Claude where it came from.</li>
 </ul>
 <h2 id="5-keep-it-use-it">5. Keep it, use it<a class="headerlink" href="#5-keep-it-use-it" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Re-run</strong> runs every code cell again on your current flights. Outputs that changed wait beside the old ones: <strong>Accept all new outputs</strong> or <strong>Discard all</strong>.</li>
-<li><strong>Export notebook (.zip)</strong> gives the notebook with its files, for another owner of the same engine — they import it from <strong>Research → Import a study or notebook…</strong>, and its cells re-run on their flights where they have EIS on their computer. Your logs don't travel.</li>
+<li>Everything else is under <strong>Actions</strong>. <strong>Export notebook (.zip)</strong> gives the notebook with its files, for another owner of the same engine — they import it from <strong>Research → Import a notebook…</strong>, and its cells re-run on their flights where they have EIS on their computer. Your logs don't travel.</li>
 <li><strong>Export as a page (.html)</strong> gives a page anyone can open — for a mechanic or a manufacturer's support desk, with two sentences of your own.</li>
 <li>To keep the finding in the <strong>Journal</strong>, ask Claude when it finishes — <em>put the finding in my Journal</em> — and add what you decided there.</li>
 </ul>
-<p>If the investigation came from the inbox, the candidate now shows <strong>Open the investigation</strong>; mark it <em>Watch</em>, <em>Acted</em> (say what was done) or <em>Nothing here</em>.</p>
+<p>If the investigation came from the inbox, the item's line now opens to <strong>Open the investigation</strong>; mark it <em>Watch</em>, <em>Acted</em> (say what was done) or <em>Nothing here</em> from its <strong>⋯</strong> menu.</p>
 <p>The original case, from a look at one flight to the notebook, is <a href="../research-takeoff/">Reproducing a takeoff investigation</a>.</p>
 
 

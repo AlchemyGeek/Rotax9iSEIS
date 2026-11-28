@@ -1,45 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" role="img" aria-label="An investigation notebook. At the top, its header: the question, who wrote it, whether it is finished, the engine version and whether its outputs are current for this workspace, then the summary. Below, cells in order: the setup cell that binds eis to the workspace, markdown saying what comes next, a log-view cell that EIS shows as the Flight view's chart and Jupyter shows as a picture, a code cell whose code is folded away and whose output states a number, and more markdown saying what it means. The same file opens on the Research page, in JupyterLab, and as an exported page." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
-<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
-<rect x="20" y="16" width="460" height="370" rx="8" fill="currentColor" opacity="0.05"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 450" role="img" aria-label="An investigation notebook in its seven sections. A header with the title, who wrote it, whether it is finished and whether its outputs are current. Then the Answer, read first: 1 the question and its scope, 2 what the data shows and what it means, 3 proposed actions with who would do each and what it would settle. Then 4 Findings: each a sentence with its numbered, captioned table, figure or log view, the calculation folded. Then 5 how this was done, 6 dated follow-ups, and 7 Working, the exploring, folded. The same file opens on the Research page, in JupyterLab, and as an exported page." font-family="Inter, system-ui, sans-serif" font-size="11" fill="currentColor">
+<defs><marker id="arn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<rect x="20" y="16" width="460" height="420" rx="8" fill="currentColor" opacity="0.05"/>
 <text x="38" y="40" font-weight="600" font-size="13">Full-power rpm cycle</text>
-<text x="38" y="57" opacity="0.75" font-size="10">by claude · finished · engine 1.0.2 · outputs current for this workspace</text>
-<text x="38" y="74" font-size="10.5"><tspan font-weight="600">Question:</tspan> does rpm cycle at full power, on every flight?</text>
-<rect x="38" y="84" width="424" height="30" rx="4" fill="#14b8a6" opacity="0.1"/>
-<text x="48" y="103" font-size="10.5"><tspan font-weight="600">Summary:</tspan> what was found, what it means, what to do</text>
-<rect x="38" y="124" width="424" height="22" rx="4" fill="none" stroke="currentColor" opacity="0.4" stroke-dasharray="3 3"/>
-<text x="48" y="139" opacity="0.75" font-size="10">▸ show code (setup: binds eis to this workspace)</text>
-<text x="38" y="166" font-weight="600">One flight first</text>
-<text x="38" y="181" opacity="0.8" font-size="10.5">The minute of full power on 1 January, rpm and manifold pressure.</text>
-<rect x="38" y="192" width="424" height="78" rx="4" fill="none" stroke="#14b8a6"/>
-<path d="M50,232 L60,220 L70,244 L80,220 L90,244 L100,220 L110,244 L120,220 L130,244 L140,220 L150,244 L160,220 L170,244 L180,220 L190,244 L200,220 L210,244 L220,220 L230,244 L240,220 L250,244 L260,220 L270,244 L280,220 L290,244 L300,220 L310,244 L320,232" fill="none" stroke="#14b8a6" stroke-width="1.4"/>
-<path d="M50,256 L60,250 L70,262 L80,250 L90,262 L100,250 L110,262 L120,250 L130,262 L140,250 L150,262 L160,250 L170,262 L180,250 L190,262 L200,250 L210,262 L220,250 L230,262 L240,250 L250,262 L260,250 L270,262 L280,250 L290,262 L300,250 L310,262 L320,256" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.7"/>
-<rect x="378" y="200" width="74" height="20" rx="4" fill="none" stroke="currentColor" opacity="0.6"/>
-<text x="415" y="214" text-anchor="middle" font-size="10">Open flight</text>
-<text x="340" y="236" font-size="10" fill="#14b8a6">rpm</text>
-<text x="340" y="260" font-size="10" opacity="0.8">MAP</text>
-<text x="38" y="292" font-weight="600">Across the flights</text>
-<rect x="38" y="300" width="424" height="22" rx="4" fill="none" stroke="currentColor" opacity="0.4" stroke-dasharray="3 3"/>
-<text x="48" y="315" opacity="0.75" font-size="10">▸ show code</text>
-<text x="48" y="340" font-family="ui-monospace, Menlo, monospace" font-size="10">RPM cycles every 4.4 s in 10 of 10 slices, swing 180 rpm …</text>
-<text x="38" y="368" opacity="0.8" font-size="10.5">What it means — a markdown cell beside every figure and log view.</text>
+<text x="38" y="56" opacity="0.75" font-size="10">by claude · finished · 2 actions · outputs current for this workspace</text>
+<rect x="38" y="66" width="424" height="104" rx="4" fill="#14b8a6" opacity="0.1"/>
+<text x="48" y="85" font-size="10.5"><tspan font-weight="600">1 The question</tspan> — and its scope: flights, manuals, limits</text>
+<text x="48" y="108" font-size="10.5"><tspan font-weight="600">2 Answer</tspan> — what the data shows, 3–5 sentences with counts:</text>
+<text x="60" y="123" font-size="10" opacity="0.85">• rpm cycles every 4.4 s in 10 of 10 takeoffs, swing 180 rpm</text>
+<text x="60" y="137" font-size="10" opacity="0.85">What it means — a hypothesis, how sure, what would change it</text>
+<text x="48" y="160" font-size="10.5"><tspan font-weight="600">3 Proposed actions</tspan> — what · who · what it settles · or <tspan font-style="italic">None</tspan></text>
+<text x="38" y="194" font-weight="600">4 Findings</text>
+<text x="38" y="209" opacity="0.85" font-size="10.5">The cycle is there on every takeoff, not one flight.</text>
+<rect x="38" y="218" width="424" height="70" rx="4" fill="none" stroke="#14b8a6"/>
+<path d="M50,246 L62,232 L74,260 L86,232 L98,260 L110,232 L122,260 L134,232 L146,260 L158,232 L170,260 L182,232 L194,260 L206,232 L218,260 L230,232 L242,260 L254,232 L266,260 L278,232 L290,246" fill="none" stroke="#14b8a6" stroke-width="1.4"/>
+<rect x="378" y="226" width="74" height="20" rx="4" fill="none" stroke="currentColor" opacity="0.6"/>
+<text x="415" y="240" text-anchor="middle" font-size="10">Open flight</text>
+<text x="50" y="280" font-size="10" opacity="0.8">Log view 1 — the full-power minute, on every takeoff</text>
+<rect x="38" y="294" width="424" height="20" rx="4" fill="none" stroke="currentColor" opacity="0.4" stroke-dasharray="3 3"/>
+<text x="48" y="308" opacity="0.75" font-size="10">▸ show the calculation</text>
+<text x="38" y="336" font-weight="600">5 How this was done</text>
+<text x="200" y="336" opacity="0.75" font-size="10">plan, method, alternatives ruled out</text>
+<text x="38" y="360" font-weight="600">6 Follow-ups</text>
+<text x="200" y="360" opacity="0.75" font-size="10">dated; each ends with what changed above</text>
+<rect x="38" y="374" width="424" height="22" rx="4" fill="none" stroke="currentColor" opacity="0.4" stroke-dasharray="3 3"/>
+<text x="48" y="389" opacity="0.75" font-size="10">▸ 7 Working (12 cells)</text>
 <g font-size="10.5">
-<line x1="482" y1="60" x2="520" y2="60" stroke="currentColor" opacity="0.5" marker-end="url(#ar)"/>
-<text x="526" y="56" font-weight="600">The header</text>
-<text x="526" y="71" opacity="0.8">who, the question, finished or open,</text>
-<text x="526" y="85" opacity="0.8">and whether the outputs still hold here</text>
-<line x1="482" y1="135" x2="520" y2="135" stroke="currentColor" opacity="0.5" marker-end="url(#ar)"/>
-<text x="526" y="131" font-weight="600">The setup cell</text>
-<text x="526" y="146" opacity="0.8">so the notebook runs in JupyterLab too</text>
-<line x1="482" y1="230" x2="520" y2="230" stroke="#14b8a6" marker-end="url(#ar)"/>
-<text x="526" y="214" font-weight="600">A log view</text>
-<text x="526" y="229" opacity="0.8">in EIS: the Flight view's chart, live;</text>
-<text x="526" y="243" opacity="0.8">in Jupyter or a PDF: the same as a picture;</text>
-<text x="526" y="257" opacity="0.8">flight not here: the picture, marked so</text>
-<line x1="482" y1="326" x2="520" y2="326" stroke="currentColor" opacity="0.5" marker-end="url(#ar)"/>
-<text x="526" y="314" font-weight="600">A code cell</text>
-<text x="526" y="329" opacity="0.8">code folded away; the output states</text>
-<text x="526" y="343" opacity="0.8">the number, with its reference</text>
+<line x1="482" y1="118" x2="520" y2="118" stroke="#14b8a6" marker-end="url(#arn)"/>
+<text x="526" y="104" font-weight="600">The Answer, read first</text>
+<text x="526" y="119" opacity="0.8">written when Claude finishes;</text>
+<text x="526" y="133" opacity="0.8">earlier Answers folded inside</text>
+<line x1="482" y1="253" x2="520" y2="253" stroke="currentColor" opacity="0.5" marker-end="url(#arn)"/>
+<text x="526" y="239" font-weight="600">Evidence</text>
+<text x="526" y="254" opacity="0.8">a sentence, then its table, figure or</text>
+<text x="526" y="268" opacity="0.8">log view — numbered, with a caption</text>
+<line x1="482" y1="348" x2="520" y2="348" stroke="currentColor" opacity="0.5" marker-end="url(#arn)"/>
+<text x="526" y="344" font-weight="600">How it was reached</text>
+<text x="526" y="359" opacity="0.8">so you can check it, or disagree</text>
+<line x1="482" y1="385" x2="520" y2="385" stroke="currentColor" opacity="0.5" marker-end="url(#arn)"/>
+<text x="526" y="389" font-weight="600">The exploring, kept but folded</text>
 </g>
-<text x="616" y="372" text-anchor="middle" opacity="0.7" font-size="10">One .ipynb file: the Research page,</text>
-<text x="616" y="386" text-anchor="middle" opacity="0.7" font-size="10">JupyterLab, an exported page</text>
+<text x="616" y="424" text-anchor="middle" opacity="0.7" font-size="10">One .ipynb file: the Research page,</text>
+<text x="616" y="438" text-anchor="middle" opacity="0.7" font-size="10">JupyterLab, an exported page</text>
 </svg>

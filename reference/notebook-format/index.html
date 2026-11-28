@@ -1821,6 +1821,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The shape
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The shape">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cell-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell roles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-finish-rule" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2098,6 +2126,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The shape
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The shape">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cell-roles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cell roles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-finish-rule" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2172,7 +2228,31 @@
 </tr>
 <tr>
 <td><code>status</code>, <code>summary</code></td>
-<td><code>open</code> or <code>finished</code>; the summary written at the finish</td>
+<td><code>open</code> or <code>finished</code>; the summary written at the finish (<em>What it means</em>, or the older free-text summary)</td>
+</tr>
+<tr>
+<td><code>shape</code></td>
+<td><code>1</code> for a notebook laid out in the seven sections (<a href="#the-shape">The shape</a>); absent on older notebooks</td>
+</tr>
+<tr>
+<td><code>top</code></td>
+<td>the structured Answer of the last finish: <code>question_scope</code>, <code>shows</code> (3–5 sentences), <code>means</code>, <code>actions</code> (<code>what</code>, <code>who</code>, <code>settles</code>, <code>recheck_after_flights</code>) or <code>actions_none</code></td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td>each earlier <code>top</code>, with the date it was replaced (<code>finished</code>)</td>
+</tr>
+<tr>
+<td><code>finding</code></td>
+<td><code>shows[0]</code> — the notebook's line in the Journal</td>
+</tr>
+<tr>
+<td><code>followup</code></td>
+<td>the follow-up open now, if any (its heading cell's id)</td>
+</tr>
+<tr>
+<td><code>card</code></td>
+<td>the Research home card: origin, channels, flights, dates, evidence counts, tests, outputs, tags, <code>actions</code></td>
 </tr>
 <tr>
 <td><code>inbox_candidate</code></td>
@@ -2193,7 +2273,7 @@
 </tbody>
 </table>
 <h2 id="cells">Cells<a class="headerlink" href="#cells" title="Permanent link">&para;</a></h2>
-<p>Standard markdown and code cells. The first code cell is the <strong>setup cell</strong> (id <code>setup</code>), which binds <code>eis</code> to the workspace (<a href="../eis-library/">the eis library</a>). Each code cell carries <code>metadata.slingology.ran</code>:</p>
+<p>Standard markdown and code cells. The first code cell is the <strong>setup cell</strong> (id <code>setup</code>), which binds <code>eis</code> to the workspace (<a href="../eis-library/">the eis library</a>). Every cell has a <code>metadata.slingology.role</code> (<a href="#cell-roles">Cell roles</a>). Each code cell carries <code>metadata.slingology.ran</code>:</p>
 <table>
 <thead>
 <tr>
@@ -2240,10 +2320,105 @@
 </tbody>
 </table>
 <p>The EIS pages read the reference and show the Flight view's chart for that window, with <strong>Open flight</strong>. If the flight isn't in the workspace they show the picture, marked <em>Flight not in this workspace</em>.</p>
+<p>An <strong>evidence output</strong> — what <code>eis.table</code>, <code>eis.figure</code> and <code>eis.logview(…, caption=)</code> produce — carries <code>metadata.slingology.evidence</code>: <code>kind</code> (<code>table</code>, <code>figure</code>, <code>logview</code>), <code>caption</code>, and for a table its <code>units</code>; a table also carries <code>slingology.table</code> (<code>n_rows</code>, <code>n_cols</code>, <code>truncated</code>). The number (<em>Table 1</em>) is the renderer's, counted in order, so moving a cell never leaves a stale number.</p>
+<h2 id="the-shape">The shape<a class="headerlink" href="#the-shape" title="Permanent link">&para;</a></h2>
+<p>A notebook is laid out in seven sections, in this order. <code>study_create</code> writes their headings — markdown cells with role <code>section</code>, ids <code>s1</code>–<code>s7</code>. Spec 16 §5.6.</p>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Holds</th>
+<th>Written by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1 The question</strong></td>
+<td>the question; <em>Scope and qualifications</em></td>
+<td>the finish (<code>question_scope</code>)</td>
+</tr>
+<tr>
+<td><strong>2 Answer</strong></td>
+<td><em>What the data shows</em> (3–5 bullets); <em>What it means</em></td>
+<td>the finish (<code>shows</code>, <code>means</code>)</td>
+</tr>
+<tr>
+<td><strong>3 Proposed actions</strong></td>
+<td>numbered: what · who · what it would settle · re-check after the next N flights — or <em>None</em>, and why</td>
+<td>the finish (<code>actions</code>)</td>
+</tr>
+<tr>
+<td><strong>4 Findings</strong></td>
+<td>each finding: one sentence, then its evidence cell (and the calculation behind it)</td>
+<td>Claude</td>
+</tr>
+<tr>
+<td><strong>5 How this was done</strong></td>
+<td>the plan, the data and slice rules in words, the method, alternatives ruled out, outside context labelled as context</td>
+<td>Claude</td>
+</tr>
+<tr>
+<td><strong>6 Follow-ups</strong></td>
+<td>dated subsections (<code>### Follow-up — 2026-11-27: title</code>), each ending with what changed above</td>
+<td>Claude, after <code>study_followup</code></td>
+</tr>
+<tr>
+<td><strong>7 Working</strong></td>
+<td>every scratch cell, in the order written</td>
+<td>gathered at the finish</td>
+</tr>
+</tbody>
+</table>
+<p>Sections 1–3 are written from the finish's fields, not from markdown: the <code>.ipynb</code> holds them as markdown cells marked <code>generated: true</code>, so JupyterLab shows the same text, and a re-finish rewrites them and keeps the earlier Answer in <code>history</code>. A follow-up opens when Claude asks for one, or by itself when new analysis lands in a finished notebook.</p>
+<h3 id="cell-roles">Cell roles<a class="headerlink" href="#cell-roles" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Cell</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>evidence</code></td>
+<td>code</td>
+<td>a table, figure or log view the reader reads without the code — shown open, numbered, with its caption</td>
+</tr>
+<tr>
+<td><code>support</code></td>
+<td>code</td>
+<td>the computation behind the evidence or sentence after it — folded under <em>show the calculation</em>. A code cell without a role is support</td>
+</tr>
+<tr>
+<td><code>scratch</code></td>
+<td>code or markdown</td>
+<td>exploring — kept, folded, under <em>Working</em></td>
+</tr>
+<tr>
+<td><code>narrative</code></td>
+<td>markdown</td>
+<td>a finding's sentence, what a result means, the plan. A markdown cell without a role is narrative</td>
+</tr>
+<tr>
+<td><code>section</code>, <code>followup</code>, <code>changed</code>, <code>setup</code></td>
+<td>—</td>
+<td>written by EIS: the headings, a follow-up's heading and its <em>What changed above</em> line, the setup cell</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Older notebooks</strong> (no <code>shape</code>) get roles when first loaded — code cells support, markdown narrative — and nothing moves; they render as before. Moving any cell into a section gives the notebook its seven headings, with its cells under <em>Findings</em>.</p>
 <h2 id="the-finish-rule">The finish rule<a class="headerlink" href="#the-finish-rule" title="Permanent link">&para;</a></h2>
-<p><code>study_finish</code> refuses a notebook that has no summary, or a figure or log view without a markdown cell right before or after it saying what it shows — and names the cells. A notebook says what each picture means.</p>
+<p><code>study_finish</code> takes the Answer as fields — <code>question_scope</code>, <code>shows</code>, <code>means</code>, <code>actions</code> (or <code>actions_none</code>), and <code>changed</code> when a follow-up is open; a <code>summary</code> alone is still accepted and stands as <em>What it means</em>. It refuses, naming the cells, while:</p>
+<ul>
+<li>a figure or log view has nothing saying what it shows — a caption, or a markdown cell right before or after it;</li>
+<li>a code cell ends in an error;</li>
+<li>an evidence cell's output is plain printed text;</li>
+<li>a support cell has nothing after it — no evidence and no sentence that uses it.</li>
+</ul>
+<p>A notebook says what each picture means, and a cell that failed is replaced, not left behind a working copy. Each code cell starts afresh, so it loads what it uses itself; when one fails on a name an earlier cell set, its error says which cell that was. At the finish the scratch cells move under <em>Working</em>.</p>
 <h2 id="the-two-renderings">The two renderings<a class="headerlink" href="#the-two-renderings" title="Permanent link">&para;</a></h2>
-<p>The Research page and <strong>Export as a page (.html)</strong> use the same renderer — the page on the website and on your computer show the same notebook — and both pass tables through a filter that keeps only plain table markup.</p>
+<p>The Research page and <strong>Export as a page (.html)</strong> use the same renderer — the page on the website and on your computer show the same notebook — and both pass tables through a filter that keeps only plain table markup. A shaped notebook reads as its sections: 1–3 typeset as one block (earlier Answers folded inside it), each finding's evidence open with its number and caption and the calculation folded beside it, then <em>How this was done</em>, the dated follow-ups, and <em>Working (n cells)</em> folded at the end. The Research home card says <em>n actions</em>.</p>
 
 
 
